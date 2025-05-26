@@ -1,0 +1,11 @@
+services:
+  tracker:
+    build: .
+    container_name: service-tracker-dash
+    ports:
+      - "8815:8815"
+    env_file:
+      - .env
+    volumes:
+      - ~/docker/tracker:/config
+
