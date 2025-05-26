@@ -67,16 +67,17 @@ Content-Type: application/json
 
 ## 🐳 Docker
 
-### Build & Run Locally
-
 ```bash
-docker build -t service-tracker-dashboard .
-docker run -p 8815:8815 \
-  -e API_TOKEN=your_token \
-  -e STD_DOZZLE_URL=http://dozzle:8888 \
-  -v $PWD/config:/config \
-  service-tracker-dashboard
-```
+services:
+  tracker:
+    image: crzykidd/service-tracker-dashboard:latest
+    container_name: service-tracker-dash
+    ports:
+      - "8815:8815"
+    env_file:
+      - .env
+    volumes:
+      - ~/docker/tracker:/config```
 
 
 ## 🧪 To Do / Ideas
