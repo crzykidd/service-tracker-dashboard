@@ -143,7 +143,15 @@ DASHBOARD_TEMPLATE = """
         {% endif %}
       </td>
       <td>{{ (entry.last_updated|time_since) }}</td>
-      <td>{{ entry.docker_status or '' }}</td>
+      <td>
+        {% if entry.docker_status == 'start' %}
+          <span class="badge bg-success" title="start">Running</span>
+        {% elif entry.docker_status == 'die' %}
+          <span class="badge bg-danger" title="die">Exited</span>
+        {% elif entry.docker_status %}
+          <span class=\"badge bg-warning text-dark\" title=\"{{ entry.docker_status }}\">{{ entry.docker_status }}</span>
+        {% endif %}
+      </td>
       <td>
         {% if STD_DOZZLE_URL and entry.container_id %}
           <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}" target="_blank" title="View logs in Dozzle">
