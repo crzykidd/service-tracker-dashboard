@@ -77,7 +77,8 @@ services:
     env_file:
       - .env
     volumes:
-      - ~/docker/tracker:/config```
+      - ~/docker/tracker:/config
+```
 
 
 ## 🧪 To Do / Ideas
