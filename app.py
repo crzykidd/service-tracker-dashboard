@@ -30,7 +30,8 @@ cursor.execute("""
         container_id TEXT,
         internalurl TEXT,
         externalurl TEXT,
-        last_updated TEXT NOT NULL
+        last_updated TEXT NOT NULL,
+        stack_name TEXT
     )
 """)
 conn.commit()
@@ -47,9 +48,11 @@ class ServiceEntry(db.Model):
     internalurl = db.Column(db.String(255), nullable=True)
     externalurl = db.Column(db.String(255), nullable=True)
     last_updated = db.Column(db.DateTime, nullable=False)
+    stack_name = db.Column(db.String(100), nullable=True)
 
     def to_dict(self):
         return {
+            'stack_name': self.stack_name,
             'id': self.id,
             'host': self.host,
             'container_name': self.container_name,
@@ -64,6 +67,7 @@ DASHBOARD_TEMPLATE = """
 <html data-bs-theme=\"dark\">
 <head>
   <title>Service Dashboard</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css\" rel=\"stylesheet\">
 <meta http-equiv=\"refresh\" content=\"30\">
 </head>
@@ -82,9 +86,7 @@ DASHBOARD_TEMPLATE = """
     <div class=\"alert alert-danger\" role=\"alert\">Entry deleted successfully.</div>
   {% endif %}
   <h1 class=\"mb-4\">Service Dashboard</h1>
-  <div class=\"d-flex justify-content-between align-items-center mb-3\">
-    <a href=\"/add\" class=\"btn btn-success\">Add New Entry</a>
-  </div>
+  
   <div class=\"row g-3 mb-4\">
     <div class=\"col-auto\">
       <input type=\"text\" id=\"filterInput\" class=\"form-control\" placeholder=\"Filter...\">
@@ -97,9 +99,10 @@ DASHBOARD_TEMPLATE = """
       <th data-sort-key=\"host\">Host</th>
       <th data-sort-key=\"container_name\">Container Name</th>
       <th data-sort-key=\"container_id\">Container ID</th>
-      <th>Internal URL</th>
-      <th>External URL</th>
+      <th>URLs</th>
       <th>Last Updated</th>
+      <th>Tools</th>
+      {% set stack_present = entries|selectattr('stack_name')|select|list|length > 0 %}{% if stack_present %}<th>Stack</th>{% endif %}
       <th>Actions</th>
     </tr>
   </thead>
@@ -108,10 +111,22 @@ DASHBOARD_TEMPLATE = """
     <tr>
       <td>{{ entry.host }}</td>
       <td>{{ entry.container_name }}</td>
-      <td>{{ entry.container_id or '' }}</td>
-      <td>{% if entry.internalurl %}<a href=\"{{ entry.internalurl }}\" target=\"_blank\" class=\"btn btn-sm btn-outline-info\">Internal</a>{% endif %}</td>
-      <td>{% if entry.externalurl %}<a href=\"{{ entry.externalurl }}\" target=\"_blank\" class=\"btn btn-sm btn-outline-success\">External</a>{% endif %}</td>
+      <td title="{{ entry.container_id }}">{{ entry.container_id[:12] if entry.container_id else '' }}</td>
+      <td>
+        {% if entry.internalurl %}
+          <a href="{{ entry.internalurl }}" target="_blank" class="btn btn-sm btn-outline-info">Internal</a>
+        {% endif %}
+        {% if entry.externalurl %}
+          <a href="{{ entry.externalurl }}" target="_blank" class="btn btn-sm btn-outline-success">External</a>
+        {% endif %}
+      </td>
       <td>{{ (entry.last_updated|time_since) }}</td>
+      <td>
+        {% if STD_DOZZLE_URL and entry.container_id %}
+          <a href=\"{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}\" target=\"_blank\" class=\"btn btn-sm btn-outline-secondary\">Dozzle</a>
+        {% endif %}
+      </td>
+      {% if stack_present %}<td>{{ entry.stack_name or '' }}</td>{% endif %}
       <td><a href=\"/edit/{{ entry.id }}\" class=\"btn btn-sm btn-outline-warning\">Edit</a></td>
     </tr>
     {% endfor %}
@@ -125,13 +140,14 @@ DASHBOARD_TEMPLATE = """
       const filter = input.value.toLowerCase();
       const rows = document.querySelectorAll('table tbody tr');
       rows.forEach(row => {
-        const host = row.children[0].innerText.toLowerCase();
-        const name = row.children[1].innerText.toLowerCase();
-        const id = row.children[2].innerText.toLowerCase();
-        row.style.display = (host.includes(filter) || name.includes(filter) || id.includes(filter)) ? '' : 'none';
+        const host = row.children[0].textContent.toLowerCase();
+        const name = row.children[1].textContent.toLowerCase();
+        const id = row.children[2].textContent.toLowerCase();
+        const match = host.includes(filter) || name.includes(filter) || id.includes(filter);
+        row.style.display = match ? '' : 'none';
       });
     });
-  });
+
     const table = document.querySelector('table');
     const headers = table.querySelectorAll('th[data-sort-key]');
     headers.forEach((header, index) => {
@@ -191,6 +207,10 @@ ADD_TEMPLATE = """
         <label class='form-label'>External URL</label>
         <input class='form-control' name='externalurl' />
       </div>
+      <div class='mb-3'>
+        <label class='form-label'>Stack Name (optional)</label>
+        <input class='form-control' name='stack_name' />
+      </div>
       <button type='submit' class='btn btn-primary'>Submit</button>
       <a href='/' class='btn btn-secondary'>Cancel</a>
     </form>
@@ -200,7 +220,47 @@ ADD_TEMPLATE = """
 """
 
 EDIT_TEMPLATE = """
-<!-- full edit-entry HTML omitted for brevity -->
+<!DOCTYPE html>
+<html data-bs-theme='dark'>
+<head>
+  <title>Edit Entry</title>
+  <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
+</head>
+<body class='bg-dark text-light'>
+  <div class='container mt-5'>
+    <h1>Edit Service Entry</h1>
+    <form method='post'>
+      <div class='mb-3'>
+        <label class='form-label'>Host</label>
+        <input class='form-control' name='host' value='{{ entry.host }}' required />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Container Name</label>
+        <input class='form-control' name='container_name' value='{{ entry.container_name }}' required />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Container ID</label>
+        <input class='form-control' name='container_id' value='{{ entry.container_id }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Internal URL</label>
+        <input class='form-control' name='internalurl' value='{{ entry.internalurl }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External URL</label>
+        <input class='form-control' name='externalurl' value='{{ entry.externalurl }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Stack Name (optional)</label>
+        <input class='form-control' name='stack_name' value='{{ entry.stack_name }}' />
+      </div>
+      <button type='submit' class='btn btn-primary'>Update</button>
+      <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
+      <a href='/' class='btn btn-secondary'>Cancel</a>
+    </form>
+  </div>
+</body>
+</html>
 """
 
 @app.route('/')
@@ -212,6 +272,16 @@ def dashboard():
     reverse = direction == 'desc'
 
     entries = ServiceEntry.query.all()
+    # Group by stack name
+    from collections import defaultdict
+    grouped_entries = defaultdict(list)
+    for e in entries:
+        grouped_entries[e.stack_name or 'Unassigned'].append(e)
+
+    grouped_entries = dict(sorted(grouped_entries.items()))
+
+    entries = [e for group in grouped_entries.values() for e in group]
+
     if query:
         entries = [e for e in entries if query in e.host.lower() or query in e.container_name.lower()]
 
@@ -247,6 +317,7 @@ def add_entry():
             container_id=container_id,
             internalurl=internalurl,
             externalurl=externalurl,
+            stack_name=request.form.get('stack_name'),
             last_updated=datetime.now()
         )
         db.session.add(entry)
@@ -267,10 +338,52 @@ def edit_entry(id):
         entry.container_id = request.form.get('container_id')
         entry.internalurl = request.form.get('internalurl')
         entry.externalurl = request.form.get('externalurl')
+        entry.stack_name = request.form.get('stack_name')
         entry.last_updated = datetime.now()
         db.session.commit()
         return redirect(url_for('dashboard'))
     return render_template_string(EDIT_TEMPLATE, entry=entry)
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    token = request.headers.get('Authorization')
+    if token != f"Bearer {API_TOKEN}":
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json()
+    host = data.get('host')
+    container_name = data.get('container_name')
+    container_id = data.get('container_id')
+    internalurl = data.get('internalurl')
+    externalurl = data.get('externalurl')
+    stack_name = data.get('stack_name')
+
+    if not host or not container_name:
+        return jsonify({'error': 'Missing fields'}), 400
+
+    existing = ServiceEntry.query.filter_by(container_name=container_name).first()
+    if existing:
+        existing.host = host
+        existing.container_id = container_id
+        existing.internalurl = internalurl
+        existing.externalurl = externalurl
+        existing.stack_name = stack_name
+        existing.last_updated = datetime.now()
+    else:
+        new_entry = ServiceEntry(
+            host=host,
+            container_name=container_name,
+            container_id=container_id,
+            internalurl=internalurl,
+            externalurl=externalurl,
+            stack_name=stack_name,
+            last_updated=datetime.now()
+        )
+        db.session.add(new_entry)
+
+    db.session.commit()
+    return jsonify({'status': 'success'})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8815, debug=True)
