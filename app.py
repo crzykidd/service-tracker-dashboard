@@ -69,7 +69,22 @@ DASHBOARD_TEMPLATE = """
   <title>Service Dashboard</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css\" rel=\"stylesheet\">
-<meta http-equiv=\"refresh\" content=\"30\">
+  <script>
+    let secondsSinceRefresh = 0;
+    setInterval(() => {
+      const input = document.getElementById('filterInput');
+      const refreshLabel = document.getElementById('refreshTimer');
+      secondsSinceRefresh++;
+      if (refreshLabel) {
+        refreshLabel.textContent = `Refreshed ${secondsSinceRefresh} seconds ago`;
+      }
+      if (!input || document.activeElement !== input) {
+        if (secondsSinceRefresh >= 60) {
+          window.location.reload();
+        }
+      }
+    }, 1000);
+  </script>
 </head>
 <body class=\"bg-dark text-light\">
 <nav class=\"navbar navbar-expand-lg navbar-dark bg-primary fixed-top\">
@@ -87,9 +102,12 @@ DASHBOARD_TEMPLATE = """
   {% endif %}
   <h1 class=\"mb-4\">Service Dashboard</h1>
   
-  <div class=\"row g-3 mb-4\">
+  <div class=\"d-flex justify-content-between align-items-center mb-4\">
     <div class=\"col-auto\">
       <input type=\"text\" id=\"filterInput\" class=\"form-control\" placeholder=\"Filter...\">
+    </div>
+    <div class=\"col-auto text-muted\">
+      <span id=\"refreshTimer\" style=\"font-size: 0.9rem;\">Refreshed just now</span>
     </div>
   </div>
 
@@ -145,7 +163,8 @@ DASHBOARD_TEMPLATE = """
         const host = row.children[0].textContent.toLowerCase();
         const name = row.children[1].textContent.toLowerCase();
         const id = row.children[2].textContent.toLowerCase();
-        const match = host.includes(filter) || name.includes(filter) || id.includes(filter);
+        const stack = row.children.length > 7 ? row.children[row.children.length - 2].textContent.toLowerCase() : '';
+        const match = host.includes(filter) || name.includes(filter) || id.includes(filter) || stack.includes(filter);
         row.style.display = match ? '' : 'none';
       });
     });
