@@ -31,7 +31,8 @@ cursor.execute("""
         internalurl TEXT,
         externalurl TEXT,
         last_updated TEXT NOT NULL,
-        stack_name TEXT
+        stack_name TEXT,
+        docker_status TEXT
     )
 """)
 conn.commit()
@@ -49,6 +50,7 @@ class ServiceEntry(db.Model):
     externalurl = db.Column(db.String(255), nullable=True)
     last_updated = db.Column(db.DateTime, nullable=False)
     stack_name = db.Column(db.String(100), nullable=True)
+    docker_status = db.Column(db.String(100), nullable=True)
 
     def to_dict(self):
         return {
@@ -59,7 +61,8 @@ class ServiceEntry(db.Model):
             'container_id': self.container_id,
             'internalurl': self.internalurl,
             'externalurl': self.externalurl,
-            'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S')
+            'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
+            'docker_status': self.docker_status
         }
 
 DASHBOARD_TEMPLATE = """
@@ -119,6 +122,7 @@ DASHBOARD_TEMPLATE = """
       <th data-sort-key=\"container_id\">Container ID</th>
       <th>URLs</th>
       <th>Last Updated</th>
+      <th>Docker Status</th>
       <th>Tools</th>
       {% set stack_present = entries|selectattr('stack_name')|select|list|length > 0 %}{% if stack_present %}<th>Stack</th>{% endif %}
       <th>Actions</th>
@@ -139,6 +143,7 @@ DASHBOARD_TEMPLATE = """
         {% endif %}
       </td>
       <td>{{ (entry.last_updated|time_since) }}</td>
+      <td>{{ entry.docker_status or '' }}</td>
       <td>
         {% if STD_DOZZLE_URL and entry.container_id %}
           <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}" target="_blank" title="View logs in Dozzle">
@@ -232,6 +237,10 @@ ADD_TEMPLATE = """
         <label class='form-label'>Stack Name (optional)</label>
         <input class='form-control' name='stack_name' />
       </div>
+      <div class='mb-3'>
+        <label class='form-label'>Docker Status</label>
+        <input class='form-control' name='docker_status' />
+      </div>
       <button type='submit' class='btn btn-primary'>Submit</button>
       <a href='/' class='btn btn-secondary'>Cancel</a>
     </form>
@@ -274,6 +283,10 @@ EDIT_TEMPLATE = """
       <div class='mb-3'>
         <label class='form-label'>Stack Name (optional)</label>
         <input class='form-control' name='stack_name' value='{{ entry.stack_name }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Docker Status</label>
+        <input class='form-control' name='docker_status' value='{{ entry.docker_status }}' />
       </div>
       <button type='submit' class='btn btn-primary'>Update</button>
       <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
@@ -339,6 +352,7 @@ def add_entry():
             internalurl=internalurl,
             externalurl=externalurl,
             stack_name=request.form.get('stack_name'),
+            docker_status=request.form.get('docker_status'),
             last_updated=datetime.now()
         )
         db.session.add(entry)
@@ -360,6 +374,7 @@ def edit_entry(id):
         entry.internalurl = request.form.get('internalurl')
         entry.externalurl = request.form.get('externalurl')
         entry.stack_name = request.form.get('stack_name')
+        entry.docker_status = request.form.get('docker_status')
         entry.last_updated = datetime.now()
         db.session.commit()
         return redirect(url_for('dashboard'))
@@ -378,6 +393,7 @@ def api_register():
     internalurl = data.get('internalurl')
     externalurl = data.get('externalurl')
     stack_name = data.get('stack_name')
+    docker_status = data.get('docker_status')
 
     if not host or not container_name:
         return jsonify({'error': 'Missing fields'}), 400
@@ -389,6 +405,7 @@ def api_register():
         existing.internalurl = internalurl
         existing.externalurl = externalurl
         existing.stack_name = stack_name
+        existing.docker_status = docker_status
         existing.last_updated = datetime.now()
     else:
         new_entry = ServiceEntry(
@@ -398,6 +415,7 @@ def api_register():
             internalurl=internalurl,
             externalurl=externalurl,
             stack_name=stack_name,
+            docker_status=docker_status,
             last_updated=datetime.now()
         )
         db.session.add(new_entry)
