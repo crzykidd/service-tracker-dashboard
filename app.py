@@ -31,7 +31,8 @@ cursor.execute("""
         internalurl TEXT,
         externalurl TEXT,
         last_updated TEXT NOT NULL,
-        stack_name TEXT
+        stack_name TEXT,
+        docker_status TEXT
     )
 """)
 conn.commit()
@@ -49,6 +50,7 @@ class ServiceEntry(db.Model):
     externalurl = db.Column(db.String(255), nullable=True)
     last_updated = db.Column(db.DateTime, nullable=False)
     stack_name = db.Column(db.String(100), nullable=True)
+    docker_status = db.Column(db.String(100), nullable=True)
 
     def to_dict(self):
         return {
@@ -59,7 +61,8 @@ class ServiceEntry(db.Model):
             'container_id': self.container_id,
             'internalurl': self.internalurl,
             'externalurl': self.externalurl,
-            'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S')
+            'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
+            'docker_status': self.docker_status
         }
 
 DASHBOARD_TEMPLATE = """
@@ -69,7 +72,22 @@ DASHBOARD_TEMPLATE = """
   <title>Service Dashboard</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css\" rel=\"stylesheet\">
-<meta http-equiv=\"refresh\" content=\"30\">
+  <script>
+    let secondsSinceRefresh = 0;
+    setInterval(() => {
+      const input = document.getElementById('filterInput');
+      const refreshLabel = document.getElementById('refreshTimer');
+      secondsSinceRefresh++;
+      if (refreshLabel) {
+        refreshLabel.textContent = `Refreshed ${secondsSinceRefresh} seconds ago`;
+      }
+      if (!input || document.activeElement !== input) {
+        if (secondsSinceRefresh >= 60) {
+          window.location.reload();
+        }
+      }
+    }, 1000);
+  </script>
 </head>
 <body class=\"bg-dark text-light\">
 <nav class=\"navbar navbar-expand-lg navbar-dark bg-primary fixed-top\">
@@ -87,9 +105,12 @@ DASHBOARD_TEMPLATE = """
   {% endif %}
   <h1 class=\"mb-4\">Service Dashboard</h1>
   
-  <div class=\"row g-3 mb-4\">
+  <div class=\"d-flex justify-content-between align-items-center mb-4\">
     <div class=\"col-auto\">
       <input type=\"text\" id=\"filterInput\" class=\"form-control\" placeholder=\"Filter...\">
+    </div>
+    <div class=\"col-auto text-muted\">
+      <span id=\"refreshTimer\" style=\"font-size: 0.9rem;\">Refreshed just now</span>
     </div>
   </div>
 
@@ -101,6 +122,7 @@ DASHBOARD_TEMPLATE = """
       <th data-sort-key=\"container_id\">Container ID</th>
       <th>URLs</th>
       <th>Last Updated</th>
+      <th>Docker Status</th>
       <th>Tools</th>
       {% set stack_present = entries|selectattr('stack_name')|select|list|length > 0 %}{% if stack_present %}<th>Stack</th>{% endif %}
       <th>Actions</th>
@@ -121,9 +143,12 @@ DASHBOARD_TEMPLATE = """
         {% endif %}
       </td>
       <td>{{ (entry.last_updated|time_since) }}</td>
+      <td>{{ entry.docker_status or '' }}</td>
       <td>
         {% if STD_DOZZLE_URL and entry.container_id %}
-          <a href=\"{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}\" target=\"_blank\" class=\"btn btn-sm btn-outline-secondary\">Dozzle</a>
+          <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}" target="_blank" title="View logs in Dozzle">
+            <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" style="height: 20px;">
+          </a>
         {% endif %}
       </td>
       {% if stack_present %}<td>{{ entry.stack_name or '' }}</td>{% endif %}
@@ -143,7 +168,8 @@ DASHBOARD_TEMPLATE = """
         const host = row.children[0].textContent.toLowerCase();
         const name = row.children[1].textContent.toLowerCase();
         const id = row.children[2].textContent.toLowerCase();
-        const match = host.includes(filter) || name.includes(filter) || id.includes(filter);
+        const stack = row.children.length > 7 ? row.children[row.children.length - 2].textContent.toLowerCase() : '';
+        const match = host.includes(filter) || name.includes(filter) || id.includes(filter) || stack.includes(filter);
         row.style.display = match ? '' : 'none';
       });
     });
@@ -211,6 +237,10 @@ ADD_TEMPLATE = """
         <label class='form-label'>Stack Name (optional)</label>
         <input class='form-control' name='stack_name' />
       </div>
+      <div class='mb-3'>
+        <label class='form-label'>Docker Status</label>
+        <input class='form-control' name='docker_status' />
+      </div>
       <button type='submit' class='btn btn-primary'>Submit</button>
       <a href='/' class='btn btn-secondary'>Cancel</a>
     </form>
@@ -253,6 +283,10 @@ EDIT_TEMPLATE = """
       <div class='mb-3'>
         <label class='form-label'>Stack Name (optional)</label>
         <input class='form-control' name='stack_name' value='{{ entry.stack_name }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Docker Status</label>
+        <input class='form-control' name='docker_status' value='{{ entry.docker_status }}' />
       </div>
       <button type='submit' class='btn btn-primary'>Update</button>
       <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
@@ -318,6 +352,7 @@ def add_entry():
             internalurl=internalurl,
             externalurl=externalurl,
             stack_name=request.form.get('stack_name'),
+            docker_status=request.form.get('docker_status'),
             last_updated=datetime.now()
         )
         db.session.add(entry)
@@ -339,6 +374,7 @@ def edit_entry(id):
         entry.internalurl = request.form.get('internalurl')
         entry.externalurl = request.form.get('externalurl')
         entry.stack_name = request.form.get('stack_name')
+        entry.docker_status = request.form.get('docker_status')
         entry.last_updated = datetime.now()
         db.session.commit()
         return redirect(url_for('dashboard'))
@@ -357,6 +393,7 @@ def api_register():
     internalurl = data.get('internalurl')
     externalurl = data.get('externalurl')
     stack_name = data.get('stack_name')
+    docker_status = data.get('docker_status')
 
     if not host or not container_name:
         return jsonify({'error': 'Missing fields'}), 400
@@ -368,6 +405,7 @@ def api_register():
         existing.internalurl = internalurl
         existing.externalurl = externalurl
         existing.stack_name = stack_name
+        existing.docker_status = docker_status
         existing.last_updated = datetime.now()
     else:
         new_entry = ServiceEntry(
@@ -377,6 +415,7 @@ def api_register():
             internalurl=internalurl,
             externalurl=externalurl,
             stack_name=stack_name,
+            docker_status=docker_status,
             last_updated=datetime.now()
         )
         db.session.add(new_entry)
@@ -387,3 +426,4 @@ def api_register():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8815, debug=True)
+

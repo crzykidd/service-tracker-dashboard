@@ -8,4 +8,19 @@ services:
       - .env
     volumes:
       - ~/docker/tracker:/config
-
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.std.rule=Host(`std.crzynet.com`)"
+      - "traefik.http.routers.std.tls=true"
+      - "traefik.http.services.std.loadbalancer.server.port=8815"     
+      - dockernotifier.notifiers=dns,service-tracker-dashboard
+      - dockernotifier.containerhostname=std
+      - dockernotifier.containerzone=crzynet.com
+      - dockernotifier.dockerdomain=home.arpa  
+      - dockernotifier.std.internalurl=https://std.crzynet.com/
+    networks:
+       proxy:
+networks:
+  proxy:
+    external: true
