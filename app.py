@@ -123,7 +123,9 @@ DASHBOARD_TEMPLATE = """
       <td>{{ (entry.last_updated|time_since) }}</td>
       <td>
         {% if STD_DOZZLE_URL and entry.container_id %}
-          <a href=\"{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}\" target=\"_blank\" class=\"btn btn-sm btn-outline-secondary\">Dozzle</a>
+          <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}" target="_blank" title="View logs in Dozzle">
+            <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" style="height: 20px;">
+          </a>
         {% endif %}
       </td>
       {% if stack_present %}<td>{{ entry.stack_name or '' }}</td>{% endif %}
@@ -387,3 +389,4 @@ def api_register():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8815, debug=True)
+
