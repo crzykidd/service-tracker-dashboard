@@ -192,10 +192,22 @@ def edit_entry(id):
         entry.externalurl = request.form.get('externalurl')
         entry.stack_name = request.form.get('stack_name')
         entry.docker_status = request.form.get('docker_status')
+
         raw_enabled = request.form.get('internal_health_check_enabled')
         entry.internal_health_check_enabled = True if raw_enabled == 'true' else False if raw_enabled == 'false' else None
         entry.internal_health_check_status = request.form.get('internal_health_check_status')
         entry.internal_health_check_update = request.form.get('internal_health_check_update')
+
+        raw_external_enabled = request.form.get('external_health_check_enabled')
+        entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
+        entry.external_health_check_status = request.form.get('external_health_check_status')
+        entry.external_health_check_update = request.form.get('external_health_check_update')
+
+        for field in ['internal_health_check_update', 'external_health_check_update']:
+          dt_val = getattr(entry, field)
+          if dt_val and isinstance(dt_val, str) and " " in dt_val:
+            setattr(entry, field, dt_val.replace(" ", "T")[:16])
+
         entry.last_updated = datetime.now()
         db.session.commit()
         return redirect(url_for('dashboard'))
@@ -207,16 +219,33 @@ def health_check_loop():
     with app.app_context():
         while True:
             time.sleep(60)
-            print("\U0001f504 Running internal health checks...")
+            print("\U0001f504 Running internal health checks...", flush=True)
             entries = ServiceEntry.query.all()
             for entry in entries:
+                internal_status = "N/A"
                 if entry.internal_health_check_enabled and entry.internalurl:
                     try:
                         response = requests.get(entry.internalurl, timeout=5)
-                        entry.internal_health_check_status = str(response.status_code)
+                        internal_status = str(response.status_code)
+                        entry.internal_health_check_status = internal_status
                     except Exception as e:
-                        entry.internal_health_check_status = f"Error: {type(e).__name__}"
+                        internal_status = f"Error: {type(e).__name__}"
+                        entry.internal_health_check_status = internal_status
                     entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                external_status = "N/A"
+                if entry.external_health_check_enabled and entry.externalurl:
+                    try:
+                        response = requests.get(entry.externalurl, timeout=5)
+                        external_status = str(response.status_code)
+                        entry.external_health_check_status = external_status
+                    except Exception as e:
+                        external_status = f"Error: {type(e).__name__}"
+                        entry.external_health_check_status = external_status
+                    entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                print(f"{entry.container_name} - Internal: {internal_status} External: {external_status}", flush=True)
+
             db.session.commit()
 
 threading.Thread(target=health_check_loop, daemon=True).start()

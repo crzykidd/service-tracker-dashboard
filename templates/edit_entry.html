@@ -3,6 +3,14 @@
 <head>
   <title>Edit Entry</title>
   <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
+  <script>
+    function setNow(fieldId) {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      const formatted = local.toISOString().slice(0, 16);
+      document.getElementsByName(fieldId)[0].value = formatted;
+    }
+  </script>
 </head>
 <body class='bg-dark text-light'>
   <div class='container mt-5'>
@@ -50,7 +58,10 @@
       </div>
       <div class='mb-3'>
         <label class='form-label'>Internal Health Check Updated</label>
-        <input class='form-control' name='internal_health_check_update' value='{{ entry.internal_health_check_update }}' />
+        <div class='input-group'>
+          <input class='form-control' type='datetime-local' name='internal_health_check_update' value='{{ entry.internal_health_check_update }}' />
+          <button type='button' class='btn btn-outline-light' onclick="setNow('internal_health_check_update')">Now</button>
+        </div>
       </div>
       <div class='mb-3'>
         <label class='form-label'>External Health Check Enabled</label>
@@ -66,7 +77,10 @@
       </div>
       <div class='mb-3'>
         <label class='form-label'>External Health Check Updated</label>
-        <input class='form-control' name='external_health_check_update' value='{{ entry.external_health_check_update }}' />
+        <div class='input-group'>
+          <input class='form-control' type='datetime-local' name='external_health_check_update' value='{{ entry.external_health_check_update }}' />
+          <button type='button' class='btn btn-outline-light' onclick="setNow('external_health_check_update')">Now</button>
+        </div>
       </div>
       <button type='submit' class='btn btn-primary'>Update</button>
       <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
