@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify, render_template_string, redirect, url
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import humanize
+from dateutil import parser
 import sqlite3
 
 app = Flask(__name__)
@@ -16,6 +17,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 @app.template_filter('time_since')
 def time_since(dt):
+    if isinstance(dt, str):
+        dt = parser.parse(dt)
     return humanize.naturaltime(datetime.now() - dt)
 
 # Ensure DB file exists and patch schema early — BEFORE SQLAlchemy loads
@@ -35,7 +38,10 @@ cursor.execute("""
         docker_status TEXT,
         internal_health_check_enabled BOOLEAN,
         internal_health_check_status TEXT,
-        internal_health_check_update TEXT
+        internal_health_check_update TEXT,
+        external_health_check_enabled BOOLEAN,
+        external_health_check_status TEXT,
+        external_health_check_update TEXT
     )
 """)
 conn.commit()
@@ -57,6 +63,9 @@ class ServiceEntry(db.Model):
     internal_health_check_enabled = db.Column(db.Boolean, nullable=True)
     internal_health_check_status = db.Column(db.String(100), nullable=True)
     internal_health_check_update = db.Column(db.String(100), nullable=True)
+    external_health_check_enabled = db.Column(db.Boolean, nullable=True)
+    external_health_check_status = db.Column(db.String(100), nullable=True)
+    external_health_check_update = db.Column(db.String(100), nullable=True)
 
     def to_dict(self):
         return {
@@ -71,7 +80,9 @@ class ServiceEntry(db.Model):
             'docker_status': self.docker_status,
             'internal_health_check_enabled': self.internal_health_check_enabled,
             'internal_health_check_status': self.internal_health_check_status,
-            'internal_health_check_update': self.internal_health_check_update
+            'internal_health_check_update': self.internal_health_check_update,
+            'external_health_check_enabled': self.external_health_check_enabled,
+            
         }
 
 DASHBOARD_TEMPLATE = """
@@ -132,6 +143,7 @@ DASHBOARD_TEMPLATE = """
       <th>URLs</th>
       <th>Last Updated</th>
       <th>Docker Status</th>
+      <th>Health Check</th>
       <th>Tools</th>
       {% set stack_present = entries|selectattr('stack_name')|select|list|length > 0 %}{% if stack_present %}<th>Stack</th>{% endif %}
       <th>Actions</th>
@@ -158,7 +170,29 @@ DASHBOARD_TEMPLATE = """
         {% elif entry.docker_status == 'die' %}
           <span class="badge bg-danger" title="die">Exited</span>
         {% elif entry.docker_status %}
-          <span class=\"badge bg-warning text-dark\" title=\"{{ entry.docker_status }}\">{{ entry.docker_status }}</span>
+          <span class="badge bg-warning text-dark" title="{{ entry.docker_status }}">{{ entry.docker_status }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if entry.internal_health_check_enabled %}
+          {% set tooltip = entry.internal_health_check_status %}
+          {% if entry.internal_health_check_update %}
+            {% set parsed = entry.internal_health_check_parsed %}
+            {% set tooltip = tooltip ~ ' (' ~ (parsed|time_since) ~ ')' %}
+            {% set is_stale = (datetime.utcnow() - parsed).total_seconds() > 3600 %}
+          {% else %}
+            {% set is_stale = true %}
+          {% endif %}
+
+          {% if entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
+            {% if is_stale %}
+              <span class="badge bg-warning text-dark" title="{{ tooltip }}">{{ entry.internal_health_check_status }}</span>
+            {% else %}
+              <span class="badge bg-success" title="{{ tooltip }}">{{ entry.internal_health_check_status }}</span>
+            {% endif %}
+          {% else %}
+            <span class="badge bg-danger" title="{{ tooltip }}">{{ entry.internal_health_check_status or 'Fail' }}</span>
+          {% endif %}
         {% endif %}
       </td>
       <td>
@@ -266,6 +300,22 @@ ADD_TEMPLATE = """
           <option value="false">False</option>
         </select>
       </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Enabled</label>
+        <select class='form-control' name='external_health_check_enabled'>
+          <option value=""></option>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Status</label>
+        <input class='form-control' name='external_health_check_status' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Updated</label>
+        <input class='form-control' name='external_health_check_update' />
+      </div>
       <button type='submit' class='btn btn-primary'>Submit</button>
       <a href='/' class='btn btn-secondary'>Cancel</a>
     </form>
@@ -329,6 +379,22 @@ EDIT_TEMPLATE = """
         <label class='form-label'>Internal Health Check Updated</label>
         <input class='form-control' name='internal_health_check_update' value='{{ entry.internal_health_check_update }}' />
       </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Enabled</label>
+        <select class='form-control' name='external_health_check_enabled'>
+          <option value="" {% if entry.external_health_check_enabled is none %}selected{% endif %}></option>
+          <option value="true" {% if entry.external_health_check_enabled == True %}selected{% endif %}>True</option>
+          <option value="false" {% if entry.external_health_check_enabled == False %}selected{% endif %}>False</option>
+        </select>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Status</label>
+        <input class='form-control' name='external_health_check_status' value='{{ entry.external_health_check_status }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Updated</label>
+        <input class='form-control' name='external_health_check_update' value='{{ entry.external_health_check_update }}' />
+      </div>
       <button type='submit' class='btn btn-primary'>Update</button>
       <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
       <a href='/' class='btn btn-secondary'>Cancel</a>
@@ -351,6 +417,13 @@ def dashboard():
     from collections import defaultdict
     grouped_entries = defaultdict(list)
     for e in entries:
+        if e.internal_health_check_update:
+            try:
+                e.internal_health_check_parsed = parser.parse(e.internal_health_check_update)
+            except Exception:
+                e.internal_health_check_parsed = None
+        else:
+            e.internal_health_check_parsed = None
         grouped_entries[e.stack_name or 'Unassigned'].append(e)
 
     grouped_entries = dict(sorted(grouped_entries.items()))
@@ -365,7 +438,7 @@ def dashboard():
     else:
         entries.sort(key=lambda x: x.container_name, reverse=reverse)
 
-    return render_template_string(DASHBOARD_TEMPLATE, entries=entries, query=query, sort=sort, direction=direction, STD_DOZZLE_URL=STD_DOZZLE_URL, msg=msg)
+    return render_template_string(DASHBOARD_TEMPLATE, entries=entries, query=query, sort=sort, direction=direction, STD_DOZZLE_URL=STD_DOZZLE_URL, msg=msg, datetime=datetime)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_entry():
@@ -401,6 +474,20 @@ def add_entry():
             internal_health_check_enabled=internal_health_check_enabled
         )
         db.session.add(entry)
+
+        raw_external_enabled = request.form.get('external_health_check_enabled')
+        entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
+        entry.external_health_check_status = request.form.get('external_health_check_status')
+        entry.external_health_check_update = request.form.get('external_health_check_update')
+
+        if entry.external_health_check_enabled and entry.externalurl:
+            try:
+                response = requests.get(entry.externalurl, timeout=5)
+                entry.external_health_check_status = str(response.status_code)
+            except Exception as e:
+                entry.external_health_check_status = f"Error: {type(e).__name__}"
+            entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         db.session.commit()
         return redirect(url_for('dashboard', msg='added'))
     return render_template_string(ADD_TEMPLATE, msg='')
@@ -481,6 +568,29 @@ def api_register():
     db.session.commit()
     return jsonify({'status': 'success'})
 
+
+import threading
+import time
+import requests
+
+def health_check_loop():
+    with app.app_context():
+        while True:
+            time.sleep(60)
+            print("🔄 Running internal health checks...")
+            entries = ServiceEntry.query.all()
+            for entry in entries:
+                if entry.internal_health_check_enabled and entry.internalurl:
+                    try:
+                        response = requests.get(entry.internalurl, timeout=5)
+                        entry.internal_health_check_status = str(response.status_code)
+                    except Exception as e:
+                        entry.internal_health_check_status = f"Error: {type(e).__name__}"
+                    entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            db.session.commit()
+
+# Start health check loop in a background thread
+threading.Thread(target=health_check_loop, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8815, debug=True)

@@ -2,3 +2,5 @@ flask
 flask_sqlalchemy
 python-dotenv
 humanize
+requests
+python-dateutil
