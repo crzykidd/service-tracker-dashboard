@@ -58,6 +58,8 @@ class ServiceEntry(db.Model):
 
 @app.template_filter('time_since')
 def time_since(dt):
+    if not dt:
+        return "never"
     if isinstance(dt, str):
         dt = parser.parse(dt)
     return humanize.naturaltime(datetime.now() - dt)
