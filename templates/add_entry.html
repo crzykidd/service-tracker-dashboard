@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html data-bs-theme='dark'>
+<head>
+  <title>Add Service Entry</title>
+  <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
+  <script>
+    function setNow(fieldId) {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      const formatted = local.toISOString().slice(0, 16);
+      document.getElementsByName(fieldId)[0].value = formatted;
+    }
+  </script>
+</head>
+<body class='bg-dark text-light'>
+  <div class='container mt-5'>
+    {% if msg == 'error' %}
+      <div class='alert alert-danger'>Host and Container Name are required.</div>
+    {% elif msg == 'duplicate' %}
+      <div class='alert alert-warning'>An entry with this Container Name or Container ID already exists.</div>
+    {% endif %}
+    <h1>Add Service Entry</h1>
+    <form method='post'>
+      <div class='mb-3'>
+        <label class='form-label'>Host</label>
+        <input class='form-control' name='host' required />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Container Name</label>
+        <input class='form-control' name='container_name' required />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Container ID</label>
+        <input class='form-control' name='container_id' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Internal URL</label>
+        <input class='form-control' name='internalurl' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External URL</label>
+        <input class='form-control' name='externalurl' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Stack Name (optional)</label>
+        <input class='form-control' name='stack_name' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Docker Status</label>
+        <input class='form-control' name='docker_status' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Internal Health Check Enabled</label>
+        <select class='form-control' name='internal_health_check_enabled'>
+          <option value=""></option>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Enabled</label>
+        <select class='form-control' name='external_health_check_enabled'>
+          <option value=""></option>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Status</label>
+        <input class='form-control' name='external_health_check_status' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>External Health Check Updated</label>
+        <div class='input-group'>
+          <input class='form-control' type='datetime-local' name='external_health_check_update' />
+          <button type='button' class='btn btn-outline-light' onclick="setNow('external_health_check_update')">Now</button>
+        </div>
+      </div>
+      <button type='submit' class='btn btn-primary'>Submit</button>
+      <a href='/' class='btn btn-secondary'>Cancel</a>
+    </form>
+  </div>
+</body>
+</html>

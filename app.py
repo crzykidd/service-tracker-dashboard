@@ -4,40 +4,19 @@ API_TOKEN = os.getenv("API_TOKEN", "supersecrettoken")
 STD_DOZZLE_URL = os.getenv("STD_DOZZLE_URL", "http://localhost:8888")
 DATABASE_PATH = '/config/services.db'
 
-from flask import Flask, request, jsonify, render_template_string, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import humanize
+from dateutil import parser
 import sqlite3
+import threading
+import time
+import requests
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-@app.template_filter('time_since')
-def time_since(dt):
-    return humanize.naturaltime(datetime.now() - dt)
-
-# Ensure DB file exists and patch schema early — BEFORE SQLAlchemy loads
-print("\u2705 Checking for 'service_entry' table...")
-conn = sqlite3.connect(DATABASE_PATH)
-cursor = conn.cursor()
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS service_entry (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        host TEXT NOT NULL,
-        container_name TEXT NOT NULL,
-        container_id TEXT,
-        internalurl TEXT,
-        externalurl TEXT,
-        last_updated TEXT NOT NULL,
-        stack_name TEXT,
-        docker_status TEXT
-    )
-""")
-conn.commit()
-conn.close()
-print("\u2705 DB schema ensured.")
 
 db = SQLAlchemy(app)
 
@@ -51,6 +30,12 @@ class ServiceEntry(db.Model):
     last_updated = db.Column(db.DateTime, nullable=False)
     stack_name = db.Column(db.String(100), nullable=True)
     docker_status = db.Column(db.String(100), nullable=True)
+    internal_health_check_enabled = db.Column(db.Boolean, nullable=True)
+    internal_health_check_status = db.Column(db.String(100), nullable=True)
+    internal_health_check_update = db.Column(db.String(100), nullable=True)
+    external_health_check_enabled = db.Column(db.Boolean, nullable=True)
+    external_health_check_status = db.Column(db.String(100), nullable=True)
+    external_health_check_update = db.Column(db.String(100), nullable=True)
 
     def to_dict(self):
         return {
@@ -62,240 +47,47 @@ class ServiceEntry(db.Model):
             'internalurl': self.internalurl,
             'externalurl': self.externalurl,
             'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
-            'docker_status': self.docker_status
+            'docker_status': self.docker_status,
+            'internal_health_check_enabled': self.internal_health_check_enabled,
+            'internal_health_check_status': self.internal_health_check_status,
+            'internal_health_check_update': self.internal_health_check_update,
+            'external_health_check_enabled': self.external_health_check_enabled,
+            'external_health_check_status': self.external_health_check_status,
+            'external_health_check_update': self.external_health_check_update,
         }
 
-DASHBOARD_TEMPLATE = """
-<!DOCTYPE html>
-<html data-bs-theme=\"dark\">
-<head>
-  <title>Service Dashboard</title>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css\" rel=\"stylesheet\">
-  <script>
-    let secondsSinceRefresh = 0;
-    setInterval(() => {
-      const input = document.getElementById('filterInput');
-      const refreshLabel = document.getElementById('refreshTimer');
-      secondsSinceRefresh++;
-      if (refreshLabel) {
-        refreshLabel.textContent = `Refreshed ${secondsSinceRefresh} seconds ago`;
-      }
-      if (!input || document.activeElement !== input) {
-        if (secondsSinceRefresh >= 60) {
-          window.location.reload();
-        }
-      }
-    }, 1000);
-  </script>
-</head>
-<body class=\"bg-dark text-light\">
-<nav class=\"navbar navbar-expand-lg navbar-dark bg-primary fixed-top\">
-  <div class=\"container-fluid\">
-    <a class=\"navbar-brand\" href=\"/\">Service Dashboard</a>
-    <div class=\"d-flex\">
-      <a href=\"/add\" class=\"btn btn-light btn-sm\">Add New Entry</a>
-    </div>
-  </div>
-</nav>
-<div style=\"height: 70px;\"></div>
-<div class=\"container mt-5\">
-  {% if msg == 'deleted' %}
-    <div class=\"alert alert-danger\" role=\"alert\">Entry deleted successfully.</div>
-  {% endif %}
-  <h1 class=\"mb-4\">Service Dashboard</h1>
-  
-  <div class=\"d-flex justify-content-between align-items-center mb-4\">
-    <div class=\"col-auto\">
-      <input type=\"text\" id=\"filterInput\" class=\"form-control\" placeholder=\"Filter...\">
-    </div>
-    <div class=\"col-auto text-muted\">
-      <span id=\"refreshTimer\" style=\"font-size: 0.9rem;\">Refreshed just now</span>
-    </div>
-  </div>
+@app.template_filter('time_since')
+def time_since(dt):
+    if isinstance(dt, str):
+        dt = parser.parse(dt)
+    return humanize.naturaltime(datetime.now() - dt)
 
-  <table class=\"table table-hover table-bordered table-dark\">
-  <thead class=\"table-secondary\">
-    <tr>
-      <th data-sort-key=\"host\">Host</th>
-      <th data-sort-key=\"container_name\">Container Name</th>
-      <th data-sort-key=\"container_id\">Container ID</th>
-      <th>URLs</th>
-      <th>Last Updated</th>
-      <th>Docker Status</th>
-      <th>Tools</th>
-      {% set stack_present = entries|selectattr('stack_name')|select|list|length > 0 %}{% if stack_present %}<th>Stack</th>{% endif %}
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for entry in entries %}
-    <tr>
-      <td>{{ entry.host }}</td>
-      <td>{{ entry.container_name }}</td>
-      <td title="{{ entry.container_id }}">{{ entry.container_id[:12] if entry.container_id else '' }}</td>
-      <td>
-        {% if entry.internalurl %}
-          <a href="{{ entry.internalurl }}" target="_blank" class="btn btn-sm btn-outline-info">Internal</a>
-        {% endif %}
-        {% if entry.externalurl %}
-          <a href="{{ entry.externalurl }}" target="_blank" class="btn btn-sm btn-outline-success">External</a>
-        {% endif %}
-      </td>
-      <td>{{ (entry.last_updated|time_since) }}</td>
-      <td>{{ entry.docker_status or '' }}</td>
-      <td>
-        {% if STD_DOZZLE_URL and entry.container_id %}
-          <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] if entry.container_id else '' }}" target="_blank" title="View logs in Dozzle">
-            <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" style="height: 20px;">
-          </a>
-        {% endif %}
-      </td>
-      {% if stack_present %}<td>{{ entry.stack_name or '' }}</td>{% endif %}
-      <td><a href=\"/edit/{{ entry.id }}\" class=\"btn btn-sm btn-outline-warning\">Edit</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-  </table>
-</div>
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    const input = document.getElementById('filterInput');
-    input.addEventListener('input', function () {
-      const filter = input.value.toLowerCase();
-      const rows = document.querySelectorAll('table tbody tr');
-      rows.forEach(row => {
-        const host = row.children[0].textContent.toLowerCase();
-        const name = row.children[1].textContent.toLowerCase();
-        const id = row.children[2].textContent.toLowerCase();
-        const stack = row.children.length > 7 ? row.children[row.children.length - 2].textContent.toLowerCase() : '';
-        const match = host.includes(filter) || name.includes(filter) || id.includes(filter) || stack.includes(filter);
-        row.style.display = match ? '' : 'none';
-      });
-    });
-
-    const table = document.querySelector('table');
-    const headers = table.querySelectorAll('th[data-sort-key]');
-    headers.forEach((header, index) => {
-      header.style.cursor = 'pointer';
-      header.addEventListener('click', () => {
-        const rows = Array.from(table.querySelectorAll('tbody tr'));
-        const direction = header.dataset.direction === 'asc' ? 'desc' : 'asc';
-        header.dataset.direction = direction;
-
-        rows.sort((a, b) => {
-          const textA = a.cells[index].innerText.toLowerCase();
-          const textB = b.cells[index].innerText.toLowerCase();
-          if (textA < textB) return direction === 'asc' ? -1 : 1;
-          if (textA > textB) return direction === 'asc' ? 1 : -1;
-          return 0;
-        });
-
-        const tbody = table.querySelector('tbody');
-        rows.forEach(row => tbody.appendChild(row));
-      });
-    });
-  });
-</script>
-</body>
-</html>
-"""
-
-ADD_TEMPLATE = """
-<!DOCTYPE html>
-<html data-bs-theme='dark'>
-<head>
-  <title>Add Service Entry</title>
-  <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
-</head>
-<body class='bg-dark text-light'>
-  <div class='container mt-5'>
-    {% if msg == 'error' %}<div class='alert alert-danger'>Host and Container Name are required.</div>{% elif msg == 'duplicate' %}<div class='alert alert-warning'>An entry with this Container Name or Container ID already exists.</div>{% endif %}
-    <h1>Add Service Entry</h1>
-    <form method='post'>
-      <div class='mb-3'>
-        <label class='form-label'>Host</label>
-        <input class='form-control' name='host' required />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Container Name</label>
-        <input class='form-control' name='container_name' required />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Container ID</label>
-        <input class='form-control' name='container_id' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Internal URL</label>
-        <input class='form-control' name='internalurl' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>External URL</label>
-        <input class='form-control' name='externalurl' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Stack Name (optional)</label>
-        <input class='form-control' name='stack_name' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Docker Status</label>
-        <input class='form-control' name='docker_status' />
-      </div>
-      <button type='submit' class='btn btn-primary'>Submit</button>
-      <a href='/' class='btn btn-secondary'>Cancel</a>
-    </form>
-  </div>
-</body>
-</html>
-"""
-
-EDIT_TEMPLATE = """
-<!DOCTYPE html>
-<html data-bs-theme='dark'>
-<head>
-  <title>Edit Entry</title>
-  <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
-</head>
-<body class='bg-dark text-light'>
-  <div class='container mt-5'>
-    <h1>Edit Service Entry</h1>
-    <form method='post'>
-      <div class='mb-3'>
-        <label class='form-label'>Host</label>
-        <input class='form-control' name='host' value='{{ entry.host }}' required />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Container Name</label>
-        <input class='form-control' name='container_name' value='{{ entry.container_name }}' required />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Container ID</label>
-        <input class='form-control' name='container_id' value='{{ entry.container_id }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Internal URL</label>
-        <input class='form-control' name='internalurl' value='{{ entry.internalurl }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>External URL</label>
-        <input class='form-control' name='externalurl' value='{{ entry.externalurl }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Stack Name (optional)</label>
-        <input class='form-control' name='stack_name' value='{{ entry.stack_name }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Docker Status</label>
-        <input class='form-control' name='docker_status' value='{{ entry.docker_status }}' />
-      </div>
-      <button type='submit' class='btn btn-primary'>Update</button>
-      <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
-      <a href='/' class='btn btn-secondary'>Cancel</a>
-    </form>
-  </div>
-</body>
-</html>
-"""
+# Ensure DB schema exists
+print("\u2705 Checking for 'service_entry' table...")
+conn = sqlite3.connect(DATABASE_PATH)
+cursor = conn.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS service_entry (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host TEXT NOT NULL,
+        container_name TEXT NOT NULL,
+        container_id TEXT,
+        internalurl TEXT,
+        externalurl TEXT,
+        last_updated TEXT NOT NULL,
+        stack_name TEXT,
+        docker_status TEXT,
+        internal_health_check_enabled BOOLEAN,
+        internal_health_check_status TEXT,
+        internal_health_check_update TEXT,
+        external_health_check_enabled BOOLEAN,
+        external_health_check_status TEXT,
+        external_health_check_update TEXT
+    )
+""")
+conn.commit()
+conn.close()
+print("\u2705 DB schema ensured.")
 
 @app.route('/')
 def dashboard():
@@ -306,14 +98,19 @@ def dashboard():
     reverse = direction == 'desc'
 
     entries = ServiceEntry.query.all()
-    # Group by stack name
     from collections import defaultdict
     grouped_entries = defaultdict(list)
     for e in entries:
+        if e.internal_health_check_update:
+            try:
+                e.internal_health_check_parsed = parser.parse(e.internal_health_check_update)
+            except Exception:
+                e.internal_health_check_parsed = None
+        else:
+            e.internal_health_check_parsed = None
         grouped_entries[e.stack_name or 'Unassigned'].append(e)
 
     grouped_entries = dict(sorted(grouped_entries.items()))
-
     entries = [e for group in grouped_entries.values() for e in group]
 
     if query:
@@ -324,7 +121,7 @@ def dashboard():
     else:
         entries.sort(key=lambda x: x.container_name, reverse=reverse)
 
-    return render_template_string(DASHBOARD_TEMPLATE, entries=entries, query=query, sort=sort, direction=direction, STD_DOZZLE_URL=STD_DOZZLE_URL, msg=msg)
+    return render_template("dashboard.html", entries=entries, query=query, sort=sort, direction=direction, STD_DOZZLE_URL=STD_DOZZLE_URL, msg=msg, datetime=datetime)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_entry():
@@ -336,14 +133,17 @@ def add_entry():
         externalurl = request.form.get('externalurl')
 
         if not host or not container_name:
-            return render_template_string(ADD_TEMPLATE, msg='error')
+            return render_template("add_entry.html", msg='error')
 
         existing = ServiceEntry.query.filter(
             (ServiceEntry.container_name == container_name) |
             (ServiceEntry.container_id == container_id if container_id else False)
         ).first()
         if existing:
-            return render_template_string(ADD_TEMPLATE, msg='duplicate')  # Duplicate name or container ID
+            return render_template("add_entry.html", msg='duplicate')
+
+        raw_enabled = request.form.get('internal_health_check_enabled')
+        internal_health_check_enabled = True if raw_enabled == 'true' else False if raw_enabled == 'false' else None
 
         entry = ServiceEntry(
             host=host,
@@ -353,12 +153,79 @@ def add_entry():
             externalurl=externalurl,
             stack_name=request.form.get('stack_name'),
             docker_status=request.form.get('docker_status'),
+            last_updated=datetime.now(),
+            internal_health_check_enabled=internal_health_check_enabled
+        )
+        db.session.add(entry)
+
+        raw_external_enabled = request.form.get('external_health_check_enabled')
+        entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
+        entry.external_health_check_status = request.form.get('external_health_check_status')
+        entry.external_health_check_update = request.form.get('external_health_check_update')
+
+        if entry.external_health_check_enabled and entry.externalurl:
+            try:
+                response = requests.get(entry.externalurl, timeout=5)
+                entry.external_health_check_status = str(response.status_code)
+            except Exception as e:
+                entry.external_health_check_status = f"Error: {type(e).__name__}"
+            entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        db.session.commit()
+        return redirect(url_for('dashboard', msg='added'))
+
+    return render_template("add_entry.html", msg='')
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    auth_header = request.headers.get("Authorization", "")
+    expected = f"Bearer {API_TOKEN}"
+    if auth_header != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+
+    if not data.get('host') or not data.get('container_name'):
+        return jsonify({"error": "Missing host or container_name"}), 400
+
+    entry = ServiceEntry.query.filter_by(container_name=data['container_name']).first()
+
+    def parse_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() == 'true'
+        return None
+
+    if entry:
+        # Update existing entry
+        entry.host = data['host']
+        entry.container_id = data.get('container_id')
+        entry.internalurl = data.get('internalurl')
+        entry.externalurl = data.get('externalurl')
+        entry.stack_name = data.get('stack_name')
+        entry.docker_status = data.get('docker_status')
+        entry.internal_health_check_enabled = parse_bool(data.get('internal_health_check_enabled'))
+        entry.external_health_check_enabled = parse_bool(data.get('external_health_check_enabled'))
+        entry.last_updated = datetime.now()
+    else:
+        # Create new entry
+        entry = ServiceEntry(
+            host=data['host'],
+            container_name=data['container_name'],
+            container_id=data.get('container_id'),
+            internalurl=data.get('internalurl'),
+            externalurl=data.get('externalurl'),
+            stack_name=data.get('stack_name'),
+            docker_status=data.get('docker_status'),
+            internal_health_check_enabled=parse_bool(data.get('internal_health_check_enabled')),
+            external_health_check_enabled=parse_bool(data.get('external_health_check_enabled')),
             last_updated=datetime.now()
         )
         db.session.add(entry)
-        db.session.commit()
-        return redirect(url_for('dashboard', msg='added'))
-    return render_template_string(ADD_TEMPLATE, msg='')
+
+    db.session.commit()
+    return jsonify(entry.to_dict()), 200 if entry else 201
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 def edit_entry(id):
@@ -368,6 +235,7 @@ def edit_entry(id):
             db.session.delete(entry)
             db.session.commit()
             return redirect(url_for('dashboard'))
+
         entry.host = request.form.get('host')
         entry.container_name = request.form.get('container_name')
         entry.container_id = request.form.get('container_id')
@@ -375,55 +243,71 @@ def edit_entry(id):
         entry.externalurl = request.form.get('externalurl')
         entry.stack_name = request.form.get('stack_name')
         entry.docker_status = request.form.get('docker_status')
+
+        raw_enabled = request.form.get('internal_health_check_enabled')
+        entry.internal_health_check_enabled = True if raw_enabled == 'true' else False if raw_enabled == 'false' else None
+        entry.internal_health_check_status = request.form.get('internal_health_check_status')
+        entry.internal_health_check_update = request.form.get('internal_health_check_update')
+
+        raw_external_enabled = request.form.get('external_health_check_enabled')
+        entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
+        entry.external_health_check_status = request.form.get('external_health_check_status')
+        entry.external_health_check_update = request.form.get('external_health_check_update')
+
+        for field in ['internal_health_check_update', 'external_health_check_update']:
+            dt_val = getattr(entry, field)
+            if dt_val and isinstance(dt_val, str) and " " in dt_val:
+                setattr(entry, field, dt_val.replace(" ", "T")[:16])
+
         entry.last_updated = datetime.now()
         db.session.commit()
         return redirect(url_for('dashboard'))
-    return render_template_string(EDIT_TEMPLATE, entry=entry)
 
-@app.route('/api/register', methods=['POST'])
-def api_register():
-    token = request.headers.get('Authorization')
-    if token != f"Bearer {API_TOKEN}":
-        return jsonify({'error': 'Unauthorized'}), 401
+    return render_template("edit_entry.html", entry=entry)
 
-    data = request.get_json()
-    host = data.get('host')
-    container_name = data.get('container_name')
-    container_id = data.get('container_id')
-    internalurl = data.get('internalurl')
-    externalurl = data.get('externalurl')
-    stack_name = data.get('stack_name')
-    docker_status = data.get('docker_status')
+# Background health check loop
+def health_check_loop():
+    with app.app_context():
+        while True:
+            time.sleep(60)
+            log_output = ["\U0001f504 Running internal health checks..."]
+            entries = ServiceEntry.query.all()
 
-    if not host or not container_name:
-        return jsonify({'error': 'Missing fields'}), 400
+            for entry in entries:
+                show_log = False
+                internal_status = ""
+                external_status = ""
 
-    existing = ServiceEntry.query.filter_by(container_name=container_name).first()
-    if existing:
-        existing.host = host
-        existing.container_id = container_id
-        existing.internalurl = internalurl
-        existing.externalurl = externalurl
-        existing.stack_name = stack_name
-        existing.docker_status = docker_status
-        existing.last_updated = datetime.now()
-    else:
-        new_entry = ServiceEntry(
-            host=host,
-            container_name=container_name,
-            container_id=container_id,
-            internalurl=internalurl,
-            externalurl=externalurl,
-            stack_name=stack_name,
-            docker_status=docker_status,
-            last_updated=datetime.now()
-        )
-        db.session.add(new_entry)
+                if entry.internal_health_check_enabled and entry.internalurl:
+                    show_log = True
+                    try:
+                        response = requests.get(entry.internalurl, timeout=5)
+                        internal_status = str(response.status_code)
+                        entry.internal_health_check_status = internal_status
+                    except Exception as e:
+                        internal_status = f"Error: {type(e).__name__}"
+                        entry.internal_health_check_status = internal_status
+                    entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    db.session.commit()
-    return jsonify({'status': 'success'})
+                if entry.external_health_check_enabled and entry.externalurl:
+                    show_log = True
+                    try:
+                        response = requests.get(entry.externalurl, timeout=5)
+                        external_status = str(response.status_code)
+                        entry.external_health_check_status = external_status
+                    except Exception as e:
+                        external_status = f"Error: {type(e).__name__}"
+                        entry.external_health_check_status = external_status
+                    entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+                if show_log:
+                    log_output.append(f"{entry.container_name} - Internal: {internal_status or 'N/A'} External: {external_status or 'N/A'}")
+
+            db.session.commit()
+            print("\n".join(log_output), flush=True)
+
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    threading.Thread(target=health_check_loop, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8815, debug=True)
-
