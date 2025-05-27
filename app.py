@@ -176,6 +176,57 @@ def add_entry():
 
     return render_template("add_entry.html", msg='')
 
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    auth_header = request.headers.get("Authorization", "")
+    expected = f"Bearer {API_TOKEN}"
+    if auth_header != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+
+    if not data.get('host') or not data.get('container_name'):
+        return jsonify({"error": "Missing host or container_name"}), 400
+
+    entry = ServiceEntry.query.filter_by(container_name=data['container_name']).first()
+
+    def parse_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() == 'true'
+        return None
+
+    if entry:
+        # Update existing entry
+        entry.host = data['host']
+        entry.container_id = data.get('container_id')
+        entry.internalurl = data.get('internalurl')
+        entry.externalurl = data.get('externalurl')
+        entry.stack_name = data.get('stack_name')
+        entry.docker_status = data.get('docker_status')
+        entry.internal_health_check_enabled = parse_bool(data.get('internal_health_check_enabled'))
+        entry.external_health_check_enabled = parse_bool(data.get('external_health_check_enabled'))
+        entry.last_updated = datetime.now()
+    else:
+        # Create new entry
+        entry = ServiceEntry(
+            host=data['host'],
+            container_name=data['container_name'],
+            container_id=data.get('container_id'),
+            internalurl=data.get('internalurl'),
+            externalurl=data.get('externalurl'),
+            stack_name=data.get('stack_name'),
+            docker_status=data.get('docker_status'),
+            internal_health_check_enabled=parse_bool(data.get('internal_health_check_enabled')),
+            external_health_check_enabled=parse_bool(data.get('external_health_check_enabled')),
+            last_updated=datetime.now()
+        )
+        db.session.add(entry)
+
+    db.session.commit()
+    return jsonify(entry.to_dict()), 200 if entry else 201
+
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 def edit_entry(id):
     entry = ServiceEntry.query.get_or_404(id)
@@ -204,9 +255,9 @@ def edit_entry(id):
         entry.external_health_check_update = request.form.get('external_health_check_update')
 
         for field in ['internal_health_check_update', 'external_health_check_update']:
-          dt_val = getattr(entry, field)
-          if dt_val and isinstance(dt_val, str) and " " in dt_val:
-            setattr(entry, field, dt_val.replace(" ", "T")[:16])
+            dt_val = getattr(entry, field)
+            if dt_val and isinstance(dt_val, str) and " " in dt_val:
+                setattr(entry, field, dt_val.replace(" ", "T")[:16])
 
         entry.last_updated = datetime.now()
         db.session.commit()
@@ -219,11 +270,16 @@ def health_check_loop():
     with app.app_context():
         while True:
             time.sleep(60)
-            print("\U0001f504 Running internal health checks...", flush=True)
+            log_output = ["\U0001f504 Running internal health checks..."]
             entries = ServiceEntry.query.all()
+
             for entry in entries:
-                internal_status = "N/A"
+                show_log = False
+                internal_status = ""
+                external_status = ""
+
                 if entry.internal_health_check_enabled and entry.internalurl:
+                    show_log = True
                     try:
                         response = requests.get(entry.internalurl, timeout=5)
                         internal_status = str(response.status_code)
@@ -233,8 +289,8 @@ def health_check_loop():
                         entry.internal_health_check_status = internal_status
                     entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                external_status = "N/A"
                 if entry.external_health_check_enabled and entry.externalurl:
+                    show_log = True
                     try:
                         response = requests.get(entry.externalurl, timeout=5)
                         external_status = str(response.status_code)
@@ -244,11 +300,14 @@ def health_check_loop():
                         entry.external_health_check_status = external_status
                     entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                print(f"{entry.container_name} - Internal: {internal_status} External: {external_status}", flush=True)
+                if show_log:
+                    log_output.append(f"{entry.container_name} - Internal: {internal_status or 'N/A'} External: {external_status or 'N/A'}")
 
             db.session.commit()
+            print("\n".join(log_output), flush=True)
 
-threading.Thread(target=health_check_loop, daemon=True).start()
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    threading.Thread(target=health_check_loop, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8815, debug=True)

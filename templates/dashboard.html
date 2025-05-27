@@ -23,6 +23,8 @@
     .status-warning { background-color: #ffc107; color: black; }
     .status-danger  { background-color: #dc3545; }
     .status-na      { background-color: #6c757d; }
+    .sortable a { color: inherit; text-decoration: none; }
+    .sortable a:hover { text-decoration: underline; }
   </style>
   <script>
     let secondsSinceRefresh = 0;
@@ -41,6 +43,9 @@
         });
       });
 
+      const urlParams = new URLSearchParams(window.location.search);
+      const hasSort = urlParams.has('sort') && urlParams.has('dir');
+
       setInterval(() => {
         secondsSinceRefresh++;
         if (refreshLabel) {
@@ -49,7 +54,7 @@
           refreshLabel.textContent = `Refreshed ${minutes > 0 ? minutes + 'm ' : ''}${seconds}s ago`;
         }
 
-        if (document.activeElement !== filterInput && secondsSinceRefresh >= 30) {
+        if (!hasSort && document.activeElement !== filterInput && secondsSinceRefresh >= 30) {
           window.location.reload();
         }
       }, 1000);
@@ -76,17 +81,18 @@
     <div class="alert alert-success" role="alert">Entry added successfully.</div>
   {% endif %}
 
+  {% set new_dir = 'asc' if direction != 'asc' else 'desc' %}
   <table class="table table-hover table-bordered table-dark">
     <thead class="table-secondary">
       <tr>
-        <th>Host</th>
-        <th>Container Name</th>
-        <th>Stack</th>
-        <th>Container ID</th>
+        <th class="sortable"><a href="?sort=host&dir={{ new_dir }}">Host{% if sort == 'host' %} {{ '↑' if direction == 'asc' else '↓' }}{% endif %}</a></th>
+        <th class="sortable"><a href="?sort=container_name&dir={{ new_dir }}">Container Name{% if sort == 'container_name' %} {{ '↑' if direction == 'asc' else '↓' }}{% endif %}</a></th>
+        <th class="sortable"><a href="?sort=stack_name&dir={{ new_dir }}">Stack{% if sort == 'stack_name' %} {{ '↑' if direction == 'asc' else '↓' }}{% endif %}</a></th>
+        <th class="sortable"><a href="?sort=container_id&dir={{ new_dir }}">Container ID{% if sort == 'container_id' %} {{ '↑' if direction == 'asc' else '↓' }}{% endif %}</a></th>
         <th>Internal URL</th>
         <th>External URL</th>
-        <th>Last API Update</th>
-        <th>Docker Status</th>
+        <th class="sortable"><a href="?sort=last_updated&dir={{ new_dir }}">Last API Update{% if sort == 'last_updated' %} {{ '↑' if direction == 'asc' else '↓' }}{% endif %}</a></th>
+        <th class="sortable"><a href="?sort=docker_status&dir={{ new_dir }}">Docker Status{% if sort == 'docker_status' %} {{ '↑' if direction == 'asc' else '↓' }}{% endif %}</a></th>
         <th>Tools</th>
         <th>Actions</th>
       </tr>
