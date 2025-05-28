@@ -350,7 +350,7 @@ def api_register():
         return None
 
     # Update or create entry
-    entry = ServiceEntry.query.filter_by(container_name=data['container_name']).first()
+    entry = ServiceEntry.query.filter_by(container_name=data['container_name'], host=data['host']).first()
     if entry:
         entry.host = data['host']
         entry.container_id = data.get('container_id')
