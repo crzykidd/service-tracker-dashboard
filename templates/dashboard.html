@@ -228,6 +228,8 @@
                 <span class="badge bg-success" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
               {% elif entry.docker_status == 'die' %}
                 <span class="badge bg-danger" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
+              {% elif entry.docker_status == 'exited' %}
+                <span class="badge bg-danger" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
               {% elif entry.docker_status %}
                 <span class="badge bg-warning text-dark" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
               {% else %}
