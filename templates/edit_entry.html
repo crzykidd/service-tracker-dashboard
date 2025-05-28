@@ -25,6 +25,19 @@
         <input class='form-control' name='container_name' value='{{ entry.container_name }}' required />
       </div>
       <div class='mb-3'>
+        <label class='form-label'>Image Name</label>
+        <div class='form-control bg-dark text-light'>
+          {% if entry.image_name %}
+            {{ entry.image_registry or '' }}{% if entry.image_registry %}/{% endif %}
+            {{ entry.image_owner or '' }}{% if entry.image_owner %}/{% endif %}
+            {{ entry.image_name }}{% if entry.image_tag %}:{{ entry.image_tag }}{% endif %}
+          {% else %}
+            <span class='text-muted'>Not set</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class='mb-3'>
         <label class='form-label'>Container ID</label>
         <input class='form-control' name='container_id' value='{{ entry.container_id }}' />
       </div>
@@ -42,7 +55,16 @@
       </div>
       <div class='mb-3'>
         <label class='form-label'>Docker Status</label>
-        <input class='form-control' name='docker_status' value='{{ entry.docker_status }}' />
+        <div class='d-flex align-items-center gap-3'>
+          <input class='form-control' name='docker_status' value='{{ entry.docker_status }}' />
+          {% if entry.last_api_update %}
+            <small class='text-muted' title='{{ entry.last_api_update }}'>
+              Updated {{ entry.last_api_update | time_since }}
+            </small>
+          {% else %}
+            <small class='text-muted'>Never updated</small>
+          {% endif %}
+        </div>
       </div>
       <div class='mb-3'>
         <label class='form-label'>Internal Health Check Enabled</label>
@@ -80,6 +102,18 @@
         <div class='input-group'>
           <input class='form-control' type='datetime-local' name='external_health_check_update' value='{{ entry.external_health_check_update }}' />
           <button type='button' class='btn btn-outline-light' onclick="setNow('external_health_check_update')">Now</button>
+        </div>
+      </div>
+
+      <div class='mb-3'>
+        <label class='form-label'>Group Name</label>
+        <input class='form-control' name='group_name' value='{{ entry.group_name }}' />
+      </div>
+
+      <div class='mb-3'>
+        <label class='form-label'>Started At</label>
+        <div class='form-control bg-dark text-light'>
+          {{ entry.started_at | time_since }}
         </div>
       </div>
       <button type='submit' class='btn btn-primary'>Update</button>
