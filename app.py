@@ -1,10 +1,8 @@
 # Config
 import os
-API_TOKEN = os.getenv("API_TOKEN", "supersecrettoken")
-STD_DOZZLE_URL = os.getenv("STD_DOZZLE_URL", "http://localhost:8888")
-DATABASE_PATH = '/config/services.db'
-
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+import logging
+from logging.handlers import RotatingFileHandler
+from flask import Flask, request, jsonify, render_template, redirect, url_for, send_from_directory, make_response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import humanize
@@ -13,6 +11,37 @@ import sqlite3
 import threading
 import time
 import requests
+from collections import defaultdict
+
+
+API_TOKEN = os.getenv("API_TOKEN", "supersecrettoken")
+STD_DOZZLE_URL = os.getenv("STD_DOZZLE_URL", "http://localhost:8888")
+DATABASE_PATH = '/config/services.db'
+LOGFILE = '/config/std.log'
+IMAGE_DIR = '/config/images'
+
+# Ensure the directory exists
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+# for image lookup
+failed_icon_cache = {}  # image_icon -> last_failed_time
+RETRY_INTERVAL = timedelta(minutes=60)  # Adjust this as needed
+# === Logging Setup ===
+log_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+log_handler = RotatingFileHandler(
+    LOGFILE, maxBytes=100 * 1024, backupCount=4
+)
+log_handler.setFormatter(log_formatter)
+log_handler.setLevel(logging.INFO)
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(log_handler)
+
+# Optional: also log to console (helpful for Docker)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+logger.addHandler(console_handler)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
@@ -28,6 +57,7 @@ class ServiceEntry(db.Model):
     internalurl = db.Column(db.String(255), nullable=True)
     externalurl = db.Column(db.String(255), nullable=True)
     last_updated = db.Column(db.DateTime, nullable=False)
+    last_api_update = db.Column(db.DateTime, nullable=True)  # <-- Add this line
     stack_name = db.Column(db.String(100), nullable=True)
     docker_status = db.Column(db.String(100), nullable=True)
     internal_health_check_enabled = db.Column(db.Boolean, nullable=True)
@@ -36,6 +66,13 @@ class ServiceEntry(db.Model):
     external_health_check_enabled = db.Column(db.Boolean, nullable=True)
     external_health_check_status = db.Column(db.String(100), nullable=True)
     external_health_check_update = db.Column(db.String(100), nullable=True)
+    image_registry = db.Column(db.String(100), nullable=True)
+    image_owner = db.Column(db.String(100), nullable=True)
+    image_name = db.Column(db.String(100), nullable=True)
+    image_tag = db.Column(db.String(100), nullable=True)
+    image_icon = db.Column(db.String(100), nullable=True)
+    group_name = db.Column(db.String(20), nullable=True, default="zz_none")
+    started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
 
     def to_dict(self):
         return {
@@ -47,6 +84,7 @@ class ServiceEntry(db.Model):
             'internalurl': self.internalurl,
             'externalurl': self.externalurl,
             'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
+            'last_api_update': self.last_api_update.strftime('%Y-%m-%d %H:%M:%S') if self.last_api_update else None,
             'docker_status': self.docker_status,
             'internal_health_check_enabled': self.internal_health_check_enabled,
             'internal_health_check_status': self.internal_health_check_status,
@@ -54,7 +92,36 @@ class ServiceEntry(db.Model):
             'external_health_check_enabled': self.external_health_check_enabled,
             'external_health_check_status': self.external_health_check_status,
             'external_health_check_update': self.external_health_check_update,
+            'image_registry': self.image_registry,
+            'image_owner': self.image_owner,
+            'image_name': self.image_name,
+            'image_tag': self.image_tag,
+            'group_name': self.group_name or "zz_none",
+            'started_at': self.started_at,
+            'image_icon': self.image_icon,
         }
+
+def fetch_icon_if_missing(image_name):
+    if not image_name:
+        return None
+    filename = f"{image_name}.svg"
+    local_path = os.path.join(IMAGE_DIR, filename)
+    if os.path.exists(local_path):
+        return filename
+
+    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{filename}"
+    try:
+        response = requests.get(icon_url, timeout=5)
+        if response.status_code == 200:
+            with open(local_path, 'wb') as f:
+                f.write(response.content)
+            logger.info(f"⬇️ Downloaded icon for {image_name} to {local_path}")
+            return filename
+        else:
+            logger.warning(f"⚠️ Icon not found for {image_name} (HTTP {response.status_code})")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to download icon for {image_name}: {e}")
+    return None
 
 @app.template_filter('time_since')
 def time_since(dt):
@@ -62,10 +129,13 @@ def time_since(dt):
         return "never"
     if isinstance(dt, str):
         dt = parser.parse(dt)
-    return humanize.naturaltime(datetime.now() - dt)
+    now = datetime.now().astimezone()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=now.tzinfo)
+    return humanize.naturaltime(now - dt)
 
 # Ensure DB schema exists
-print("\u2705 Checking for 'service_entry' table...")
+logger.info("✅ Checking for 'service_entry' table...")
 conn = sqlite3.connect(DATABASE_PATH)
 cursor = conn.cursor()
 cursor.execute("""
@@ -77,6 +147,7 @@ cursor.execute("""
         internalurl TEXT,
         externalurl TEXT,
         last_updated TEXT NOT NULL,
+        last_api_update TEXT,
         stack_name TEXT,
         docker_status TEXT,
         internal_health_check_enabled BOOLEAN,
@@ -84,46 +155,65 @@ cursor.execute("""
         internal_health_check_update TEXT,
         external_health_check_enabled BOOLEAN,
         external_health_check_status TEXT,
-        external_health_check_update TEXT
+        external_health_check_update TEXT,
+        image_registry TEXT,
+        image_owner TEXT,
+        image_name TEXT,
+        image_tag TEXT,
+        image_icon TEXT,
+        group_name TEXT,
+        started_at TEXT
     )
 """)
 conn.commit()
 conn.close()
-print("\u2705 DB schema ensured.")
+logger.info("✅ DB schema ensured.")
+
+
+from collections import defaultdict
 
 @app.route('/')
 def dashboard():
-    msg = request.args.get('msg')
-    query = request.args.get('q', '').lower()
-    sort = request.args.get('sort', 'container_name')
+    sort = request.args.get('sort', 'group_name')
     direction = request.args.get('dir', 'asc')
-    reverse = direction == 'desc'
+    group_by = request.args.get('group_by', 'group_name')
+    msg = request.args.get('msg')
 
-    entries = ServiceEntry.query.all()
-    from collections import defaultdict
+    # Build query and sort direction
+    sort_attr = getattr(ServiceEntry, sort)
+    sort_attr = sort_attr.asc() if direction == 'asc' else sort_attr.desc()
+    entries = ServiceEntry.query.order_by(sort_attr).all()
+
+    # Group entries
     grouped_entries = defaultdict(list)
-    for e in entries:
-        if e.internal_health_check_update:
-            try:
-                e.internal_health_check_parsed = parser.parse(e.internal_health_check_update)
-            except Exception:
-                e.internal_health_check_parsed = None
-        else:
-            e.internal_health_check_parsed = None
-        grouped_entries[e.stack_name or 'Unassigned'].append(e)
+    for entry in entries:
+        key = getattr(entry, group_by) or 'zz_none'
+        grouped_entries[key].append(entry)
 
+    # Sort group keys alphabetically
     grouped_entries = dict(sorted(grouped_entries.items()))
-    entries = [e for group in grouped_entries.values() for e in group]
 
-    if query:
-        entries = [e for e in entries if query in e.host.lower() or query in e.container_name.lower()]
+    return render_template(
+        "dashboard.html",
+        entries=entries,
+        grouped_entries=grouped_entries,
+        sort=sort,
+        direction=direction,
+        group_by=group_by,
+        msg=msg,
+        STD_DOZZLE_URL=os.getenv('STD_DOZZLE_URL')
+    )
+    
+@app.route("/dbdump")
+def db_dump():
+    entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
+    return render_template("dbdump.html", entries=entries)    
 
-    if sort == 'host':
-        entries.sort(key=lambda x: x.host, reverse=reverse)
-    else:
-        entries.sort(key=lambda x: x.container_name, reverse=reverse)
-
-    return render_template("dashboard.html", entries=entries, query=query, sort=sort, direction=direction, STD_DOZZLE_URL=STD_DOZZLE_URL, msg=msg, datetime=datetime)
+@app.route('/images/<path:filename>')
+def serve_image(filename):
+    response = make_response(send_from_directory(IMAGE_DIR, filename))
+    response.headers['Cache-Control'] = 'public, max-age=86400'  # cache for 1 day
+    return response
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_entry():
@@ -186,12 +276,72 @@ def api_register():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
+    if app.debug:
+        logger.info("🔍 Received API payload:")
+        for k, v in data.items():
+            logger.info(f"    {k}: {v}")
 
     if not data.get('host') or not data.get('container_name'):
         return jsonify({"error": "Missing host or container_name"}), 400
 
-    entry = ServiceEntry.query.filter_by(container_name=data['container_name']).first()
+    # Parse image_name into components
+    image_raw = data.get("image_name", "")
+    registry, owner, img_name, tag = None, None, None, None
 
+    if image_raw:
+        tag_split = image_raw.split(":")
+        base = tag_split[0]
+        tag = tag_split[1] if len(tag_split) > 1 else None
+        parts = base.split("/")
+        if len(parts) == 3:
+            registry, owner, img_name = parts
+        elif len(parts) == 2:
+            owner, img_name = parts
+        elif len(parts) == 1:
+            img_name = parts[0]
+
+    # Use provided image_icon or try to fetch from known icon repo
+    image_icon = data.get("image_icon")
+    if not image_icon and img_name:
+        image_icon = fetch_icon_if_missing(img_name)
+
+    elif image_icon:
+        icon_path = os.path.join(IMAGE_DIR, image_icon)
+        now = datetime.now()
+        last_fail = failed_icon_cache.get(image_icon)
+
+        if not os.path.exists(icon_path) and (not last_fail or now - last_fail > RETRY_INTERVAL):
+            try:
+                icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
+                response = requests.get(icon_url, timeout=5)
+                if response.status_code == 200:
+                    with open(icon_path, 'wb') as f:
+                        f.write(response.content)
+                    logger.info(f"⬇️ Downloaded explicitly provided icon: {image_icon}")
+                    failed_icon_cache.pop(image_icon, None)
+                else:
+                    failed_icon_cache[image_icon] = now
+                    logger.warning(f"⚠️ Could not download image_icon '{image_icon}' — status {response.status_code}")
+            except Exception as e:
+                failed_icon_cache[image_icon] = now
+                logger.warning(f"⚠️ Failed to fetch image_icon '{image_icon}': {e}")
+
+
+
+    # If image_icon was explicitly provided, check and download if needed
+    if image_icon and not os.path.exists(os.path.join(IMAGE_DIR, image_icon)):
+        try:
+            icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
+            response = requests.get(icon_url, timeout=5)
+            if response.status_code == 200:
+                with open(os.path.join(IMAGE_DIR, image_icon), 'wb') as f:
+                    f.write(response.content)
+                logger.info(f"⬇️ Downloaded explicitly provided icon: {image_icon}")
+            else:
+                logger.warning(f"⚠️ Could not download image_icon '{image_icon}' — status {response.status_code}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to fetch image_icon '{image_icon}': {e}")
+    # Convert booleans
     def parse_bool(value):
         if isinstance(value, bool):
             return value
@@ -199,8 +349,9 @@ def api_register():
             return value.lower() == 'true'
         return None
 
+    # Update or create entry
+    entry = ServiceEntry.query.filter_by(container_name=data['container_name']).first()
     if entry:
-        # Update existing entry
         entry.host = data['host']
         entry.container_id = data.get('container_id')
         entry.internalurl = data.get('internalurl')
@@ -209,9 +360,16 @@ def api_register():
         entry.docker_status = data.get('docker_status')
         entry.internal_health_check_enabled = parse_bool(data.get('internal_health_check_enabled'))
         entry.external_health_check_enabled = parse_bool(data.get('external_health_check_enabled'))
+        entry.group_name = data.get('group_name') or "zz_none"
+        entry.started_at = data.get('started_at')
         entry.last_updated = datetime.now()
+        entry.last_api_update = datetime.now()
+        entry.image_registry = registry
+        entry.image_owner = owner
+        entry.image_name = img_name
+        entry.image_icon = image_icon
+        entry.image_tag = tag
     else:
-        # Create new entry
         entry = ServiceEntry(
             host=data['host'],
             container_name=data['container_name'],
@@ -222,12 +380,22 @@ def api_register():
             docker_status=data.get('docker_status'),
             internal_health_check_enabled=parse_bool(data.get('internal_health_check_enabled')),
             external_health_check_enabled=parse_bool(data.get('external_health_check_enabled')),
-            last_updated=datetime.now()
+            group_name=data.get('group_name') or "zz_none",
+            started_at=data.get('started_at'),
+            last_updated=datetime.now(),
+            last_api_update=datetime.now(),
+            image_registry=registry,
+            image_owner=owner,
+            image_name=img_name,
+            image_icon=image_icon,
+            image_tag=tag
         )
         db.session.add(entry)
 
     db.session.commit()
     return jsonify(entry.to_dict()), 200 if entry else 201
+
+
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 def edit_entry(id):
@@ -237,6 +405,7 @@ def edit_entry(id):
             db.session.delete(entry)
             db.session.commit()
             return redirect(url_for('dashboard'))
+
 
         entry.host = request.form.get('host')
         entry.container_name = request.form.get('container_name')
@@ -306,10 +475,15 @@ def health_check_loop():
                     log_output.append(f"{entry.container_name} - Internal: {internal_status or 'N/A'} External: {external_status or 'N/A'}")
 
             db.session.commit()
-            print("\n".join(log_output), flush=True)
+            for line in log_output:
+                logger.info(line)
 
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     threading.Thread(target=health_check_loop, daemon=True).start()
 
+app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8815, debug=True)
+    logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
+    app.run(host='0.0.0.0', port=8815, debug=app.debug)
+ 

@@ -76,6 +76,14 @@
           <button type='button' class='btn btn-outline-light' onclick="setNow('external_health_check_update')">Now</button>
         </div>
       </div>
+      <div class='mb-3'>
+        <label class='form-label'>Image Name</label>
+        <input class='form-control' name='image_name' value='{{ entry.image_name if entry else "" }}' />
+      </div>
+      <div class='mb-3'>
+        <label class='form-label'>Group Name</label>
+        <input class='form-control' name='group_name' value='{{ entry.group_name if entry else "ungrouped" }}' />
+      </div>
       <button type='submit' class='btn btn-primary'>Submit</button>
       <a href='/' class='btn btn-secondary'>Cancel</a>
     </form>

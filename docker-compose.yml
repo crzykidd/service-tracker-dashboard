@@ -6,6 +6,8 @@ services:
       - "8815:8815"
     env_file:
       - .env
+    environment:
+      - FLASK_DEBUG=1
     volumes:
       - ~/docker/tracker:/config
     labels:
@@ -19,6 +21,9 @@ services:
       - dockernotifier.containerzone=crzynet.com
       - dockernotifier.dockerdomain=home.arpa  
       - dockernotifier.std.internalurl=https://std.crzynet.com/
+      - dockernotifier.std.internal.health=true
+      - dockernotifier.std.group=dnloads
+
     networks:
        proxy:
 networks:
