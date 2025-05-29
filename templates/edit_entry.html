@@ -1,125 +1,331 @@
 <!DOCTYPE html>
-<html data-bs-theme='dark'>
+<html lang="en">
 <head>
-  <title>Edit Entry</title>
-  <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
-  <script>
-    function setNow(fieldId) {
-      const now = new Date();
-      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-      const formatted = local.toISOString().slice(0, 16);
-      document.getElementsByName(fieldId)[0].value = formatted;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit Service Entry</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #1f2937;
+      color: #f3f4f6;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      position: relative;
     }
-  </script>
+    #three-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+      display: block;
+    }
+    .container {
+      display: inline-block;
+      max-width: 90vw;
+      margin: auto
+      background-color: #374151;
+      padding: 1.5rem;
+      border: 1px solid #4b5563;
+      border-radius: 0.5rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      z-index: 1;
+      position: relative;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #d1d5db;
+      margin-bottom: 0.25rem;
+    }
+    .form-control {
+      display: inline-block;
+      width: 64ch;
+      max-width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #4b5563;
+      border-radius: 0.375rem;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      font-size: 0.875rem;
+      color: #f3f4f6;
+      background-color: #4b5563;
+    }
+    .form-control:focus {
+      border-color: #6366f1;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+    .read-only-field {
+      display: inline-block;
+      width: 64ch;
+      max-width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #4b5563;
+      border-radius: 0.375rem;
+      background-color: #4b5563;
+      color: #d1d5db;
+      font-size: 0.875rem;
+      min-height: 2.5rem;
+      display: flex;
+      align-items: center;
+    }
+    .tight-grid-all {
+      display: grid;
+      grid-template-columns: max-content max-content;
+      gap: 1rem 2rem;
+      justify-content: center;
+    }
+    .btn-primary {
+      background-color: #4f46e5;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      transition: background-color 0.15s ease-in-out;
+    }
+    .btn-primary:hover {
+      background-color: #4338ca;
+    }
+    .btn-danger {
+      background-color: #dc2626;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      transition: background-color 0.15s ease-in-out;
+    }
+    .btn-danger:hover {
+      background-color: #b91c1c;
+    }
+    .btn-secondary {
+      background-color: #6b7280;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      transition: background-color 0.15s ease-in-out;
+    }
+    .btn-secondary:hover {
+      background-color: #4b5563;
+    }
+  </style>
 </head>
-<body class='bg-dark text-light'>
-  <div class='container mt-5'>
-    <h1>Edit Service Entry</h1>
-    <form method='post'>
-      <div class='mb-3'>
-        <label class='form-label'>Host</label>
-        <input class='form-control' name='host' value='{{ entry.host }}' required />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Container Name</label>
-        <input class='form-control' name='container_name' value='{{ entry.container_name }}' required />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Image Name</label>
-        <div class='form-control bg-dark text-light'>
-          {% if entry.image_name %}
-            {{ entry.image_registry or '' }}{% if entry.image_registry %}/{% endif %}
-            {{ entry.image_owner or '' }}{% if entry.image_owner %}/{% endif %}
-            {{ entry.image_name }}{% if entry.image_tag %}:{{ entry.image_tag }}{% endif %}
-          {% else %}
-            <span class='text-muted'>Not set</span>
-          {% endif %}
+<body>
+  <canvas id="three-canvas"></canvas>
+  <div class="container">
+    <h1 class="text-3xl font-bold text-white mb-6 text-center">Edit Service Entry</h1>
+    <form method="post" class="space-y-4">
+      <div class="tight-grid-all">
+        <div>
+          <label class='form-label'>Host</label>
+          <input class='form-control' name='host' value='{{ entry.host }}' required />
         </div>
-      </div>
+        <div>
+          <label class='form-label'>Container Name</label>
+          <input class='form-control' name='container_name' value='{{ entry.container_name }}' required />
+        </div>
+        <div>
+          <label class='form-label'>Image Name</label>
+          <div class='read-only-field'>
+            {% if entry.image_name %}
+              {{ entry.image_registry or '' }}{% if entry.image_registry %}/{% endif %}
+              {{ entry.image_owner or '' }}{% if entry.image_owner %}/{% endif %}
+              {{ entry.image_name }}{% if entry.image_tag %}:{{ entry.image_tag }}{% endif %}
+            {% else %}
+              <span class='text-gray-400'>Not set</span>
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>Container ID</label>
+          <div class='read-only-field'>
+            {{ entry.container_id or 'N/A' }}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>Internal URL</label>
+          <input class='form-control' name='internalurl' value='{{ entry.internalurl or '' }}' />
+        </div>
+        <div>
+          <label class='form-label'>External URL</label>
+          <input class='form-control' name='externalurl' value='{{ entry.externalurl or '' }}' />
+        </div>
+        <div>
+          <label class='form-label'>Stack Name (optional)</label>
+          <div class='read-only-field'>
+            {{ entry.stack_name or 'N/A' }}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>
+            Docker Status
+            {% if entry.last_api_update %}
+              <span class='text-gray-400 text-xs ml-2'>(Updated {{ entry.last_api_update | time_since }})</span>
+            {% else %}
+              <span class='text-gray-400 text-xs ml-2'>(Never updated)</span>
+            {% endif %}
+          </label>
+          <input class='form-control' name='docker_status' value='{{ entry.docker_status or '' }}' />
+        </div>
+        <div>
+          <label class='form-label'>Internal Health Check Enabled</label>
+          <select class='form-control' name='internal_health_check_enabled'>
+            <option value="" {% if entry.internal_health_check_enabled is none %}selected{% endif %}>Select...</option>
+            <option value="true" {% if entry.internal_health_check_enabled == True %}selected{% endif %}>True</option>
+            <option value="false" {% if entry.internal_health_check_enabled == False %}selected{% endif %}>False</option>
+          </select>
+        </div>
+        <div>
+          <label class='form-label'>Internal Health Check Status</label>
+          <div class='read-only-field'>
+            {{ entry.internal_health_check_status or 'N/A' }}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>Internal Health Check Updated</label>
+          <div class='read-only-field'>
+            {% if entry.internal_health_check_update %}
+              {{ entry.internal_health_check_update | time_since }} ago
+            {% else %}
+              N/A
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>External Health Check Enabled</label>
+          <select class='form-control' name='external_health_check_enabled'>
+            <option value="" {% if entry.external_health_check_enabled is none %}selected{% endif %}>Select...</option>
+            <option value="true" {% if entry.external_health_check_enabled == True %}selected{% endif %}>True</option>
+            <option value="false" {% if entry.external_health_check_enabled == False %}selected{% endif %}>False</option>
+          </select>
+        </div>
+        <div>
+          <label class='form-label'>External Health Check Status</label>
+          <div class='read-only-field'>
+            {{ entry.external_health_check_status or 'N/A' }}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>External Health Check Updated</label>
+          <div class='read-only-field'>
+            {% if entry.external_health_check_update %}
+              {{ entry.external_health_check_update | time_since }} ago
+            {% else %}
+              N/A
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <label class='form-label'>Group Name</label>
+          <input class='form-control' name='group_name' value='{{ entry.group_name or '' }}' />
+        </div>
+        <div>
+          <label class='form-label'>Started At</label>
+          <div class='read-only-field'>
+            {{ entry.started_at | time_since if entry.started_at else 'N/A' }}
+          </div>
+        </div>
+        <div class="form-check mt-3" title="By checking this box, you will disallow the API from changing this record.">
+          <input class="form-check-input" type="checkbox" id="is_static" name="is_static"
+            {% if entry and entry.is_static %}checked{% endif %}>
+            <label class="form-check-label" for="is_static">
+            Static Entry
+            </label>
+        </div>
 
-      <div class='mb-3'>
-        <label class='form-label'>Container ID</label>
-        <input class='form-control' name='container_id' value='{{ entry.container_id }}' />
       </div>
-      <div class='mb-3'>
-        <label class='form-label'>Internal URL</label>
-        <input class='form-control' name='internalurl' value='{{ entry.internalurl }}' />
+      <div class="flex justify-end gap-3 pt-4">
+        <button type="submit" class="btn-primary">Update</button>
+        <button type="submit" name="delete" value="1" class="btn-danger" onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
+        <a href="/" class="btn-secondary">Cancel</a>
       </div>
-      <div class='mb-3'>
-        <label class='form-label'>External URL</label>
-        <input class='form-control' name='externalurl' value='{{ entry.externalurl }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Stack Name (optional)</label>
-        <input class='form-control' name='stack_name' value='{{ entry.stack_name }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Docker Status</label>
-        <div class='d-flex align-items-center gap-3'>
-          <input class='form-control' name='docker_status' value='{{ entry.docker_status }}' />
-          {% if entry.last_api_update %}
-            <small class='text-muted' title='{{ entry.last_api_update }}'>
-              Updated {{ entry.last_api_update | time_since }}
-            </small>
-          {% else %}
-            <small class='text-muted'>Never updated</small>
-          {% endif %}
-        </div>
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Internal Health Check Enabled</label>
-        <select class='form-control' name='internal_health_check_enabled'>
-          <option value="" {% if entry.internal_health_check_enabled is none %}selected{% endif %}></option>
-          <option value="true" {% if entry.internal_health_check_enabled == True %}selected{% endif %}>True</option>
-          <option value="false" {% if entry.internal_health_check_enabled == False %}selected{% endif %}>False</option>
-        </select>
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Internal Health Check Status</label>
-        <input class='form-control' name='internal_health_check_status' value='{{ entry.internal_health_check_status }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>Internal Health Check Updated</label>
-        <div class='input-group'>
-          <input class='form-control' type='datetime-local' name='internal_health_check_update' value='{{ entry.internal_health_check_update }}' />
-          <button type='button' class='btn btn-outline-light' onclick="setNow('internal_health_check_update')">Now</button>
-        </div>
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>External Health Check Enabled</label>
-        <select class='form-control' name='external_health_check_enabled'>
-          <option value="" {% if entry.external_health_check_enabled is none %}selected{% endif %}></option>
-          <option value="true" {% if entry.external_health_check_enabled == True %}selected{% endif %}>True</option>
-          <option value="false" {% if entry.external_health_check_enabled == False %}selected{% endif %}>False</option>
-        </select>
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>External Health Check Status</label>
-        <input class='form-control' name='external_health_check_status' value='{{ entry.external_health_check_status }}' />
-      </div>
-      <div class='mb-3'>
-        <label class='form-label'>External Health Check Updated</label>
-        <div class='input-group'>
-          <input class='form-control' type='datetime-local' name='external_health_check_update' value='{{ entry.external_health_check_update }}' />
-          <button type='button' class='btn btn-outline-light' onclick="setNow('external_health_check_update')">Now</button>
-        </div>
-      </div>
-
-      <div class='mb-3'>
-        <label class='form-label'>Group Name</label>
-        <input class='form-control' name='group_name' value='{{ entry.group_name }}' />
-      </div>
-
-      <div class='mb-3'>
-        <label class='form-label'>Started At</label>
-        <div class='form-control bg-dark text-light'>
-          {{ entry.started_at | time_since }}
-        </div>
-      </div>
-      <button type='submit' class='btn btn-primary'>Update</button>
-      <button type='submit' name='delete' value='1' class='btn btn-danger' onclick="return confirm('Are you sure you want to delete this entry?')">Delete</button>
-      <a href='/' class='btn btn-secondary'>Cancel</a>
     </form>
   </div>
+  <script>
+    let scene, camera, renderer, particles;
+    let mouseX = 0, mouseY = 0;
+    let windowHalfX = window.innerWidth / 2;
+    let windowHalfY = window.innerHeight / 2;
+
+    function initThreeJS() {
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x1f2937, 0.0005);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+      camera.position.z = 200;
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.getElementById('three-canvas').appendChild(renderer.domElement);
+
+      const particleCount = 1000;
+      const geometry = new THREE.BufferGeometry();
+      const positions = [];
+      const colors = [];
+      const color = new THREE.Color();
+
+      for (let i = 0; i < particleCount; i++) {
+        const x = Math.random() * 400 - 200;
+        const y = Math.random() * 400 - 200;
+        const z = Math.random() * 400 - 200;
+        positions.push(x, y, z);
+        color.setHSL(Math.random() * 0.1 + 0.6, 0.5, 0.5);
+        colors.push(color.r, color.g, color.b);
+      }
+
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      const material = new THREE.PointsMaterial({
+        size: 1.5,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.8,
+        sizeAttenuation: true
+      });
+
+      particles = new THREE.Points(geometry, material);
+      scene.add(particles);
+
+      document.addEventListener('mousemove', onDocumentMouseMove, false);
+      window.addEventListener('resize', onWindowResize, false);
+    }
+
+    function onDocumentMouseMove(event) {
+      mouseX = (event.clientX - windowHalfX) * 0.2;
+      mouseY = (event.clientY - windowHalfY) * 0.2;
+    }
+
+    function onWindowResize() {
+      windowHalfX = window.innerWidth / 2;
+      windowHalfY = window.innerHeight / 2;
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      camera.position.x += (mouseX - camera.position.x) * 0.005;
+      camera.position.y += (-mouseY - camera.position.y) * 0.005;
+      camera.lookAt(scene.position);
+      particles.rotation.x += 0.0005;
+      particles.rotation.y += 0.001;
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function () {
+      initThreeJS();
+      animate();
+    };
+  </script>
 </body>
 </html>

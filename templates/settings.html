@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+<head>
+  <title>Settings</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-dark text-light">
+  <div class="container mt-5">
+    <h1>Settings</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Backup Form -->
+    <form method="POST">
+      <input type="hidden" name="action" value="backup">
+      <div class="mb-3">
+        <label for="mode" class="form-label">Backup Mode</label>
+        <select class="form-select" name="mode" id="mode">
+          <option value="all">All Entries</option>
+          <option value="static">Static Only</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-success">Download YAML Backup</button>
+      <div class="form-text">A copy will also be saved to <code>/config/backup.yaml</code></div>
+    </form>
+
+    <hr class="my-4">
+
+    <!-- Restore Form -->
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="restore">
+
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="use_custom_file" name="use_custom_file"
+               onchange="document.getElementById('restore_file_input').style.display = this.checked ? 'block' : 'none';">
+        <label class="form-check-label" for="use_custom_file">
+          Use custom restore file (instead of <code>/config/backup.yaml</code>)
+        </label>
+      </div>
+
+      <div class="mb-3" id="restore_file_input" style="display: none;">
+        <label for="restore_file" class="form-label">Select YAML File</label>
+        <input type="file" class="form-control" name="restore_file" id="restore_file" accept=".yaml,.yml">
+      </div>
+
+      <button type="submit" class="btn btn-warning">Restore from YAML</button>
+    </form>
+
+    <a href="/" class="btn btn-secondary mt-4">Back to Dashboard</a>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
