@@ -28,7 +28,7 @@
     td, th { white-space: nowrap; }
     .table-group-header td { background-color: #343a40; font-weight: bold; }
     .logo-icon {
-      height: 32px;
+      height: 40px;
       max-width: 40px;
       filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
       transition: transform 0.2s ease-in-out;
@@ -119,10 +119,13 @@
         <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
         <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
         <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
+        <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
       </select>
     </div>
     <div class="col-md-auto">
-      <a href="/add" class="btn btn-sm btn-outline-light">Add Record</a>
+      <a href="/add" class="btn btn-sm btn-outline-light">Add Record</a> 
+      <a href="/settings" class="btn btn-sm btn-outline-secondary ms-2">Settings</a>
+
     </div>
     <div class="col-md-auto text-muted small" id="refreshTimer" style="cursor: pointer;" onclick="window.location.reload()">
       Refreshed just now
@@ -224,18 +227,25 @@
             <td>
               {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'Never updated' %}
               {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
+
               {% if entry.docker_status == 'start' or entry.docker_status == 'running' %}
                 <span class="badge bg-success" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
-              {% elif entry.docker_status == 'die' %}
-                <span class="badge bg-danger" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
-              {% elif entry.docker_status == 'exited' %}
+              {% elif entry.docker_status == 'die' or entry.docker_status == 'exited' %}
                 <span class="badge bg-danger" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
               {% elif entry.docker_status %}
                 <span class="badge bg-warning text-dark" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
               {% else %}
                 <span class="badge bg-secondary" title="Updated {{ tooltip }} — {{ timestamp }}">Unknown</span>
               {% endif %}
-            </td>
+
+              {% if entry.image_tag %}
+                <div style="font-size: 0.75rem; color: #cccccc; margin-top: 0.25rem;">
+                  Tag: <code>{{ entry.image_tag }}</code>
+                </div>
+              {% endif %}
+             </td>
+            
+
             <td>
               {% if STD_DOZZLE_URL and entry.container_id %}
                 <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
@@ -243,7 +253,12 @@
                 </a>
               {% endif %}
             </td>
-            <td><a href="/edit/{{ entry.id }}" class="btn btn-sm btn-outline-warning">Edit</a></td>
+            <td>
+              <a href="/edit/{{ entry.id }}" class="btn btn-sm btn-outline-warning">Edit</a>
+              {% if entry.is_static %}
+                <span title="Static entry — API updates blocked" style="margin-left: 6px;">🔒</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

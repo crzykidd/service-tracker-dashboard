@@ -4,3 +4,4 @@ python-dotenv
 humanize
 requests
 python-dateutil
+PyYAML

@@ -2,7 +2,7 @@
 import os
 import logging
 from logging.handlers import RotatingFileHandler
-from flask import Flask, request, jsonify, render_template, redirect, url_for, send_from_directory, make_response
+from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import humanize
@@ -12,6 +12,7 @@ import threading
 import time
 import requests
 from collections import defaultdict
+import yaml
 
 
 API_TOKEN = os.getenv("API_TOKEN", "supersecrettoken")
@@ -19,6 +20,7 @@ STD_DOZZLE_URL = os.getenv("STD_DOZZLE_URL", "http://localhost:8888")
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
 IMAGE_DIR = '/config/images'
+BACKUP_PATH = '/config/backup.yaml'
 
 # Ensure the directory exists
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -29,7 +31,7 @@ RETRY_INTERVAL = timedelta(minutes=60)  # Adjust this as needed
 # === Logging Setup ===
 log_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
 log_handler = RotatingFileHandler(
-    LOGFILE, maxBytes=100 * 1024, backupCount=4
+    LOGFILE, maxBytes=10 * 1024 * 1024, backupCount=4
 )
 log_handler.setFormatter(log_formatter)
 log_handler.setLevel(logging.INFO)
@@ -44,6 +46,7 @@ console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "changeme-in-prod")
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -72,6 +75,7 @@ class ServiceEntry(db.Model):
     image_tag = db.Column(db.String(100), nullable=True)
     image_icon = db.Column(db.String(100), nullable=True)
     group_name = db.Column(db.String(20), nullable=True, default="zz_none")
+    is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
 
     def to_dict(self):
@@ -99,6 +103,7 @@ class ServiceEntry(db.Model):
             'group_name': self.group_name or "zz_none",
             'started_at': self.started_at,
             'image_icon': self.image_icon,
+            'is_static': self.is_static,
         }
 
 def fetch_icon_if_missing(image_name):
@@ -162,6 +167,7 @@ cursor.execute("""
         image_tag TEXT,
         image_icon TEXT,
         group_name TEXT,
+        is_static BOOLEAN NOT NULL DEFAULT 0,
         started_at TEXT
     )
 """)
@@ -187,11 +193,19 @@ def dashboard():
     # Group entries
     grouped_entries = defaultdict(list)
     for entry in entries:
-        key = getattr(entry, group_by) or 'zz_none'
+        raw_key = getattr(entry, group_by)
+        if isinstance(raw_key, bool):
+            key = "Static" if raw_key else "Dynamic"
+        else:
+            key = str(raw_key) if raw_key else "zz_none"
         grouped_entries[key].append(entry)
 
-    # Sort group keys alphabetically
-    grouped_entries = dict(sorted(grouped_entries.items()))
+    # Custom sort: prioritize "Static" over "Dynamic", then alphabetical
+    if group_by == "is_static":
+        sort_order = {"Static": 0, "Dynamic": 1}
+        grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: sort_order.get(item[0], 99)))
+    else:
+        grouped_entries = dict(sorted(grouped_entries.items()))
 
     return render_template(
         "dashboard.html",
@@ -208,6 +222,81 @@ def dashboard():
 def db_dump():
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)    
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        mode = request.form.get('mode', 'all')
+
+        if action == 'backup':
+            entries = ServiceEntry.query.all()
+            if mode == 'static':
+                entries = [e for e in entries if e.is_static]
+
+            data = [e.to_dict() for e in entries]
+
+            # Write to /config/backup.yaml
+            with open(BACKUP_PATH, 'w') as f:
+                yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+
+            logger.info(f"📦 YAML backup saved to {BACKUP_PATH} ({mode} entries)")
+
+            return send_file(
+                BACKUP_PATH,
+                mimetype='text/yaml',
+                as_attachment=True,
+                download_name=f'service_backup_{mode}.yaml'
+            )
+
+        elif action == 'restore':
+            use_custom = request.form.get('use_custom_file') == 'on'
+            file = request.files.get('restore_file') if use_custom else None
+
+            try:
+                if file:
+                    content = file.read().decode('utf-8')
+                    records = yaml.safe_load(content)
+                else:
+                    with open(BACKUP_PATH, 'r') as f:
+                        records = yaml.safe_load(f)
+
+                restored = 0
+                for item in records:
+                    if not item.get('host') or not item.get('container_name'):
+                        logger.warning(f"⛔ Skipping entry with missing host/container_name: {item}")
+                        continue
+
+                    entry = ServiceEntry.query.filter_by(
+                        container_name=item['container_name'],
+                        host=item['host']
+                    ).first()
+
+                    if entry and entry.is_static:
+                        continue
+
+                    if not entry:
+                        entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
+                        db.session.add(entry)
+
+                    for field, value in item.items():
+                        if hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update']:
+                            setattr(entry, field, value)
+
+                    entry.last_updated = datetime.now()
+                    restored += 1
+
+                db.session.commit()
+                flash(f"✅ Restored {restored} entries from YAML.", "success")
+                logger.info(f"♻️ Restored {restored} entries from {'uploaded file' if file else BACKUP_PATH}")
+            except Exception as e:
+                logger.exception("❌ Restore failed")
+                flash(f"Restore failed: {str(e)}", "danger")
+
+            return redirect(url_for('settings'))
+
+    return render_template('settings.html')
+
 
 @app.route('/images/<path:filename>')
 def serve_image(filename):
@@ -246,8 +335,11 @@ def add_entry():
             stack_name=request.form.get('stack_name'),
             docker_status=request.form.get('docker_status'),
             last_updated=datetime.now(),
+            group_name = request.form.get('group_name'),
             internal_health_check_enabled=internal_health_check_enabled
         )
+        is_static_raw = request.form.get('is_static')
+        entry.is_static = True if is_static_raw == 'on' else False
         db.session.add(entry)
 
         raw_external_enabled = request.form.get('external_health_check_enabled')
@@ -352,23 +444,50 @@ def api_register():
     # Update or create entry
     entry = ServiceEntry.query.filter_by(container_name=data['container_name'], host=data['host']).first()
     if entry:
-        entry.host = data['host']
-        entry.container_id = data.get('container_id')
-        entry.internalurl = data.get('internalurl')
-        entry.externalurl = data.get('externalurl')
-        entry.stack_name = data.get('stack_name')
-        entry.docker_status = data.get('docker_status')
-        entry.internal_health_check_enabled = parse_bool(data.get('internal_health_check_enabled'))
-        entry.external_health_check_enabled = parse_bool(data.get('external_health_check_enabled'))
-        entry.group_name = data.get('group_name') or "zz_none"
-        entry.started_at = data.get('started_at')
+        if entry.is_static:
+            logger.info(f"Skipping update for '{entry.container_name}' on '{entry.host}' — static lock enabled.")
+            return jsonify({"status": "skipped", "reason": "static lock"}), 200
         entry.last_updated = datetime.now()
         entry.last_api_update = datetime.now()
-        entry.image_registry = registry
-        entry.image_owner = owner
-        entry.image_name = img_name
-        entry.image_icon = image_icon
-        entry.image_tag = tag
+
+        if data.get("container_id"):
+            entry.container_id = data["container_id"]
+        if data.get("internalurl"):
+            entry.internalurl = data["internalurl"]
+        if data.get("externalurl"):
+            entry.externalurl = data["externalurl"]
+        if data.get("stack_name"):
+            entry.stack_name = data["stack_name"]
+        if data.get("docker_status"):
+            entry.docker_status = data["docker_status"]
+        if data.get("group_name"):
+            entry.group_name = data["group_name"]
+        if data.get("started_at"):
+            entry.started_at = data["started_at"]
+
+        if "internal_health_check_enabled" in data:
+            parsed = parse_bool(data["internal_health_check_enabled"])
+            if parsed is not None:
+                entry.internal_health_check_enabled = parsed
+
+        if "external_health_check_enabled" in data:
+            parsed = parse_bool(data["external_health_check_enabled"])
+            if parsed is not None:
+                entry.external_health_check_enabled = parsed
+
+        if registry:
+            entry.image_registry = registry
+        if owner:
+            entry.image_owner = owner
+        if img_name:
+            entry.image_name = img_name
+        if image_icon:
+            entry.image_icon = image_icon
+        if tag:
+            entry.image_tag = tag
+
+   
+    
     else:
         entry = ServiceEntry(
             host=data['host'],
@@ -409,28 +528,30 @@ def edit_entry(id):
 
         entry.host = request.form.get('host')
         entry.container_name = request.form.get('container_name')
-        entry.container_id = request.form.get('container_id')
+        #entry.container_id = request.form.get('container_id')
         entry.internalurl = request.form.get('internalurl')
         entry.externalurl = request.form.get('externalurl')
-        entry.stack_name = request.form.get('stack_name')
+        #entry.stack_name = request.form.get('stack_name')
         entry.docker_status = request.form.get('docker_status')
-
+        entry.group_name = request.form.get('group_name')
         raw_enabled = request.form.get('internal_health_check_enabled')
         entry.internal_health_check_enabled = True if raw_enabled == 'true' else False if raw_enabled == 'false' else None
-        entry.internal_health_check_status = request.form.get('internal_health_check_status')
-        entry.internal_health_check_update = request.form.get('internal_health_check_update')
+        #entry.internal_health_check_status = request.form.get('internal_health_check_status')
+        #entry.internal_health_check_update = request.form.get('internal_health_check_update')
 
         raw_external_enabled = request.form.get('external_health_check_enabled')
         entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
-        entry.external_health_check_status = request.form.get('external_health_check_status')
-        entry.external_health_check_update = request.form.get('external_health_check_update')
+        #entry.external_health_check_status = request.form.get('external_health_check_status')
+        #entry.external_health_check_update = request.form.get('external_health_check_update')
+        is_static_raw = request.form.get('is_static')
+        entry.is_static = True if is_static_raw == 'on' else False
 
-        for field in ['internal_health_check_update', 'external_health_check_update']:
-            dt_val = getattr(entry, field)
-            if dt_val and isinstance(dt_val, str) and " " in dt_val:
-                setattr(entry, field, dt_val.replace(" ", "T")[:16])
+        #for field in ['internal_health_check_update', 'external_health_check_update']:
+        #    dt_val = getattr(entry, field)
+        #    if dt_val and isinstance(dt_val, str) and " " in dt_val:
+        #        setattr(entry, field, dt_val.replace(" ", "T")[:16])
 
-        entry.last_updated = datetime.now()
+        #entry.last_updated = datetime.now()
         db.session.commit()
         return redirect(url_for('dashboard'))
 
