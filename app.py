@@ -66,7 +66,11 @@ def read_version_info():
             return dict(line.strip().split("=", 1) for line in f)
     except Exception as e:
         logger.warning(f"⚠️ Could not read version info: {e}")
-        return {}
+        return {
+            "version": "unknown",
+            "commit": "unknown",
+            "build_time": "unknown"
+        }
 # Ensure the directory exists
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
@@ -473,7 +477,8 @@ def settings():
          current_config=config,
          config_from_env=config_from_env,
          config_from_file=config_from_file,
-         server_backup_files=server_backup_files
+         server_backup_files=server_backup_files,
+         version_info=read_version_info() 
     )
 
 # Helper to check if flash messages are already present (to avoid duplicates)
