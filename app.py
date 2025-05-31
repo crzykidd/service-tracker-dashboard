@@ -387,47 +387,64 @@ def serve_image(filename):
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_entry():
+    raw_referrer = request.args.get('ref', '/')
+    parsed = urlparse(raw_referrer)
+    referrer = parsed.path
+    if parsed.query:
+        referrer += '?' + parsed.query
+    if not referrer.startswith('/'):
+        referrer = '/tiled_dash'
+
     if request.method == 'POST':
         host = request.form.get('host')
-        # Use 'application' from form, map to container_name
         container_name = request.form.get('application')
-        # internalurl from form
         internalurl = request.form.get('internal_url')
-        # externalurl from form
         externalurl = request.form.get('external_url')
         group_name = request.form.get('group_name')
-        # image_icon from form
         image_icon = request.form.get('icon_image')
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form)
+            return render_template("add_entry.html", msg='error', entry=request.form, ref=referrer)
 
-        # Check for duplicates based on host and container_name
         existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
         if existing:
             flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
-            return render_template("add_entry.html", msg='duplicate', entry=request.form)
+            return render_template("add_entry.html", msg='duplicate', entry=request.form, ref=referrer)
 
-        # Handle boolean for internal_health_check (from HTML name 'internal_health_check')
         internal_health_check_enabled = request.form.get('internal_health_check') == 'on'
-        # Handle boolean for external_health_check (from HTML name 'external_health_check')
         external_health_check_enabled = request.form.get('external_health_check') == 'on'
-        # Handle boolean for is_static (from HTML name 'locked')
         is_static = request.form.get('locked') == 'on'
 
-        # Attempt to fetch icon if not provided and container_name is available
-        if not image_icon and container_name:
-            # Sanitize container_name to be a valid part of a filename if needed,
-            # or use a derived name. For simplicity, using container_name directly.
-            # Your fetch_icon_if_missing might need adjustment if container_name contains chars invalid for filenames.
-            derived_icon_name = container_name.lower().replace(" ", "-") # Example derivation
+        if image_icon:
+            icon_path = os.path.join(IMAGE_DIR, image_icon)
+            if not os.path.exists(icon_path):
+                try:
+                    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
+                    response = requests.get(icon_url, timeout=5)
+                    if response.status_code == 200:
+                        with open(icon_path, 'wb') as f:
+                            f.write(response.content)
+                        logger.info(f"📥 Downloaded manually supplied icon: {image_icon}")
+                    else:
+                        msg = f"Icon not found (HTTP {response.status_code}) at {icon_url}"
+                        if app.debug:
+                            logger.debug(msg)
+                        else:
+                            logger.warning(f"⚠️ {msg}")
+                except Exception as e:
+                    msg = f"Exception while downloading icon '{image_icon}': {e}"
+                    if app.debug:
+                        logger.debug(msg)
+                    else:
+                        logger.warning(f"⚠️ {msg}")
+        elif not image_icon and container_name:
+            derived_icon_name = container_name.lower().replace(" ", "-")
             image_icon = fetch_icon_if_missing(derived_icon_name)
             if image_icon:
-                 logger.info(f"💡 Automatically fetched icon '{image_icon}' for new entry '{container_name}'.")
+                logger.info(f"💡 Automatically fetched icon '{image_icon}' for new entry '{container_name}'.")
             else:
-                 logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'. Manual entry recommended.")
-
+                logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'. Manual entry recommended.")
 
         entry = ServiceEntry(
             host=host,
@@ -435,22 +452,19 @@ def add_entry():
             internalurl=internalurl,
             externalurl=externalurl,
             last_updated=datetime.now(),
-            # last_api_update will be set by API calls, not manual add
-            group_name=group_name if group_name else "zz_none", # Ensure default if empty
+            group_name=group_name if group_name else "zz_none",
             internal_health_check_enabled=internal_health_check_enabled,
             external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             is_static=is_static
-            # Other fields like container_id, stack_name, docker_status, etc.,
-            # are typically populated by API updates or could be added as optional form fields.
-            # For now, they will be None or their default.
         )
         db.session.add(entry)
         db.session.commit()
         flash(f"Service entry '{container_name}' added successfully!", 'success')
-        return redirect(url_for('tiled_dashboard')) # Or 'dashboard'
+        return redirect(referrer)
 
-    return render_template("add_entry.html", msg='', entry={}) # Pass an empty dict for `entry` on GET
+    return render_template("add_entry.html", msg='', entry={}, ref=referrer)
+
 
 @app.route('/api/register', methods=['POST'])
 def api_register():

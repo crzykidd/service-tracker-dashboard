@@ -97,6 +97,24 @@
                     <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Update Entry</button>
                     <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Cancel</button>
                 </div>
+               <hr class="my-6 border-dashboard-accent">
+              <div class="mt-6 bg-dashboard-info-box rounded-lg p-4">
+                <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
+                <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
+                <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
+                    Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
+                </label>
+                <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                    <input type="text" name="delete_confirmation" id="delete_confirmation"
+                          placeholder="Type container name to confirm" 
+                          class="form-input w-full sm:w-auto px-4 py-2 rounded-lg text-sm" required>
+                    <button type="submit" name="delete" value="true"
+                            class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
+                        Delete Entry
+                    </button>
+                </div>
+            </div>
+
             </form>
         </div>
         <div class="bg-dashboard-info-box shadow-xl rounded-xl p-6 sm:p-8">
