@@ -748,7 +748,7 @@ def edit_entry(id):
 
         elif not new_image_icon and request.form.get('force_update_icon') == 'true':
             derived_icon_name = entry.container_name.lower().replace(" ", "-")
-            fetched_icon = fetch_icon_if_missing(derived_icon_name)
+            fetched_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger)
             if fetched_icon:
                 entry.image_icon = fetched_icon
                 logger.info(f"\U0001f4a1 Auto-fetched icon '{fetched_icon}' during edit for '{entry.container_name}'.")
