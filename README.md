@@ -1,33 +1,53 @@
-
 # 🧭 Service Tracker Dashboard
 
-A simple Flask-based dashboard to track and display metadata, health, and status information for services running in Docker containers. Designed for home lab and small-scale infrastructure environments, this dashboard aggregates info via API or web form and offers health checks, image tracking, and status indicators.
+A simple Flask web app that helps you track, organize, and monitor Docker containers across your lab or home setup. You can view service details, run health checks, group entries, and manage everything through a clean web UI or via API. Built for small environments, but flexible enough to grow with your stack.  
+
+This service relies on [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier)  This uses labels to send info from your docker hosts to this dashboard.   Most all settings for docker containers can be set via labels, but you can update something in the dashboard, however docker container labels take priority.  The notifier sends updates to give latest docker container info to the dash on it's update interval
+
+I wrote this as 90% of my stuff runs in docker, but you can manually add other hosts if you want to use it for your entire dashboard. 
 
 ---
 
-## 🚀 Features
+## 🚀 What It Does
 
-- Web dashboard to view and filter containers by group, stack, host, etc.
-- REST API for registering/updating service metadata
-- Internal and external health check monitoring
-- Auto-download icons from [homarr-labs dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
-- SQLite-backed, persistent tracking
-- Includes log rotation and optional Dozzle integration
-- Image and status badge caching
-
----
-
-## 🔧 Environment Variables
-
-| Variable            | Description                                         | Default                |
-|---------------------|-----------------------------------------------------|------------------------|
-| `API_TOKEN`         | API bearer token required for `/api/register`       | `supersecrettoken`     |
-| `STD_DOZZLE_URL`    | Optional: link to Dozzle logs for service containers| `http://localhost:8888`|
-| `FLASK_DEBUG`       | Enable Flask debug mode                             | `0`                    |
+- Table and tile-style dashboards (`/` and `/tiled_dash`)
+- Internal + external health checks every 60 seconds
+- Auto-downloads container icons from [Homarr Labs](https://github.com/homarr-labs/dashboard-icons)
+- API support for pushing container metadata
+- Simple SQLite database backend
+- Daily YAML backups with retention policy
+- Manual add/edit/delete interface
+- Dozzle log integration (optional)
+- Clean UI with dark mode support
+- Designed to run cleanly in Docker
 
 ---
 
-## 🐳 Docker Compose
+## 🔧 Config Overview
+
+You can configure the app using environment variables or a `settings.yml` file inside `/config`. ENV vars take priority over the file. If `settings.yml` doesn’t exist, it’ll be created from a default template.
+
+### Supported Settings
+
+| Setting Name            | Type   | ENV Variable Name         | What it does                                      |
+|-------------------------|--------|----------------------------|---------------------------------------------------|
+| `api_token`             | string | `API_TOKEN`                | Required auth token for the API                   |
+| `std_dozzle_url`        | string | `STD_DOZZLE_URL`           | Link to your Dozzle instance (optional)           |
+| `backup_path`           | string | `BACKUP_PATH`              | Directory to store YAML backups                   |
+| `backup_days_to_keep`   | int    | `BACKUP_DAYS_TO_KEEP`      | How long to keep daily backups (in days)          |
+
+### Example `settings.yml`
+
+```yaml
+api_token: supersecrettoken
+std_dozzle_url: http://dozzle.local
+backup_path: /config/backups
+backup_days_to_keep: 7
+```
+
+---
+
+## 🐳 Docker Compose Setup
 
 ```yaml
 services:
@@ -40,6 +60,7 @@ services:
       - API_TOKEN=supersecrettoken
       - STD_DOZZLE_URL=http://dozzle.local
       - FLASK_DEBUG=0
+      - FLASK_SECRET_KEY=changeme-in-prod
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/hostname:/etc/host_hostname:ro
@@ -47,28 +68,25 @@ services:
     restart: unless-stopped
 ```
 
-> Replace `yourdockerhubuser/service-tracker-dashboard` with your actual Docker image.
+Make sure to update the image name with your Docker Hub username or registry if needed.
 
 ---
 
-## 📥 API Usage
+## 📥 API: Registering Services
 
-### `POST /api/register`
-
-Registers or updates a container entry.
+Send a `POST` request to `/api/register` with your service data. This endpoint requires a bearer token (defined by `API_TOKEN`).
 
 **Headers:**
 ```http
-Authorization: Bearer <API_TOKEN>
+Authorization: Bearer your_token
 Content-Type: application/json
 ```
 
-**Body Parameters (partial list):**
+**Sample JSON:**
 ```json
 {
   "host": "docker01",
   "container_name": "nginx",
-  "container_id": "abc123...",
   "internalurl": "http://nginx:80",
   "externalurl": "https://my.domain.com",
   "stack_name": "frontend",
@@ -83,59 +101,76 @@ Content-Type: application/json
 
 ---
 
-## 🔖 Labels (for automation tools)
+## 🏷️ Docker Labels (Optional)
 
-Optional: Apply these labels to containers for automated tracking via companion tools.
+If you're using an external tool to send events (like `docker-api-notifier`), you can use labels like this:
 
 ```yaml
 labels:
   - "dockernotifier.notifiers=service-tracker-dashboard"
+  - "dockernotifier.std.internalurl=http://nginx:80"
+  - "dockernotifier.std.externalurl=https://nginx.domain.com"
+  - "dockernotifier.std.group=web"
+  - "dockernotifier.std.internal.health=true"
 ```
 
 ---
 
-## 📁 Files & Paths
+## 📂 Files and Paths
 
-- Database: `/config/services.db`
-- Logs: `/config/std.log` (rotated)
-- Icons: `/config/images/` (cached or downloaded from GitHub)
-
----
-
-## 📊 UI Features
-
-- Sortable and grouped table view
-- Add/Edit/Delete records via form
-- Real-time status display
-- Cached icon and metadata rendering
+| Path                     | Purpose                          |
+|--------------------------|----------------------------------|
+| `/config/services.db`    | SQLite database                  |
+| `/config/std.log`        | Main app logs (with rotation)    |
+| `/config/images/`        | Cached icons                     |
+| `/config/backups/`       | YAML backups (manual + nightly)  |
+| `/config/settings.yml`   | Optional config file             |
 
 ---
 
 ## 🧪 Health Checks
 
-- Runs every 60 seconds in a background thread
-- Both internal and external URLs are probed
-- Status and timestamp saved to the database
+- Checks run every 60 seconds in the background
+- Internal and external URLs are pinged if enabled
+- Status code and timestamp are saved for both
+- Failed checks don’t crash the app — they’re logged and move on
+- UI shows color-coded status (green/yellow/red)
 
 ---
 
-## 🛠 Dev Notes
+## 🌐 App Routes
 
-- Logs show health check results and image icon fetches.
-- Image names are parsed to extract registry, owner, name, and tag.
-- Icons are pulled from:  
-  `https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/<image_icon>`
+| Route             | What it does                        |
+|-------------------|-------------------------------------|
+| `/`               | Main dashboard (table view)         |
+| `/tiled_dash`     | Grid-style dashboard                |
+| `/add`            | Manually add a new entry            |
+| `/edit/<id>`      | Edit or delete an existing entry    |
+| `/settings`       | Backup/restore via web interface    |
+| `/dbdump`         | Raw dump of all DB entries          |
+| `/images/<file>`  | Serves icon files from image cache  |
+| `/api/register`   | Programmatic entry/update endpoint  |
 
 ---
 
-## 📍 Accessing
+## 🧠 How It Behaves
 
-Open your browser to:  
-[http://localhost:8815](http://localhost:8815)
+- If an entry is marked as "static", the API won't overwrite it
+- Icon fetch falls back to using the container name (lowercased and hyphenated)
+- Nightly backups are saved at 12:05 AM
+- Old backups are auto-deleted based on your retention setting
+- Version metadata (from `/app/version.txt`) shows up in `/settings`
 
-- `/` → Dashboard  
-- `/add` → Manual entry form  
-- `/edit/<id>` → Edit entry  
-- `/dbdump` → Raw DB list  
-- `/api/register` → API endpoint  
-- `/images/<filename>` → Cached icons
+---
+
+## 📍 Getting Started
+
+Once running, hit the web UI at:  
+👉 [http://localhost:8815](http://localhost:8815)
+
+- View the dashboard  
+- Add/edit entries  
+- Restore from backup  
+- Register services via API
+
+---

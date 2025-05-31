@@ -16,6 +16,17 @@
     .logo-icon:hover {
       transform: scale(1.1);
     }
+    .icon-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      background-color: #3d3d3d;
+      border-radius: 4px;
+      font-size: 20px;
+      color: #9e9e9e;
+    }
   </style>
 </head>
 <body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans">
@@ -70,15 +81,28 @@
           {% for entry in group_entries %}
           <tr class="border-b border-gray-700" data-entry data-group="{{ entry.group_name }}" data-container="{{ entry.container_name }}" data-stack="{{ entry.stack_name }}">
             <td class="px-3 py-2">
-              {% if entry.image_icon %}
-                {% set target_url = entry.internalurl or entry.externalurl %}
-                {% if target_url %}
-                  <a href="{{ target_url }}" target="_blank"><img src="{{ url_for('serve_image', filename=entry.image_icon) }}" class="logo-icon" alt="Logo" /></a>
+              <div class="logo-icon">
+                {% if entry.image_icon %}
+                  {% set target_url = entry.internalurl or entry.externalurl %}
+                  {% if target_url %}
+                    <a href="{{ target_url }}" target="_blank">
+                      <img src="{{ url_for('serve_image', filename=entry.image_icon) }}"
+                          class="logo-icon"
+                          alt="Logo"
+                          onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
+                    </a>
+                  {% else %}
+                    <img src="{{ url_for('serve_image', filename=entry.image_icon) }}"
+                        class="logo-icon"
+                        alt="Logo"
+                        onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
+                  {% endif %}
                 {% else %}
-                  <img src="{{ url_for('serve_image', filename=entry.image_icon) }}" class="logo-icon" alt="Logo" />
+                  <span class="icon-placeholder">📦</span>
                 {% endif %}
-              {% endif %}
+              </div>
             </td>
+
             <td class="px-3 py-2">{{ entry.group_name }}</td>
             <td class="px-3 py-2">
               <div>{{ entry.container_name }}</div>
@@ -96,9 +120,19 @@
                 {% set tooltip = 'Not Monitored' %}
                 {% set display = 'NA' %}
                 {% if entry.internal_health_check_enabled %}
-                  {% set status_class = 'bg-green-600' if entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 else 'bg-red-600' %}
-                  {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
-                  {% set display = entry.internal_health_check_status or '?' %}
+                  {% if entry.internal_health_check_status == 'Error: SSLError' %}
+                    {% set status_class = 'bg-yellow-300 text-black' %}
+                    {% set tooltip = 'SSL Error — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                    {% set display = 'SSL' %}
+                  {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
+                    {% set status_class = 'bg-green-600' %}
+                    {% set tooltip = entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                    {% set display = entry.internal_health_check_status %}
+                  {% else %}
+                    {% set status_class = 'bg-red-600' %}
+                    {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}       
+                    {% set display = entry.internal_health_check_status or '?' %}
+                  {% endif %}
                 {% endif %}
                 <div class="flex items-center gap-2">
                   <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
@@ -112,9 +146,19 @@
                 {% set tooltip = 'Not Monitored' %}
                 {% set display = 'NA' %}
                 {% if entry.external_health_check_enabled %}
-                  {% set status_class = 'bg-green-600' if entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 else 'bg-red-600' %}
-                  {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
-                  {% set display = entry.external_health_check_status or '?' %}
+                  {% if entry.external_health_check_status == 'Error: SSLError' %}
+                    {% set status_class = 'bg-yellow-300 text-black' %}
+                    {% set tooltip = 'SSL Error — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set display = 'SSL' %}
+                  {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
+                    {% set status_class = 'bg-green-600' %}
+                    {% set tooltip = entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set display = entry.external_health_check_status %}
+                  {% else %}
+                    {% set status_class = 'bg-red-600' %}
+                    {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set display = entry.external_health_check_status or '?' %}
+                {% endif %}
                 {% endif %}
                 <div class="flex items-center gap-2">
                   <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
