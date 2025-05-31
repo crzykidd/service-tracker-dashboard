@@ -819,7 +819,7 @@ if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 # for 5 min testing
-from apscheduler.triggers.interval import IntervalTrigger
+# from apscheduler.triggers.interval import IntervalTrigger
 
 def run_scheduled_backup():
     with app.app_context():
@@ -861,8 +861,8 @@ def run_scheduled_backup():
 
 # Start background scheduler
 scheduler = BackgroundScheduler()
-#scheduler.add_job(run_scheduled_backup, CronTrigger(hour=0, minute=5))  # 12:05 AM
-scheduler.add_job(run_scheduled_backup, IntervalTrigger(minutes=1))
+scheduler.add_job(run_scheduled_backup, CronTrigger(hour=0, minute=5))  # 12:05 AM
+#scheduler.add_job(run_scheduled_backup, IntervalTrigger(minutes=1))
 scheduler.start()
 
 app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
