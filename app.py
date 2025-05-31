@@ -48,6 +48,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 config, config_from_env, config_from_file = load_settings()
+# Set STD_DOZZLE_URL from environment first, fallback to settings file
+app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", config.get("STD_DOZZLE_URL", ""))
+
 
 logger.info("🔧 Loaded settings:")
 for k, v in config.items():
