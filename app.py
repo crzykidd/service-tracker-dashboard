@@ -13,21 +13,14 @@ import time
 import requests
 from collections import defaultdict
 import yaml
+from settings_loader import load_settings
+from image_utils import resolve_image_metadata, parse_bool
+from urllib.parse import urlparse, urljoin
 
-
-API_TOKEN = os.getenv("API_TOKEN", "supersecrettoken")
-STD_DOZZLE_URL = os.getenv("STD_DOZZLE_URL", "http://localhost:8888")
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
 IMAGE_DIR = '/config/images'
-BACKUP_PATH = '/config/backup.yaml'
 
-# Ensure the directory exists
-os.makedirs(IMAGE_DIR, exist_ok=True)
-
-# for image lookup
-failed_icon_cache = {}  # image_icon -> last_failed_time
-RETRY_INTERVAL = timedelta(minutes=60)  # Adjust this as needed
 # === Logging Setup ===
 log_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
 log_handler = RotatingFileHandler(
@@ -45,12 +38,35 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
+
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "changeme-in-prod")
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+settings = load_settings()
+logger.info("🔧 Loaded settings:")
+for k, v in settings.items():
+    logger.info(f"    {k} = {v}")
+
+# Optionally populate into app.config if you use `Flask config`
+app.config.update(settings)
+
+logger.info("⚙️ Flask config (from settings):")
+for k in settings:
+    logger.info(f"    {k} = {app.config.get(k)}")
+# Or just reference as `settings["api_token"]`, etc.
+
+
+# Ensure the directory exists
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+# for image lookup
+failed_icon_cache = {}  # image_icon -> last_failed_time
+RETRY_INTERVAL = timedelta(minutes=60)  # Adjust this as needed
+
 
 class ServiceEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -106,6 +122,19 @@ class ServiceEntry(db.Model):
             'is_static': self.is_static,
         }
 
+
+# Add this inside the ServiceEntry class in your app.py
+
+    @property
+    def is_docker_status_stale(self):
+        if self.is_static:  # Static entries might not receive frequent API updates
+            return False
+        if self.last_api_update:
+            # Consider stale if last_api_update is older than 5 minutes
+            return (datetime.now() - self.last_api_update) > timedelta(minutes=5)
+        # If no API update has ever been recorded, and it's not static, consider it stale or unknown.
+        # For a newly added dynamic entry, this would be True until the first API update.
+        return True
 def fetch_icon_if_missing(image_name):
     if not image_name:
         return None
@@ -217,7 +246,59 @@ def dashboard():
         msg=msg,
         STD_DOZZLE_URL=os.getenv('STD_DOZZLE_URL')
     )
-    
+
+
+
+from collections import defaultdict # Ensure this is imported at the top of your app.py
+
+
+@app.route('/tiled_dash')
+def tiled_dashboard():
+    group_by_param = request.args.get('group_by', 'group_name')  # Default grouping by group_name
+
+    # Determine the attribute to sort and group by
+    if hasattr(ServiceEntry, group_by_param):
+        group_by_attr_name = group_by_param
+        group_by_attr_for_query = getattr(ServiceEntry, group_by_param)
+    else:
+        # Fallback to group_name if the param is invalid
+        group_by_attr_name = 'group_name'
+        group_by_attr_for_query = ServiceEntry.group_name
+
+    # Fetch entries, sorted primarily by the grouping attribute, then by container name
+    entries = ServiceEntry.query.order_by(group_by_attr_for_query.asc(), ServiceEntry.container_name.asc()).all()
+
+    grouped_entries_dict = defaultdict(list)
+    for entry in entries:
+        key_value = getattr(entry, group_by_attr_name)
+
+        if group_by_attr_name == "is_static": # If you add 'is_static' to dropdown later
+            key = "Static Entries" if key_value else "Dynamic Entries"
+        # Handle common 'empty' or 'placeholder' group names
+        elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "zz_none":
+            key = "Ungrouped"
+        else:
+            key = str(key_value)
+        grouped_entries_dict[key].append(entry)
+
+    # Sort groups for consistent display
+    if group_by_attr_name == "is_static":
+        sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0])))
+    elif group_by_attr_name in ["group_name", "host", "stack_name"]: # Added "stack_name"
+        # Sort alphabetically, but ensure "Ungrouped" (if it appears for None/empty values) is last
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0])))
+    else:
+        # Default to alphabetical sorting for other group types
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
+
+    return render_template(
+        "tiled_dash.html",
+        grouped_entries=sorted_grouped_entries,
+        active_group_by=group_by_attr_name, # Pass the currently active group_by key
+        STD_DOZZLE_URL=app.config['std_dozzle_url']
+    )
+
 @app.route("/dbdump")
 def db_dump():
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
@@ -308,62 +389,73 @@ def serve_image(filename):
 def add_entry():
     if request.method == 'POST':
         host = request.form.get('host')
-        container_name = request.form.get('container_name')
-        container_id = request.form.get('container_id')
-        internalurl = request.form.get('internalurl')
-        externalurl = request.form.get('externalurl')
+        # Use 'application' from form, map to container_name
+        container_name = request.form.get('application')
+        # internalurl from form
+        internalurl = request.form.get('internal_url')
+        # externalurl from form
+        externalurl = request.form.get('external_url')
+        group_name = request.form.get('group_name')
+        # image_icon from form
+        image_icon = request.form.get('icon_image')
 
         if not host or not container_name:
-            return render_template("add_entry.html", msg='error')
+            flash('Host and Application (Container Name) are required.', 'danger')
+            return render_template("add_entry.html", msg='error', entry=request.form)
 
-        existing = ServiceEntry.query.filter(
-            (ServiceEntry.container_name == container_name) |
-            (ServiceEntry.container_id == container_id if container_id else False)
-        ).first()
+        # Check for duplicates based on host and container_name
+        existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
         if existing:
-            return render_template("add_entry.html", msg='duplicate')
+            flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
+            return render_template("add_entry.html", msg='duplicate', entry=request.form)
 
-        raw_enabled = request.form.get('internal_health_check_enabled')
-        internal_health_check_enabled = True if raw_enabled == 'true' else False if raw_enabled == 'false' else None
+        # Handle boolean for internal_health_check (from HTML name 'internal_health_check')
+        internal_health_check_enabled = request.form.get('internal_health_check') == 'on'
+        # Handle boolean for external_health_check (from HTML name 'external_health_check')
+        external_health_check_enabled = request.form.get('external_health_check') == 'on'
+        # Handle boolean for is_static (from HTML name 'locked')
+        is_static = request.form.get('locked') == 'on'
+
+        # Attempt to fetch icon if not provided and container_name is available
+        if not image_icon and container_name:
+            # Sanitize container_name to be a valid part of a filename if needed,
+            # or use a derived name. For simplicity, using container_name directly.
+            # Your fetch_icon_if_missing might need adjustment if container_name contains chars invalid for filenames.
+            derived_icon_name = container_name.lower().replace(" ", "-") # Example derivation
+            image_icon = fetch_icon_if_missing(derived_icon_name)
+            if image_icon:
+                 logger.info(f"💡 Automatically fetched icon '{image_icon}' for new entry '{container_name}'.")
+            else:
+                 logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'. Manual entry recommended.")
+
 
         entry = ServiceEntry(
             host=host,
             container_name=container_name,
-            container_id=container_id,
             internalurl=internalurl,
             externalurl=externalurl,
-            stack_name=request.form.get('stack_name'),
-            docker_status=request.form.get('docker_status'),
             last_updated=datetime.now(),
-            group_name = request.form.get('group_name'),
-            internal_health_check_enabled=internal_health_check_enabled
+            # last_api_update will be set by API calls, not manual add
+            group_name=group_name if group_name else "zz_none", # Ensure default if empty
+            internal_health_check_enabled=internal_health_check_enabled,
+            external_health_check_enabled=external_health_check_enabled,
+            image_icon=image_icon,
+            is_static=is_static
+            # Other fields like container_id, stack_name, docker_status, etc.,
+            # are typically populated by API updates or could be added as optional form fields.
+            # For now, they will be None or their default.
         )
-        is_static_raw = request.form.get('is_static')
-        entry.is_static = True if is_static_raw == 'on' else False
         db.session.add(entry)
-
-        raw_external_enabled = request.form.get('external_health_check_enabled')
-        entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
-        entry.external_health_check_status = request.form.get('external_health_check_status')
-        entry.external_health_check_update = request.form.get('external_health_check_update')
-
-        if entry.external_health_check_enabled and entry.externalurl:
-            try:
-                response = requests.get(entry.externalurl, timeout=5)
-                entry.external_health_check_status = str(response.status_code)
-            except Exception as e:
-                entry.external_health_check_status = f"Error: {type(e).__name__}"
-            entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
         db.session.commit()
-        return redirect(url_for('dashboard', msg='added'))
+        flash(f"Service entry '{container_name}' added successfully!", 'success')
+        return redirect(url_for('tiled_dashboard')) # Or 'dashboard'
 
-    return render_template("add_entry.html", msg='')
+    return render_template("add_entry.html", msg='', entry={}) # Pass an empty dict for `entry` on GET
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
     auth_header = request.headers.get("Authorization", "")
-    expected = f"Bearer {API_TOKEN}"
+    expected = f"Bearer {app.config['api_token']}"
     if auth_header != expected:
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -376,70 +468,22 @@ def api_register():
     if not data.get('host') or not data.get('container_name'):
         return jsonify({"error": "Missing host or container_name"}), 400
 
-    # Parse image_name into components
-    image_raw = data.get("image_name", "")
-    registry, owner, img_name, tag = None, None, None, None
+    # ✅ Use shared metadata resolver
+    image_meta = resolve_image_metadata(
+        image_raw=data.get("image_name"),
+        image_icon_override=data.get("image_icon"),
+        fallback_name=data.get("container_name"),
+        image_dir=IMAGE_DIR,
+        failed_icon_cache=failed_icon_cache,
+        retry_interval=RETRY_INTERVAL,
+        logger=logger
+    )
 
-    if image_raw:
-        tag_split = image_raw.split(":")
-        base = tag_split[0]
-        tag = tag_split[1] if len(tag_split) > 1 else None
-        parts = base.split("/")
-        if len(parts) == 3:
-            registry, owner, img_name = parts
-        elif len(parts) == 2:
-            owner, img_name = parts
-        elif len(parts) == 1:
-            img_name = parts[0]
-
-    # Use provided image_icon or try to fetch from known icon repo
-    image_icon = data.get("image_icon")
-    if not image_icon and img_name:
-        image_icon = fetch_icon_if_missing(img_name)
-
-    elif image_icon:
-        icon_path = os.path.join(IMAGE_DIR, image_icon)
-        now = datetime.now()
-        last_fail = failed_icon_cache.get(image_icon)
-
-        if not os.path.exists(icon_path) and (not last_fail or now - last_fail > RETRY_INTERVAL):
-            try:
-                icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
-                response = requests.get(icon_url, timeout=5)
-                if response.status_code == 200:
-                    with open(icon_path, 'wb') as f:
-                        f.write(response.content)
-                    logger.info(f"⬇️ Downloaded explicitly provided icon: {image_icon}")
-                    failed_icon_cache.pop(image_icon, None)
-                else:
-                    failed_icon_cache[image_icon] = now
-                    logger.warning(f"⚠️ Could not download image_icon '{image_icon}' — status {response.status_code}")
-            except Exception as e:
-                failed_icon_cache[image_icon] = now
-                logger.warning(f"⚠️ Failed to fetch image_icon '{image_icon}': {e}")
-
-
-
-    # If image_icon was explicitly provided, check and download if needed
-    if image_icon and not os.path.exists(os.path.join(IMAGE_DIR, image_icon)):
-        try:
-            icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
-            response = requests.get(icon_url, timeout=5)
-            if response.status_code == 200:
-                with open(os.path.join(IMAGE_DIR, image_icon), 'wb') as f:
-                    f.write(response.content)
-                logger.info(f"⬇️ Downloaded explicitly provided icon: {image_icon}")
-            else:
-                logger.warning(f"⚠️ Could not download image_icon '{image_icon}' — status {response.status_code}")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to fetch image_icon '{image_icon}': {e}")
-    # Convert booleans
-    def parse_bool(value):
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.lower() == 'true'
-        return None
+    registry = image_meta["registry"]
+    owner = image_meta["owner"]
+    img_name = image_meta["image_name"]
+    tag = image_meta["image_tag"]
+    image_icon = image_meta["image_icon"]
 
     # Update or create entry
     entry = ServiceEntry.query.filter_by(container_name=data['container_name'], host=data['host']).first()
@@ -516,46 +560,95 @@ def api_register():
 
 
 
+
+
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 def edit_entry(id):
     entry = ServiceEntry.query.get_or_404(id)
+
+    # Track the referrer for redirecting after save
+    raw_referrer = request.args.get('ref', '/')
+    parsed = urlparse(raw_referrer)
+    referrer = parsed.path
+    if parsed.query:
+        referrer += '?' + parsed.query
+
+    # Safety check: prevent open redirect attacks
+    if not referrer.startswith('/'):
+        referrer = '/'
+
     if request.method == 'POST':
-        if 'delete' in request.form:
+        # Handle delete action
+        if 'delete' in request.form and request.form.get('delete_confirmation') == entry.container_name:
+            logger.info(f"\U0001f5d1️ Deleting entry ID {id}: {entry.container_name} on {entry.host}")
             db.session.delete(entry)
             db.session.commit()
-            return redirect(url_for('dashboard'))
+            flash(f"Service entry '{entry.container_name}' deleted successfully.", 'success')
+            return redirect(referrer)
+        elif 'delete' in request.form:
+            flash(f"Deletion not confirmed for '{entry.container_name}'. Please type the name to confirm.", 'warning')
+            return render_template("edit_entry.html", entry=entry, ref=referrer)
+
+        # Update all editable fields
+        entry.host = request.form.get('host', '').strip()
+        entry.container_name = request.form.get('container_name', '').strip()
+        entry.internalurl = request.form.get('internalurl', '').strip() or None
+        entry.externalurl = request.form.get('externalurl', '').strip() or None
+        entry.group_name = request.form.get('group_name', '').strip() or None
+
+        new_image_icon = request.form.get('image_icon', '').strip()
+        entry.image_icon = new_image_icon  # Always set explicitly, even blank
+
+        if new_image_icon:
+            icon_path = os.path.join(IMAGE_DIR, new_image_icon)
+            if not os.path.exists(icon_path):
+                try:
+                    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{new_image_icon}"
+                    response = requests.get(icon_url, timeout=5)
+                    if response.status_code == 200:
+                        with open(icon_path, 'wb') as f:
+                            f.write(response.content)
+                        logger.info(f"\U0001f4e5 Downloaded manually supplied icon: {new_image_icon}")
+                    else:
+                        msg = f"Icon not found (HTTP {response.status_code}) at {icon_url}"
+                        if app.debug:
+                            logger.debug(msg)
+                        else:
+                            logger.warning(f"⚠️ {msg}")
+                except Exception as e:
+                    msg = f"Exception while downloading icon '{new_image_icon}': {e}"
+                    if app.debug:
+                        logger.debug(msg)
+                    else:
+                        logger.warning(f"⚠️ {msg}")
+
+        elif not new_image_icon and request.form.get('force_update_icon') == 'true':
+            derived_icon_name = entry.container_name.lower().replace(" ", "-")
+            fetched_icon = fetch_icon_if_missing(derived_icon_name)
+            if fetched_icon:
+                entry.image_icon = fetched_icon
+                logger.info(f"\U0001f4a1 Auto-fetched icon '{fetched_icon}' during edit for '{entry.container_name}'.")
+
+        # Boolean fields
+        entry.internal_health_check_enabled = request.form.get('internal_health_check_enabled') == 'on'
+        entry.external_health_check_enabled = request.form.get('external_health_check_enabled') == 'on'
+        entry.is_static = request.form.get('is_static') == 'on'
+
+        entry.last_updated = datetime.now()
+
+        try:
+            db.session.commit()
+            flash(f"Service entry '{entry.container_name}' updated successfully!", 'success')
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error updating entry {entry.id}: {e}")
+            flash(f"Error updating entry: {str(e)}", 'danger')
+
+        return redirect(referrer)
+
+    return render_template("edit_entry.html", entry=entry, ref=referrer)
 
 
-        entry.host = request.form.get('host')
-        entry.container_name = request.form.get('container_name')
-        #entry.container_id = request.form.get('container_id')
-        entry.internalurl = request.form.get('internalurl')
-        entry.externalurl = request.form.get('externalurl')
-        #entry.stack_name = request.form.get('stack_name')
-        entry.docker_status = request.form.get('docker_status')
-        entry.group_name = request.form.get('group_name')
-        raw_enabled = request.form.get('internal_health_check_enabled')
-        entry.internal_health_check_enabled = True if raw_enabled == 'true' else False if raw_enabled == 'false' else None
-        #entry.internal_health_check_status = request.form.get('internal_health_check_status')
-        #entry.internal_health_check_update = request.form.get('internal_health_check_update')
-
-        raw_external_enabled = request.form.get('external_health_check_enabled')
-        entry.external_health_check_enabled = True if raw_external_enabled == 'true' else False if raw_external_enabled == 'false' else None
-        #entry.external_health_check_status = request.form.get('external_health_check_status')
-        #entry.external_health_check_update = request.form.get('external_health_check_update')
-        is_static_raw = request.form.get('is_static')
-        entry.is_static = True if is_static_raw == 'on' else False
-
-        #for field in ['internal_health_check_update', 'external_health_check_update']:
-        #    dt_val = getattr(entry, field)
-        #    if dt_val and isinstance(dt_val, str) and " " in dt_val:
-        #        setattr(entry, field, dt_val.replace(" ", "T")[:16])
-
-        #entry.last_updated = datetime.now()
-        db.session.commit()
-        return redirect(url_for('dashboard'))
-
-    return render_template("edit_entry.html", entry=entry)
 
 # Background health check loop
 def health_check_loop():

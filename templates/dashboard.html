@@ -124,6 +124,7 @@
     </div>
     <div class="col-md-auto">
       <a href="/add" class="btn btn-sm btn-outline-light">Add Record</a> 
+      <a href="/tile_dash" class="btn btn-sm btn-outline-secondary ms-2">Tile View</a>
       <a href="/settings" class="btn btn-sm btn-outline-secondary ms-2">Settings</a>
 
     </div>
@@ -254,7 +255,9 @@
               {% endif %}
             </td>
             <td>
-              <a href="/edit/{{ entry.id }}" class="btn btn-sm btn-outline-warning">Edit</a>
+              <a href="{{ url_for('edit_entry', id=entry.id, ref=request.full_path) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+
+
               {% if entry.is_static %}
                 <span title="Static entry — API updates blocked" style="margin-left: 6px;">🔒</span>
               {% endif %}

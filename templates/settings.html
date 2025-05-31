@@ -19,7 +19,7 @@
       {% endif %}
     {% endwith %}
 
-    <!-- Backup Form -->
+    <!-- Backup & Download -->
     <form method="POST">
       <input type="hidden" name="action" value="backup">
       <div class="mb-3">
@@ -33,11 +33,32 @@
       <div class="form-text">A copy will also be saved to <code>/config/backup.yaml</code></div>
     </form>
 
+    <!-- Backup to File Only -->
+    <form method="POST" class="mt-3">
+      <input type="hidden" name="action" value="backup_file_only">
+      <div class="mb-3">
+        <label for="file_only_mode" class="form-label">Backup Mode</label>
+        <select class="form-select" name="mode" id="file_only_mode">
+          <option value="all">All Entries</option>
+          <option value="static">Static Only</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-outline-success">Backup to File Only (No Download)</button>
+    </form>
+
     <hr class="my-4">
 
-    <!-- Restore Form -->
+    <!-- Restore -->
     <form method="POST" enctype="multipart/form-data">
       <input type="hidden" name="action" value="restore">
+
+      <div class="mb-3">
+        <label for="restore_mode" class="form-label">Restore Mode</label>
+        <select class="form-select" name="mode" id="restore_mode">
+          <option value="all">All Entries</option>
+          <option value="static">Static Only</option>
+        </select>
+      </div>
 
       <div class="form-check mb-3">
         <input class="form-check-input" type="checkbox" id="use_custom_file" name="use_custom_file"

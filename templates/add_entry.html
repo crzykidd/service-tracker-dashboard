@@ -1,285 +1,122 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Add Service Entry</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #1f2937; /* dark-gray-900 */
-      color: #f3f4f6; /* gray-100 */
-      overflow: hidden;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      place-items: center;
-      min-height: 100vh;
-      position: relative;
-    }
-    #three-canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: -1;
-      display: block;
-    }
-    .container {
-      display: inline-block; /* Allows margin auto to work with grid centering */
-      max-width: 90vw; /* Responsive max width */
-      width: max-content; /* Shrink to content */
-      margin: auto; /* Centering fallback, though grid handles it */
-      background-color: #374151; /* dark-gray-700 */
-      padding: 1.5rem; /* p-6 */
-      border: 1px solid #4b5563; /* dark-gray-600 */
-      border-radius: 0.5rem; /* rounded-lg */
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-xl */
-      z-index: 1;
-      position: relative; /* For z-index to take effect */
-      max-height: 90vh; /* Max height */
-      overflow-y: auto; /* Scroll if content overflows */
-    }
-    .form-label {
-      display: block;
-      font-size: 0.875rem; /* text-sm */
-      font-weight: 500; /* font-medium */
-      color: #d1d5db; /* gray-300 */
-      margin-bottom: 0.25rem; /* mb-1 */
-    }
-    .form-control {
-      display: inline-block;
-      width: 64ch; /* Optimal width for text entry */
-      max-width: 100%; /* Responsive */
-      padding: 0.5rem 0.75rem; /* py-2 px-3 */
-      border: 1px solid #4b5563; /* border-gray-600 */
-      border-radius: 0.375rem; /* rounded-md */
-      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
-      font-size: 0.875rem; /* text-sm */
-      color: #f3f4f6; /* text-gray-100 */
-      background-color: #4b5563; /* bg-gray-600 */
-    }
-    .form-control:focus {
-      border-color: #6366f1; /* focus:border-indigo-500 */
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); /* focus:ring-indigo-500 focus:ring-opacity-50 */
-    }
-    .tight-grid-all {
-      display: grid;
-      /* Adjust for potentially single column on smaller screens if needed, or keep two */
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* Responsive columns */
-      gap: 1rem 2rem; /* gap-4 md:gap-x-8 */
-      justify-content: center;
-    }
-    @media (min-width: 1024px) { /* lg breakpoint */
-        .tight-grid-all {
-            grid-template-columns: max-content max-content; /* Revert to fixed two columns on larger screens */
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add New Service Entry</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles if needed, or to define a color palette */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter as a modern font */
         }
-    }
-    .btn { /* Base button style */
-        padding: 0.5rem 1rem; /* py-2 px-4 */
-        border-radius: 0.375rem; /* rounded-md */
-        font-weight: 500; /* font-medium */
-        transition: background-color 0.15s ease-in-out;
-        text-decoration: none; /* For <a> tags styled as buttons */
-        display: inline-block; /* For <a> tags */
-        text-align: center;
-    }
-    .btn-primary {
-      background-color: #4f46e5; /* bg-indigo-600 */
-      color: white;
-    }
-    .btn-primary:hover {
-      background-color: #4338ca; /* hover:bg-indigo-700 */
-    }
-    .btn-secondary {
-      background-color: #6b7280; /* bg-gray-500 */
-      color: white;
-    }
-    .btn-secondary:hover {
-      background-color: #4b5563; /* hover:bg-gray-600 */
-    }
-    .message-box {
-        margin-bottom: 1rem; /* mb-4 */
-        padding: 0.75rem; /* p-3 */
-        border-radius: 0.375rem; /* rounded-md */
-        color: white;
-        text-align: center;
-    }
-    .message-success {
-        background-color: #10b981; /* bg-green-500 */
-    }
-    .message-error {
-        background-color: #ef4444; /* bg-red-500 */
-    }
-  </style>
+        /* Example color palette (adjust to match tile_dash if specific colors are known) */
+        .bg-dashboard-dark { background-color: #1a202c; } /* Dark background for the page */
+        .bg-dashboard-card { background-color: #2d3748; } /* Lighter background for the form card */
+        .text-dashboard-primary { color: #e2e8f0; } /* Primary text color */
+        .text-dashboard-secondary { color: #a0aec0; } /* Secondary text color */
+        .border-dashboard-accent { border-color: #4a5568; } /* Border color */
+        .btn-primary { background-color: #4299e1; color: white; } /* Primary button */
+        .btn-primary:hover { background-color: #3182ce; }
+        .btn-secondary { background-color: #4a5568; color: white; } /* Secondary button */
+        .btn-secondary:hover { background-color: #2d3748; }
+        .form-input {
+            background-color: #1a202c;
+            border-color: #4a5568;
+            color: #e2e8f0;
+        }
+        .form-input:focus {
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+            outline: none;
+        }
+        .form-checkbox {
+            color: #4299e1; /* Accent color for checkbox */
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-  <canvas id="three-canvas"></canvas>
-  <div class="container">
-    <h1 class="text-3xl font-bold text-white mb-6 text-center">Add New Service Entry</h1>
+<body class="bg-dashboard-dark text-dashboard-primary flex items-center justify-center min-h-screen p-4 sm:p-6">
+    <div class="bg-dashboard-card shadow-2xl rounded-xl p-6 sm:p-8 md:p-10 w-full max-w-2xl">
+        <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
 
-    {% if msg %}
-      <div class="message-box {% if msg == 'error' or msg == 'duplicate' %}message-error{% else %}message-success{% endif %}">
-        {% if msg == 'added' %}Service added successfully!{% endif %}
-        {% if msg == 'error' %}Error: Host and Container Name are required.{% endif %}
-        {% if msg == 'duplicate' %}Error: Service with this Container Name or ID already exists.{% endif %}
-      </div>
-    {% endif %}
+              <form action="{{ url_for('add_entry') }}" method="POST"> <div class="mb-5">
+                <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
+                <input type="text" name="host" id="host" required
+                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                       placeholder="e.g., server01.example.com">
+            </div>
 
-    <form method="post" action="{{ url_for('add_entry') }}" class="space-y-4">
-      <div class="tight-grid-all">
-        <div>
-          <label class='form-label' for="host">Host</label>
-          <input class='form-control' type="text" id="host" name='host' value='' required />
-        </div>
-        <div>
-          <label class='form-label' for="container_name">Container Name</label>
-          <input class='form-control' type="text" id="container_name" name='container_name' value='' required />
-        </div>
-        <div>
-          <label class='form-label' for="container_id">Container ID (optional)</label>
-          <input class='form-control' type="text" id="container_id" name='container_id' value='' />
-        </div>
-        <div>
-          <label class='form-label' for="internalurl">Internal URL (optional)</label>
-          <input class='form-control' type="url" id="internalurl" name='internalurl' value='' placeholder="http://example.internal"/>
-        </div>
-        <div>
-          <label class='form-label' for="externalurl">External URL (optional)</label>
-          <input class='form-control' type="url" id="externalurl" name='externalurl' value='' placeholder="https://example.com"/>
-        </div>
-        <div>
-          <label class='form-label' for="stack_name">Stack Name (optional)</label>
-          <input class='form-control' type="text" id="stack_name" name='stack_name' value='' />
-        </div>
-        <div>
-          <label class='form-label' for="docker_status">Docker Status (optional)</label>
-          <input class='form-control' type="text" id="docker_status" name='docker_status' value='' />
-        </div>
-        <div>
-          <label class='form-label' for="group_name">Group Name (optional)</label>
-          <input class='form-control' type="text" id="group_name" name='group_name' value='' />
-        </div>
-        <div>
-          <label class='form-label' for="internal_health_check_enabled">Internal Health Check Enabled</label>
-          <select class='form-control' id="internal_health_check_enabled" name='internal_health_check_enabled'>
-            <option value="" selected>Select...</option>
-            <option value="true">True</option>
-            <option value="false">False</option>
-          </select>
-        </div>
-        <div>
-          <label class='form-label' for="external_health_check_enabled">External Health Check Enabled</label>
-          <select class='form-control' id="external_health_check_enabled" name='external_health_check_enabled'>
-            <option value="" selected>Select...</option>
-            <option value="true">True</option>
-            <option value="false">False</option>
-          </select>
-        </div>
-        <div class="form-check mt-3" title="By checking this box, you will disallow the API from changing this record.">
-          <input class="form-check-input" type="checkbox" id="is_static" name="is_static"
-            {% if entry and entry.is_static %}checked{% endif %}>
-            <label class="form-check-label" for="is_static">
-            Static Entry
-            </label>
-        </div>
+            <div class="mb-5">
+                <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
+                <input type="text" name="application" id="application" required
+                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                       placeholder="e.g., proxmox, unifi-controller, ilo">
+            </div>
 
-      </div>
-      <div class="flex justify-end gap-3 pt-4">
-        <button type="submit" class="btn btn-primary">Add Entry</button>
-        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
-      </div>
-    </form>
-  </div>
-  <script>
-    // Three.js background animation script (copied from edit_entry.html)
-    let scene, camera, renderer, particles;
-    let mouseX = 0, mouseY = 0;
-    let windowHalfX = window.innerWidth / 2;
-    let windowHalfY = window.innerHeight / 2;
+            <div class="mb-5">
+                <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
+                <div class="flex items-center space-x-3">
+                    <input type="url" name="internal_url" id="internal_url"
+                           class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                           placeholder="e.g., http://localhost:8080">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="internal_health_check" id="internal_health_check"
+                               class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500">
+                        <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+                    </div>
+                </div>
+            </div>
 
-    function initThreeJS() {
-      scene = new THREE.Scene();
-      scene.fog = new THREE.FogExp2(0x1f2937, 0.0005); // Match body background
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
-      camera.position.z = 200; // Adjusted for a bit more distance
-      
-      const canvas = document.getElementById('three-canvas');
-      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      // No need to appendChild if canvas element is already in HTML
+            <div class="mb-5">
+                <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
+                <div class="flex items-center space-x-3">
+                    <input type="url" name="external_url" id="external_url"
+                           class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                           placeholder="e.g., https://myapp.example.com">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="external_health_check" id="external_health_check"
+                               class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500">
+                        <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+                    </div>
+                </div>
+            </div>
 
-      const particleCount = 1000; // Number of particles
-      const geometry = new THREE.BufferGeometry();
-      const positions = [];
-      const colorsAttribute = []; // Renamed to avoid conflict with new THREE.Color()
-      const color = new THREE.Color();
+            <div class="mb-5">
+                <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
+                <input type="text" name="group_name" id="group_name"
+                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                       placeholder="e.g., Production Services">
+            </div>
 
-      for (let i = 0; i < particleCount; i++) {
-        const x = Math.random() * 600 - 300; // Increased spread
-        const y = Math.random() * 600 - 300;
-        const z = Math.random() * 600 - 300;
-        positions.push(x, y, z);
-        // Particle colors (e.g., shades of blue/purple to complement the dark theme)
-        color.setHSL(Math.random() * 0.2 + 0.55, 0.7, Math.random() * 0.2 + 0.4); 
-        colorsAttribute.push(color.r, color.g, color.b);
-      }
+            <div class="mb-5">
+                <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
+                <input type="text" name="icon_image" id="icon_image"
+                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                       placeholder="e.g., proxmox.svg (find on dashboardicons.com)">
+                <p class="mt-1 text-xs text-dashboard-secondary">Enter the filename of the SVG icon (e.g., service.svg). Icons should be placed in your static/images folder.</p>
+                <p class="mt-1 text-xs text-dashboard-secondary">(will try to match automatically from application above.)</p>
+            </div>
 
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsAttribute, 3));
+            <div class="mb-6 sm:mb-8">
+                <div class="flex items-center">
+                    <input type="checkbox" name="locked" id="locked"
+                           class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500">
+                    <label for="locked" class="ml-2 text-sm font-medium text-dashboard-secondary">Locked (Static Entry)</label>
+                </div>
+                <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by automated API calls.</p>
+            </div>
 
-      const material = new THREE.PointsMaterial({
-        size: 1.5,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.7, // Slightly more subtle
-        sizeAttenuation: true
-      });
-
-      particles = new THREE.Points(geometry, material);
-      scene.add(particles);
-
-      document.addEventListener('mousemove', onDocumentMouseMove, false);
-      window.addEventListener('resize', onWindowResize, false);
-    }
-
-    function onDocumentMouseMove(event) {
-      mouseX = (event.clientX - windowHalfX) * 0.1; // Reduced sensitivity
-      mouseY = (event.clientY - windowHalfY) * 0.1; // Reduced sensitivity
-    }
-
-    function onWindowResize() {
-      windowHalfX = window.innerWidth / 2;
-      windowHalfY = window.innerHeight / 2;
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    function animate() {
-      requestAnimationFrame(animate);
-      // Smoother camera movement
-      camera.position.x += (mouseX - camera.position.x) * 0.0025; 
-      camera.position.y += (-mouseY - camera.position.y) * 0.0025;
-      camera.lookAt(scene.position);
-      
-      // Particle animation
-      particles.rotation.x += 0.0002;
-      particles.rotation.y += 0.0005;
-      
-      renderer.render(scene, camera);
-    }
-
-    // Initialize Three.js on window load
-    window.onload = function () {
-      initThreeJS();
-      animate();
-    };
-  </script>
+            <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
+                <button type="submit"
+                        class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
+                    Add Entry
+                </button>
+                <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
 </body>
 </html>

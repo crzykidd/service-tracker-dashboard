@@ -1,0 +1,15 @@
+# settings.example.yml
+# This is the settings for for STD (Service Tracker Dashboard)
+# Any ENV variables set will be used before the entry in this config file.
+
+# Backup file location.   Make sure this is mountable in from your container.  
+# Can be set with ENV BACKUP_PATH=/config/backups
+backup_path: /config/backups
+
+# API Token for connections
+# Can be set with ENV API_TOKEN=supersecrettoken
+api_token: supersecrettoken
+
+# URL for dozzle instance for quick connect to logs
+# Can be set with ENV STD_DOZZLE_URL
+std_dozzle_url: http://dozzle.host.com:8080
