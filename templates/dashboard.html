@@ -96,9 +96,19 @@
                 {% set tooltip = 'Not Monitored' %}
                 {% set display = 'NA' %}
                 {% if entry.internal_health_check_enabled %}
-                  {% set status_class = 'bg-green-600' if entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 else 'bg-red-600' %}
-                  {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
-                  {% set display = entry.internal_health_check_status or '?' %}
+                  {% if entry.internal_health_check_status == 'Error: SSLError' %}
+                    {% set status_class = 'bg-yellow-300 text-black' %}
+                    {% set tooltip = 'SSL Error — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                    {% set display = 'SSL' %}
+                  {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
+                    {% set status_class = 'bg-green-600' %}
+                    {% set tooltip = entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                    {% set display = entry.internal_health_check_status %}
+                  {% else %}
+                    {% set status_class = 'bg-red-600' %}
+                    {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}       
+                    {% set display = entry.internal_health_check_status or '?' %}
+                  {% endif %}
                 {% endif %}
                 <div class="flex items-center gap-2">
                   <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
@@ -112,9 +122,19 @@
                 {% set tooltip = 'Not Monitored' %}
                 {% set display = 'NA' %}
                 {% if entry.external_health_check_enabled %}
-                  {% set status_class = 'bg-green-600' if entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 else 'bg-red-600' %}
-                  {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
-                  {% set display = entry.external_health_check_status or '?' %}
+                  {% if entry.external_health_check_status == 'Error: SSLError' %}
+                    {% set status_class = 'bg-yellow-300 text-black' %}
+                    {% set tooltip = 'SSL Error — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set display = 'SSL' %}
+                  {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
+                    {% set status_class = 'bg-green-600' %}
+                    {% set tooltip = entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set display = entry.external_health_check_status %}
+                  {% else %}
+                    {% set status_class = 'bg-red-600' %}
+                    {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set display = entry.external_health_check_status or '?' %}
+                {% endif %}
                 {% endif %}
                 <div class="flex items-center gap-2">
                   <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
