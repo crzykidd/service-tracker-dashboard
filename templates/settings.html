@@ -1,84 +1,262 @@
 <!DOCTYPE html>
-<html data-bs-theme="dark">
+<html lang="en">
 <head>
-  <title>Settings</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Dark Theme</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style for flash messages (dark theme) */
+        .flash-message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.375rem; /* rounded-md */
+            font-size: 0.875rem; /* text-sm */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .flash-success {
+            background-color: #047857; /* green-700 */
+            color: #D1FAE5; /* green-100 */
+            border: 1px solid #059669; /* green-600 */
+        }
+        .flash-danger {
+            background-color: #B91C1C; /* red-700 */
+            color: #FEE2E2; /* red-100 */
+            border: 1px solid #DC2626; /* red-600 */
+        }
+        .flash-info {
+            background-color: #1D4ED8; /* blue-700 */
+            color: #DBEAFE; /* blue-100 */
+            border: 1px solid #2563EB; /* blue-600 */
+        }
+        .close-button {
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            cursor: pointer;
+            color: inherit;
+        }
+        /* Dark theme for code tag */
+        code {
+            background-color: #374151; /* gray-700 */
+            color: #D1D5DB; /* gray-300 */
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            font-size: 0.875em;
+        }
+        /* Dark theme for select elements */
+        select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+    </style>
 </head>
-<body class="bg-dark text-light">
-  <div class="container mt-5">
-    <h1>Settings</h1>
+<body class="bg-gray-900 min-h-screen flex flex-col items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-4xl w-full bg-gray-800 shadow-2xl rounded-lg p-6 md:p-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-gray-100">Settings</h1>
+        </header>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-          </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+        <div id="flash-messages-container" class="mb-6 space-y-3">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category|lower }}" role="alert">
+                            <span>{{ message }}</span>
+                            <button type="button" class="close-button" onclick="this.parentElement.style.display='none'">&times;</button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
 
-    <!-- Backup & Download -->
-    <form method="POST">
-      <input type="hidden" name="action" value="backup">
-      <div class="mb-3">
-        <label for="mode" class="form-label">Backup Mode</label>
-        <select class="form-select" name="mode" id="mode">
-          <option value="all">All Entries</option>
-          <option value="static">Static Only</option>
-        </select>
-      </div>
-      <button type="submit" class="btn btn-success">Download YAML Backup</button>
-      <div class="form-text">A copy will also be saved to <code>/config/backup.yaml</code></div>
-    </form>
+        <div class="flex flex-col md:flex-row md:space-x-6 space-y-6 md:space-y-0">
 
-    <!-- Backup to File Only -->
-    <form method="POST" class="mt-3">
-      <input type="hidden" name="action" value="backup_file_only">
-      <div class="mb-3">
-        <label for="file_only_mode" class="form-label">Backup Mode</label>
-        <select class="form-select" name="mode" id="file_only_mode">
-          <option value="all">All Entries</option>
-          <option value="static">Static Only</option>
-        </select>
-      </div>
-      <button type="submit" class="btn btn-outline-success">Backup to File Only (No Download)</button>
-    </form>
+            <section id="backup-section" class="w-full md:w-1/2 p-6 bg-gray-700 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold text-gray-200 mb-4 border-b border-gray-600 pb-2">Backup Service Data</h2>
+                <p class="text-sm text-gray-400 mb-4">Manage YAML backups of all your service entries.</p>
+                <form action="{{ url_for('settings') }}" method="POST" class="space-y-4">
+                    <input type="hidden" name="action" value="backup">
+                    <button type="submit" name="backup_operation" value="download_all" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500">
+                        Download Full Backup (YAML)
+                    </button>
+                    <button type="submit" name="backup_operation" value="save_on_server" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-teal-500">
+                        Save Full Backup to Server
+                    </button>
+                </form>
+            </section>
 
-    <hr class="my-4">
+            <section id="restore-section" class="w-full md:w-1/2 p-6 bg-gray-700 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold text-gray-200 mb-4 border-b border-gray-600 pb-2">Restore Service Data</h2>
+                <p class="text-sm text-gray-400 mb-4">Restore service entries from a YAML backup file.</p>
+                <form action="{{ url_for('settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+                    <input type="hidden" name="action" value="restore">
 
-    <!-- Restore -->
-    <form method="POST" enctype="multipart/form-data">
-      <input type="hidden" name="action" value="restore">
+                    <div>
+                        <span class="block text-sm font-medium text-gray-300 mb-2">Restore Source:</span>
+                        <div class="space-y-2">
+                            <div class="flex items-center">
+                                <input id="restore_from_server_select" name="restore_source" type="radio" value="server" checked class="h-4 w-4 text-indigo-500 border-gray-500 focus:ring-indigo-400 bg-gray-600" onchange="toggleRestoreSource(this.value)">
+                                <label for="restore_from_server_select" class="ml-2 block text-sm text-gray-300">
+                                    Select from server backups
+                                </label>
+                            </div>
+                            <div class="flex items-center">
+                                <input id="restore_from_upload" name="restore_source" type="radio" value="upload" class="h-4 w-4 text-indigo-500 border-gray-500 focus:ring-indigo-400 bg-gray-600" onchange="toggleRestoreSource(this.value)">
+                                <label for="restore_from_upload" class="ml-2 block text-sm text-gray-300">
+                                    Upload a custom YAML file
+                                </label>
+                            </div>
+                        </div>
+                    </div>
 
-      <div class="mb-3">
-        <label for="restore_mode" class="form-label">Restore Mode</label>
-        <select class="form-select" name="mode" id="restore_mode">
-          <option value="all">All Entries</option>
-          <option value="static">Static Only</option>
-        </select>
-      </div>
+                    <div id="server-file-selector-section" class="space-y-1">
+                        <label for="server_backup_filename" class="block text-sm font-medium text-gray-300">Available server backups:</label>
+                        <select id="server_backup_filename" name="server_backup_filename" class="w-full p-2 border border-gray-500 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-600 text-gray-200 placeholder-gray-400">
+                            {% if server_backup_files %}
+                                {% for filename in server_backup_files %}
+                                    <option value="{{ filename }}">{{ filename }}</option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="" disabled>No backup files found on server</option>
+                            {% endif %}
+                        </select>
+                    </div>
 
-      <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" id="use_custom_file" name="use_custom_file"
-               onchange="document.getElementById('restore_file_input').style.display = this.checked ? 'block' : 'none';">
-        <label class="form-check-label" for="use_custom_file">
-          Use custom restore file (instead of <code>/config/backup.yaml</code>)
-        </label>
-      </div>
+                    <div id="file-upload-section" class="hidden space-y-1">
+                         <label for="restore_file_input_label" class="block text-sm font-medium text-gray-300">Select YAML file to restore:</label>
+                        <div class="mt-1 flex items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-500 border-dashed rounded-md">
+                            <div class="space-y-1 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                <div class="flex text-sm text-gray-400 justify-center">
+                                    <label for="restore_file_input" class="relative cursor-pointer bg-gray-700 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-offset-gray-800 focus-within:ring-indigo-500">
+                                        <span>Upload a file</span>
+                                        <input id="restore_file_input" name="restore_file" type="file" class="sr-only" accept=".yaml,.yml">
+                                    </label>
+                                    <p class="pl-1">or drag and drop</p>
+                                </div>
+                                <p id="file-name-display" class="text-xs text-gray-500">YAML up to 10MB</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="restore-scope-section" class="space-y-1">
+                        <label for="restore_scope" class="block text-sm font-medium text-gray-300">Restore Scope:</label>
+                        <select id="restore_scope" name="restore_scope" class="w-full p-2 border border-gray-500 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-600 text-gray-200 placeholder-gray-400">
+                            <option value="all" selected>All Entries</option>
+                            <option value="static">Static Entries Only</option>
+                        </select>
+                    </div>
 
-      <div class="mb-3" id="restore_file_input" style="display: none;">
-        <label for="restore_file" class="form-label">Select YAML File</label>
-        <input type="file" class="form-control" name="restore_file" id="restore_file" accept=".yaml,.yml">
-      </div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500">
+                        Restore Data
+                    </button>
+                </form>
+            </section>
+        </div>
+    </div>
 
-      <button type="submit" class="btn btn-warning">Restore from YAML</button>
-    </form>
+    <script>
+        const serverFileSelectorSection = document.getElementById('server-file-selector-section');
+        const fileUploadSection = document.getElementById('file-upload-section');
+        const restoreFileInput = document.getElementById('restore_file_input');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        const serverBackupFilenameSelect = document.getElementById('server_backup_filename');
+        // const restoreScopeSection = document.getElementById('restore-scope-section'); // This element is always visible, no JS needed to toggle it.
 
-    <a href="/" class="btn btn-secondary mt-4">Back to Dashboard</a>
-  </div>
+        function toggleRestoreSource(selectedValue) {
+            if (selectedValue === 'server') {
+                if(serverFileSelectorSection) serverFileSelectorSection.classList.remove('hidden');
+                if(fileUploadSection) fileUploadSection.classList.add('hidden');
+                if (restoreFileInput) restoreFileInput.value = ''; 
+                if (fileNameDisplay) fileNameDisplay.textContent = 'YAML up to 10MB'; 
+                if (serverBackupFilenameSelect) serverBackupFilenameSelect.disabled = false;
+                if (restoreFileInput) restoreFileInput.disabled = true;
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+            } else if (selectedValue === 'upload') {
+                if(serverFileSelectorSection) serverFileSelectorSection.classList.add('hidden');
+                if(fileUploadSection) fileUploadSection.classList.remove('hidden');
+                if (serverBackupFilenameSelect) serverBackupFilenameSelect.disabled = true;
+                if (restoreFileInput) restoreFileInput.disabled = false;
+            }
+        }
+
+        const initiallyCheckedRestoreSource = document.querySelector('input[name="restore_source"]:checked');
+        if (initiallyCheckedRestoreSource) {
+            toggleRestoreSource(initiallyCheckedRestoreSource.value);
+        } else {
+            toggleRestoreSource('server');
+        }
+        
+        if (restoreFileInput) {
+            restoreFileInput.addEventListener('change', function() {
+                if (this.files && this.files.length > 0) {
+                    if (fileNameDisplay) {
+                        fileNameDisplay.textContent = this.files[0].name;
+                    }
+                } else {
+                    if (fileNameDisplay) {
+                        fileNameDisplay.textContent = 'YAML up to 10MB';
+                    }
+                }
+            });
+        }
+
+    </script>
+    <div class="max-w-4xl w-full mt-10 bg-gray-800 shadow-2xl rounded-lg p-6 md:p-8">
+    <h2 class="text-xl font-semibold text-gray-100 mb-4 border-b border-gray-600 pb-2">Current Configuration</h2>
+    <div class="overflow-x-auto">
+        <table class="min-w-full table-auto text-sm text-left text-gray-300">
+            <thead class="bg-gray-700 text-gray-200">
+                <tr>
+                    <th class="px-4 py-2">Key</th>
+                    <th class="px-4 py-2">Value</th>
+                    <th class="px-4 py-2">Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, value in current_config.items() %}
+                <tr class="border-b border-gray-600">
+                  <td class="px-4 py-2 font-medium">{{ key }}</td>
+                  <td class="px-4 py-2">
+                    <code>
+                    {% if key == 'api_token' %}
+                      •••••••••••••
+                    {% else %}
+                      {{ value }}
+                    {% endif %}
+                  </code>
+                </td>
+              <td class="px-4 py-2 text-sm">
+                  {% if key in config_from_env %}
+                      <span class="text-green-400">ENV</span>
+                  {% elif key in config_from_file %}
+                      <span class="text-yellow-400">YAML</span>
+                    {% else %}  
+                      <span class="text-red-400">Default / Missing</span>
+                  {% endif %}
+              </td>
+          </tr>
+          {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 </body>
 </html>

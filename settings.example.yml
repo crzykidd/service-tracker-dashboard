@@ -5,6 +5,7 @@
 # Backup file location.   Make sure this is mountable in from your container.  
 # Can be set with ENV BACKUP_PATH=/config/backups
 backup_path: /config/backups
+backup_days_to_keep: 7
 
 # API Token for connections
 # Can be set with ENV API_TOKEN=supersecrettoken
