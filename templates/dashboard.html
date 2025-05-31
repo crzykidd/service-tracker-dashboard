@@ -1,32 +1,12 @@
 <!DOCTYPE html>
-<html data-bs-theme="dark">
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Service Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    .status-container {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .status-badge {
-      padding: 2px 8px;
-      font-size: 0.8rem;
-      border-radius: 12px;
-      font-weight: bold;
-      color: white;
-      min-width: 32px;
-      text-align: center;
-    }
-    .status-success { background-color: #28a745; }
-    .status-warning { background-color: #ffc107; color: black; }
-    .status-danger  { background-color: #dc3545; }
-    .status-na      { background-color: #6c757d; }
-    .sortable a { color: inherit; text-decoration: none; }
-    .sortable a:hover { text-decoration: underline; }
-    td, th { white-space: nowrap; }
-    .table-group-header td { background-color: #343a40; font-weight: bold; }
     .logo-icon {
       height: 40px;
       max-width: 40px;
@@ -36,26 +16,159 @@
     .logo-icon:hover {
       transform: scale(1.1);
     }
-
   </style>
-  <script>
-    function copyToClipboard(text, el) {
-      navigator.clipboard.writeText(text).then(() => {
-        const original = el.innerHTML;
-        el.innerHTML = "<em>Copied!</em>";
-        setTimeout(() => el.innerHTML = original, 1000);
-      });
-    }
-  </script>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans">
+  <div class="max-w-7xl mx-auto">
+    <div class="flex justify-end gap-2 mb-6">
+      <a href="/add" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Add Record</a>
+      <a href="/tiled_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Tile View</a>
+      <a href="/settings" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Settings</a>
+    </div>
+
+    <div class="flex flex-wrap gap-4 mb-4 items-center">
+      <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
+      <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+        <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
+        <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
+        <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
+        <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
+      </select>
+      <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
+    </div>
+
+    {% if msg == 'deleted' %}
+      <div class="bg-red-700 text-white px-4 py-2 rounded mb-4">Entry deleted successfully.</div>
+    {% elif msg == 'added' %}
+      <div class="bg-green-700 text-white px-4 py-2 rounded mb-4">Entry added successfully.</div>
+    {% endif %}
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full table-auto text-sm text-left border-collapse">
+        <thead class="bg-gray-700 text-gray-200">
+          <tr>
+            <th class="px-3 py-2">Logo</th>
+            <th class="px-3 py-2">Group</th>
+            <th class="px-3 py-2">Container</th>
+            <th class="px-3 py-2">Stack</th>
+            <th class="px-3 py-2">Host</th>
+            <th class="px-3 py-2">Internal</th>
+            <th class="px-3 py-2">External</th>
+            <th class="px-3 py-2">Last Update</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Tools</th>
+            <th class="px-3 py-2">Actions</th>
+          </tr>
+        </thead>
+        {% for group, group_entries in grouped_entries.items() %}
+        <tbody>
+          <tr class="bg-gray-800 font-semibold">
+            <td colspan="11" class="px-4 py-2">{{ group }}</td>
+          </tr>
+        </tbody>
+        <tbody>
+          {% for entry in group_entries %}
+          <tr class="border-b border-gray-700" data-entry data-group="{{ entry.group_name }}" data-container="{{ entry.container_name }}" data-stack="{{ entry.stack_name }}">
+            <td class="px-3 py-2">
+              {% if entry.image_icon %}
+                {% set target_url = entry.internalurl or entry.externalurl %}
+                {% if target_url %}
+                  <a href="{{ target_url }}" target="_blank"><img src="{{ url_for('serve_image', filename=entry.image_icon) }}" class="logo-icon" alt="Logo" /></a>
+                {% else %}
+                  <img src="{{ url_for('serve_image', filename=entry.image_icon) }}" class="logo-icon" alt="Logo" />
+                {% endif %}
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">{{ entry.group_name }}</td>
+            <td class="px-3 py-2">
+              <div>{{ entry.container_name }}</div>
+              {% if entry.container_id %}
+              <div class="text-xs text-gray-400 cursor-pointer" onclick="copyToClipboard('{{ entry.container_id }}', this)" title="Click to copy full ID">
+                <code>{{ entry.container_id[:12] }}</code>
+              </div>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">{{ entry.stack_name or '' }}</td>
+            <td class="px-3 py-2">{{ entry.host }}</td>
+            <td class="px-3 py-2">
+              {% if entry.internalurl %}
+                {% set status_class = 'bg-gray-600' %}
+                {% set tooltip = 'Not Monitored' %}
+                {% set display = 'NA' %}
+                {% if entry.internal_health_check_enabled %}
+                  {% set status_class = 'bg-green-600' if entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 else 'bg-red-600' %}
+                  {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                  {% set display = entry.internal_health_check_status or '?' %}
+                {% endif %}
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
+                  <a href="{{ entry.internalurl }}" target="_blank" class="border border-blue-400 text-blue-300 text-xs px-2 py-0.5 rounded hover:bg-blue-400 hover:text-white transition">Internal</a>
+                </div>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">
+              {% if entry.externalurl %}
+                {% set status_class = 'bg-gray-600' %}
+                {% set tooltip = 'Not Monitored' %}
+                {% set display = 'NA' %}
+                {% if entry.external_health_check_enabled %}
+                  {% set status_class = 'bg-green-600' if entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 else 'bg-red-600' %}
+                  {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                  {% set display = entry.external_health_check_status or '?' %}
+                {% endif %}
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
+                  <a href="{{ entry.externalurl }}" target="_blank" class="border border-green-400 text-green-300 text-xs px-2 py-0.5 rounded hover:bg-green-400 hover:text-white transition">External</a>
+                </div>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">{{ entry.last_updated|time_since }}</td>
+            <td class="px-3 py-2">
+              {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'Never updated' %}
+              {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
+              {% if entry.docker_status in ['start', 'running'] %}
+                <span class="bg-green-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
+              {% elif entry.docker_status in ['die', 'exited'] %}
+                <span class="bg-red-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
+              {% elif entry.docker_status %}
+                <span class="bg-yellow-400 text-black px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
+              {% else %}
+                <span class="bg-gray-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Unknown</span>
+              {% endif %}
+              {% if entry.image_tag %}
+                <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">
+              {% if STD_DOZZLE_URL and entry.container_id %}
+                <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
+                  <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" class="h-5" />
+                </a>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">
+              <a href="{{ url_for('edit_entry', id=entry.id, ref=request.full_path) }}" class="border border-yellow-400 text-yellow-300 text-xs px-2 py-0.5 rounded hover:bg-yellow-400 hover:text-black transition">Edit</a>
+              {% if entry.is_static %}
+                <span title="Static entry — API updates blocked" class="ml-2">🔒</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
   <script>
     let secondsSinceRefresh = 0;
     document.addEventListener('DOMContentLoaded', function () {
       const filterInput = document.getElementById('filterInput');
       const refreshLabel = document.getElementById('refreshTimer');
+      const rows = document.querySelectorAll('table tbody tr[data-entry]');
 
       filterInput.addEventListener('input', function () {
-        const filter = filterInput.value.toLowerCase();
-        const rows = document.querySelectorAll('table tbody tr[data-entry]');
+        const filter = this.value.toLowerCase();
         rows.forEach(row => {
           const group = row.dataset.group.toLowerCase();
           const name = row.dataset.container.toLowerCase();
@@ -64,24 +177,12 @@
         });
       });
 
-      const urlParams = new URLSearchParams(window.location.search);
-      if (!urlParams.has('group_by')) {
-        urlParams.set('group_by', 'group_name');
-        window.location.search = urlParams.toString();
-      }
-
-      const hasSort = urlParams.has('sort') && urlParams.has('dir');
-
       setInterval(() => {
         secondsSinceRefresh++;
         if (refreshLabel) {
-          const minutes = Math.floor(secondsSinceRefresh / 60);
-          const seconds = secondsSinceRefresh % 60;
-          refreshLabel.textContent = `Refreshed ${minutes > 0 ? minutes + 'm ' : ''}${seconds}s ago`;
-        }
-
-        if (!hasSort && document.activeElement !== filterInput && secondsSinceRefresh >= 30) {
-          window.location.reload();
+          const m = Math.floor(secondsSinceRefresh / 60);
+          const s = secondsSinceRefresh % 60;
+          refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
         }
       }, 1000);
 
@@ -91,183 +192,15 @@
         params.set("group_by", selected);
         window.location.search = params.toString();
       });
-
-      // Remember collapse state
-      const collapsibles = document.querySelectorAll('[data-bs-toggle="collapse"]');
-      collapsibles.forEach(btn => {
-        const targetId = btn.getAttribute('data-bs-target');
-        const state = localStorage.getItem(targetId);
-        if (state === 'collapsed') {
-          document.querySelector(targetId).classList.remove('show');
-        }
-        btn.addEventListener('click', () => {
-          const isCollapsed = !document.querySelector(targetId).classList.contains('show');
-          localStorage.setItem(targetId, isCollapsed ? 'expanded' : 'collapsed');
-        });
-      });
     });
+
+    function copyToClipboard(text, el) {
+      navigator.clipboard.writeText(text).then(() => {
+        const original = el.innerHTML;
+        el.innerHTML = "<em>Copied!</em>";
+        setTimeout(() => el.innerHTML = original, 1000);
+      });
+    }
   </script>
-</head>
-<body class="bg-dark text-light">
-<div class="container mt-5">
-  <div class="row mb-3 align-items-center">
-    <div class="col-md-3">
-      <input type="text" id="filterInput" class="form-control" placeholder="Filter by Group, Container, or Stack">
-    </div>
-    <div class="col-md-3">
-      <select id="groupBySelect" class="form-select">
-        <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
-        <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
-        <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
-        <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
-      </select>
-    </div>
-    <div class="col-md-auto">
-      <a href="{{ url_for('add_entry', ref=request.full_path) }}" class="btn btn-sm btn-outline-light">Add Record</a>
-      <a href="/tiled_dash" class="btn btn-sm btn-outline-secondary ms-2">Tile View</a>
-      <a href="/settings" class="btn btn-sm btn-outline-secondary ms-2">Settings</a>
-
-    </div>
-    <div class="col-md-auto text-muted small" id="refreshTimer" style="cursor: pointer;" onclick="window.location.reload()">
-      Refreshed just now
-    </div>
-  </div>
-
-  {% if msg == 'deleted' %}
-    <div class="alert alert-danger" role="alert">Entry deleted successfully.</div>
-  {% elif msg == 'added' %}
-    <div class="alert alert-success" role="alert">Entry added successfully.</div>
-  {% endif %}
-
-  <table class="table table-hover table-bordered table-dark">
-    <thead class="table-secondary">
-      <tr>
-        <th>Logo</th>
-        <th>Group</th>
-        <th>Container Name</th>
-        <th>Stack</th>
-        <th>Host</th>
-        <th>Internal URL</th>
-        <th>External URL</th>
-        <th>Last API Update</th>
-        <th>Docker Status</th>
-        <th>Tools</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    {% for group, group_entries in grouped_entries.items() %}
-      <tbody>
-        <tr class="table-group-header">
-          <td colspan="11">
-            <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#group-{{ loop.index }}">▼ {{ group }}</button>
-          </td>
-        </tr>
-      </tbody>
-      <tbody id="group-{{ loop.index }}" class="collapse show">
-        {% for entry in group_entries %}
-          <tr data-entry data-group="{{ entry.group_name }}" data-container="{{ entry.container_name }}" data-stack="{{ entry.stack_name }}">
-            <td>
-              {% if entry.image_icon %}
-                {% set target_url = entry.internalurl or entry.externalurl %}
-                {% if target_url %}
-                  <a href="{{ target_url }}" target="_blank">
-                    <img src="{{ url_for('serve_image', filename=entry.image_icon) }}" alt="Logo" class="logo-icon">
-                  </a>
-                {% else %}
-                  <img src="{{ url_for('serve_image', filename=entry.image_icon) }}" alt="Logo" class="logo-icon">
-                {% endif %}
-              {% endif %}
-            </td>
-            <td>{{ entry.group_name }}</td>
-            <td>
-              <div>{{ entry.container_name }}</div>
-              {% if entry.container_id %}
-                <div style="font-size: 0.75rem; cursor: pointer;" 
-                    onclick="copyToClipboard('{{ entry.container_id }}', this)" 
-                    title="Click to copy full ID">
-                  <code style="color: #cccccc;">{{ entry.container_id[:12] }}</code>
-                </div>
-              {% endif %}
-            </td>
-
-            <td>{{ entry.stack_name or '' }}</td>
-            <td>{{ entry.host }}</td>
-            <td>
-              {% if entry.internalurl %}
-                {% set status_class = 'status-na' %}
-                {% set tooltip = 'Not Monitored' %}
-                {% set status_display = 'NA' %}
-                {% if entry.internal_health_check_enabled %}
-                  {% set status_class = 'status-success' if entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 else 'status-danger' %}
-                  {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
-                  {% set status_display = entry.internal_health_check_status or '?' %}
-                {% endif %}
-                <div class="status-container">
-                  <span class="status-badge {{ status_class }}" title="{{ tooltip }}">{{ status_display }}</span>
-                  <a href="{{ entry.internalurl }}" class="btn btn-sm btn-outline-info" target="_blank">Internal</a>
-                </div>
-              {% endif %}
-            </td>
-            <td>
-              {% if entry.externalurl %}
-                {% set status_class = 'status-na' %}
-                {% set tooltip = 'Not Monitored' %}
-                {% set status_display = 'NA' %}
-                {% if entry.external_health_check_enabled %}
-                  {% set status_class = 'status-success' if entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 else 'status-danger' %}
-                  {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
-                  {% set status_display = entry.external_health_check_status or '?' %}
-                {% endif %}
-                <div class="status-container">
-                  <span class="status-badge {{ status_class }}" title="{{ tooltip }}">{{ status_display }}</span>
-                  <a href="{{ entry.externalurl }}" class="btn btn-sm btn-outline-success" target="_blank">External</a>
-                </div>
-              {% endif %}
-            </td>
-            <td>{{ entry.last_updated|time_since }}</td>
-            <td>
-              {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'Never updated' %}
-              {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
-
-              {% if entry.docker_status == 'start' or entry.docker_status == 'running' %}
-                <span class="badge bg-success" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
-              {% elif entry.docker_status == 'die' or entry.docker_status == 'exited' %}
-                <span class="badge bg-danger" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
-              {% elif entry.docker_status %}
-                <span class="badge bg-warning text-dark" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
-              {% else %}
-                <span class="badge bg-secondary" title="Updated {{ tooltip }} — {{ timestamp }}">Unknown</span>
-              {% endif %}
-
-              {% if entry.image_tag %}
-                <div style="font-size: 0.75rem; color: #cccccc; margin-top: 0.25rem;">
-                  Tag: <code>{{ entry.image_tag }}</code>
-                </div>
-              {% endif %}
-             </td>
-            
-
-            <td>
-              {% if STD_DOZZLE_URL and entry.container_id %}
-                <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
-                  <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" style="height: 20px;">
-                </a>
-              {% endif %}
-            </td>
-            <td>
-              <a href="{{ url_for('edit_entry', id=entry.id, ref=request.full_path) }}" class="btn btn-sm btn-outline-warning">Edit</a>
-
-
-              {% if entry.is_static %}
-                <span title="Static entry — API updates blocked" style="margin-left: 6px;">🔒</span>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    {% endfor %}
-  </table>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

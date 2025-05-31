@@ -46,18 +46,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-settings = load_settings()
+config, config_from_env, config_from_file = load_settings()
+
 logger.info("🔧 Loaded settings:")
-for k, v in settings.items():
+for k, v in config.items():
     logger.info(f"    {k} = {v}")
 
 # Optionally populate into app.config if you use `Flask config`
-app.config.update(settings)
+app.config.update(config)
 
 logger.info("⚙️ Flask config (from settings):")
-for k in settings:
+for k in config:
     logger.info(f"    {k} = {app.config.get(k)}")
-# Or just reference as `settings["api_token"]`, etc.
 
 
 # Ensure the directory exists
@@ -135,27 +135,6 @@ class ServiceEntry(db.Model):
         # If no API update has ever been recorded, and it's not static, consider it stale or unknown.
         # For a newly added dynamic entry, this would be True until the first API update.
         return True
-def fetch_icon_if_missing(image_name):
-    if not image_name:
-        return None
-    filename = f"{image_name}.svg"
-    local_path = os.path.join(IMAGE_DIR, filename)
-    if os.path.exists(local_path):
-        return filename
-
-    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{filename}"
-    try:
-        response = requests.get(icon_url, timeout=5)
-        if response.status_code == 200:
-            with open(local_path, 'wb') as f:
-                f.write(response.content)
-            logger.info(f"⬇️ Downloaded icon for {image_name} to {local_path}")
-            return filename
-        else:
-            logger.warning(f"⚠️ Icon not found for {image_name} (HTTP {response.status_code})")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to download icon for {image_name}: {e}")
-    return None
 
 @app.template_filter('time_since')
 def time_since(dt):
@@ -304,48 +283,116 @@ def db_dump():
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)    
 
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
+    settings, config_from_env, config_from_file = load_settings()
+    BACKUP_DIR = settings.get("backup_path", "/config/backups")
+    BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
     if request.method == 'POST':
         action = request.form.get('action')
-        mode = request.form.get('mode', 'all')
 
         if action == 'backup':
+            backup_operation = request.form.get('backup_operation')
+            
+            # Backup is always for all entries now
             entries = ServiceEntry.query.all()
-            if mode == 'static':
-                entries = [e for e in entries if e.is_static]
-
             data = [e.to_dict() for e in entries]
 
-            # Write to /config/backup.yaml
-            with open(BACKUP_PATH, 'w') as f:
-                yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+            # The default backup file is always written/updated first
+            # You might want to name this default file more explicitly, e.g., latest_backup.yaml
+            # or use BACKUP_PATH directly if it's intended as the primary/latest server backup.
+            # For this example, we continue to use BACKUP_PATH as the target for server saves.
+            try:
+                with open(BACKUP_PATH, 'w') as f:
+                    yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+                logger.info(f"📦 Default YAML backup updated at {BACKUP_PATH} (all entries)")
 
-            logger.info(f"📦 YAML backup saved to {BACKUP_PATH} ({mode} entries)")
+                if backup_operation == 'save_on_server':
+                    # If the goal was just to save on the server, we're done.
+                    flash(f"✅ Backup saved to server: {BACKUP_PATH}", "success")
+                    return redirect(url_for('settings'))
+                
+                elif backup_operation == 'download_all':
+                    # If the goal is to download, send the file that was just written.
+                    logger.info(f"📦 Preparing YAML backup for download from {BACKUP_PATH} (all entries)")
+                    return send_file(
+                        BACKUP_PATH,
+                        mimetype='text/yaml',
+                        as_attachment=True,
+                        download_name=f'service_backup_all_{datetime.now().strftime("%Y%m%d_%H%M%S")}.yaml' # Added timestamp to download
+                    )
+                else:
+                    flash("Unknown backup operation.", "danger")
+                    return redirect(url_for('settings'))
 
-            return send_file(
-                BACKUP_PATH,
-                mimetype='text/yaml',
-                as_attachment=True,
-                download_name=f'service_backup_{mode}.yaml'
-            )
+            except Exception as e:
+                logger.exception("❌ Backup operation failed")
+                flash(f"Backup operation failed: {str(e)}", "danger")
+                return redirect(url_for('settings'))
 
         elif action == 'restore':
-            use_custom = request.form.get('use_custom_file') == 'on'
-            file = request.files.get('restore_file') if use_custom else None
+            restore_source = request.form.get('restore_source')
+            restore_scope = request.form.get('restore_scope', 'all') # Defaults to 'all'
+            
+            records = None
+            source_description = "unknown source"
 
             try:
-                if file:
-                    content = file.read().decode('utf-8')
-                    records = yaml.safe_load(content)
+                if restore_source == 'upload':
+                    file = request.files.get('restore_file')
+                    if file and file.filename:
+                        content = file.read().decode('utf-8')
+                        records = yaml.safe_load(content)
+                        source_description = f"uploaded file '{file.filename}'"
+                    else:
+                        flash("No file uploaded for restore.", "warning")
+                        return redirect(url_for('settings'))
+                
+                elif restore_source == 'server':
+                    selected_filename = request.form.get('server_backup_filename')
+                    if selected_filename:
+                        # Basic security check: ensure filename doesn't try to escape BACKUP_DIR
+                        if ".." in selected_filename or selected_filename.startswith("/"):
+                            flash("Invalid server filename selected.", "danger")
+                            return redirect(url_for('settings'))
+                        
+                        file_path = os.path.join(BACKUP_DIR, selected_filename)
+                        if os.path.exists(file_path) and os.path.isfile(file_path):
+                            with open(file_path, 'r') as f:
+                                records = yaml.safe_load(f)
+                            source_description = f"server file '{selected_filename}'"
+                        else:
+                            flash(f"Selected server backup file '{selected_filename}' not found or is invalid.", "danger")
+                            return redirect(url_for('settings'))
+                    else:
+                        flash("No server backup file selected.", "warning")
+                        return redirect(url_for('settings'))
                 else:
-                    with open(BACKUP_PATH, 'r') as f:
-                        records = yaml.safe_load(f)
+                    flash("Invalid restore source selected.", "danger")
+                    return redirect(url_for('settings'))
 
-                restored = 0
+                if records is None:
+                    if not flash_is_present(request): # Avoid double flashing if already flashed above
+                         flash("Could not load records for restore.", "danger")
+                    return redirect(url_for('settings'))
+
+                restored_count = 0
+                skipped_count = 0
+                
                 for item in records:
                     if not item.get('host') or not item.get('container_name'):
                         logger.warning(f"⛔ Skipping entry with missing host/container_name: {item}")
+                        skipped_count +=1
+                        continue
+
+                    item_is_static_from_backup = item.get('is_static', False)
+
+                    # Apply restore_scope: if scope is 'static', skip non-static items from backup
+                    if restore_scope == 'static' and not item_is_static_from_backup:
+                        skipped_count +=1
                         continue
 
                     entry = ServiceEntry.query.filter_by(
@@ -353,30 +400,81 @@ def settings():
                         host=item['host']
                     ).first()
 
-                    if entry and entry.is_static:
-                        continue
-
-                    if not entry:
+                    if entry: # Entry exists in DB
+                        # Rule: Protect existing static entries in DB from being overwritten by non-static items
+                        # during a 'restore all' operation.
+                        if entry.is_static and restore_scope == 'all' and not item_is_static_from_backup:
+                            logger.info(f"ℹ️ Skipping update for DB static entry '{entry.container_name}' "
+                                        f"by non-static item from backup during 'all' scope restore.")
+                            skipped_count +=1
+                            continue
+                        # Otherwise (entry is not static, or item from backup is static, or scope is 'static'), proceed to update.
+                    else: # New entry, create it
                         entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
                         db.session.add(entry)
 
+                    # Apply fields from backup item to DB entry
                     for field, value in item.items():
-                        if hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update']:
+                        # Ensure 'is_static' is handled correctly based on the item from backup
+                        if field == 'is_static':
+                            if hasattr(entry, 'is_static'):
+                                setattr(entry, 'is_static', item_is_static_from_backup)
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update']:
                             setattr(entry, field, value)
+                    
+                    # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
+                    # (especially if item_is_static_from_backup was derived from .get with a default)
+                    if not entry.id and hasattr(entry, 'is_static'): # if it's a new entry being added
+                         if 'is_static' not in item: # if 'is_static' was not explicitly in the backup item dict
+                            setattr(entry, 'is_static', item_is_static_from_backup) # ensure it's set from .get default
 
                     entry.last_updated = datetime.now()
-                    restored += 1
-
+                    restored_count += 1
+                
                 db.session.commit()
-                flash(f"✅ Restored {restored} entries from YAML.", "success")
-                logger.info(f"♻️ Restored {restored} entries from {'uploaded file' if file else BACKUP_PATH}")
+                flash_message = f"✅ Restored {restored_count} entries"
+                if restore_scope == 'static':
+                    flash_message += " (static entries only)"
+                flash_message += f" from {source_description}."
+                if skipped_count > 0:
+                    flash_message += f" Skipped {skipped_count} items."
+                flash(flash_message, "success")
+                logger.info(f"♻️ {flash_message}")
+
             except Exception as e:
+                db.session.rollback() # Rollback in case of error during DB operations
                 logger.exception("❌ Restore failed")
                 flash(f"Restore failed: {str(e)}", "danger")
-
+            
             return redirect(url_for('settings'))
 
-    return render_template('settings.html')
+    # GET request: List backup files for the restore dropdown
+    server_backup_files = []
+    if os.path.exists(BACKUP_DIR):
+        try:
+            # List files and filter for .yaml or .yml, sort them (e.g., reverse for newest first if names allow)
+            all_files = [f for f in os.listdir(BACKUP_DIR) if os.path.isfile(os.path.join(BACKUP_DIR, f)) and (f.endswith('.yaml') or f.endswith('.yml'))]
+            # You might want to sort these files, e.g., by modification time or name
+            all_files.sort(reverse=True) # Example: newest first if names are sortable by time
+            server_backup_files = all_files
+        except Exception as e:
+            logger.exception(f"Error listing backup files from {BACKUP_DIR}")
+            flash(f"Could not list server backup files: {str(e)}", "warning")
+            
+    return render_template(
+        'settings.html',
+         current_config=config,
+         config_from_env=config_from_env,
+         config_from_file=config_from_file,
+         server_backup_files=server_backup_files
+    )
+
+# Helper to check if flash messages are already present (to avoid duplicates)
+# This is a basic check; Flask's get_flashed_messages usually clears them.
+def flash_is_present(req):
+    return '_flashes' in req.environ.get('flask._flashes', [])
+
+
 
 
 @app.route('/images/<path:filename>')
@@ -387,64 +485,47 @@ def serve_image(filename):
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_entry():
-    raw_referrer = request.args.get('ref', '/')
-    parsed = urlparse(raw_referrer)
-    referrer = parsed.path
-    if parsed.query:
-        referrer += '?' + parsed.query
-    if not referrer.startswith('/'):
-        referrer = '/tiled_dash'
-
     if request.method == 'POST':
         host = request.form.get('host')
+        # Use 'application' from form, map to container_name
         container_name = request.form.get('application')
+        # internalurl from form
         internalurl = request.form.get('internal_url')
+        # externalurl from form
         externalurl = request.form.get('external_url')
         group_name = request.form.get('group_name')
+        # image_icon from form
         image_icon = request.form.get('icon_image')
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, ref=referrer)
+            return render_template("add_entry.html", msg='error', entry=request.form)
 
+        # Check for duplicates based on host and container_name
         existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
         if existing:
             flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
-            return render_template("add_entry.html", msg='duplicate', entry=request.form, ref=referrer)
+            return render_template("add_entry.html", msg='duplicate', entry=request.form)
 
+        # Handle boolean for internal_health_check (from HTML name 'internal_health_check')
         internal_health_check_enabled = request.form.get('internal_health_check') == 'on'
+        # Handle boolean for external_health_check (from HTML name 'external_health_check')
         external_health_check_enabled = request.form.get('external_health_check') == 'on'
+        # Handle boolean for is_static (from HTML name 'locked')
         is_static = request.form.get('locked') == 'on'
 
-        if image_icon:
-            icon_path = os.path.join(IMAGE_DIR, image_icon)
-            if not os.path.exists(icon_path):
-                try:
-                    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
-                    response = requests.get(icon_url, timeout=5)
-                    if response.status_code == 200:
-                        with open(icon_path, 'wb') as f:
-                            f.write(response.content)
-                        logger.info(f"📥 Downloaded manually supplied icon: {image_icon}")
-                    else:
-                        msg = f"Icon not found (HTTP {response.status_code}) at {icon_url}"
-                        if app.debug:
-                            logger.debug(msg)
-                        else:
-                            logger.warning(f"⚠️ {msg}")
-                except Exception as e:
-                    msg = f"Exception while downloading icon '{image_icon}': {e}"
-                    if app.debug:
-                        logger.debug(msg)
-                    else:
-                        logger.warning(f"⚠️ {msg}")
-        elif not image_icon and container_name:
-            derived_icon_name = container_name.lower().replace(" ", "-")
+        # Attempt to fetch icon if not provided and container_name is available
+        if not image_icon and container_name:
+            # Sanitize container_name to be a valid part of a filename if needed,
+            # or use a derived name. For simplicity, using container_name directly.
+            # Your fetch_icon_if_missing might need adjustment if container_name contains chars invalid for filenames.
+            derived_icon_name = container_name.lower().replace(" ", "-") # Example derivation
             image_icon = fetch_icon_if_missing(derived_icon_name)
             if image_icon:
-                logger.info(f"💡 Automatically fetched icon '{image_icon}' for new entry '{container_name}'.")
+                 logger.info(f"💡 Automatically fetched icon '{image_icon}' for new entry '{container_name}'.")
             else:
-                logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'. Manual entry recommended.")
+                 logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'. Manual entry recommended.")
+
 
         entry = ServiceEntry(
             host=host,
@@ -452,19 +533,22 @@ def add_entry():
             internalurl=internalurl,
             externalurl=externalurl,
             last_updated=datetime.now(),
-            group_name=group_name if group_name else "zz_none",
+            # last_api_update will be set by API calls, not manual add
+            group_name=group_name if group_name else "zz_none", # Ensure default if empty
             internal_health_check_enabled=internal_health_check_enabled,
             external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             is_static=is_static
+            # Other fields like container_id, stack_name, docker_status, etc.,
+            # are typically populated by API updates or could be added as optional form fields.
+            # For now, they will be None or their default.
         )
         db.session.add(entry)
         db.session.commit()
         flash(f"Service entry '{container_name}' added successfully!", 'success')
-        return redirect(referrer)
+        return redirect(url_for('tiled_dashboard')) # Or 'dashboard'
 
-    return render_template("add_entry.html", msg='', entry={}, ref=referrer)
-
+    return render_template("add_entry.html", msg='', entry={}) # Pass an empty dict for `entry` on GET
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
@@ -708,6 +792,55 @@ def health_check_loop():
 
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     threading.Thread(target=health_check_loop, daemon=True).start()
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+# for 5 min testing
+from apscheduler.triggers.interval import IntervalTrigger
+
+def run_scheduled_backup():
+    with app.app_context():
+        config, _, _ = load_settings()
+        backup_dir = config.get("backup_path", "/config/backups")
+        days_to_keep = int(config.get("backup_days_to_keep", 7))
+
+        os.makedirs(backup_dir, exist_ok=True)
+
+        filename = datetime.now().strftime("%Y-%m-%d-std_backup.yml")
+        full_path = os.path.join(backup_dir, filename)
+
+        try:
+            entries = ServiceEntry.query.all()
+            data = [e.to_dict() for e in entries]
+            with open(full_path, 'w') as f:
+                yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+            logger.info(f"🌙 Scheduled backup saved to {full_path}")
+        except Exception as e:
+            logger.error(f"❌ Scheduled backup failed: {e}")
+
+        # Cleanup
+        now = time.time()
+        cutoff = now - (days_to_keep * 86400)
+        removed = 0
+        for fname in os.listdir(backup_dir):
+            if fname.endswith("-std_backup.yml"):
+                fpath = os.path.join(backup_dir, fname)
+                if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
+                    try:
+                        os.remove(fpath)
+                        logger.info(f"🧹 Removed old backup: {fname}")
+                        removed += 1
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not remove old backup {fname}: {e}")
+        if removed:
+            logger.info(f"🧹 Removed {removed} expired backup(s) from {backup_dir}")
+
+
+# Start background scheduler
+scheduler = BackgroundScheduler()
+#scheduler.add_job(run_scheduled_backup, CronTrigger(hour=0, minute=5))  # 12:05 AM
+scheduler.add_job(run_scheduled_backup, IntervalTrigger(minutes=1))
+scheduler.start()
 
 app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
