@@ -60,7 +60,13 @@ logger.info("⚙️ Flask config (from settings):")
 for k in config:
     logger.info(f"    {k} = {app.config.get(k)}")
 
-
+def read_version_info():
+    try:
+        with open("/app/version.txt", "r") as f:
+            return dict(line.strip().split("=", 1) for line in f)
+    except Exception as e:
+        logger.warning(f"⚠️ Could not read version info: {e}")
+        return {}
 # Ensure the directory exists
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
@@ -855,6 +861,12 @@ scheduler.add_job(run_scheduled_backup, IntervalTrigger(minutes=1))
 scheduler.start()
 
 app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+
+version_info = read_version_info()
+logger.info(f"🚀 Service Tracker Dashboard Starting...")
+logger.info(f"📦 Version: {version_info.get('version', 'unknown')}")
+logger.info(f"🔀 Commit: {version_info.get('commit', 'unknown')}")
+logger.info(f"⏱️ Build Time: {version_info.get('build_time', 'unknown')}")
 
 if __name__ == '__main__':
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
