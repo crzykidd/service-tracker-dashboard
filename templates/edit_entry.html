@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Service Entry</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
         .bg-dashboard-dark { background-color: #1a202c; }
@@ -39,23 +40,30 @@
             word-break: break-all;
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="bg-dashboard-dark text-dashboard-primary flex items-center justify-center min-h-screen p-4 sm:p-6">
     <div class="w-full max-w-2xl">
+        <div class="w-full max-w-4xl flex justify-end gap-2 mb-4">
+            <a href="/tiled_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Tile View</a>
+            <a href="/" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Dashboard</a>
+            <a href="/add" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Add Record</a>
+        </div>
+
         <div class="bg-dashboard-card shadow-2xl rounded-xl p-6 sm:p-8 md:p-10 mb-6">
             <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Edit Service Entry</h1>
             <form action="{{ url_for('edit_entry', id=entry.id, ref=ref) }}" method="POST">
-
                 <input type="hidden" name="force_update_icon" value="true">
+
                 <div class="mb-5">
                     <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
                     <input type="text" name="host" id="host" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.host }}">
                 </div>
+
                 <div class="mb-5">
                     <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
                     <input type="text" name="container_name" id="application" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.container_name }}">
                 </div>
+
                 <div class="mb-5">
                     <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
                     <div class="flex items-center space-x-3">
@@ -66,6 +74,7 @@
                         </div>
                     </div>
                 </div>
+
                 <div class="mb-5">
                     <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
                     <div class="flex items-center space-x-3">
@@ -76,16 +85,19 @@
                         </div>
                     </div>
                 </div>
+
                 <div class="mb-5">
                     <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
                     <input type="text" name="group_name" id="group_name" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.group_name or '' }}">
                 </div>
+
                 <div class="mb-5">
                     <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
                     <input type="text" name="image_icon" id="icon_image" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.image_icon or '' }}">
                     <p class="mt-1 text-xs text-dashboard-secondary">Enter the filename of the SVG icon (e.g., service.svg).</p>
                     <p class="mt-1 text-xs text-dashboard-secondary">(will try to match automatically from application above.)</p>
                 </div>
+
                 <div class="mb-6 sm:mb-8">
                     <div class="flex items-center">
                         <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500" {% if entry.is_static %}checked{% endif %}>
@@ -93,11 +105,12 @@
                     </div>
                     <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by automated API calls.</p>
                 </div>
+
                 <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
                     <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Update Entry</button>
                     <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Cancel</button>
                 </div>
-               <hr class="my-6 border-dashboard-accent">
+                               <hr class="my-6 border-dashboard-accent">
               <div class="mt-6 bg-dashboard-info-box rounded-lg p-4">
                 <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
                 <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
@@ -107,16 +120,16 @@
                 <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                     <input type="text" name="delete_confirmation" id="delete_confirmation"
                           placeholder="Type container name to confirm" 
-                          class="form-input w-full sm:w-auto px-4 py-2 rounded-lg text-sm" required>
+                          class="form-input w-full sm:w-auto px-4 py-2 rounded-lg text-sm">
                     <button type="submit" name="delete" value="true"
                             class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
                         Delete Entry
                     </button>
                 </div>
             </div>
-
             </form>
         </div>
+
         <div class="bg-dashboard-info-box shadow-xl rounded-xl p-6 sm:p-8">
             <h2 class="text-xl sm:text-2xl font-semibold mb-4 sm:mb-6 text-dashboard-primary">Additional Information</h2>
             <div class="space-y-4">

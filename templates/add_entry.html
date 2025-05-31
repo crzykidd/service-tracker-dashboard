@@ -5,20 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add New Service Entry</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Custom styles if needed, or to define a color palette */
         body {
-            font-family: 'Inter', sans-serif; /* Using Inter as a modern font */
+            font-family: 'Inter', sans-serif;
         }
-        /* Example color palette (adjust to match tile_dash if specific colors are known) */
-        .bg-dashboard-dark { background-color: #1a202c; } /* Dark background for the page */
-        .bg-dashboard-card { background-color: #2d3748; } /* Lighter background for the form card */
-        .text-dashboard-primary { color: #e2e8f0; } /* Primary text color */
-        .text-dashboard-secondary { color: #a0aec0; } /* Secondary text color */
-        .border-dashboard-accent { border-color: #4a5568; } /* Border color */
-        .btn-primary { background-color: #4299e1; color: white; } /* Primary button */
+        .bg-dashboard-dark { background-color: #1a202c; }
+        .bg-dashboard-card { background-color: #2d3748; }
+        .text-dashboard-primary { color: #e2e8f0; }
+        .text-dashboard-secondary { color: #a0aec0; }
+        .border-dashboard-accent { border-color: #4a5568; }
+        .btn-primary { background-color: #4299e1; color: white; }
         .btn-primary:hover { background-color: #3182ce; }
-        .btn-secondary { background-color: #4a5568; color: white; } /* Secondary button */
+        .btn-secondary { background-color: #4a5568; color: white; }
         .btn-secondary:hover { background-color: #2d3748; }
         .form-input {
             background-color: #1a202c;
@@ -31,92 +30,88 @@
             outline: none;
         }
         .form-checkbox {
-            color: #4299e1; /* Accent color for checkbox */
+            color: #4299e1;
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="bg-dashboard-dark text-dashboard-primary flex items-center justify-center min-h-screen p-4 sm:p-6">
-    <div class="bg-dashboard-card shadow-2xl rounded-xl p-6 sm:p-8 md:p-10 w-full max-w-2xl">
-        <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
+    <div class="w-full max-w-4xl">
+        <div class="w-full flex justify-end gap-2 mb-6">
+            <a href="/tiled_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Tile View</a>
+            <a href="/" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Dashboard</a>
+            <a href="/settings" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Settings</a>
+        </div>
 
-              <form action="{{ url_for('add_entry') }}" method="POST"> <div class="mb-5">
-                <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
-                <input type="text" name="host" id="host" required
-                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                       placeholder="e.g., server01.example.com">
-            </div>
+        <div class="bg-dashboard-card shadow-2xl rounded-xl p-6 sm:p-8 md:p-10">
+            <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
 
-            <div class="mb-5">
-                <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
-                <input type="text" name="application" id="application" required
-                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                       placeholder="e.g., proxmox, unifi-controller, ilo">
-            </div>
+            <form action="{{ url_for('add_entry') }}" method="POST">
+                <!-- Host -->
+                <div class="mb-5">
+                    <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
+                    <input type="text" name="host" id="host" required class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., server01.example.com">
+                </div>
 
-            <div class="mb-5">
-                <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
-                <div class="flex items-center space-x-3">
-                    <input type="url" name="internal_url" id="internal_url"
-                           class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                           placeholder="e.g., http://localhost:8080">
-                    <div class="flex items-center">
-                        <input type="checkbox" name="internal_health_check" id="internal_health_check"
-                               class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500">
-                        <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+                <!-- Application -->
+                <div class="mb-5">
+                    <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
+                    <input type="text" name="application" id="application" required class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., proxmox">
+                </div>
+
+                <!-- Internal URL + Health Check -->
+                <div class="mb-5">
+                    <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
+                    <div class="flex items-center space-x-3">
+                        <input type="url" name="internal_url" id="internal_url" class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm" placeholder="http://localhost:8080">
+                        <div class="flex items-center">
+                            <input type="checkbox" name="internal_health_check" id="internal_health_check" class="form-checkbox h-5 w-5 rounded border-dashboard-accent">
+                            <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="mb-5">
-                <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
-                <div class="flex items-center space-x-3">
-                    <input type="url" name="external_url" id="external_url"
-                           class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                           placeholder="e.g., https://myapp.example.com">
-                    <div class="flex items-center">
-                        <input type="checkbox" name="external_health_check" id="external_health_check"
-                               class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500">
-                        <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+                <!-- External URL + Health Check -->
+                <div class="mb-5">
+                    <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
+                    <div class="flex items-center space-x-3">
+                        <input type="url" name="external_url" id="external_url" class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm" placeholder="https://example.com">
+                        <div class="flex items-center">
+                            <input type="checkbox" name="external_health_check" id="external_health_check" class="form-checkbox h-5 w-5 rounded border-dashboard-accent">
+                            <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="mb-5">
-                <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
-                <input type="text" name="group_name" id="group_name"
-                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                       placeholder="e.g., Production Services">
-            </div>
-
-            <div class="mb-5">
-                <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
-                <input type="text" name="icon_image" id="icon_image"
-                       class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                       placeholder="e.g., proxmox.svg (find on dashboardicons.com)">
-                <p class="mt-1 text-xs text-dashboard-secondary">Enter the filename of the SVG icon (e.g., service.svg). Icons should be placed in your static/images folder.</p>
-                <p class="mt-1 text-xs text-dashboard-secondary">(will try to match automatically from application above.)</p>
-            </div>
-
-            <div class="mb-6 sm:mb-8">
-                <div class="flex items-center">
-                    <input type="checkbox" name="locked" id="locked"
-                           class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500">
-                    <label for="locked" class="ml-2 text-sm font-medium text-dashboard-secondary">Locked (Static Entry)</label>
+                <!-- Group Name -->
+                <div class="mb-5">
+                    <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
+                    <input type="text" name="group_name" id="group_name" class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., Production">
                 </div>
-                <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by automated API calls.</p>
-            </div>
 
-            <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
-                <button type="submit"
-                        class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
-                    Add Entry
-                </button>
-                <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
-                    Cancel
-                </button>
-            </div>
-        </form>
+                <!-- Icon Image -->
+                <div class="mb-5">
+                    <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
+                    <input type="text" name="icon_image" id="icon_image" class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., app.svg">
+                    <p class="mt-1 text-xs text-dashboard-secondary">Will attempt auto-match if left blank.</p>
+                </div>
+
+                <!-- Locked Checkbox -->
+                <div class="mb-6">
+                    <div class="flex items-center">
+                        <input type="checkbox" name="locked" id="locked" class="form-checkbox h-5 w-5 rounded border-dashboard-accent">
+                        <label for="locked" class="ml-2 text-sm font-medium text-dashboard-secondary">Locked (Static Entry)</label>
+                    </div>
+                    <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by the API.</p>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
+                    <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Add Entry</button>
+                    <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Cancel</button>
+                </div>
+                
+            </form>
+        </div>
     </div>
 </body>
 </html>
