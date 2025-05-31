@@ -172,16 +172,17 @@
     </div>
 
 
-    <div class="controls-container">
-        <div class="grouping-controls">
-            <label for="groupBySelect">Group by:</label>
-            <select id="groupBySelect">
-                <option value="group_name">Group Name</option>
-                <option value="host">Docker Host</option>
-                  <option value="stack_name">Stack Name</option>
-                </select>
-        </div>
-        </div>
+    <div class="controls-container text-gray-300">
+    <div class="grouping-controls flex items-center space-x-2">
+        <label for="groupBySelect" class="text-sm">Group by:</label>
+        <select id="groupBySelect"
+                class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="group_name">Group Name</option>
+        <option value="host">Docker Host</option>
+        <option value="stack_name">Stack Name</option>
+        </select>
+    </div>
+    </div>
 
     {% if grouped_entries %}
         {% for group_name, entries_in_group in grouped_entries.items() %}
