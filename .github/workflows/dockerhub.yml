@@ -34,3 +34,6 @@ jobs:
           tags: |
             crzykidd/service-tracker-dashboard:${{ env.VERSION }}
             crzykidd/service-tracker-dashboard:latest
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+            GIT_COMMIT=${{ github.sha }}

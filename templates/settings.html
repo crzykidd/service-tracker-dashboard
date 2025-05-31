@@ -233,6 +233,16 @@
 
     </script>
     <div class="max-w-4xl w-full mt-10 bg-gray-800 shadow-2xl rounded-lg p-6 md:p-8">
+    {% if version_info %}
+    <div class="mb-4 p-4 bg-gray-700 text-sm text-gray-300 rounded shadow-md">
+        <div class="mb-1 font-semibold text-gray-200">Service Tracker Version Info</div>
+        <ul class="list-disc list-inside space-y-1 text-gray-300">
+            <li><strong>Version:</strong> {{ version_info.version }}</li>
+            <li><strong>Commit:</strong> {{ version_info.commit }}</li>
+            <li><strong>Build Time:</strong> {{ version_info.build_time }}</li>
+        </ul>
+    </div>
+    {% endif %}
     <h2 class="text-xl font-semibold text-gray-100 mb-4 border-b border-gray-600 pb-2">Current Configuration</h2>
     <div class="overflow-x-auto">
         <table class="min-w-full table-auto text-sm text-left text-gray-300">
