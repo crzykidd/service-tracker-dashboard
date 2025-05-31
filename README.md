@@ -23,6 +23,16 @@ I wrote this as 90% of my stuff runs in docker, but you can manually add other h
 
 ---
 
+## Screenshots
+
+<a href="STD-MainDash.png">
+  <img src="STD-MainDash.png" alt="Main Dashboard" width="300"/>
+</a>
+<a href="STD-TiledDash-ByHost.png">
+  <img src="STD-TiledDash-ByHost.png" alt="Tiled Dashboard" width="300"/>
+</a>
+
+
 ## 🔧 Config Overview
 
 You can configure the app using environment variables or a `settings.yml` file inside `/config`. ENV vars take priority over the file. If `settings.yml` doesn’t exist, it’ll be created from a default template.
