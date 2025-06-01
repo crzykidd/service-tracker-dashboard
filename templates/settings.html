@@ -100,92 +100,110 @@
         <div class="flex flex-col md:flex-row md:space-x-6 space-y-6 md:space-y-0">
 
 
+<div class="w-full">
+  <div class="cursor-pointer flex items-center justify-between px-6 py-4 bg-gray-700 rounded-t-lg shadow-md select-none"
+       onclick="toggleCollapse('backup-restore-collapse')">
+    <h2 class="text-xl font-semibold text-gray-200">Backup & Restore</h2>
+    <svg id="backup-restore-collapse-arrow" class="w-5 h-5 text-gray-400 transform transition-transform duration-300" fill="none"
+         stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M19 9l-7 7-7-7"></path>
+    </svg>
+  </div>
 
-            <section id="backup-section" class="w-full md:w-1/2 p-6 bg-gray-700 rounded-lg shadow-lg">
-                <h2 class="text-xl font-semibold text-gray-200 mb-4 border-b border-gray-600 pb-2">Backup Service Data</h2>
-                <p class="text-sm text-gray-400 mb-4">Manage YAML backups of all your service entries.</p>
-                <form action="{{ url_for('settings') }}" method="POST" class="space-y-4">
-                    <input type="hidden" name="action" value="backup">
-                    <button type="submit" name="backup_operation" value="download_all" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500">
-                        Download Full Backup (YAML)
-                    </button>
-                    <button type="submit" name="backup_operation" value="save_on_server" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-teal-500">
-                        Save Full Backup to Server
-                    </button>
-                </form>
+  <div id="backup-restore-collapse" class="hidden transition-all duration-300 overflow-hidden bg-gray-700 rounded-b-lg shadow-lg p-6 space-y-10">
+    <!-- Backup Section -->
+    <div>
+      <h3 class="text-lg font-semibold text-gray-200 mb-2 border-b border-gray-600 pb-1">Backup Service Data</h3>
+      <p class="text-sm text-gray-400 mb-4">Manage YAML backups of all your service entries.</p>
+      <form action="{{ url_for('settings') }}" method="POST" class="space-y-4">
+        <input type="hidden" name="action" value="backup">
+        <button type="submit" name="backup_operation" value="download_all"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500">
+          Download Full Backup (YAML)
+        </button>
+        <button type="submit" name="backup_operation" value="save_on_server"
+                class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-teal-500">
+          Save Full Backup to Server
+        </button>
+      </form>
+    </div>
 
-            </section>
+    <!-- Restore Section -->
+    <div>
+      <h3 class="text-lg font-semibold text-gray-200 mb-2 border-b border-gray-600 pb-1">Restore Service Data</h3>
+      <p class="text-sm text-gray-400 mb-4">Restore service entries from a YAML backup file.</p>
+      <form action="{{ url_for('settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+        <input type="hidden" name="action" value="restore">
 
-   
-            <section id="restore-section" class="w-full md:w-1/2 p-6 bg-gray-700 rounded-lg shadow-lg">
-                <h2 class="text-xl font-semibold text-gray-200 mb-4 border-b border-gray-600 pb-2">Restore Service Data</h2>
-                <p class="text-sm text-gray-400 mb-4">Restore service entries from a YAML backup file.</p>
-                <form action="{{ url_for('settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
-                    <input type="hidden" name="action" value="restore">
+        <div>
+          <span class="block text-sm font-medium text-gray-300 mb-2">Restore Source:</span>
+          <div class="space-y-2">
+            <div class="flex items-center">
+              <input id="restore_from_server_select" name="restore_source" type="radio" value="server" checked class="h-4 w-4 text-indigo-500 border-gray-500 focus:ring-indigo-400 bg-gray-600" onchange="toggleRestoreSource(this.value)">
+              <label for="restore_from_server_select" class="ml-2 block text-sm text-gray-300">
+                Select from server backups
+              </label>
+            </div>
+            <div class="flex items-center">
+              <input id="restore_from_upload" name="restore_source" type="radio" value="upload" class="h-4 w-4 text-indigo-500 border-gray-500 focus:ring-indigo-400 bg-gray-600" onchange="toggleRestoreSource(this.value)">
+              <label for="restore_from_upload" class="ml-2 block text-sm text-gray-300">
+                Upload a custom YAML file
+              </label>
+            </div>
+          </div>
+        </div>
 
-                    <div>
-                        <span class="block text-sm font-medium text-gray-300 mb-2">Restore Source:</span>
-                        <div class="space-y-2">
-                            <div class="flex items-center">
-                                <input id="restore_from_server_select" name="restore_source" type="radio" value="server" checked class="h-4 w-4 text-indigo-500 border-gray-500 focus:ring-indigo-400 bg-gray-600" onchange="toggleRestoreSource(this.value)">
-                                <label for="restore_from_server_select" class="ml-2 block text-sm text-gray-300">
-                                    Select from server backups
-                                </label>
-                            </div>
-                            <div class="flex items-center">
-                                <input id="restore_from_upload" name="restore_source" type="radio" value="upload" class="h-4 w-4 text-indigo-500 border-gray-500 focus:ring-indigo-400 bg-gray-600" onchange="toggleRestoreSource(this.value)">
-                                <label for="restore_from_upload" class="ml-2 block text-sm text-gray-300">
-                                    Upload a custom YAML file
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+        <div id="server-file-selector-section" class="space-y-1">
+          <label for="server_backup_filename" class="block text-sm font-medium text-gray-300">Available server backups:</label>
+          <select id="server_backup_filename" name="server_backup_filename" class="w-full p-2 border border-gray-500 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-600 text-gray-200 placeholder-gray-400">
+            {% if server_backup_files %}
+              {% for filename in server_backup_files %}
+                <option value="{{ filename }}">{{ filename }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="" disabled>No backup files found on server</option>
+            {% endif %}
+          </select>
+        </div>
 
-                    <div id="server-file-selector-section" class="space-y-1">
-                        <label for="server_backup_filename" class="block text-sm font-medium text-gray-300">Available server backups:</label>
-                        <select id="server_backup_filename" name="server_backup_filename" class="w-full p-2 border border-gray-500 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-600 text-gray-200 placeholder-gray-400">
-                            {% if server_backup_files %}
-                                {% for filename in server_backup_files %}
-                                    <option value="{{ filename }}">{{ filename }}</option>
-                                {% endfor %}
-                            {% else %}
-                                <option value="" disabled>No backup files found on server</option>
-                            {% endif %}
-                        </select>
-                    </div>
+        <div id="file-upload-section" class="hidden space-y-1">
+          <label for="restore_file_input_label" class="block text-sm font-medium text-gray-300">Select YAML file to restore:</label>
+          <div class="mt-1 flex items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-500 border-dashed rounded-md">
+            <div class="space-y-1 text-center">
+              <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <div class="flex text-sm text-gray-400 justify-center">
+                <label for="restore_file_input" class="relative cursor-pointer bg-gray-700 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-offset-gray-800 focus-within:ring-indigo-500">
+                  <span>Upload a file</span>
+                  <input id="restore_file_input" name="restore_file" type="file" class="sr-only" accept=".yaml,.yml">
+                </label>
+                <p class="pl-1">or drag and drop</p>
+              </div>
+              <p id="file-name-display" class="text-xs text-gray-500">YAML up to 10MB</p>
+            </div>
+          </div>
+        </div>
 
-                    <div id="file-upload-section" class="hidden space-y-1">
-                         <label for="restore_file_input_label" class="block text-sm font-medium text-gray-300">Select YAML file to restore:</label>
-                        <div class="mt-1 flex items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-500 border-dashed rounded-md">
-                            <div class="space-y-1 text-center">
-                                <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                                </svg>
-                                <div class="flex text-sm text-gray-400 justify-center">
-                                    <label for="restore_file_input" class="relative cursor-pointer bg-gray-700 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-offset-gray-800 focus-within:ring-indigo-500">
-                                        <span>Upload a file</span>
-                                        <input id="restore_file_input" name="restore_file" type="file" class="sr-only" accept=".yaml,.yml">
-                                    </label>
-                                    <p class="pl-1">or drag and drop</p>
-                                </div>
-                                <p id="file-name-display" class="text-xs text-gray-500">YAML up to 10MB</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="restore-scope-section" class="space-y-1">
-                        <label for="restore_scope" class="block text-sm font-medium text-gray-300">Restore Scope:</label>
-                        <select id="restore_scope" name="restore_scope" class="w-full p-2 border border-gray-500 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-600 text-gray-200 placeholder-gray-400">
-                            <option value="all" selected>All Entries</option>
-                            <option value="static">Static Entries Only</option>
-                        </select>
-                    </div>
+        <div id="restore-scope-section" class="space-y-1">
+          <label for="restore_scope" class="block text-sm font-medium text-gray-300">Restore Scope:</label>
+          <select id="restore_scope" name="restore_scope" class="w-full p-2 border border-gray-500 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-gray-600 text-gray-200 placeholder-gray-400">
+            <option value="all" selected>All Entries</option>
+            <option value="static">Static Entries Only</option>
+          </select>
+        </div>
 
-                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500">
-                        Restore Data
-                    </button>
-                </form>
-            </section>
+        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500">
+          Restore Data
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+
         </div>
     </div>
 
@@ -237,6 +255,42 @@
         }
 
     </script>
+ 
+    <script>
+    // Used to colapse areas.
+    function toggleCollapse(id) {
+        const section = document.getElementById(id);
+        const arrow = document.getElementById(id + '-arrow');
+        const isHidden = section.classList.contains('hidden');
+
+        if (isHidden) {
+        section.classList.remove('hidden');
+        arrow.classList.add('rotate-180');
+        localStorage.setItem(`collapse-${id}`, 'open');
+        } else {
+        section.classList.add('hidden');
+        arrow.classList.remove('rotate-180');
+        localStorage.setItem(`collapse-${id}`, 'closed');
+        }
+    }
+
+    // Auto-restore collapse state on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        const collapsibleId = 'backup-restore-collapse';
+        const section = document.getElementById(collapsibleId);
+        const arrow = document.getElementById(collapsibleId + '-arrow');
+        const storedState = localStorage.getItem(`collapse-${collapsibleId}`);
+
+        if (storedState === 'open') {
+        section.classList.remove('hidden');
+        arrow.classList.add('rotate-180');
+        } else {
+        section.classList.add('hidden');
+        arrow.classList.remove('rotate-180');
+        }
+    });
+    </script>
+
     <div class="max-w-4xl w-full mt-10 bg-gray-800 shadow-2xl rounded-lg p-6 md:p-8">
     <div class="mb-4 p-4 bg-gray-700 text-sm text-gray-300 rounded shadow-md">
         <div class="mb-1 font-semibold text-gray-200">Service Tracker Version Info</div>
