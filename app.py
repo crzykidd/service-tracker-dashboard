@@ -474,14 +474,23 @@ def settings():
         except Exception as e:
             logger.exception(f"Error listing backup files from {BACKUP_DIR}")
             flash(f"Could not list server backup files: {str(e)}", "warning")
-            
+
+# Check which icon files are missing
+        missing_icons = []
+        all_entries = ServiceEntry.query.all()
+        for entry in all_entries:
+            icon = entry.image_icon
+            if icon and not os.path.exists(os.path.join(IMAGE_DIR, icon)):
+                missing_icons.append(f"{entry.container_name} → {icon}")            
+    
     return render_template(
         'settings.html',
          current_config=config,
          config_from_env=config_from_env,
          config_from_file=config_from_file,
          server_backup_files=server_backup_files,
-         version_info=read_version_info() 
+         version_info=read_version_info(),
+         missing_icons=missing_icons 
     )
 
 # Helper to check if flash messages are already present (to avoid duplicates)
@@ -909,7 +918,7 @@ if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     threading.Thread(target=health_check_loop, daemon=True).start()
     verify_and_fetch_missing_icons()  # 👈 Run image validation once at startup
 
-    
+
 
 if __name__ == '__main__':
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
