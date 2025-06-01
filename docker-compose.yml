@@ -10,6 +10,8 @@ services:
       - FLASK_DEBUG=1
     volumes:
       - ~/docker/tracker:/config
+      - .:/app
+    working_dir: /app
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
