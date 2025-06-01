@@ -598,6 +598,38 @@ def api_register():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
+    # 🔁 Remap STD-style keys to internal DB fields
+    label_key_map = {
+        "group": "group_name",
+        "internal_health": "internal_health_check_enabled",
+        "external_health": "external_health_check_enabled",
+        "docker_host": "host",
+        "icon": "image_icon",
+    }
+    for src_key, target_key in label_key_map.items():
+        if src_key in data and target_key not in data:
+            data[target_key] = data[src_key]
+    # For debug: log any unexpected fields (not known or remapped)
+    if app.debug:
+        known_fields = {
+            "host", "docker_host", "container_name", "container_id", "internalurl", "externalurl",
+            "stack_name", "docker_status", "group_name", "group", "started_at",
+            "internal_health_check_enabled", "external_health_check_enabled",
+            "internal.health", "external.health",
+            "image_name", "image_icon", "timestamp"
+        }
+        # Include remapped fields (e.g., group → group_name)
+        known_fields.update(label_key_map.values())
+
+        for key in data:
+            if key not in known_fields:
+                logger.warning(f"⚠️ Unexpected STD label received (ignored): {key} = {data[key]}")
+
+
+    for src_key, target_key in label_key_map.items():
+        if src_key in data and target_key not in data:
+            data[target_key] = data[src_key]
+
     if app.debug:
         logger.info("🔍 Received API payload:")
         for k, v in data.items():
