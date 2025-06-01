@@ -8,9 +8,12 @@ services:
       - .env
     environment:
       - FLASK_DEBUG=1
+    #entrypoint: ["/entrypoint.sh"]
     volumes:
       - ~/docker/tracker:/config
       - .:/app
+      - ./entrypoint.sh:/entrypoint.sh
+
     working_dir: /app
     labels:
       - "traefik.enable=true"
