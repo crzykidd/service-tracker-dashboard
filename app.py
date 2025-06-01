@@ -918,11 +918,14 @@ def verify_and_fetch_missing_icons():
 
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     threading.Thread(target=health_check_loop, daemon=True).start()
-    verify_and_fetch_missing_icons()  # 👈 Run image validation once at startup
+ 
 
 
 
 if __name__ == '__main__':
+    logger.info("🔍 Verifying icon files for all ServiceEntry records...")
+    verify_and_fetch_missing_icons()
+
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
     app.run(host='0.0.0.0', port=8815, debug=app.debug)
  
