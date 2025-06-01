@@ -163,40 +163,40 @@ def time_since(dt):
     return humanize.naturaltime(now - dt)
 
 # Ensure DB schema exists
-logger.info("✅ Checking for 'service_entry' table...")
-conn = sqlite3.connect(DATABASE_PATH)
-cursor = conn.cursor()
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS service_entry (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        host TEXT NOT NULL,
-        container_name TEXT NOT NULL,
-        container_id TEXT,
-        internalurl TEXT,
-        externalurl TEXT,
-        last_updated TEXT NOT NULL,
-        last_api_update TEXT,
-        stack_name TEXT,
-        docker_status TEXT,
-        internal_health_check_enabled BOOLEAN,
-        internal_health_check_status TEXT,
-        internal_health_check_update TEXT,
-        external_health_check_enabled BOOLEAN,
-        external_health_check_status TEXT,
-        external_health_check_update TEXT,
-        image_registry TEXT,
-        image_owner TEXT,
-        image_name TEXT,
-        image_tag TEXT,
-        image_icon TEXT,
-        group_name TEXT,
-        is_static BOOLEAN NOT NULL DEFAULT 0,
-        started_at TEXT
-    )
-""")
-conn.commit()
-conn.close()
-logger.info("✅ DB schema ensured.")
+#logger.info("✅ Checking for 'service_entry' table...")
+#conn = sqlite3.connect(DATABASE_PATH)
+#cursor = conn.cursor()
+#cursor.execute("""
+#    CREATE TABLE IF NOT EXISTS service_entry (
+#        id INTEGER PRIMARY KEY AUTOINCREMENT,
+#        host TEXT NOT NULL,
+#        container_name TEXT NOT NULL,
+#        container_id TEXT,
+#        internalurl TEXT,
+#        externalurl TEXT,
+#        last_updated TEXT NOT NULL,
+#        last_api_update TEXT,
+#        stack_name TEXT,
+#        docker_status TEXT,
+#        internal_health_check_enabled BOOLEAN,
+#        internal_health_check_status TEXT,
+#        internal_health_check_update TEXT,
+#        external_health_check_enabled BOOLEAN,
+#        external_health_check_status TEXT,
+#        external_health_check_update TEXT,
+#        image_registry TEXT,
+#        image_owner TEXT,
+#        image_name TEXT,
+#        image_tag TEXT,
+#        image_icon TEXT,
+#        group_name TEXT,
+#        is_static BOOLEAN NOT NULL DEFAULT 0,
+#        started_at TEXT
+#    )
+#""")
+#conn.commit()
+#conn.close()
+#logger.info("✅ DB schema ensured.")
 
 
 from collections import defaultdict
