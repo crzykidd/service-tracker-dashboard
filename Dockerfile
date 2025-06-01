@@ -13,4 +13,9 @@ RUN echo "version=${APP_VERSION}" > /app/version.txt && \
     echo "commit=${GIT_COMMIT}" >> /app/version.txt && \
     echo "build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> /app/version.txt
 EXPOSE 8815
-CMD ["sh", "-c", "alembic upgrade head && python app.py"]
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
+
