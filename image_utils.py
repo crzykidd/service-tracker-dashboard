@@ -1,39 +1,58 @@
 import os
 import requests
 from datetime import datetime
+import inspect
 
-def fetch_icon_if_missing(name, image_dir, logger):
+
+
+def fetch_icon_if_missing(name, image_dir, logger, debug=False, source_hint=None):
     if not name:
         return None
 
-    name = name.lower().rstrip(".svg")  # normalize
+    # Get calling function or route
+    stack = inspect.stack()
+    caller_function = stack[1].function if len(stack) > 1 else "unknown"
+
+    if name.lower().endswith(".svg"):
+        name = name[:-4]  # remove exactly 4 characters: ".svg"
+    name = name.lower()
     filename = f"{name}.svg"
     local_path = os.path.join(image_dir, filename)
 
     if os.path.exists(local_path):
         return filename
 
-    # Attempt jsDelivr first, then GitHub raw
     sources = [
         (f"https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{filename}", "jsDelivr CDN"),
         (f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{filename}", "GitHub Raw")
     ]
 
+    label_hint = f" - {source_hint}" if source_hint else ""
+    caller_hint = f" [caller: {caller_function}]"
+
     for url, label in sources:
         try:
-            logger.info(f"🌐 Trying {label} for icon: {filename}")
+            logger.info(f"🌐 Trying {label} for icon: {filename}{label_hint}{caller_hint}")
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 with open(local_path, 'wb') as f:
                     f.write(response.content)
-                logger.info(f"✅ Downloaded icon '{filename}' from {label}")
+                logger.info(f"✅ Downloaded icon '{filename}' from {label}{label_hint}{caller_hint}")
                 return filename
             else:
-                logger.warning(f"⚠️ {label} failed for {filename} — HTTP {response.status_code}")
+                msg = f"{label} failed for {filename}{label_hint} — HTTP {response.status_code}{caller_hint}"
+                if debug:
+                    logger.debug(f"❌ {msg} | URL: {url}")
+                else:
+                    logger.warning(f"⚠️ {msg}")
         except Exception as e:
-            logger.error(f"❌ Exception while downloading {filename} from {label}: {e}")
+            msg = f"Exception while downloading {filename}{label_hint} from {label}: {e}{caller_hint}"
+            if debug:
+                logger.debug(f"❌ {msg} | URL: {url}")
+            else:
+                logger.error(f"❌ {msg}")
 
-    logger.error(f"🛑 All sources failed for icon: {filename}")
+    logger.error(f"🛑 All sources failed for icon: {filename}{label_hint}{caller_hint}")
     return None
 
 
@@ -44,6 +63,7 @@ def parse_bool(value):
         return value.lower() == 'true'
     return None
 
+
 def resolve_image_metadata(
     image_raw=None,
     image_icon_override=None,
@@ -51,12 +71,9 @@ def resolve_image_metadata(
     image_dir=None,
     failed_icon_cache=None,
     retry_interval=None,
-    logger=None
+    logger=None,
+    debug=False
 ):
-    """
-    Parses image info and resolves an icon.
-    If image_raw is not provided, fallback_name can be used for the icon.
-    """
     registry = owner = img_name = tag = None
 
     if image_raw:
@@ -77,7 +94,13 @@ def resolve_image_metadata(
     image_icon = image_icon_override
 
     if not image_icon and icon_source_name:
-        image_icon = fetch_icon_if_missing(icon_source_name, image_dir, logger)
+        image_icon = fetch_icon_if_missing(
+            icon_source_name,
+            image_dir,
+            logger,
+            debug=debug,
+            source_hint=fallback_name
+        )
     elif image_icon:
         icon_path = os.path.join(image_dir, image_icon)
         now = datetime.now()
@@ -94,10 +117,18 @@ def resolve_image_metadata(
                     failed_icon_cache.pop(image_icon, None)
                 else:
                     failed_icon_cache[image_icon] = now
-                    logger.warning(f"⚠️ Could not download image_icon '{image_icon}' — status {response.status_code}")
+                    msg = f"Could not download image_icon '{image_icon}' — status {response.status_code}"
+                    if debug:
+                        logger.debug(f"❌ {msg} | URL: {icon_url}")
+                    else:
+                        logger.warning(f"⚠️ {msg}")
             except Exception as e:
                 failed_icon_cache[image_icon] = now
-                logger.warning(f"⚠️ Failed to fetch image_icon '{image_icon}': {e}")
+                msg = f"Failed to fetch image_icon '{image_icon}': {e}"
+                if debug:
+                    logger.debug(f"❌ {msg} | URL: {icon_url}")
+                else:
+                    logger.warning(f"⚠️ {msg}")
 
     return {
         "registry": registry,

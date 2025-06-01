@@ -21,26 +21,27 @@ from image_utils import fetch_icon_if_missing
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
 IMAGE_DIR = '/config/images'
+IS_DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
 
 # === Logging Setup ===
 log_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
-log_handler = RotatingFileHandler(
-    LOGFILE, maxBytes=10 * 1024 * 1024, backupCount=4
-)
+
+log_handler = RotatingFileHandler(LOGFILE, maxBytes=10 * 1024 * 1024, backupCount=4)
 log_handler.setFormatter(log_formatter)
-log_handler.setLevel(logging.INFO)
+log_handler.setLevel(logging.DEBUG if IS_DEBUG else logging.INFO)
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(log_handler)
-
-# Optional: also log to console (helpful for Docker)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.DEBUG if IS_DEBUG else logging.INFO)
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG if IS_DEBUG else logging.INFO)
+logger.addHandler(log_handler)
 logger.addHandler(console_handler)
 
 
 app = Flask(__name__)
+app.debug = IS_DEBUG
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "changeme-in-prod")
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -561,7 +562,7 @@ def add_entry():
                     logger.warning(f"⚠️ Failed to fetch icon '{image_icon}': {e}")
         else:
             derived_icon_name = container_name.lower().replace(" ", "-")
-            image_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger)
+            image_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger, debug=app.debug)
             if image_icon:
                 logger.info(f"💡 Automatically fetched icon '{image_icon}' for new entry '{container_name}'.")
             else:
@@ -613,7 +614,8 @@ def api_register():
         image_dir=IMAGE_DIR,
         failed_icon_cache=failed_icon_cache,
         retry_interval=RETRY_INTERVAL,
-        logger=logger
+        logger=logger,
+        debug=app.debug
     )
 
     registry = image_meta["registry"]
@@ -766,7 +768,7 @@ def edit_entry(id):
 
         elif not new_image_icon and request.form.get('force_update_icon') == 'true':
             derived_icon_name = entry.container_name.lower().replace(" ", "-")
-            fetched_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger)
+            fetched_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger, debug=app.debug)
             if fetched_icon:
                 entry.image_icon = fetched_icon
                 logger.info(f"\U0001f4a1 Auto-fetched icon '{fetched_icon}' during edit for '{entry.container_name}'.")
@@ -906,7 +908,7 @@ def verify_and_fetch_missing_icons():
                 icon_path = os.path.join(IMAGE_DIR, icon)
                 if not os.path.exists(icon_path):
                     logger.warning(f"🚫 Missing icon: {icon} — attempting download...")
-                    fetched = fetch_icon_if_missing(icon, IMAGE_DIR, logger)
+                    fetched = fetch_icon_if_missing(icon, IMAGE_DIR, logger, debug=app.debug)
                     if fetched:
                         logger.info(f"✅ Successfully fetched missing icon: {fetched}")
                     else:
