@@ -474,14 +474,23 @@ def settings():
         except Exception as e:
             logger.exception(f"Error listing backup files from {BACKUP_DIR}")
             flash(f"Could not list server backup files: {str(e)}", "warning")
-            
+
+# Check which icon files are missing
+        missing_icons = []
+        all_entries = ServiceEntry.query.all()
+        for entry in all_entries:
+            icon = entry.image_icon
+            if icon and not os.path.exists(os.path.join(IMAGE_DIR, icon)):
+                missing_icons.append(f"{entry.container_name} → {icon}")            
+    
     return render_template(
         'settings.html',
          current_config=config,
          config_from_env=config_from_env,
          config_from_file=config_from_file,
          server_backup_files=server_backup_files,
-         version_info=read_version_info() 
+         version_info=read_version_info(),
+         missing_icons=missing_icons 
     )
 
 # Helper to check if flash messages are already present (to avoid duplicates)
@@ -514,7 +523,11 @@ def add_entry():
         internalurl = request.form.get('internal_url')
         externalurl = request.form.get('external_url')
         group_name = request.form.get('group_name')
-        image_icon = request.form.get('icon_image', '').strip()
+        image_icon_raw = request.form.get('icon_image', '').strip().lower()
+        if image_icon_raw and not image_icon_raw.endswith('.svg'):
+            image_icon = f"{image_icon_raw}.svg"
+        else:
+            image_icon = image_icon_raw
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
@@ -720,7 +733,12 @@ def edit_entry(id):
         entry.externalurl = request.form.get('externalurl', '').strip() or None
         entry.group_name = request.form.get('group_name', '').strip() or None
 
-        new_image_icon = request.form.get('image_icon', '').strip()
+        raw = request.form.get('image_icon', '').strip().lower()
+        if raw and not raw.endswith('.svg'):
+            new_image_icon = f"{raw}.svg"
+        else:
+            new_image_icon = raw
+
         entry.image_icon = new_image_icon  # Always set explicitly, even blank
 
         if new_image_icon:
@@ -875,6 +893,32 @@ logger.info(f"🚀 Service Tracker Dashboard Starting...")
 logger.info(f"📦 Version: {version_info.get('version', 'unknown')}")
 logger.info(f"🔀 Commit: {version_info.get('commit', 'unknown')}")
 logger.info(f"⏱️ Build Time: {version_info.get('build_time', 'unknown')}")
+
+# Check images at startup
+def verify_and_fetch_missing_icons():
+    logger.info("🔍 Verifying icon files for all ServiceEntry records...")
+    with app.app_context():
+        entries = ServiceEntry.query.all()
+        missing_count = 0
+        for entry in entries:
+            icon = entry.image_icon
+            if icon:
+                icon_path = os.path.join(IMAGE_DIR, icon)
+                if not os.path.exists(icon_path):
+                    logger.warning(f"🚫 Missing icon: {icon} — attempting download...")
+                    fetched = fetch_icon_if_missing(icon, IMAGE_DIR, logger)
+                    if fetched:
+                        logger.info(f"✅ Successfully fetched missing icon: {fetched}")
+                    else:
+                        logger.error(f"❌ Failed to download icon: {icon}")
+                        missing_count += 1
+        logger.info(f"🔁 Icon verification complete. Missing count: {missing_count}")
+
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    threading.Thread(target=health_check_loop, daemon=True).start()
+    verify_and_fetch_missing_icons()  # 👈 Run image validation once at startup
+
+
 
 if __name__ == '__main__':
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")

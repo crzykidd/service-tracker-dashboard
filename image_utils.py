@@ -5,24 +5,37 @@ from datetime import datetime
 def fetch_icon_if_missing(name, image_dir, logger):
     if not name:
         return None
+
+    name = name.lower().rstrip(".svg")  # normalize
     filename = f"{name}.svg"
     local_path = os.path.join(image_dir, filename)
+
     if os.path.exists(local_path):
         return filename
 
-    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{filename}"
-    try:
-        response = requests.get(icon_url, timeout=5)
-        if response.status_code == 200:
-            with open(local_path, 'wb') as f:
-                f.write(response.content)
-            logger.info(f"⬇️ Downloaded icon for {name} to {local_path}")
-            return filename
-        else:
-            logger.warning(f"⚠️ Icon not found for {name} (HTTP {response.status_code})")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to download icon for {name}: {e}")
+    # Attempt jsDelivr first, then GitHub raw
+    sources = [
+        (f"https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{filename}", "jsDelivr CDN"),
+        (f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{filename}", "GitHub Raw")
+    ]
+
+    for url, label in sources:
+        try:
+            logger.info(f"🌐 Trying {label} for icon: {filename}")
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                with open(local_path, 'wb') as f:
+                    f.write(response.content)
+                logger.info(f"✅ Downloaded icon '{filename}' from {label}")
+                return filename
+            else:
+                logger.warning(f"⚠️ {label} failed for {filename} — HTTP {response.status_code}")
+        except Exception as e:
+            logger.error(f"❌ Exception while downloading {filename} from {label}: {e}")
+
+    logger.error(f"🛑 All sources failed for icon: {filename}")
     return None
+
 
 def parse_bool(value):
     if isinstance(value, bool):

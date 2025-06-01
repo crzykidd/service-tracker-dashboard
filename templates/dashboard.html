@@ -75,15 +75,28 @@
             <th class="px-3 py-2">Actions</th>
           </tr>
         </thead>
-        {% for group, group_entries in grouped_entries.items() %}
-        <tbody>
-          <tr class="bg-gray-800 font-semibold">
-            <td colspan="11" class="px-4 py-2">{{ group }}</td>
-          </tr>
-        </tbody>
-        <tbody>
-          {% for entry in group_entries %}
-          <tr class="border-b border-gray-700" data-entry data-group="{{ entry.group_name }}" data-container="{{ entry.container_name }}" data-stack="{{ entry.stack_name }}">
+
+          {% for group_data in grouped_entries.items() %}
+          {% set group = group_data[0] %}
+          {% set group_entries = group_data[1] %}
+          {% set group_index = loop.index0 %}
+          <tbody>
+            <tr class="bg-gray-800 font-semibold cursor-pointer" onclick="toggleGroup('{{ group_index }}')">
+              <td colspan="11" class="px-4 py-2">
+                <span id="toggle-icon-{{ group_index }}">▼</span>
+                {{ group }}
+              </td>
+            </tr>
+          </tbody>
+          <tbody>
+            {% for entry in group_entries %}
+            <tr class="border-b border-gray-700 group-entry"
+                data-group-id="{{ group_index }}"
+                data-entry data-group="{{ entry.group_name }}"
+                data-container="{{ entry.container_name }}"
+                data-stack="{{ entry.stack_name }}">
+
+
             <td class="px-3 py-2">
               <div class="logo-icon">
                 {% if entry.image_icon %}
@@ -241,6 +254,34 @@
         window.location.search = params.toString();
       });
     });
+
+    function toggleGroup(groupId) {
+      const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
+      const icon = document.getElementById(`toggle-icon-${groupId}`);
+      let isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
+
+      const newState = !isCollapsed;
+      entries.forEach(row => row.style.display = newState ? 'none' : '');
+      if (icon) icon.textContent = newState ? '▶' : '▼';
+
+      localStorage.setItem(`group-collapsed-${groupId}`, newState);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // Existing logic (filterInput, refreshTimer, etc.)
+
+      // Add this to restore state from localStorage
+      const allGroups = document.querySelectorAll('[id^="toggle-icon-"]');
+      allGroups.forEach(iconEl => {
+        const groupId = iconEl.id.replace('toggle-icon-', '');
+        const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
+        const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
+        entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
+        iconEl.textContent = isCollapsed ? '▶' : '▼';
+      });
+    });
+
+
 
     function copyToClipboard(text, el) {
       navigator.clipboard.writeText(text).then(() => {
