@@ -1,3 +1,47 @@
-.env
 settings.yml
-/config
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.env
+.env.*
+*.sqlite3
+*.db
+*.log
+
+# Flask-related
+instance/
+config.py
+*.bak
+*.swp
+*.tmp
+
+# Docker
+*.pid
+*.sock
+config/
+images/
+docker-compose.override.yml
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# macOS & IDEs
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+
+# Coverage/testing
+htmlcov/
+.tox/
+.coverage
+.pytest_cache/
+
+# YAML backups if generated
+/config/backups/
