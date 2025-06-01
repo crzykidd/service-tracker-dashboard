@@ -514,7 +514,11 @@ def add_entry():
         internalurl = request.form.get('internal_url')
         externalurl = request.form.get('external_url')
         group_name = request.form.get('group_name')
-        image_icon = request.form.get('icon_image', '').strip()
+        image_icon_raw = request.form.get('icon_image', '').strip().lower()
+        if image_icon_raw and not image_icon_raw.endswith('.svg'):
+            image_icon = f"{image_icon_raw}.svg"
+        else:
+            image_icon = image_icon_raw
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
@@ -720,7 +724,12 @@ def edit_entry(id):
         entry.externalurl = request.form.get('externalurl', '').strip() or None
         entry.group_name = request.form.get('group_name', '').strip() or None
 
-        new_image_icon = request.form.get('image_icon', '').strip()
+        raw = request.form.get('image_icon', '').strip().lower()
+        if raw and not raw.endswith('.svg'):
+            new_image_icon = f"{raw}.svg"
+        else:
+            new_image_icon = raw
+
         entry.image_icon = new_image_icon  # Always set explicitly, even blank
 
         if new_image_icon:
@@ -875,6 +884,32 @@ logger.info(f"🚀 Service Tracker Dashboard Starting...")
 logger.info(f"📦 Version: {version_info.get('version', 'unknown')}")
 logger.info(f"🔀 Commit: {version_info.get('commit', 'unknown')}")
 logger.info(f"⏱️ Build Time: {version_info.get('build_time', 'unknown')}")
+
+# Check images at startup
+def verify_and_fetch_missing_icons():
+    logger.info("🔍 Verifying icon files for all ServiceEntry records...")
+    with app.app_context():
+        entries = ServiceEntry.query.all()
+        missing_count = 0
+        for entry in entries:
+            icon = entry.image_icon
+            if icon:
+                icon_path = os.path.join(IMAGE_DIR, icon)
+                if not os.path.exists(icon_path):
+                    logger.warning(f"🚫 Missing icon: {icon} — attempting download...")
+                    fetched = fetch_icon_if_missing(icon, IMAGE_DIR, logger)
+                    if fetched:
+                        logger.info(f"✅ Successfully fetched missing icon: {fetched}")
+                    else:
+                        logger.error(f"❌ Failed to download icon: {icon}")
+                        missing_count += 1
+        logger.info(f"🔁 Icon verification complete. Missing count: {missing_count}")
+
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    threading.Thread(target=health_check_loop, daemon=True).start()
+    verify_and_fetch_missing_icons()  # 👈 Run image validation once at startup
+
+    
 
 if __name__ == '__main__':
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
