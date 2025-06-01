@@ -29,7 +29,7 @@ I wrote this as 90% of my stuff runs in docker, but you can manually add other h
   <img src="STD-MainDash.png" alt="Main Dashboard" width="300"/>
 </a>
 <a href="STD-Tiled_mobile.png">
-  <img src="STD-Tiled_mobile.png" alt="Tiled Mobile Dashboard" width="300"/>
+  <img src="STD-Tiled_mobile.png" alt="Tiled Mobile Dashboard" width="200"/>
 </a>
 
 
