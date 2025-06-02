@@ -216,60 +216,77 @@
                             <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
                             <small class="host-name" title="{{ entry.host }}">{{ entry.host }}</small>
                         </div>
+
                         <div class="tile-statuses">
                             <div class="tile-web-statuses">
+                                {% set internal_status_class =
+                                    'status-button-good' if entry.internal_health_check_status == '200' else
+                                    'status-button-stale' if entry.internal_health_check_status == 'Error: SSLError' else
+                                    'status-button-bad' if entry.internal_health_check_status else
+                                    'status-button-unknown' %}
+
+                                {% set external_status_class =
+                                    'status-button-good' if entry.external_health_check_status == '200' else
+                                    'status-button-stale' if entry.external_health_check_status == 'Error: SSLError' else
+                                    'status-button-bad' if entry.external_health_check_status else
+                                    'status-button-unknown' %}
+
                                 {% if entry.internalurl and entry.internal_health_check_enabled %}
                                     <a href="{{ entry.internalurl }}" target="_blank"
-                                       class="status-button {{ 'status-button-good' if entry.internal_health_check_status == '200' else 'status-button-bad' if entry.internal_health_check_status else 'status-button-unknown' }}"
-                                       title="Internal: {{ entry.internal_health_check_status or 'N/A' }} ({{ entry.internal_health_check_update | time_since }})">
-                                       INT
+                                    class="status-button {{ internal_status_class }}"
+                                    title="Internal: {{ entry.internal_health_check_status or 'N/A' }} ({{ entry.internal_health_check_update | time_since }})">
+                                        INT
                                     </a>
                                 {% endif %}
+                                
                                 {% if entry.externalurl and entry.external_health_check_enabled %}
                                     <a href="{{ entry.externalurl }}" target="_blank"
-                                       class="status-button {{ 'status-button-good' if entry.external_health_check_status == '200' else 'status-button-bad' if entry.external_health_check_status else 'status-button-unknown' }}"
-                                       title="External: {{ entry.external_health_check_status or 'N/A' }} ({{ entry.external_health_check_update | time_since }})">
-                                       EXT
+                                    class="status-button {{ external_status_class }}"
+                                    title="External: {{ entry.external_health_check_status or 'N/A' }} ({{ entry.external_health_check_update | time_since }})">
+                                        EXT
                                     </a>
                                 {% endif %}
                             </div>
+
+                            {% if not entry.is_static %}
                             <div class="tile-docker-status">
                                 {% set docker_link = (STD_DOZZLE_URL + "/#/?filter=" + entry.container_name if STD_DOZZLE_URL and entry.container_name else "#") %}
                                 {% set docker_status_lower = entry.docker_status.lower() if entry.docker_status else 'unknown' %}
                                 
                                 {% set _is_good_docker = ('running' in docker_status_lower and 'unhealthy' not in docker_status_lower) or 'healthy' in docker_status_lower %}
                                 {% set _is_bad_docker = 'exited' in docker_status_lower or 'dead' in docker_status_lower or 'unhealthy' in docker_status_lower or 'restarting' in docker_status_lower or 'removing' in docker_status_lower or 'paused' in docker_status_lower %}
-
+                                
                                 {% set docker_class = 'status-button-stale' if entry.is_docker_status_stale else
                                                     'status-button-good' if _is_good_docker else
                                                     'status-button-bad' if _is_bad_docker else
                                                     'status-button-unknown' %}
                                 
                                 {% set display_docker_status = (entry.docker_status.split('(')[0].strip() if entry.docker_status else 'N/A') %}
-
+                                
                                 <a href="{{ docker_link }}" target="_blank"
-                                   class="status-button docker-status-button {{ docker_class }}"
-                                   title="Docker: {{ entry.docker_status or 'N/A' }}{% if entry.last_api_update %} ({{ entry.last_api_update | time_since }}){% endif %}">
-                                    {{ display_docker_status[:9] }}{{ '…' if display_docker_status|length > 9 else '' }}
+                                class="status-button docker-status-button {{ docker_class }}"
+                                title="Docker: {{ entry.docker_status or 'N/A' }}{% if entry.last_api_update %} ({{ entry.last_api_update | time_since }}){% endif %}">
+                                {{ display_docker_status[:9] }}{{ '…' if display_docker_status|length > 9 else '' }}
                                 </a>
                             </div>
+
                             {% set dozzle_url = entry.dozzle_url_override if entry.dozzle_url_override else STD_DOZZLE_URL %}
                             {% set container_id = entry.container_id_override if entry.container_id_override else entry.container_id %}
-
                             {% if dozzle_url and container_id %}
-                            <a href="{{ dozzle_url }}/container/{{ container_id[:12] }}"
-                            target="_blank"
-                            class="dozzle-direct-link"
-                            title="Open Logs in Dozzle ({{ container_id[:12] }})">
-                                <img src="{{ url_for('static', filename='dozzle.svg')  }}" 
+                                <a href="{{ dozzle_url }}/container/{{ container_id[:12] }}"
+                                target="_blank"
+                                class="dozzle-direct-link"
+                                title="Open Logs in Dozzle ({{ container_id[:12] }})">
+                                <img src="{{ url_for('static', filename='dozzle.svg')  }}"
                                     alt="Dozzle Logs"
                                     class="dozzle-icon-img">
-                            </a>
+                                </a>
                             {% endif %}
-                            
+                            {% endif %}
+
                         </div>
-
-
+                        
+                   
                         
                     </div>
                 {% else %}
