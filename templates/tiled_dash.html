@@ -246,16 +246,20 @@
                                     {{ display_docker_status[:9] }}{{ '…' if display_docker_status|length > 9 else '' }}
                                 </a>
                             </div>
-                            {% if STD_DOZZLE_URL and entry.container_id and entry.container_id|length > 0 %}
-                            <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}"
-                               target="_blank"
-                               class="dozzle-direct-link"
-                               title="Open Logs in Dozzle ({{ entry.container_id[:12] }})">
+                            {% set dozzle_url = entry.dozzle_url_override if entry.dozzle_url_override else STD_DOZZLE_URL %}
+                            {% set container_id = entry.container_id_override if entry.container_id_override else entry.container_id %}
+
+                            {% if dozzle_url and container_id %}
+                            <a href="{{ dozzle_url }}/container/{{ container_id[:12] }}"
+                            target="_blank"
+                            class="dozzle-direct-link"
+                            title="Open Logs in Dozzle ({{ container_id[:12] }})">
                                 <img src="{{ url_for('static', filename='dozzle.svg')  }}" 
-                                     alt="Dozzle Logs"
-                                     class="dozzle-icon-img">
+                                    alt="Dozzle Logs"
+                                    class="dozzle-icon-img">
                             </a>
-                        {% endif %}
+                            {% endif %}
+                            
                         </div>
 
 
