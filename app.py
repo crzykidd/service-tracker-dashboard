@@ -17,6 +17,8 @@ from settings_loader import load_settings
 from image_utils import resolve_image_metadata, parse_bool
 from urllib.parse import urlparse, urljoin
 from image_utils import fetch_icon_if_missing
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
@@ -829,9 +831,13 @@ def edit_entry(id):
 
 # Background health check loop
 def health_check_loop():
+    from settings_loader import load_settings
+    settings, _, _ = load_settings()
+    URL_HEALTHCHECK_INTERVAL = settings.get("url_healthcheck_interval", 60)
+
     with app.app_context():
         while True:
-            time.sleep(60)
+            time.sleep(URL_HEALTHCHECK_INTERVAL)
             log_output = ["\U0001f504 Running internal health checks..."]
             entries = ServiceEntry.query.all()
 
@@ -869,13 +875,6 @@ def health_check_loop():
             for line in log_output:
                 logger.info(line)
 
-if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-    threading.Thread(target=health_check_loop, daemon=True).start()
-
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-# for 5 min testing
-# from apscheduler.triggers.interval import IntervalTrigger
 
 def run_scheduled_backup():
     with app.app_context():
@@ -951,7 +950,6 @@ def verify_and_fetch_missing_icons():
 
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     threading.Thread(target=health_check_loop, daemon=True).start()
- 
 
 
 
