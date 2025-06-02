@@ -49,6 +49,9 @@
         <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
         <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
       </select>
+      <span class="text-sm text-gray-400 ml-4">
+        Total Services: {{ grouped_entries.values() | map('length') | sum }}
+      </span>
       <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
     </div>
 
@@ -84,7 +87,8 @@
             <tr class="bg-gray-800 font-semibold cursor-pointer" onclick="toggleGroup('{{ group_index }}')">
               <td colspan="11" class="px-4 py-2">
                 <span id="toggle-icon-{{ group_index }}">▼</span>
-                {{ group }}
+                  {{ group }} <span class="text-sm text-gray-400 ml-2">({{ group_entries|length }})</span>
+
               </td>
             </tr>
           </tbody>
