@@ -173,12 +173,11 @@
     </div>
 
 
-    <div class="controls-container text-gray-300 mb-4">
-    <div class="grouping-controls flex items-center space-x-4">
+    <div class="controls-container text-gray-300 mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+    <div class="grouping-controls flex items-center space-x-4 flex-wrap">
         <div class="flex items-center space-x-2">
         <label for="groupBySelect" class="text-sm">Group by:</label>
-        <select id="groupBySelect"
-                class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <select id="groupBySelect" class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="group_name">Group Name</option>
             <option value="host">Docker Host</option>
             <option value="stack_name">Stack Name</option>
@@ -186,7 +185,20 @@
         </div>
         <div class="text-sm text-gray-400">Total Resources: {{ total_entries }}</div>
     </div>
+
+    <div class="flex items-center gap-2">
+        <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
+        <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
+        <option value="30">30s</option>
+        <option value="60">1m</option>
+        <option value="300">5m</option>
+        <option value="600">10m</option>
+        <option value="0">Never</option>
+        </select>
+        <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
     </div>
+    </div>
+
 
 
 
@@ -298,86 +310,89 @@
     {% endif %}
 
 <script>
-        
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            // --- Logic for Grouping Dropdown ---
-            const groupBySelect = document.getElementById('groupBySelect');
-            const currentUrlParamsForGrouping = new URLSearchParams(window.location.search); // Renamed to avoid conflict
-            
-            const activeGroupBy = currentUrlParamsForGrouping.get('group_by') || 'group_name'; 
+let secondsSinceRefresh = 0;
+let refreshInterval = 60;
 
-            if (groupBySelect) {
-                groupBySelect.value = activeGroupBy; 
+document.addEventListener('DOMContentLoaded', function () {
+  // Group By Dropdown Logic
+  const groupBySelect = document.getElementById('groupBySelect');
+  const urlParams = new URLSearchParams(window.location.search);
+  const activeGroupBy = urlParams.get('group_by') || 'group_name';
+  if (groupBySelect) {
+    groupBySelect.value = activeGroupBy;
+    groupBySelect.addEventListener('change', function () {
+      urlParams.set('group_by', this.value);
+      window.location.search = urlParams.toString();
+    });
+  }
 
-                groupBySelect.addEventListener('change', function() {
-                    const selectedGroupBy = this.value;
-                    const existingParamsForGrouping = new URLSearchParams(window.location.search); // Renamed
-                    existingParamsForGrouping.set('group_by', selectedGroupBy);
-                    window.location.search = existingParamsForGrouping.toString(); 
-                });
-            }
+  // Tile Clickability
+  const tiles = document.querySelectorAll('.tile');
+  tiles.forEach(tile => {
+    const internalUrl = tile.dataset.internalurl;
+    const externalUrl = tile.dataset.externalurl;
+    if (internalUrl || externalUrl) {
+      tile.style.cursor = 'pointer';
+      tile.addEventListener('click', function (event) {
+        if (event.target.closest('a.status-button') || event.target.closest('a.dozzle-direct-link')) return;
+        if (internalUrl) {
+          window.open(internalUrl, '_blank');
+        } else if (externalUrl) {
+          window.open(externalUrl, '_blank');
+        }
+      });
+    }
+  });
 
-            // --- Logic for Making Tiles Clickable ---
-            const tiles = document.querySelectorAll('.tile');
-            tiles.forEach(tile => {
-                const internalUrl = tile.dataset.internalurl; // Assumes you've added data-internalurl to your .tile divs
-                const externalUrl = tile.dataset.externalurl; // Assumes you've added data-externalurl to your .tile divs
+  // Collapse Toggle Persistence
+  const headers = document.querySelectorAll('.group-header');
+  headers.forEach(header => {
+    const groupName = header.dataset.group;
+    const container = document.querySelector(`[data-group-container="${groupName}"]`);
+    const icon = header.querySelector('.toggle-icon');
+    const isCollapsed = localStorage.getItem(`groupCollapse:${groupName}`) === 'true';
+    if (isCollapsed) {
+      container.style.display = 'none';
+      icon.textContent = '▸';
+    }
+    header.addEventListener('click', () => {
+      const collapsed = container.style.display === 'none';
+      container.style.display = collapsed ? '' : 'none';
+      icon.textContent = collapsed ? '▾' : '▸';
+      localStorage.setItem(`groupCollapse:${groupName}`, (!collapsed).toString());
+    });
+  });
 
-                // Only make the tile appear clickable and add a listener if there's a URL
-                if (internalUrl || externalUrl) {
-                    tile.style.cursor = 'pointer'; // Change cursor to indicate clickability
+  // Auto Refresh Logic
+  const refreshLabel = document.getElementById('refreshTimer');
+  const refreshDropdown = document.getElementById('refreshInterval');
+  const savedInterval = localStorage.getItem('refreshInterval');
+  if (savedInterval !== null) {
+    refreshInterval = parseInt(savedInterval);
+    if (refreshDropdown) refreshDropdown.value = savedInterval;
+  }
+  if (refreshDropdown) {
+    refreshDropdown.addEventListener('change', function () {
+      refreshInterval = parseInt(this.value);
+      localStorage.setItem('refreshInterval', this.value);
+    });
+  }
 
-                    tile.addEventListener('click', function(event) {
-                        // IMPORTANT: Check if the click was on an existing button inside the tile.
-                        // If so, let the button's own click event handle it and do nothing here.
-                        if (event.target.closest('a.status-button') || event.target.closest('a.dozzle-direct-link')) {
-                            return; 
-                        }
+  setInterval(() => {
+    secondsSinceRefresh++;
+    if (refreshLabel) {
+      const m = Math.floor(secondsSinceRefresh / 60);
+      const s = secondsSinceRefresh % 60;
+      refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
+    }
 
-                        // Proceed with tile click action
-                        if (internalUrl) {
-                            window.open(internalUrl, '_blank'); // Open in a new tab
-                        } else if (externalUrl) {
-                            // This 'else if' ensures externalUrl is only tried if internalUrl is not present or empty
-                            window.open(externalUrl, '_blank'); // Open in a new tab
-                        }
-                    });
-                }
-            });
-        });
-    </script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            // Collapse logic
-            const headers = document.querySelectorAll('.group-header');
-            headers.forEach(header => {
-                const groupName = header.dataset.group;
-                const container = document.querySelector(`[data-group-container="${groupName}"]`);
-                const icon = header.querySelector('.toggle-icon');
+    if (refreshInterval > 0 && secondsSinceRefresh >= refreshInterval) {
+      window.location.reload();
+    }
+  }, 1000);
+});
+</script>
 
-                // Restore collapse state from localStorage
-                const isCollapsed = localStorage.getItem(`groupCollapse:${groupName}`) === 'true';
-                if (isCollapsed) {
-                    container.style.display = 'none';
-                    icon.textContent = '▸';
-                }
-
-                header.addEventListener('click', () => {
-                    const currentlyCollapsed = container.style.display === 'none';
-                    if (currentlyCollapsed) {
-                        container.style.display = '';
-                        icon.textContent = '▾';
-                        localStorage.setItem(`groupCollapse:${groupName}`, 'false');
-                    } else {
-                        container.style.display = 'none';
-                        icon.textContent = '▸';
-                        localStorage.setItem(`groupCollapse:${groupName}`, 'true');
-                    }
-                });
-            });
-        });
-    </script>
 
 </body>
 </html>

@@ -5,6 +5,7 @@
 # Backup file location.   Make sure this is mountable in from your container.  
 # Can be set with ENV BACKUP_PATH=/config/backups
 backup_path: /config/backups
+backup_days_to_keep: 7
 
 # API Token for connections
 # Can be set with ENV API_TOKEN=supersecrettoken
@@ -13,3 +14,6 @@ api_token: supersecrettoken
 # URL for dozzle instance for quick connect to logs
 # Can be set with ENV STD_DOZZLE_URL
 std_dozzle_url: http://dozzle.host.com:8080
+
+# How often do we test the URL endpoints
+url_refresh_interval: 120

@@ -11,6 +11,7 @@ VALID_KEYS = {
     "backup_days_to_keep": int,
     "api_token": str,
     "std_dozzle_url": str,
+    "url_healthcheck_interval": int
 }
 
 def load_settings():

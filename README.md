@@ -47,6 +47,7 @@ You can configure the app using environment variables or a `settings.yml` file i
 | `std_dozzle_url`        | string | `STD_DOZZLE_URL`           | Link to your Dozzle instance (optional)           |
 | `backup_path`           | string | `BACKUP_PATH`              | Directory to store YAML backups                   |
 | `backup_days_to_keep`   | int    | `BACKUP_DAYS_TO_KEEP`      | How long to keep daily backups (in days)          |
+| `url_healthcheck_interval` | int  | `URL_HEALTHCHECK_INTERVAL` | How long between health checks on URLs           |
 
 ### Example `settings.yml`
 
