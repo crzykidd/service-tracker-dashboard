@@ -292,7 +292,8 @@ def tiled_dashboard():
         "tiled_dash.html",
         grouped_entries=sorted_grouped_entries,
         active_group_by=group_by_attr_name, # Pass the currently active group_by key
-        STD_DOZZLE_URL=app.config['std_dozzle_url']
+        STD_DOZZLE_URL=app.config['std_dozzle_url'],
+        total_entries=len(entries) 
     )
 
 @app.route("/dbdump")

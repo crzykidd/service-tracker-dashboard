@@ -173,24 +173,31 @@
     </div>
 
 
-    <div class="controls-container text-gray-300">
-    <div class="grouping-controls flex items-center space-x-2">
+    <div class="controls-container text-gray-300 mb-4">
+    <div class="grouping-controls flex items-center space-x-4">
+        <div class="flex items-center space-x-2">
         <label for="groupBySelect" class="text-sm">Group by:</label>
         <select id="groupBySelect"
                 class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        <option value="group_name">Group Name</option>
-        <option value="host">Docker Host</option>
-        <option value="stack_name">Stack Name</option>
+            <option value="group_name">Group Name</option>
+            <option value="host">Docker Host</option>
+            <option value="stack_name">Stack Name</option>
         </select>
+        </div>
+        <div class="text-sm text-gray-400">Total Resources: {{ total_entries }}</div>
     </div>
     </div>
+
+
 
     {% if grouped_entries %}
         {% for group_name, entries_in_group in grouped_entries.items() %}
             <h2 class="group-title flex items-center gap-2 cursor-pointer group-header" data-group="{{ group_name }}">
-                <span class="toggle-icon transition-transform duration-200">▾</span>
-                <span>{{ group_name }}</span>
+            <span class="toggle-icon transition-transform duration-200">▾</span>
+            <span>{{ group_name }}</span>
+            <span class="text-sm text-gray-400">({{ entries_in_group|length }})</span>
             </h2>
+
             <div class="tile-container" data-group-container="{{ group_name }}">
                 {% for entry in entries_in_group %}
                     <div class="tile"
