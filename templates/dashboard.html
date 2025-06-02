@@ -41,18 +41,33 @@
     </div>
 
 
-    <div class="flex flex-wrap gap-4 mb-4 items-center">
-      <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
-      <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-        <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
-        <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
-        <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
-        <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
-      </select>
-      <span class="text-sm text-gray-400 ml-4">
-        Total Services: {{ grouped_entries.values() | map('length') | sum }}
-      </span>
-      <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
+    <div class="flex flex-col sm:flex-row sm:justify-between gap-4 mb-4 items-start sm:items-center">
+      <div class="flex gap-4 items-center flex-wrap">
+        <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
+        
+        <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+          <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
+          <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
+          <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
+          <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
+        </select>
+
+        <span class="text-sm text-gray-400 ml-2">
+          Total Services: {{ grouped_entries.values() | map('length') | sum }}
+        </span>
+      </div>
+
+      <div class="flex gap-2 items-center mt-2 sm:mt-0">
+        <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
+        <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
+          <option value="30">30s</option>
+          <option value="60">1m</option>
+          <option value="300">5m</option>
+          <option value="600">10m</option>
+          <option value="0">Never</option>
+        </select>
+        <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
+      </div>
     </div>
 
     {% if msg == 'deleted' %}
@@ -234,11 +249,30 @@
 
   <script>
     let secondsSinceRefresh = 0;
+    let refreshInterval = 60; // default
+
     document.addEventListener('DOMContentLoaded', function () {
       const filterInput = document.getElementById('filterInput');
       const refreshLabel = document.getElementById('refreshTimer');
+      const refreshDropdown = document.getElementById('refreshInterval');
       const rows = document.querySelectorAll('table tbody tr[data-entry]');
 
+      // Load saved interval or default
+      const savedInterval = localStorage.getItem('refreshInterval');
+      if (savedInterval !== null) {
+        refreshInterval = parseInt(savedInterval);
+        if (refreshDropdown) refreshDropdown.value = savedInterval;
+      }
+
+      // Listen for dropdown change
+      if (refreshDropdown) {
+        refreshDropdown.addEventListener('change', function () {
+          refreshInterval = parseInt(this.value);
+          localStorage.setItem('refreshInterval', this.value);
+        });
+      }
+
+      // Filtering rows
       filterInput.addEventListener('input', function () {
         const filter = this.value.toLowerCase();
         rows.forEach(row => {
@@ -249,6 +283,7 @@
         });
       });
 
+      // Update refresh timer and handle auto-reload
       setInterval(() => {
         secondsSinceRefresh++;
         if (refreshLabel) {
@@ -256,13 +291,20 @@
           const s = secondsSinceRefresh % 60;
           refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
         }
+
+        if (refreshInterval > 0 && secondsSinceRefresh >= refreshInterval) {
+          window.location.reload();
+        }
       }, 1000);
 
-      document.getElementById("groupBySelect").addEventListener("change", function () {
-        const selected = this.value;
-        const params = new URLSearchParams(window.location.search);
-        params.set("group_by", selected);
-        window.location.search = params.toString();
+      // Restore group toggle state
+      const allGroups = document.querySelectorAll('[id^="toggle-icon-"]');
+      allGroups.forEach(iconEl => {
+        const groupId = iconEl.id.replace('toggle-icon-', '');
+        const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
+        const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
+        entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
+        iconEl.textContent = isCollapsed ? '▶' : '▼';
       });
     });
 
@@ -278,22 +320,6 @@
       localStorage.setItem(`group-collapsed-${groupId}`, newState);
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
-      // Existing logic (filterInput, refreshTimer, etc.)
-
-      // Add this to restore state from localStorage
-      const allGroups = document.querySelectorAll('[id^="toggle-icon-"]');
-      allGroups.forEach(iconEl => {
-        const groupId = iconEl.id.replace('toggle-icon-', '');
-        const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
-        const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
-        entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
-        iconEl.textContent = isCollapsed ? '▶' : '▼';
-      });
-    });
-
-
-
     function copyToClipboard(text, el) {
       navigator.clipboard.writeText(text).then(() => {
         const original = el.innerHTML;
@@ -301,6 +327,7 @@
         setTimeout(() => el.innerHTML = original, 1000);
       });
     }
-  </script>
+    </script>
+
 </body>
 </html>
