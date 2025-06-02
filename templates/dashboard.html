@@ -255,6 +255,15 @@
       const filterInput = document.getElementById('filterInput');
       const refreshLabel = document.getElementById('refreshTimer');
       const refreshDropdown = document.getElementById('refreshInterval');
+      const groupBySelect = document.getElementById('groupBySelect');
+      if (groupBySelect) {
+        groupBySelect.addEventListener('change', function () {
+          const selected = this.value;
+          const params = new URLSearchParams(window.location.search);
+          params.set('group_by', selected);
+          window.location.search = params.toString();
+        });
+      }
       const rows = document.querySelectorAll('table tbody tr[data-entry]');
 
       // Load saved interval or default
