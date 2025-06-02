@@ -604,7 +604,9 @@ def api_register():
     label_key_map = {
         "group": "group_name",
         "internal_health": "internal_health_check_enabled",
+        "internal.health": "internal_health_check_enabled",  # Add this
         "external_health": "external_health_check_enabled",
+        "external.health": "external_health_check_enabled",  # Add this
         "docker_host": "host",
         "icon": "image_icon",
     }
@@ -627,10 +629,6 @@ def api_register():
             if key not in known_fields:
                 logger.warning(f"⚠️ Unexpected STD label received (ignored): {key} = {data[key]}")
 
-
-    for src_key, target_key in label_key_map.items():
-        if src_key in data and target_key not in data:
-            data[target_key] = data[src_key]
 
     if app.debug:
         logger.info("🔍 Received API payload:")
