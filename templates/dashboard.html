@@ -42,22 +42,15 @@
 
 
     <div class="flex flex-wrap gap-4 mb-4 items-center">
-      <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack"
-            class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
-      
-      <select id="groupBySelect"
-              class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+      <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
+      <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
         <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
         <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
         <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
         <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
       </select>
-
-      <div class="text-sm text-gray-400">Total Resources: {{ entries|length }}</div>
-
       <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
     </div>
-
 
     {% if msg == 'deleted' %}
       <div class="bg-red-700 text-white px-4 py-2 rounded mb-4">Entry deleted successfully.</div>
@@ -91,7 +84,7 @@
             <tr class="bg-gray-800 font-semibold cursor-pointer" onclick="toggleGroup('{{ group_index }}')">
               <td colspan="11" class="px-4 py-2">
                 <span id="toggle-icon-{{ group_index }}">▼</span>
-                {{ group }} <span class="text-sm text-gray-400">({{ group_entries|length }})</span>
+                {{ group }}
               </td>
             </tr>
           </tbody>
@@ -191,22 +184,29 @@
               {% endif %}
             </td>
             <td class="px-3 py-2">{{ entry.last_updated|time_since }}</td>
+
             <td class="px-3 py-2">
-              {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'Never updated' %}
-              {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
-              {% if entry.docker_status in ['start', 'running'] %}
-                <span class="bg-green-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
-              {% elif entry.docker_status in ['die', 'exited'] %}
-                <span class="bg-red-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
-              {% elif entry.docker_status %}
-                <span class="bg-yellow-400 text-black px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
+              {% if not entry.is_static %}
+                {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'Never updated' %}
+                {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
+                {% if entry.docker_status in ['start', 'running'] %}
+                  <span class="bg-green-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
+                {% elif entry.docker_status in ['die', 'exited'] %}
+                  <span class="bg-red-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
+                {% elif entry.docker_status %}
+                  <span class="bg-yellow-400 text-black px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
+                {% else %}
+                  <span class="bg-gray-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Unknown</span>
+                {% endif %}
+                {% if entry.image_tag %}
+                  <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>
+                {% endif %}
               {% else %}
-                <span class="bg-gray-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Unknown</span>
-              {% endif %}
-              {% if entry.image_tag %}
-                <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>
+                <span class="text-xs text-gray-400 italic">Static</span>
               {% endif %}
             </td>
+
+
             <td class="px-3 py-2">
               {% if STD_DOZZLE_URL and entry.container_id %}
                 <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
