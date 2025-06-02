@@ -243,6 +243,7 @@ def dashboard():
 
 
 
+
 from collections import defaultdict # Ensure this is imported at the top of your app.py
 
 
@@ -279,9 +280,10 @@ def tiled_dashboard():
     if group_by_attr_name == "is_static":
         sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0])))
-    elif group_by_attr_name in ["group_name", "host", "stack_name"]: # Added "stack_name"
-        # Sort alphabetically, but ensure "Ungrouped" (if it appears for None/empty values) is last
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0])))
+    elif group_by_attr_name in ["group_name", "host", "stack_name"]:
+        sorted_grouped_entries = dict(
+        sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
+    )
     else:
         # Default to alphabetical sorting for other group types
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
