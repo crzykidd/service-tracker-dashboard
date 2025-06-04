@@ -1,0 +1,10 @@
+services:
+  alembic:
+    build: .
+    command: alembic revision --autogenerate -m "Add widget_key to ServiceEntry"
+    volumes:
+      - ~/docker/tracker:/config  # Mount the same volume where services.db is stored
+      - .:/app  # Mount the current directory
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development

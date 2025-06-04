@@ -110,6 +110,7 @@ class ServiceEntry(db.Model):
     group_name = db.Column(db.String(20), nullable=True, default="zz_none")
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
+    widget_key = db.Column(db.String(255), nullable=True)
 
     def to_dict(self):
         return {
@@ -137,6 +138,7 @@ class ServiceEntry(db.Model):
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
+            'widget_key': self.widget_key, 
         }
 
 
