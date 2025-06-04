@@ -19,6 +19,7 @@ from urllib.parse import urlparse, urljoin
 from image_utils import fetch_icon_if_missing
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
@@ -110,7 +111,7 @@ class ServiceEntry(db.Model):
     group_name = db.Column(db.String(20), nullable=True, default="zz_none")
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
-    widget_key = db.Column(db.String(255), nullable=True)
+    widget_id = db.Column(db.Integer, nullable=True)
 
     def to_dict(self):
         return {
@@ -138,8 +139,35 @@ class ServiceEntry(db.Model):
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
-            'widget_key': self.widget_key, 
+            'widget_id': self.widget_id, 
         }
+
+
+class Widget(db.Model):
+    __tablename__ = 'widget'
+
+    id = db.Column(db.Integer, primary_key=True)
+    widget_name = db.Column(db.String(255), nullable=False, unique=True)
+    widget_url = db.Column(db.String(255), nullable=False)
+    widget_fields = db.Column(db.JSON, nullable=False)  # Store the fields as a JSON list
+    widget_api_key = db.Column(db.String(255), nullable=True)  # New column for widget API key
+
+    def __repr__(self):
+        return f'<Widget {self.widget_name}>'
+    
+class WidgetValue(db.Model):
+    __tablename__ = 'widget_value'
+
+    id = db.Column(db.Integer, primary_key=True)
+    widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=False)  # Foreign key to widget.id
+    widget_value_key = db.Column(db.String(255), nullable=False)
+    widget_value = db.Column(db.String(255), nullable=True)
+
+    widget = db.relationship('Widget', backref=db.backref('widget_values', lazy=True))
+
+    def __repr__(self):
+        return f'<WidgetValue {self.widget_id}, {self.widget_value_key}>'    
+
 
 
 # Add this inside the ServiceEntry class in your app.py
@@ -299,6 +327,54 @@ def tiled_dashboard():
         STD_DOZZLE_URL=app.config['std_dozzle_url'],
         total_entries=len(entries) 
     )
+@app.route('/add_widget', methods=['POST'])
+def add_widget():
+    widget_name = request.form['widget_name']
+    widget_url = request.form['widget_url']
+    widget_api_key = request.form['widget_api_key']
+    widget_fields = request.form['widget_fields']  # JSON array
+
+    # Create new Widget object
+    new_widget = Widget(
+        widget_name=widget_name,
+        widget_url=widget_url,
+        widget_api_key=widget_api_key,
+        widget_fields=widget_fields  # Make sure it's stored as a JSON array
+    )
+
+    db.session.add(new_widget)
+    db.session.commit()
+
+    flash(f"Widget '{widget_name}' added successfully!", 'success')
+    return redirect(url_for('settings'))  # Redirect back to settings page
+
+@app.route('/edit_widget/<int:id>', methods=['POST'])
+def edit_widget(id):
+    widget = Widget.query.get(id)
+    
+    if request.method == 'POST':
+        # Update the widget's fields
+        widget.widget_name = request.form['widget_name']
+        widget.widget_url = request.form['widget_url']
+        widget.widget_api_key = request.form['widget_api_key']
+        widget.widget_fields = request.form['widget_fields']
+
+        db.session.commit()
+
+        flash(f"Widget '{widget.widget_name}' updated successfully!", 'success')
+        return redirect(url_for('settings'))
+
+@app.route('/delete_widget/<int:id>', methods=['GET'])
+def delete_widget(id):
+    widget = Widget.query.get(id)
+    
+    if widget:
+        db.session.delete(widget)
+        db.session.commit()
+        flash(f"Widget '{widget.widget_name}' deleted successfully!", 'success')
+
+    return redirect(url_for('settings'))
+
 
 @app.route("/dbdump")
 def db_dump():
@@ -829,7 +905,62 @@ def edit_entry(id):
 
     return render_template("edit_entry.html", entry=entry, ref=referrer)
 
+# widget checks
+def update_widget_data_periodically():
+    """
+    This function is called periodically to update widget data for all widgets.
+    It fetches data based on the API URL, API key, and widget fields, then updates the WidgetValue table.
+    """
+    # Get all widgets from the database
+    widgets = Widget.query.all()
 
+    # For each widget, fetch data and update the WidgetValue table
+    for widget in widgets:
+        api_url = widget.widget_url
+        api_key = widget.widget_api_key
+        widget_fields = widget.widget_fields  # Assume this is a JSON list of fields
+
+        # Fetch the data for the widget
+        data = fetch_widget_data(api_url, api_key, widget_fields)
+
+        if "error" in data:
+            print(f"Error fetching data for widget {widget.id}: {data['error']}")
+            continue
+
+        # Update the WidgetValue table with the new data
+        for key, value in data.items():
+            # Check if the widget value already exists
+            widget_value = WidgetValue.query.filter_by(widget_id=widget.id, widget_value_key=key).first()
+
+            if not widget_value:
+                # If no existing record, create a new one
+                widget_value = WidgetValue(
+                    widget_id=widget.id,
+                    widget_value_key=key,
+                    widget_value=str(value)  # Store the value as a string
+                )
+                db.session.add(widget_value)
+            else:
+                # If the record exists, update it
+                widget_value.widget_value = str(value)
+
+            # Commit the changes to the database
+            db.session.commit()
+
+    print("Widget values updated successfully!")
+
+# Set up the APScheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    update_widget_data_periodically,
+    IntervalTrigger(minutes=10),  # Set interval to 10 minutes (adjust as needed)
+    id='widget_data_update_job',
+    name='Update widget values periodically',
+    replace_existing=True
+)
+
+# Start the scheduler
+scheduler.start()
 
 # Background health check loop
 def health_check_loop():
