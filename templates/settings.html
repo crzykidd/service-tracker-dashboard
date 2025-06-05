@@ -280,30 +280,39 @@
         <h2 class="text-xl font-semibold mb-4">Widget Settings</h2>
         <p class="text-gray-400 text-sm mb-4">Manage widget-related settings here.</p>
 
-        <!-- Add New Widget Form -->
-        <h3 class="text-lg font-semibold mb-4">Add New Widget</h3>
-        <form action="/add_widget" method="POST" class="mb-6">
+        <!-- Add or Edit Widget -->
+        <h3 class="text-lg font-semibold mb-4">Edit Widget for Service</h3>
+        <form action="/edit_service_widget/{{ entry.id }}" method="POST" class="mb-6">
+          <!-- Dropdown to select a widget -->
           <div class="mb-4">
-            <label for="widget_name" class="block text-gray-300">Widget Name</label>
-            <input type="text" name="widget_name" id="widget_name" class="w-full p-2 rounded bg-gray-600 text-white" required />
+            <label for="widget_id" class="block text-gray-300">Select Widget</label>
+            <select name="widget_id" id="widget_id" class="w-full p-2 rounded bg-gray-600 text-white">
+              <option value="">Select a Widget</option>
+              <option value="none" {% if not entry.widget_id %}selected{% endif %}>None</option>
+              {% for widget in available_widgets %}
+                <option value="{{ widget.id }}" {% if entry.widget_id == widget.id %}selected{% endif %}>
+                  {{ widget.widget_name }}
+                </option>
+              {% endfor %}
+            </select>
           </div>
 
+          <!-- API URL field -->
           <div class="mb-4">
             <label for="widget_url" class="block text-gray-300">API URL</label>
-            <input type="text" name="widget_url" id="widget_url" class="w-full p-2 rounded bg-gray-600 text-white" required />
+            <input type="text" name="widget_url" id="widget_url" class="w-full p-2 rounded bg-gray-600 text-white"
+              value="{{ selected_widget.widget_url if selected_widget else '' }}" {% if not entry.widget_id %}disabled{% endif %} required />
           </div>
 
+          <!-- API Key field -->
           <div class="mb-4">
             <label for="widget_api_key" class="block text-gray-300">API Key</label>
-            <input type="text" name="widget_api_key" id="widget_api_key" class="w-full p-2 rounded bg-gray-600 text-white" required />
+            <input type="text" name="widget_api_key" id="widget_api_key" class="w-full p-2 rounded bg-gray-600 text-white"
+              value="{{ selected_widget.widget_api_key if selected_widget else '' }}" {% if not entry.widget_id %}disabled{% endif %} required />
           </div>
 
-          <div class="mb-4">
-            <label for="widget_fields" class="block text-gray-300">Fields (JSON Array)</label>
-            <input type="text" name="widget_fields" id="widget_fields" class="w-full p-2 rounded bg-gray-600 text-white" required />
-          </div>
-
-          <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded">Add Widget</button>
+          <!-- Submit Button -->
+          <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded">Save Widget</button>
         </form>
 
         <!-- Display Existing Widgets -->
@@ -348,6 +357,7 @@
   </div>     <!-- flex container -->
 </div>
 <!-- End of widgets -->
+
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {

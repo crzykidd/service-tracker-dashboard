@@ -20,6 +20,7 @@ from image_utils import fetch_icon_if_missing
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+import json
 
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
@@ -111,7 +112,8 @@ class ServiceEntry(db.Model):
     group_name = db.Column(db.String(20), nullable=True, default="zz_none")
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
-    widget_id = db.Column(db.Integer, nullable=True)
+    widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
+    widget = db.relationship('Widget', backref='services', lazy=True)
 
     def to_dict(self):
         return {
@@ -194,45 +196,9 @@ def time_since(dt):
         dt = dt.replace(tzinfo=now.tzinfo)
     return humanize.naturaltime(now - dt)
 
-# Ensure DB schema exists
-#logger.info("✅ Checking for 'service_entry' table...")
-#conn = sqlite3.connect(DATABASE_PATH)
-#cursor = conn.cursor()
-#cursor.execute("""
-#    CREATE TABLE IF NOT EXISTS service_entry (
-#        id INTEGER PRIMARY KEY AUTOINCREMENT,
-#        host TEXT NOT NULL,
-#        container_name TEXT NOT NULL,
-#        container_id TEXT,
-#        internalurl TEXT,
-#        externalurl TEXT,
-#        last_updated TEXT NOT NULL,
-#        last_api_update TEXT,
-#        stack_name TEXT,
-#        docker_status TEXT,
-#        internal_health_check_enabled BOOLEAN,
-#        internal_health_check_status TEXT,
-#        internal_health_check_update TEXT,
-#        external_health_check_enabled BOOLEAN,
-#        external_health_check_status TEXT,
-#        external_health_check_update TEXT,
-#        image_registry TEXT,
-#        image_owner TEXT,
-#        image_name TEXT,
-#        image_tag TEXT,
-#        image_icon TEXT,
-#        group_name TEXT,
-#        is_static BOOLEAN NOT NULL DEFAULT 0,
-#        started_at TEXT
-#    )
-#""")
-#conn.commit()
-#conn.close()
-#logger.info("✅ DB schema ensured.")
-
 
 from collections import defaultdict
-
+scheduler = BackgroundScheduler()
 @app.route('/')
 def dashboard():
     sort = request.args.get('sort', 'group_name')
@@ -327,53 +293,7 @@ def tiled_dashboard():
         STD_DOZZLE_URL=app.config['std_dozzle_url'],
         total_entries=len(entries) 
     )
-@app.route('/add_widget', methods=['POST'])
-def add_widget():
-    widget_name = request.form['widget_name']
-    widget_url = request.form['widget_url']
-    widget_api_key = request.form['widget_api_key']
-    widget_fields = request.form['widget_fields']  # JSON array
 
-    # Create new Widget object
-    new_widget = Widget(
-        widget_name=widget_name,
-        widget_url=widget_url,
-        widget_api_key=widget_api_key,
-        widget_fields=widget_fields  # Make sure it's stored as a JSON array
-    )
-
-    db.session.add(new_widget)
-    db.session.commit()
-
-    flash(f"Widget '{widget_name}' added successfully!", 'success')
-    return redirect(url_for('settings'))  # Redirect back to settings page
-
-@app.route('/edit_widget/<int:id>', methods=['POST'])
-def edit_widget(id):
-    widget = Widget.query.get(id)
-    
-    if request.method == 'POST':
-        # Update the widget's fields
-        widget.widget_name = request.form['widget_name']
-        widget.widget_url = request.form['widget_url']
-        widget.widget_api_key = request.form['widget_api_key']
-        widget.widget_fields = request.form['widget_fields']
-
-        db.session.commit()
-
-        flash(f"Widget '{widget.widget_name}' updated successfully!", 'success')
-        return redirect(url_for('settings'))
-
-@app.route('/delete_widget/<int:id>', methods=['GET'])
-def delete_widget(id):
-    widget = Widget.query.get(id)
-    
-    if widget:
-        db.session.delete(widget)
-        db.session.commit()
-        flash(f"Widget '{widget.widget_name}' deleted successfully!", 'success')
-
-    return redirect(url_for('settings'))
 
 
 @app.route("/dbdump")
@@ -811,7 +731,26 @@ def api_register():
     return jsonify(entry.to_dict()), 200 if entry else 201
 
 
+@app.route('/widget_config/<widget_name>')
+def widget_config(widget_name):
+    path = os.path.join('/app/widgets', widget_name, 'settings.json')
+    if not os.path.exists(path):
+        return jsonify([])  # Or 404 if you prefer
+    with open(path) as f:
+        try:
+            config = json.load(f)
+            return jsonify(config.get("available_fields", []))
+        except Exception as e:
+            app.logger.warning(f"Failed to load widget settings for {widget_name}: {e}")
+            return jsonify([])
+        
 
+from sqlalchemy.orm import joinedload
+
+@app.route('/widgets')
+def list_widgets():
+    widgets = Widget.query.options(joinedload(Widget.widget_values)).all()
+    return render_template("widget_list.html", widgets=widgets)
 
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
@@ -829,6 +768,35 @@ def edit_entry(id):
     if not referrer.startswith('/'):
         referrer = '/'
 
+    # Fetch all available widgets from the widgets directory
+    widgets_dir = '/app/widgets'
+    available_widgets = []
+
+    if os.path.exists(widgets_dir):
+        # Log the path of the directory being scanned
+        logger.debug(f"Scanning directory for widgets: {widgets_dir}")
+        
+        # List directories in the widgets folder (one directory per widget)
+        available_widgets = [d for d in os.listdir(widgets_dir) if os.path.isdir(os.path.join(widgets_dir, d))]
+        
+        # Log the number of widgets found and their directory names
+        if available_widgets:
+            logger.debug(f"Found {len(available_widgets)} widget(s) in directory: {widgets_dir}")
+            logger.debug(f"Widgets found: {', '.join(available_widgets)}")  # Log directory names (widget names)
+        else:
+            logger.debug(f"No widgets found in directory: {widgets_dir}")
+    else:
+        logger.warning(f"Widgets directory not found: {widgets_dir}")
+
+    # Fetch the current widget info if a widget is associated
+    selected_widget = None
+    if entry.widget_id:
+        selected_widget = Widget.query.get(entry.widget_id)
+        if selected_widget:
+            logger.debug(f"Selected widget for entry {entry.id}: {selected_widget.widget_name}")
+        else:
+            logger.warning(f"No widget found for entry {entry.id} with widget_id: {entry.widget_id}")
+
     if request.method == 'POST':
         # Handle delete action
         if 'delete' in request.form and request.form.get('delete_confirmation') == entry.container_name:
@@ -839,7 +807,7 @@ def edit_entry(id):
             return redirect(referrer)
         elif 'delete' in request.form:
             flash(f"Deletion not confirmed for '{entry.container_name}'. Please type the name to confirm.", 'warning')
-            return render_template("edit_entry.html", entry=entry, ref=referrer)
+            return render_template("edit_entry.html", entry=entry, ref=referrer, available_widgets=available_widgets, selected_widget=selected_widget)
 
         # Update all editable fields
         entry.host = request.form.get('host', '').strip()
@@ -848,6 +816,50 @@ def edit_entry(id):
         entry.externalurl = request.form.get('externalurl', '').strip() or None
         entry.group_name = request.form.get('group_name', '').strip() or None
 
+
+        # Handle widget selection and update logic
+        widget_name = request.form.get('widget_name')  # always the actual name (e.g. 'sonarr')
+        widget_url = request.form.get('widget_url', '').strip()
+        widget_api_key = request.form.get('widget_api_key', '').strip()
+        widget_fields = request.form.getlist('widget_fields')
+
+        if not widget_name or widget_name == "none":
+            entry.widget_id = None
+        else:
+            if entry.widget_id:
+                widget = Widget.query.get(entry.widget_id)
+                if widget:
+                    widget.widget_name = widget_name
+                    widget.widget_url = widget_url
+                    widget.widget_api_key = widget_api_key
+                    widget.widget_fields = widget_fields  
+                else:
+                    logger.warning(f"Entry has widget_id={entry.widget_id}, but it doesn't exist. Creating new widget.")
+                    new_widget = Widget(
+                        widget_name=widget_name,
+                        widget_url=widget_url,
+                        widget_api_key=widget_api_key,
+                        widget_fields=widget_fields,  
+                    )
+                    db.session.add(new_widget)
+                    db.session.flush()
+                    entry.widget_id = new_widget.id
+            else:
+                new_widget = Widget(
+                    widget_name=widget_name,
+                    widget_url=widget_url,
+                    widget_api_key=widget_api_key,
+                    widget_fields=widget_fields,  
+                )
+                db.session.add(new_widget)
+                db.session.flush()
+                entry.widget_id = new_widget.id
+
+
+
+
+
+        # Handle the image icon
         raw = request.form.get('image_icon', '').strip().lower()
         if raw and not raw.endswith('.svg'):
             new_image_icon = f"{raw}.svg"
@@ -856,6 +868,7 @@ def edit_entry(id):
 
         entry.image_icon = new_image_icon  # Always set explicitly, even blank
 
+        # Icon logic (as you already have)
         if new_image_icon:
             icon_path = os.path.join(IMAGE_DIR, new_image_icon)
             if not os.path.exists(icon_path):
@@ -902,65 +915,72 @@ def edit_entry(id):
             flash(f"Error updating entry: {str(e)}", 'danger')
 
         return redirect(referrer)
+    all_widgets = Widget.query.all()
+    return render_template("edit_entry.html", entry=entry, ref=referrer, available_widgets=available_widgets, selected_widget=selected_widget, widgets=all_widgets)
 
-    return render_template("edit_entry.html", entry=entry, ref=referrer)
 
 # widget checks
+from widgets.sonarr.fetch_data import fetch_widget_data  # You may want to import dynamically if many widgets
+
 def update_widget_data_periodically():
-    """
-    This function is called periodically to update widget data for all widgets.
-    It fetches data based on the API URL, API key, and widget fields, then updates the WidgetValue table.
-    """
-    # Get all widgets from the database
-    widgets = Widget.query.all()
+    with app.app_context():
+        widgets = Widget.query.all()
 
-    # For each widget, fetch data and update the WidgetValue table
-    for widget in widgets:
-        api_url = widget.widget_url
-        api_key = widget.widget_api_key
-        widget_fields = widget.widget_fields  # Assume this is a JSON list of fields
+        for widget in widgets:  # ✅ Now inside context
+            print(f"🔄 Running widget fetch for: {widget.widget_name} ({widget.id})")
+            try:
+                widget_key = widget.widget_name  # 💡 Use widget_name, not widget_key
+                widget_dir = os.path.join('widgets', widget_key)
+                settings_path = os.path.join(widget_dir, 'settings.json')
 
-        # Fetch the data for the widget
-        data = fetch_widget_data(api_url, api_key, widget_fields)
+                if not os.path.exists(settings_path):
+                    print(f"⚠️ Missing settings.json for widget '{widget_key}'")
+                    continue
 
-        if "error" in data:
-            print(f"Error fetching data for widget {widget.id}: {data['error']}")
-            continue
+                with open(settings_path, 'r') as f:
+                    settings = json.load(f)
 
-        # Update the WidgetValue table with the new data
-        for key, value in data.items():
-            # Check if the widget value already exists
-            widget_value = WidgetValue.query.filter_by(widget_id=widget.id, widget_value_key=key).first()
+                available_fields = settings.get("available_fields", [])
+                requested_fields = widget.widget_fields
+                api_url = widget.widget_url
+                api_key = widget.widget_api_key
 
-            if not widget_value:
-                # If no existing record, create a new one
-                widget_value = WidgetValue(
-                    widget_id=widget.id,
-                    widget_value_key=key,
-                    widget_value=str(value)  # Store the value as a string
-                )
-                db.session.add(widget_value)
-            else:
-                # If the record exists, update it
-                widget_value.widget_value = str(value)
+                try:
+                    import importlib
+                    module = importlib.import_module(f"widgets.{widget_key}.fetch_data")
+                    fetch_func = getattr(module, "fetch_widget_data")
+                    data = fetch_func(api_url, api_key, requested_fields, available_fields)
+                except Exception as e:
+                    print(f"❌ Failed to load widget fetcher for '{widget_key}': {e}")
+                    continue
 
-            # Commit the changes to the database
-            db.session.commit()
+                if isinstance(data, dict) and "error" in data:
+                    print(f"❌ Error fetching data for widget {widget.id}: {data['error']}")
+                    continue
 
-    print("Widget values updated successfully!")
+                for key, value in data.items():
+                    widget_value = WidgetValue.query.filter_by(widget_id=widget.id, widget_value_key=key).first()
 
-# Set up the APScheduler
-scheduler = BackgroundScheduler()
-scheduler.add_job(
-    update_widget_data_periodically,
-    IntervalTrigger(minutes=10),  # Set interval to 10 minutes (adjust as needed)
-    id='widget_data_update_job',
-    name='Update widget values periodically',
-    replace_existing=True
-)
+                    if not widget_value:
+                        widget_value = WidgetValue(
+                            widget_id=widget.id,
+                            widget_value_key=key,
+                            widget_value=str(value)
+                        )
+                        db.session.add(widget_value)
+                    else:
+                        widget_value.widget_value = str(value)
 
-# Start the scheduler
-scheduler.start()
+                db.session.commit()
+                print(f"✅ Updated values for widget {widget_key} (ID: {widget.id})")
+
+            except Exception as e:
+                print(f"🔥 Exception while processing widget {widget.id}: {str(e)}")
+
+        
+
+
+
 
 # Background health check loop
 def health_check_loop():
@@ -1047,11 +1067,6 @@ def run_scheduled_backup():
             logger.info(f"🧹 Removed {removed} expired backup(s) from {backup_dir}")
 
 
-# Start background scheduler
-scheduler = BackgroundScheduler()
-scheduler.add_job(run_scheduled_backup, CronTrigger(hour=0, minute=5))  # 12:05 AM
-#scheduler.add_job(run_scheduled_backup, IntervalTrigger(minutes=1))
-scheduler.start()
 
 app.debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
@@ -1082,6 +1097,31 @@ def verify_and_fetch_missing_icons():
         logger.info(f"🔁 Icon verification complete. Missing count: {missing_count}")
 
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    threading.Thread(target=health_check_loop, daemon=True).start()
+
+# === APScheduler Setup with Debug-Safe Guard ===
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    scheduler = BackgroundScheduler()
+
+    scheduler.add_job(
+        update_widget_data_periodically,
+        IntervalTrigger(seconds=15),
+        id='widget_data_update_job',
+        name='Update widget values periodically',
+        replace_existing=True
+    )
+
+    scheduler.add_job(
+        run_scheduled_backup,
+        CronTrigger(hour=0, minute=5),
+        id='scheduled_backup_job',
+        name='Run daily backup',
+        replace_existing=True
+    )
+
+    scheduler.start()
+
+    # Start any background threads too
     threading.Thread(target=health_check_loop, daemon=True).start()
 
 
