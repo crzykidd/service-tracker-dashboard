@@ -52,20 +52,25 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-config, config_from_env, config_from_file = load_settings()
+
+@app.context_processor
+def inject_now():
+    return {'now': datetime.now}
+
+settings, config_from_env, config_from_file = load_settings()
 # Set STD_DOZZLE_URL from environment first, fallback to settings file
-app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", config.get("STD_DOZZLE_URL", ""))
+app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", settings.get("STD_DOZZLE_URL", ""))
 
 
 logger.info("🔧 Loaded settings:")
-for k, v in config.items():
+for k, v in settings.items():
     logger.info(f"    {k} = {v}")
 
 # Optionally populate into app.config if you use `Flask config`
-app.config.update(config)
+app.config.update(settings)
 
 logger.info("⚙️ Flask config (from settings):")
-for k in config:
+for k in settings:
     logger.info(f"    {k} = {app.config.get(k)}")
 
 def read_version_info():
@@ -115,10 +120,10 @@ class ServiceEntry(db.Model):
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
     widget = db.relationship('Widget', backref='services', lazy=True)
 
+# fields for backup
     def to_dict(self):
-        return {
+        data = {
             'stack_name': self.stack_name,
-            'id': self.id,
             'host': self.host,
             'container_name': self.container_name,
             'container_id': self.container_id,
@@ -141,15 +146,25 @@ class ServiceEntry(db.Model):
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
-            'widget_id': self.widget_id, 
         }
+
+        # Add inline widget info if attached
+        if self.widget:
+            data['widget'] = {
+                'widget_name': self.widget.widget_name,
+                'widget_url': self.widget.widget_url,
+                'widget_fields': self.widget.widget_fields,
+                'widget_api_key': self.widget.widget_api_key,
+            }
+
+        return data
 
 
 class Widget(db.Model):
     __tablename__ = 'widget'
 
     id = db.Column(db.Integer, primary_key=True)
-    widget_name = db.Column(db.String(255), nullable=False, unique=True)
+    widget_name = db.Column(db.String(255), nullable=False)
     widget_url = db.Column(db.String(255), nullable=False)
     widget_fields = db.Column(db.JSON, nullable=False)  # Store the fields as a JSON list
     widget_api_key = db.Column(db.String(255), nullable=True)  # New column for widget API key
@@ -164,6 +179,7 @@ class WidgetValue(db.Model):
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=False)  # Foreign key to widget.id
     widget_value_key = db.Column(db.String(255), nullable=False)
     widget_value = db.Column(db.String(255), nullable=True)
+    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     widget = db.relationship('Widget', backref=db.backref('widget_values', lazy=True))
 
@@ -211,6 +227,16 @@ def dashboard():
     sort_attr = sort_attr.asc() if direction == 'asc' else sort_attr.desc()
     entries = ServiceEntry.query.order_by(sort_attr).all()
 
+    widget_value_rows = WidgetValue.query.all()
+    widget_values = {}
+
+    for wv in widget_value_rows:
+        if wv.widget_id not in widget_values:
+            widget_values[wv.widget_id] = {}
+        widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
+
+    
+
     # Group entries
     grouped_entries = defaultdict(list)
     for entry in entries:
@@ -236,7 +262,9 @@ def dashboard():
         direction=direction,
         group_by=group_by,
         msg=msg,
-        STD_DOZZLE_URL=os.getenv('STD_DOZZLE_URL')
+        STD_DOZZLE_URL=os.getenv('STD_DOZZLE_URL'),
+        widget_values=widget_values
+
     )
 
 
@@ -247,52 +275,64 @@ from collections import defaultdict # Ensure this is imported at the top of your
 
 @app.route('/tiled_dash')
 def tiled_dashboard():
-    group_by_param = request.args.get('group_by', 'group_name')  # Default grouping by group_name
+    group_by_param = request.args.get('group_by', 'group_name')
 
-    # Determine the attribute to sort and group by
     if hasattr(ServiceEntry, group_by_param):
         group_by_attr_name = group_by_param
         group_by_attr_for_query = getattr(ServiceEntry, group_by_param)
     else:
-        # Fallback to group_name if the param is invalid
         group_by_attr_name = 'group_name'
         group_by_attr_for_query = ServiceEntry.group_name
 
-    # Fetch entries, sorted primarily by the grouping attribute, then by container name
     entries = ServiceEntry.query.order_by(group_by_attr_for_query.asc(), ServiceEntry.container_name.asc()).all()
+
+    # === NEW: Preload widget values ===
+    widget_value_rows = WidgetValue.query.all()
+    widget_values = {}
+
+    for wv in widget_value_rows:  # Use the rows you've already fetched
+        if wv.widget_id not in widget_values:
+            widget_values[wv.widget_id] = {}
+        widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
 
     grouped_entries_dict = defaultdict(list)
     for entry in entries:
         key_value = getattr(entry, group_by_attr_name)
-
-        if group_by_attr_name == "is_static": # If you add 'is_static' to dropdown later
+        if group_by_attr_name == "is_static":
             key = "Static Entries" if key_value else "Dynamic Entries"
-        # Handle common 'empty' or 'placeholder' group names
         elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "zz_none":
             key = "Ungrouped"
         else:
             key = str(key_value)
         grouped_entries_dict[key].append(entry)
 
-    # Sort groups for consistent display
+    # ✅ Sort entries WITHIN each group (widgets first, then container name)
+    for key, group_entries in grouped_entries_dict.items():
+        grouped_entries_dict[key] = sorted(
+            group_entries,
+            key=lambda e: (e.widget_id is None, e.container_name.lower())
+        )
+
+
+    # === Group sorting (unchanged) ===
     if group_by_attr_name == "is_static":
         sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0])))
     elif group_by_attr_name in ["group_name", "host", "stack_name"]:
-        sorted_grouped_entries = dict(
-        sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
-    )
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower())))
     else:
-        # Default to alphabetical sorting for other group types
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
     return render_template(
         "tiled_dash.html",
         grouped_entries=sorted_grouped_entries,
-        active_group_by=group_by_attr_name, # Pass the currently active group_by key
+        active_group_by=group_by_attr_name,
         STD_DOZZLE_URL=app.config['std_dozzle_url'],
-        total_entries=len(entries) 
+        total_entries=len(entries),
+        widget_values=widget_values
     )
+
+
 
 
 
@@ -319,10 +359,7 @@ def settings():
             entries = ServiceEntry.query.all()
             data = [e.to_dict() for e in entries]
 
-            # The default backup file is always written/updated first
-            # You might want to name this default file more explicitly, e.g., latest_backup.yaml
-            # or use BACKUP_PATH directly if it's intended as the primary/latest server backup.
-            # For this example, we continue to use BACKUP_PATH as the target for server saves.
+
             try:
                 with open(BACKUP_PATH, 'w') as f:
                     yaml.dump(data, f, allow_unicode=True, sort_keys=False)
@@ -413,11 +450,37 @@ def settings():
                         skipped_count +=1
                         continue
 
+                    # Handle embedded widget data if present
+                    # --- 1. Restore or create the widget ---
+                    widget_data = item.get('widget')
+                    widget_obj = None
+
+                    if widget_data:
+                        widget_obj = Widget.query.filter_by(
+                            widget_name=widget_data.get('widget_name'),
+                            widget_url=widget_data.get('widget_url')
+                        ).first()
+
+                        if not widget_obj:
+                            widget_obj = Widget(
+                                widget_name=widget_data.get('widget_name'),
+                                widget_url=widget_data.get('widget_url'),
+                                widget_fields=widget_data.get('widget_fields') or [],
+                                widget_api_key=widget_data.get('widget_api_key'),
+                            )
+                            db.session.add(widget_obj)
+                        else:
+                            widget_obj.widget_fields = widget_data.get('widget_fields') or []
+                            widget_obj.widget_api_key = widget_data.get('widget_api_key')
+
+                        db.session.flush()  # ensure widget_obj.id is available
+
+
+
                     entry = ServiceEntry.query.filter_by(
                         container_name=item['container_name'],
                         host=item['host']
                     ).first()
-
                     if entry: # Entry exists in DB
                         # Rule: Protect existing static entries in DB from being overwritten by non-static items
                         # during a 'restore all' operation.
@@ -430,6 +493,8 @@ def settings():
                     else: # New entry, create it
                         entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
                         db.session.add(entry)
+                    if widget_obj:
+                        entry.widget_id = widget_obj.id
 
                     # Apply fields from backup item to DB entry
                     for field, value in item.items():
@@ -437,8 +502,9 @@ def settings():
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
                                 setattr(entry, 'is_static', item_is_static_from_backup)
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update']:
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget']:
                             setattr(entry, field, value)
+
                     
                     # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
                     # (especially if item_is_static_from_backup was derived from .get with a default)
@@ -489,7 +555,7 @@ def settings():
     
     return render_template(
         'settings.html',
-         current_config=config,
+         current_config=settings,
          config_from_env=config_from_env,
          config_from_file=config_from_file,
          server_backup_files=server_backup_files,
@@ -739,7 +805,7 @@ def widget_config(widget_name):
     with open(path) as f:
         try:
             config = json.load(f)
-            return jsonify(config.get("available_fields", []))
+            return jsonify(settings.get("available_fields", []))
         except Exception as e:
             app.logger.warning(f"Failed to load widget settings for {widget_name}: {e}")
             return jsonify([])
@@ -824,6 +890,17 @@ def edit_entry(id):
         widget_fields = request.form.getlist('widget_fields')
 
         if not widget_name or widget_name == "none":
+            if entry.widget_id:
+                # Delete associated widget values
+                WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
+
+                # Delete the widget itself
+                widget_to_delete = Widget.query.get(entry.widget_id)
+                if widget_to_delete:
+                    db.session.delete(widget_to_delete)
+
+                logger.info(f"🗑️ Deleted widget ID {entry.widget_id} and its values for entry ID {entry.id}")
+
             entry.widget_id = None
         else:
             if entry.widget_id:
@@ -965,11 +1042,13 @@ def update_widget_data_periodically():
                         widget_value = WidgetValue(
                             widget_id=widget.id,
                             widget_value_key=key,
-                            widget_value=str(value)
+                            widget_value=str(value),
+                            last_updated=datetime.utcnow()
                         )
                         db.session.add(widget_value)
                     else:
                         widget_value.widget_value = str(value)
+                        widget_value.last_updated = datetime.utcnow()
 
                 db.session.commit()
                 print(f"✅ Updated values for widget {widget_key} (ID: {widget.id})")
@@ -1031,9 +1110,9 @@ def health_check_loop():
 
 def run_scheduled_backup():
     with app.app_context():
-        config, _, _ = load_settings()
-        backup_dir = config.get("backup_path", "/config/backups")
-        days_to_keep = int(config.get("backup_days_to_keep", 7))
+        settings, _, _ = load_settings()
+        backup_dir = settings.get("backup_path", "/config/backups")
+        days_to_keep = int(settings.get("backup_days_to_keep", 7))
 
         os.makedirs(backup_dir, exist_ok=True)
 
@@ -1102,10 +1181,13 @@ if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
 # === APScheduler Setup with Debug-Safe Guard ===
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     scheduler = BackgroundScheduler()
-
+    settings, _, _ = load_settings()
+    reload_seconds = settings.get("widget_background_reload")
+    if not isinstance(reload_seconds, int) or reload_seconds <= 0:
+        reload_seconds = 300  # default fallback
     scheduler.add_job(
         update_widget_data_periodically,
-        IntervalTrigger(seconds=15),
+        IntervalTrigger(seconds=reload_seconds),
         id='widget_data_update_job',
         name='Update widget values periodically',
         replace_existing=True

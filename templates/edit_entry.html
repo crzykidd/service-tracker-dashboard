@@ -118,7 +118,7 @@
 
                         <!-- Add or Edit Widget -->
                         <h3 class="text-lg font-semibold mb-4">Edit Widget for Service</h3>
-                        <form action="{{ url_for('edit_entry', id=entry.id) }}" method="POST" class="mb-6">
+                        
                         <!-- Widget Dropdown -->
                         <div class="mb-4">
                         <label for="widget_id" class="block text-gray-300">Select Widget</label>
@@ -156,8 +156,9 @@
             </div>
 
 
-          <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded">Save Widget</button>
-        </form>
+          <p class="text-xs text-gray-400 mt-2">Changes to widget settings will be saved when you click “Update Entry”.</p>
+
+
       </div> <!-- inner card -->
     </div>   <!-- wrapper box -->
   </div>     <!-- flex container -->

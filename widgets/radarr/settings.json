@@ -1,0 +1,24 @@
+{
+  "widget_name": "radarr",
+  "description": "Radarr Queue Monitor",
+  "available_fields": [
+    {
+      "key": "wanted",
+      "label": "Wanted",
+      "description": "Number of items currently wanted",
+      "api_path": "/api/v3/wanted/missing"
+    },
+    {
+      "key": "queued",
+      "label": "Queued",
+      "description": "Current number of items queued",
+      "api_path": "/api/v3/queue"
+    },
+    {
+      "key": "movies",
+      "label": "Movies",
+      "description": "Number of Movies Collected",
+      "api_path": "/api/v3/movie"
+    }
+  ]
+}

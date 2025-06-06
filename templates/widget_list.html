@@ -6,6 +6,13 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 text-white p-6 font-sans">
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
+  <script>
+    dayjs.extend(dayjs_plugin_relativeTime);
+    dayjs.extend(dayjs_plugin_utc);
+  </script>
   <h1 class="text-3xl font-bold mb-6">Widget Table</h1>
 
   <div class="overflow-x-auto">
@@ -32,7 +39,12 @@
             {% if widget.widget_values %}
               <ul class="list-disc list-inside space-y-1">
                 {% for val in widget.widget_values %}
-                  <li><strong>{{ val.widget_value_key }}</strong>: {{ val.widget_value }}</li>
+                  <li>
+                    <strong>{{ val.widget_value_key }}</strong>: {{ val.widget_value }}
+                    <span class="text-xs text-gray-400">
+                      (<span class="rel-time" data-time="{{ val.last_updated.isoformat() }}">{{ val.last_updated }}</span>)
+                    </span>
+                  </li>
                 {% endfor %}
               </ul>
             {% else %}
@@ -45,5 +57,15 @@
 
     </table>
   </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      document.querySelectorAll(".rel-time").forEach(el => {
+        const isoTime = el.getAttribute("data-time");
+        if (isoTime) {
+          el.textContent = dayjs.utc(isoTime).fromNow();
+        }
+      });
+    });
+  </script>
 </body>
 </html>
