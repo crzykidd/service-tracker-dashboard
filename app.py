@@ -802,10 +802,11 @@ def widget_config(widget_name):
     path = os.path.join('/app/widgets', widget_name, 'settings.json')
     if not os.path.exists(path):
         return jsonify([])  # Or 404 if you prefer
+
     with open(path) as f:
         try:
             config = json.load(f)
-            return jsonify(settings.get("available_fields", []))
+            return jsonify(config.get("available_fields", []))  # ✅ FIXED
         except Exception as e:
             app.logger.warning(f"Failed to load widget settings for {widget_name}: {e}")
             return jsonify([])
