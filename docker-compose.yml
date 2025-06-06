@@ -4,8 +4,6 @@ services:
     container_name: service-tracker-dash
     ports:
       - "8815:8815"
-    env_file:
-      - .env
     environment:
       - FLASK_DEBUG=1
     entrypoint: ["/entrypoint.sh"]
