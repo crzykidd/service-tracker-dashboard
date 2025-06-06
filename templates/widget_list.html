@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Widget Table</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-6 font-sans">
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
+  <script>
+    dayjs.extend(dayjs_plugin_relativeTime);
+    dayjs.extend(dayjs_plugin_utc);
+  </script>
+  <h1 class="text-3xl font-bold mb-6">Widget Table</h1>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full bg-gray-800 rounded-lg overflow-hidden">
+      <thead class="bg-gray-700 text-gray-300">
+        <tr>
+          <th class="px-4 py-3 text-left">ID</th>
+          <th class="px-4 py-3 text-left">Widget Name</th>
+          <th class="px-4 py-3 text-left">API URL</th>
+          <th class="px-4 py-3 text-left">API Key</th>
+          <th class="px-4 py-3 text-left">Fields</th>
+          <th class="px-4 py-3 text-left">Values</th> <!-- ✅ new -->
+        </tr>
+      </thead>
+      <tbody>
+        {% for widget in widgets %}
+        <tr class="border-t border-gray-700 hover:bg-gray-700">
+          <td class="px-4 py-2">{{ widget.id }}</td>
+          <td class="px-4 py-2">{{ widget.widget_name }}</td>
+          <td class="px-4 py-2">{{ widget.widget_url }}</td>
+          <td class="px-4 py-2">{{ widget.widget_api_key }}</td>
+          <td class="px-4 py-2 text-sm text-gray-400">{{ widget.widget_fields | tojson }}</td>
+          <td class="px-4 py-2 text-sm text-green-300">
+            {% if widget.widget_values %}
+              <ul class="list-disc list-inside space-y-1">
+                {% for val in widget.widget_values %}
+                  <li>
+                    <strong>{{ val.widget_value_key }}</strong>: {{ val.widget_value }}
+                    <span class="text-xs text-gray-400">
+                      (<span class="rel-time" data-time="{{ val.last_updated.isoformat() }}">{{ val.last_updated }}</span>)
+                    </span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <em class="text-gray-500">No values</em>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+
+    </table>
+  </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      document.querySelectorAll(".rel-time").forEach(el => {
+        const isoTime = el.getAttribute("data-time");
+        if (isoTime) {
+          el.textContent = dayjs.utc(isoTime).fromNow();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -17,3 +17,6 @@ std_dozzle_url: http://dozzle.host.com:8080
 
 # How often do we test the URL endpoints
 url_refresh_interval: 120
+
+# How often do we reload the widget data default 300 seconds
+widget_background_reload: 300

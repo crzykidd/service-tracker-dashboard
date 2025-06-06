@@ -85,9 +85,8 @@
             <th class="px-3 py-2">Container</th>
             <th class="px-3 py-2">Stack</th>
             <th class="px-3 py-2">Host</th>
-            <th class="px-3 py-2">Internal</th>
-            <th class="px-3 py-2">External</th>
-            <th class="px-3 py-2">Last Update</th>
+            <th class="px-3 py-2">Widget</th>
+            <th class="px-3 py-2">URLs</th>
             <th class="px-3 py-2">Status</th>
             <th class="px-3 py-2">Tools</th>
             <th class="px-3 py-2">Actions</th>
@@ -140,8 +139,17 @@
             </td>
 
             <td class="px-3 py-2">{{ entry.group_name }}</td>
+            
             <td class="px-3 py-2">
-              <div>{{ entry.container_name }}</div>
+              {% set target_url = entry.internalurl or entry.externalurl %}
+              {% if target_url %}
+                <div>
+                  <a href="{{ target_url }}" target="_blank" class="text-blue-400 hover:underline">{{ entry.container_name }}</a>
+                </div>
+              {% else %}
+                <div>{{ entry.container_name }}</div>
+              {% endif %}
+
               {% if entry.container_id %}
               <div class="text-xs text-gray-400 cursor-pointer" onclick="copyToClipboard('{{ entry.container_id }}', this)" title="Click to copy full ID">
                 <code>{{ entry.container_id[:12] }}</code>
@@ -150,73 +158,113 @@
             </td>
             <td class="px-3 py-2">{{ entry.stack_name or '' }}</td>
             <td class="px-3 py-2">{{ entry.host }}</td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 align-top">
+              {% if entry.widget_id %}
+                {% set widget_data = widget_values.get(entry.widget_id) %}
+                {% if widget_data %}
+                  <div class="flex flex-wrap gap-1">
+                    {% for field, value in widget_data.items() %}
+                      <div class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-center min-w-[72px]">
+                        <div class="text-[0.6rem] text-gray-400 uppercase tracking-wide leading-tight whitespace-nowrap">
+                          {{ field.replace('_', ' ') | title }}
+                        </div>
+                        <div class="text-sm font-medium leading-snug" title="{{ value }}">
+                          {% if value.lower().startswith('error:') %}
+                            <span class="text-red-500">Error</span>
+                          {% else %}
+                            <span class="text-white">{{ value }}</span>
+                          {% endif %}
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-gray-500 italic text-xs">No widget data</div>
+                {% endif %}
+              {% else %}
+                <div class="text-gray-500 italic text-xs">None</div>
+              {% endif %}
+            </td>
+
+            <td class="px-3 py-2 space-y-0.5">
               {% if entry.internalurl %}
                 {% set status_class = 'bg-gray-600' %}
-                {% set tooltip = 'Not Monitored' %}
+                {% set tooltip = entry.internalurl ~ ' — Not Monitored' %}
                 {% set display = 'NA' %}
                 {% if entry.internal_health_check_enabled %}
                   {% if entry.internal_health_check_status == 'Error: SSLError' %}
                     {% set status_class = 'bg-yellow-300 text-black' %}
-                    {% set tooltip = 'SSL Error — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                    {% set tooltip = entry.internalurl ~ ' — SSL Error — updated ' ~ (entry.internal_health_check_update|time_since) %}
                     {% set display = 'SSL' %}
                   {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
                     {% set status_class = 'bg-green-600' %}
-                    {% set tooltip = entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
+                    {% set tooltip = entry.internalurl ~ ' — ' ~ entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
                     {% set display = entry.internal_health_check_status %}
                   {% else %}
                     {% set status_class = 'bg-red-600' %}
-                    {% set tooltip = (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}       
+                    {% set tooltip = entry.internalurl ~ ' — ' ~ (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
                     {% set display = entry.internal_health_check_status or '?' %}
                   {% endif %}
                 {% endif %}
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
-                  <a href="{{ entry.internalurl }}" target="_blank" class="border border-blue-400 text-blue-300 text-xs px-2 py-0.5 rounded hover:bg-blue-400 hover:text-white transition">Internal</a>
+                <div>
+                  <span class="text-xs text-gray-400">INT:</span>
+                  <a href="{{ entry.internalurl }}" target="_blank" title="{{ tooltip }}">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}">{{ display }}</span>
+                  </a>
                 </div>
               {% endif %}
-            </td>
-            <td class="px-3 py-2">
+
               {% if entry.externalurl %}
                 {% set status_class = 'bg-gray-600' %}
-                {% set tooltip = 'Not Monitored' %}
+                {% set tooltip = entry.externalurl ~ ' — Not Monitored' %}
                 {% set display = 'NA' %}
                 {% if entry.external_health_check_enabled %}
                   {% if entry.external_health_check_status == 'Error: SSLError' %}
                     {% set status_class = 'bg-yellow-300 text-black' %}
-                    {% set tooltip = 'SSL Error — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set tooltip = entry.externalurl ~ ' — SSL Error — updated ' ~ (entry.external_health_check_update|time_since) %}
                     {% set display = 'SSL' %}
                   {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
                     {% set status_class = 'bg-green-600' %}
-                    {% set tooltip = entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set tooltip = entry.externalurl ~ ' — ' ~ entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
                     {% set display = entry.external_health_check_status %}
                   {% else %}
                     {% set status_class = 'bg-red-600' %}
-                    {% set tooltip = (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
+                    {% set tooltip = entry.externalurl ~ ' — ' ~ (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
                     {% set display = entry.external_health_check_status or '?' %}
+                  {% endif %}
                 {% endif %}
-                {% endif %}
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="{{ tooltip }}">{{ display }}</span>
-                  <a href="{{ entry.externalurl }}" target="_blank" class="border border-green-400 text-green-300 text-xs px-2 py-0.5 rounded hover:bg-green-400 hover:text-white transition">External</a>
+                <div>
+                  <span class="text-xs text-gray-400">EXT:</span>
+                  <a href="{{ entry.externalurl }}" target="_blank" title="{{ tooltip }}">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}">{{ display }}</span>
+                  </a>
                 </div>
               {% endif %}
             </td>
-            <td class="px-3 py-2">{{ entry.last_updated|time_since }}</td>
+
+            
 
             <td class="px-3 py-2">
               {% if not entry.is_static %}
-                {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'Never updated' %}
+                {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'No update timestamp' %}
                 {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
-                {% if entry.docker_status in ['start', 'running'] %}
-                  <span class="bg-green-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Running</span>
+                
+                {% if not entry.last_api_update %}
+                  {% set status_class = 'bg-red-600' %}
+                {% elif entry.docker_status in ['start', 'running'] %}
+                  {% set status_class = 'bg-green-600' %}
                 {% elif entry.docker_status in ['die', 'exited'] %}
-                  <span class="bg-red-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Exited</span>
+                  {% set status_class = 'bg-red-600' %}
                 {% elif entry.docker_status %}
-                  <span class="bg-yellow-400 text-black px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">{{ entry.docker_status }}</span>
+                  {% set status_class = 'bg-yellow-400 text-black' %}
                 {% else %}
-                  <span class="bg-gray-600 px-2 py-0.5 rounded text-xs font-medium" title="Updated {{ tooltip }} — {{ timestamp }}">Unknown</span>
+                  {% set status_class = 'bg-gray-600' %}
                 {% endif %}
+
+                <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="Updated {{ tooltip }} — {{ timestamp }}">
+                  {{ entry.docker_status or 'Unknown' }}
+                </span>
+
                 {% if entry.image_tag %}
                   <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>
                 {% endif %}
@@ -224,6 +272,8 @@
                 <span class="text-xs text-gray-400 italic">Static</span>
               {% endif %}
             </td>
+
+
 
 
             <td class="px-3 py-2">

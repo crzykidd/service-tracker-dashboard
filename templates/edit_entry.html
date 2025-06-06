@@ -106,29 +106,94 @@
                     </div>
                     <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by automated API calls.</p>
                 </div>
+ 
+                <!-- Add this section in the form for widget selection -->
+                <!-- Start of widgets -->
+                <div id="tab-widgets" class="tab-content">
+                <div class="flex justify-center">
+                    <div class="max-w-4xl w-full bg-gray-800 shadow-2xl rounded-lg p-6 md:p-8">
+                    <div class="bg-gray-700 text-gray-200 p-6 rounded shadow-md">
+                        <h2 class="text-xl font-semibold mb-4">Widget Settings</h2>
+                        <p class="text-gray-400 text-sm mb-4">Manage widget-related settings here.</p>
+
+                        <!-- Add or Edit Widget -->
+                        <h3 class="text-lg font-semibold mb-4">Edit Widget for Service</h3>
+                        
+                        <!-- Widget Dropdown -->
+                        <div class="mb-4">
+                        <label for="widget_id" class="block text-gray-300">Select Widget</label>
+
+                        <select name="widget_name" id="widget_name" class="w-full p-2 rounded bg-gray-600 text-white border border-gray-500">
+
+                        <option value="none" {% if not selected_widget %}selected{% endif %}>None</option>
+                        {% for name in available_widgets %}
+                            <option value="{{ name }}" {% if selected_widget and selected_widget.widget_name == name %}selected{% endif %}>
+                            {{ name|capitalize }}
+                            </option>
+                        {% endfor %}
+                        </select>
+     
+
+                        </div>
+
+
+          <!-- Widget Info -->
+            <div class="mb-4">
+            <label for="widget_url" class="block text-gray-300">API URL</label>
+            <input type="text" name="widget_url" id="widget_url"
+                    value="{{ selected_widget.widget_url if selected_widget else '' }}"
+                    class="w-full p-2 rounded bg-gray-600 text-white">
+            </div>
+
+            <div class="mb-4">
+            <label for="widget_api_key" class="block text-gray-300">API Key</label>
+            <input type="text" name="widget_api_key" id="widget_api_key"
+                    value="{{ selected_widget.widget_api_key if selected_widget else '' }}"
+                    class="w-full p-2 rounded bg-gray-600 text-white">
+            </div>
+            <div class="mb-4" id="widget_fields_container">
+            <!-- Checkboxes for widget fields will be loaded here -->
+            </div>
+
+
+          <p class="text-xs text-gray-400 mt-2">Changes to widget settings will be saved when you click “Update Entry”.</p>
+
+
+      </div> <!-- inner card -->
+    </div>   <!-- wrapper box -->
+  </div>     <!-- flex container -->
+</div>
+<!-- End of widgets -->
+
+
+
 
                 <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
                     <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Update Entry</button>
                     <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Cancel</button>
                 </div>
-                               <hr class="my-6 border-dashboard-accent">
-              <div class="mt-6 bg-dashboard-info-box rounded-lg p-4">
-                <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
-                <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
-                <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
-                    Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
-                </label>
-                <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                    <input type="text" name="delete_confirmation" id="delete_confirmation"
-                          placeholder="Type container name to confirm" 
-                          class="form-input w-full sm:w-auto px-4 py-2 rounded-lg text-sm">
-                    <button type="submit" name="delete" value="true"
-                            class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
-                        Delete Entry
-                    </button>
+
+                <hr class="my-6 border-dashboard-accent">
+                
+                <div class="mt-6 bg-dashboard-info-box rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
+                    <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
+                    <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
+                        Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
+                    </label>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <input type="text" name="delete_confirmation" id="delete_confirmation"
+                            placeholder="Type container name to confirm" 
+                            class="form-input w-full sm:w-auto px-4 py-2 rounded-lg text-sm">
+                        <button type="submit" name="delete" value="true"
+                                class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
+                            Delete Entry
+                        </button>
+                    </div>
                 </div>
-            </div>
-            </form>
+                </form>
+
+                
         </div>
 
         <div class="bg-dashboard-info-box shadow-xl rounded-xl p-6 sm:p-8">
@@ -152,5 +217,62 @@
             </div>
         </div>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const widgetSelect = document.getElementById('widget_name');
+        const container = document.getElementById('widget_fields_container');
+
+        function loadWidgetFields(widgetName, preselected = []) {
+            container.innerHTML = '';
+            console.log("📦 Loading widget:", widgetName); // ✅ moved here
+
+            if (!widgetName || widgetName === 'none') return;
+
+            fetch(`/widget_config/${widgetName}`)
+                .then(response => response.json())
+                .then(fields => {
+                    console.log("✅ Fields loaded:", fields); // ✅ moved here
+                    if (!Array.isArray(fields)) return;
+
+                    fields.forEach(field => {
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.name = 'widget_fields';
+                        checkbox.value = field.key;
+                        checkbox.className = 'mr-2';
+                        if (preselected.includes(field.key)) {
+                            checkbox.checked = true;
+                        }
+
+                        const label = document.createElement('label');
+                        label.className = 'block mb-2 text-sm text-white';
+                        label.innerHTML = `<strong>${field.label}</strong><br><span class="text-gray-400">${field.description}</span>`;
+                        label.prepend(checkbox);
+
+                        container.appendChild(label);
+                    });
+                })
+                .catch(err => {
+                    console.error("❌ Error loading widget config:", err);
+                });
+        }
+
+        widgetSelect.addEventListener('change', function () {
+            loadWidgetFields(this.value);
+        });
+
+        // Preload on edit
+        
+        {% if selected_widget and selected_widget.widget_name %}
+            loadWidgetFields(
+                '{{ selected_widget.widget_name }}',
+                {{ selected_widget.widget_fields | tojson | safe }}
+            );
+        {% endif %}
+            });
+    </script>
+
+
 </body>
 </html>
