@@ -42,6 +42,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG if IS_DEBUG else logging.INFO)
 logger.addHandler(log_handler)
 logger.addHandler(console_handler)
+unauthorized_log_tracker = {}
 
 
 app = Flask(__name__)
@@ -662,9 +663,22 @@ def add_entry():
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
+
     auth_header = request.headers.get("Authorization", "")
     expected = f"Bearer {app.config['api_token']}"
+    client_ip = request.remote_addr
+    now = datetime.utcnow()
+
+    # Rate-limit unauthorized logs to once every 2 minutes per IP
     if auth_header != expected:
+        logger.info(f"401 - Unauthorized API access from {client_ip} to /api/register")
+
+        # Rate-limited WARNING (optional)
+        last_log_time = unauthorized_log_tracker.get(client_ip)
+        if not last_log_time or (now - last_log_time) > timedelta(minutes=2):
+            logger.warning(f"⚠️ Repeated unauthorized access from {client_ip}")
+            unauthorized_log_tracker[client_ip] = now
+
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
