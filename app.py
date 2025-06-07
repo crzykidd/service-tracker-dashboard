@@ -255,6 +255,9 @@ def dashboard():
     else:
         grouped_entries = dict(sorted(grouped_entries.items()))
 
+    widget_fields = {
+        widget.id: widget.widget_fields for widget in Widget.query.all()
+    }
     return render_template(
         "dashboard.html",
         entries=entries,
@@ -265,7 +268,8 @@ def dashboard():
         msg=msg,
         STD_DOZZLE_URL=settings.get("std_dozzle_url"),
         display_tools=settings.get("display_tools", False),
-        widget_values=widget_values
+        widget_values=widget_values,
+        widget_fields=widget_fields
 
     )
 
@@ -325,13 +329,17 @@ def tiled_dashboard():
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
+    widget_fields = {
+        widget.id: widget.widget_fields for widget in Widget.query.all()
+    }
     return render_template(
         "tiled_dash.html",
         grouped_entries=sorted_grouped_entries,
         active_group_by=group_by_attr_name,
         STD_DOZZLE_URL=app.config['std_dozzle_url'],
         total_entries=len(entries),
-        widget_values=widget_values
+        widget_values=widget_values,
+        widget_fields=widget_fields
     )
 
 
