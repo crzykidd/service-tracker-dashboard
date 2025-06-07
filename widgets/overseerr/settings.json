@@ -1,0 +1,37 @@
+{
+  "widget_name": "overseerr",
+  "description": "Overseerr Monitor",
+  "available_fields": [
+    {
+      "key": "request_pending",
+      "label": "Pending",
+      "description": "Number of requests pending",
+      "api_path": "/api/v1/request/count",
+      "response_path": "pending"
+
+    },
+    {
+      "key": "request_movie",
+      "label": "Movies",
+      "description": "Number of Movies missing",
+      "api_path": "/api/v1/request/count",
+      "response_path": "movie"
+
+    },    
+    {
+      "key": "request_tv",
+      "label": "TV",
+      "description": "Number of TV episodes missing",
+      "api_path": "/api/v1/request/count",
+      "response_path": "tv"
+
+    },  
+    {
+      "key": "issues_open",
+      "label": "Issues",
+      "description": "Number of issues open",
+      "api_path": "/api/v1/issue/count",
+      "response_path": "open"
+    }
+  ]
+}
