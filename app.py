@@ -262,7 +262,8 @@ def dashboard():
         direction=direction,
         group_by=group_by,
         msg=msg,
-        STD_DOZZLE_URL=os.getenv('STD_DOZZLE_URL'),
+        STD_DOZZLE_URL=settings.get("std_dozzle_url"),
+        display_tools=settings.get("display_tools", False),
         widget_values=widget_values
 
     )

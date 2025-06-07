@@ -88,7 +88,9 @@
             <th class="px-3 py-2">Widget</th>
             <th class="px-3 py-2">URLs</th>
             <th class="px-3 py-2">Status</th>
-            <th class="px-3 py-2">Tools</th>
+            {% if display_tools %}
+              <th class="px-3 py-2">Tools</th>
+            {% endif %}
             <th class="px-3 py-2">Actions</th>
           </tr>
         </thead>
@@ -273,16 +275,18 @@
               {% endif %}
             </td>
 
+            {% if display_tools %}
+              <td class="px-3 py-2">
+                {% if STD_DOZZLE_URL and entry.container_id %}
+                  <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
+                    <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" class="h-5" />
+                  </a>
+                {% endif %}
+              </td>
+            {% endif %}
 
 
 
-            <td class="px-3 py-2">
-              {% if STD_DOZZLE_URL and entry.container_id %}
-                <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
-                  <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" class="h-5" />
-                </a>
-              {% endif %}
-            </td>
             <td class="px-3 py-2">
               <a href="{{ url_for('edit_entry', id=entry.id, ref=request.full_path) }}" class="border border-yellow-400 text-yellow-300 text-xs px-2 py-0.5 rounded hover:bg-yellow-400 hover:text-black transition">Edit</a>
               {% if entry.is_static %}
