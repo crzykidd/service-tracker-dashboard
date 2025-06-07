@@ -13,10 +13,12 @@ api_token: supersecrettoken
 
 # URL for dozzle instance for quick connect to logs
 # Can be set with ENV STD_DOZZLE_URL
-std_dozzle_url: http://dozzle.host.com:8080
+# If you set this a tools section will show up in your
+# dashboard. 
+#std_dozzle_url: http://dozzle.host.com:8080
 
 # How often do we test the URL endpoints
-url_refresh_interval: 120
+url_refresh_interval: 300
 
 # How often do we reload the widget data default 300 seconds
-widget_background_reload: 300
+widget_background_reload: 900

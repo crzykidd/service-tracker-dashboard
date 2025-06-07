@@ -5,7 +5,7 @@ import logging
 
 CONFIG_PATH = "/config/settings.yml"
 DEFAULT_TEMPLATE = "settings.example.yml"
-
+EXAMPLE_DEST = "/config/settings.example.yml"
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -19,14 +19,28 @@ VALID_KEYS = {
     "url_healthcheck_interval": int,
     "widget_background_reload": int
 }
-
+DEFAULT_VALUES = {
+    "backup_path": "/config/backups",
+    "backup_days_to_keep": 7,
+    "url_healthcheck_interval": 300,
+    "widget_background_reload": 900
+}
 def load_settings():
-    if not os.path.exists(CONFIG_PATH):
-        shutil.copy(DEFAULT_TEMPLATE, CONFIG_PATH)
-        logger.debug(f"No settings.yml found. Copied default to: {CONFIG_PATH}")
+    file_config = {}
 
-    with open(CONFIG_PATH, "r") as f:
-        file_config = yaml.safe_load(f) or {}
+    # Always overwrite the example settings file for the user
+    try:
+        shutil.copy(DEFAULT_TEMPLATE, EXAMPLE_DEST)
+        logger.debug(f"✅ Copied latest example settings to: {EXAMPLE_DEST}")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to copy example settings file: {e}")
+
+    # Handle optional settings.yml
+    if not os.path.exists(CONFIG_PATH):
+        logger.warning("⚠️ No settings.yml found. Proceeding with ENV vars and defaults only.")
+    else:
+        with open(CONFIG_PATH, "r") as f:
+            file_config = yaml.safe_load(f) or {}
 
     final_config = {}
     config_from_env = {}
@@ -46,7 +60,8 @@ def load_settings():
             final_config[key] = file_config[key]
             config_from_file[key] = final_config[key]
         else:
-            final_config[key] = None  # Optional: set default fallback here
+            final_config[key] = DEFAULT_VALUES.get(key, None)
+            logger.debug(f"  {key} = {final_config[key]} (default fallback)")
 
     logger.debug("YAML settings:")
     for key, val in config_from_file.items():
@@ -61,3 +76,4 @@ def load_settings():
     logger.debug(f"display_tools = {final_config['display_tools']} (derived from std_dozzle_url)")
 
     return final_config, config_from_env, config_from_file
+
