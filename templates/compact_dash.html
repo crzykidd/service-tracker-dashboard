@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Compact Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #1e1e1e;
+      color: #e0e0e0;
+      padding: 15px;
+    }
+    .tile {
+      background-color: #2c2c2c;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background-color 0.2s ease-in-out;
+      cursor: pointer;
+    }
+    .tile:hover {
+      background-color: #3a3a3a;
+    }
+    .tile img {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+    }
+    .container-name {
+      font-weight: 600;
+      color: #ffffff;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .host-name {
+      font-size: 0.7rem;
+      color: #aaaaaa;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tile-content {
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+
+<div class="flex justify-end gap-2 mb-4">
+  <a href="/add" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white">Add Record</a>
+  <a href="/" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white">Dashboard</a>
+  <a href="/settings" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white">Settings</a>
+</div>
+
+<div class="page-header mb-4">
+  <h1 class="text-2xl font-bold">Compact Dashboard</h1>
+</div>
+
+<div class="controls-container text-gray-300 mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+  <div class="grouping-controls flex items-center space-x-4 flex-wrap">
+    <div class="flex items-center space-x-2">
+      <label for="groupBySelect" class="text-sm">Group by:</label>
+      <select id="groupBySelect" class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm">
+        <option value="group_name">Group Name</option>
+        <option value="host">Docker Host</option>
+        <option value="stack_name">Stack Name</option>
+      </select>
+    </div>
+    <div class="text-sm text-gray-400">Total Resources: {{ total_entries }}</div>
+  </div>
+</div>
+
+{% if flattened_entries %}
+<div class="grid auto-cols-max grid-flow-col gap-x-6" style="grid-template-rows: repeat(10, auto);">
+  {% for item in flattened_entries %}
+    {% if item.is_group_header %}
+    <div class="tile bg-gray-800 border border-gray-600 justify-center items-center text-center">
+    <div class="text-lg font-bold text-white truncate w-full">{{ item.group }}</div>
+    </div>
+    {% else %}
+      <div class="tile"
+           onclick="window.open('{{ item.entry.internalurl if item.entry.internalurl else item.entry.externalurl }}', '_blank')">
+        <div>
+          {% if item.entry.image_icon %}
+            <img src="{{ url_for('serve_image', filename=item.entry.image_icon) }}"
+                 alt="icon"
+                 onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'text-gray-500\'>📦</span>';">
+          {% else %}
+            <span class="text-gray-500 text-xl">📦</span>
+          {% endif %}
+        </div>
+        <div class="tile-content">
+          <div class="container-name" title="{{ item.entry.container_name }}">{{ item.entry.container_name }}</div>
+          {% if show_host %}
+          <div class="host-name" title="{{ item.entry.host }}">{{ item.entry.host }}</div>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+
+{% else %}
+  <p class="text-center mt-6 text-gray-400">No entries found for this view.</p>
+{% endif %}
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const groupBySelect = document.getElementById('groupBySelect');
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentGroup = urlParams.get('group_by') || 'group_name';
+    groupBySelect.value = currentGroup;
+
+    groupBySelect.addEventListener('change', function () {
+      urlParams.set('group_by', this.value);
+      window.location.search = urlParams.toString();
+    });
+  });
+</script>
+
+</body>
+</html>
