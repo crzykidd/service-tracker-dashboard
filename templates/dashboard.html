@@ -165,7 +165,9 @@
                 {% set widget_data = widget_values.get(entry.widget_id) %}
                 {% if widget_data %}
                   <div class="flex flex-wrap gap-1">
-                    {% for field, value in widget_data.items() %}
+                    {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
+                    {% for field, value in widget_data.items() if field in allowed_fields %}
+
                       <div class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-center min-w-[72px]">
                         <div class="text-[0.6rem] text-gray-400 uppercase tracking-wide leading-tight whitespace-nowrap">
                           {{ field.replace('_', ' ') | title }}

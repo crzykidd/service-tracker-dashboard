@@ -338,8 +338,9 @@
                             title="Last updated: {{ last_updated }}"
                         {% endif %}>   
                             {% if widget_data %}
+                                {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
                                 <div class="grid grid-cols-3 gap-2">
-                                    {% for field, value in widget_data.items() %}
+                                    {% for field, value in widget_data.items() if field in allowed_fields %}
                                         <div class="bg-gray-700 rounded-md px-2 py-1 text-center shadow-sm border border-gray-600">
                                             <div class="text-[0.65rem] text-gray-400 uppercase tracking-wide leading-tight">
                                                 {{ field.replace('_', ' ') | title }}
