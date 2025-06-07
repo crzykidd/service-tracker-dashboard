@@ -845,7 +845,10 @@ def edit_entry(id):
         logger.debug(f"Scanning directory for widgets: {widgets_dir}")
         
         # List directories in the widgets folder (one directory per widget)
-        available_widgets = [d for d in os.listdir(widgets_dir) if os.path.isdir(os.path.join(widgets_dir, d))]
+        available_widgets = [
+            d for d in os.listdir(widgets_dir)
+            if os.path.isdir(os.path.join(widgets_dir, d)) and d != '__pycache__'
+        ]
         
         # Log the number of widgets found and their directory names
         if available_widgets:
