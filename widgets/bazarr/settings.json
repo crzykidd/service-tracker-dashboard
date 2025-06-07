@@ -1,0 +1,28 @@
+{
+  "widget_name": "bazarr",
+  "description": "Bazarr Queue Monitor",
+  "available_fields": [
+    {
+      "key": "missing_movies",
+      "label": "Movies",
+      "description": "Number of Movies without Subtitles",
+      "api_path": "/api/badges",
+      "response_path": "movies"
+
+    },
+    {
+      "key": "missing_episodes",
+      "label": "Episodes",
+      "description": "Number of Episodes without Subtitles",
+      "api_path": "/api/badges",
+      "response_path": "episodes"
+    },
+    {
+      "key": "bad_provider",
+      "label": "Bad Providers",
+      "description": "Providers missing",
+      "api_path": "/api/badges",
+      "response_path": "providers"
+    }
+  ]
+}

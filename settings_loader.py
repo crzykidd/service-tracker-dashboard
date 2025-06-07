@@ -8,7 +8,7 @@ DEFAULT_TEMPLATE = "settings.example.yml"
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s")
+
 
 # Define the expected config keys and their types
 VALID_KEYS = {
