@@ -378,7 +378,7 @@ def settings():
                 if backup_operation == 'save_on_server':
                     # If the goal was just to save on the server, we're done.
                     flash(f"✅ Backup saved to server: {BACKUP_PATH}", "success")
-                    return redirect(url_for('settings'))
+                    return redirect(url_for('settings', section='backup'))
                 
                 elif backup_operation == 'download_all':
                     # If the goal is to download, send the file that was just written.
@@ -391,7 +391,7 @@ def settings():
                     )
                 else:
                     flash("Unknown backup operation.", "danger")
-                    return redirect(url_for('settings'))
+                    return redirect(url_for('settings', section='backup'))
 
             except Exception as e:
                 logger.exception("❌ Backup operation failed")
@@ -540,7 +540,7 @@ def settings():
                 logger.exception("❌ Restore failed")
                 flash(f"Restore failed: {str(e)}", "danger")
             
-            return redirect(url_for('settings'))
+            return redirect(url_for('settings', section='backup'))
 
     # GET request: List backup files for the restore dropdown
     server_backup_files = []
@@ -562,7 +562,7 @@ def settings():
             icon = entry.image_icon
             if icon and not os.path.exists(os.path.join(IMAGE_DIR, icon)):
                 missing_icons.append(f"{entry.container_name} → {icon}")            
-    
+    widgets = Widget.query.all()
     return render_template(
         'settings.html',
          current_config=settings,
@@ -570,6 +570,7 @@ def settings():
          config_from_file=config_from_file,
          server_backup_files=server_backup_files,
          version_info=read_version_info(),
+         widgets=widgets,
          missing_icons=missing_icons 
     )
 
