@@ -185,6 +185,10 @@
             <option value="host">Docker Host</option>
             <option value="stack_name">Stack Name</option>
         </select>
+        In group sort:<select id="sortInGroupSelect" class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
+        <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
+        </select>
         </div>
         <div class="text-sm text-gray-400">Total Resources: {{ total_entries }}</div>
     </div>
@@ -478,7 +482,23 @@ document.addEventListener('DOMContentLoaded', function () {
       window.location.reload();
     }
   }, 1000);
+
+    // Sort In Group Logic
+    const sortSelect = document.getElementById('sortInGroupSelect');
+    const sortParam = new URLSearchParams(window.location.search).get('sort_in_group') || 'priority';
+    if (sortSelect) {
+        sortSelect.value = sortParam;
+
+        sortSelect.addEventListener('change', function () {
+            const params = new URLSearchParams(window.location.search);
+            params.set('group_by', document.getElementById('groupBySelect').value);
+            params.set('sort_in_group', this.value);
+            window.location.search = params.toString();
+        });
+    }
+  
 });
+
 </script>
 
 

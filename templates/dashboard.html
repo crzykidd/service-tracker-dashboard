@@ -52,7 +52,11 @@
           <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
           <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
         </select>
-
+        In Group Sort: 
+        <select id="sortInGroupSelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+          <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
+          <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
+        </select> 
         <span class="text-sm text-gray-400 ml-2">
           Total Services: {{ grouped_entries.values() | map('length') | sum }}
         </span>
@@ -67,6 +71,7 @@
           <option value="600">10m</option>
           <option value="0">Never</option>
         </select>
+     
         <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
       </div>
     </div>
@@ -393,6 +398,33 @@
         setTimeout(() => el.innerHTML = original, 1000);
       });
     }
+  const sortInGroupSelect = document.getElementById('sortInGroupSelect');
+  if (sortInGroupSelect) {
+    // If no localStorage value, save the one rendered by backend
+    if (!localStorage.getItem('sortInGroup')) {
+      localStorage.setItem('sortInGroup', sortInGroupSelect.value);
+    }
+
+    // Always use localStorage to override the dropdown value
+    const savedSort = localStorage.getItem('sortInGroup');
+    if (savedSort && sortInGroupSelect.value !== savedSort) {
+      sortInGroupSelect.value = savedSort;
+
+      // Force refresh with correct value if mismatch
+      const params = new URLSearchParams(window.location.search);
+      params.set('sort_in_group', savedSort);
+      window.location.search = params.toString();
+    }
+
+    // On change, update URL and localStorage
+    sortInGroupSelect.addEventListener('change', function () {
+      localStorage.setItem('sortInGroup', this.value);
+      const params = new URLSearchParams(window.location.search);
+      params.set('sort_in_group', this.value);
+      window.location.search = params.toString();
+    });
+  }
+
     </script>
 
 </body>

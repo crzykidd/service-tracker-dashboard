@@ -223,6 +223,9 @@ def dashboard():
     sort = request.args.get('sort', 'group_name')
     direction = request.args.get('dir', 'asc')
     group_by = request.args.get('group_by', 'group_name')
+    sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
+
+    
     msg = request.args.get('msg')
 
     # Build query and sort direction
@@ -252,10 +255,14 @@ def dashboard():
 
     # Sort each group by priority (lower number = higher priority), then alphabetically by container name
     for key in grouped_entries:
-        grouped_entries[key].sort(key=lambda e: (
-            e.sort_priority if e.sort_priority is not None else 9999,  # low numbers first; None = lowest priority
-            e.container_name.lower()
-        ))
+        if sort_in_group == 'alphabetical':
+            grouped_entries[key].sort(key=lambda e: e.container_name.lower())
+        else:  # default to priority
+            grouped_entries[key].sort(key=lambda e: (
+                e.sort_priority if e.sort_priority is not None else 9999,
+                e.container_name.lower()
+            ))
+
 
     # Sort the group keys
     if group_by == "is_static":
@@ -278,7 +285,8 @@ def dashboard():
         STD_DOZZLE_URL=settings.get("std_dozzle_url"),
         display_tools=settings.get("display_tools", False),
         widget_values=widget_values,
-        widget_fields=widget_fields
+        widget_fields=widget_fields,
+        sort_in_group=sort_in_group,
 
     )
 
@@ -291,6 +299,7 @@ from collections import defaultdict # Ensure this is imported at the top of your
 @app.route('/tiled_dash')
 def tiled_dashboard():
     group_by_param = request.args.get('group_by', 'group_name')
+    sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
 
     if hasattr(ServiceEntry, group_by_param):
         group_by_attr_name = group_by_param
@@ -301,15 +310,15 @@ def tiled_dashboard():
 
     entries = ServiceEntry.query.order_by(group_by_attr_for_query.asc(), ServiceEntry.container_name.asc()).all()
 
-    # === NEW: Preload widget values ===
+    # === Preload widget values ===
     widget_value_rows = WidgetValue.query.all()
     widget_values = {}
-
-    for wv in widget_value_rows:  # Use the rows you've already fetched
+    for wv in widget_value_rows:
         if wv.widget_id not in widget_values:
             widget_values[wv.widget_id] = {}
         widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
 
+    # === Group entries ===
     grouped_entries_dict = defaultdict(list)
     for entry in entries:
         key_value = getattr(entry, group_by_attr_name)
@@ -321,26 +330,37 @@ def tiled_dashboard():
             key = str(key_value)
         grouped_entries_dict[key].append(entry)
 
-    # Sort entries within each group by priority first, then name
+    # === Sort entries within each group ===
     for key, group_entries in grouped_entries_dict.items():
-        grouped_entries_dict[key] = sorted(
-            group_entries,
-            key=lambda e: (
-                e.sort_priority if e.sort_priority is not None else 9999,
-                e.container_name.lower()
+        if sort_in_group == "alphabetical":
+            grouped_entries_dict[key] = sorted(
+                group_entries, key=lambda e: e.container_name.lower()
             )
-        )
+        else:  # default to priority
+            grouped_entries_dict[key] = sorted(
+                group_entries,
+                key=lambda e: (
+                    e.sort_priority if e.sort_priority is not None else 9999,
+                    e.container_name.lower()
+                )
+            )
 
-
-    # === Group sorting (unchanged) ===
+    # === Sort groups themselves ===
     if group_by_attr_name == "is_static":
         sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0])))
+        sorted_grouped_entries = dict(sorted(
+            grouped_entries_dict.items(),
+            key=lambda item: (sort_order.get(item[0], 99), item[0])
+        ))
     elif group_by_attr_name in ["group_name", "host", "stack_name"]:
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower())))
+        sorted_grouped_entries = dict(sorted(
+            grouped_entries_dict.items(),
+            key=lambda item: (item[0] == "Ungrouped", item[0].lower())
+        ))
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
+    # === Pass to template ===
     widget_fields = {
         widget.id: widget.widget_fields for widget in Widget.query.all()
     }
@@ -348,6 +368,7 @@ def tiled_dashboard():
         "tiled_dash.html",
         grouped_entries=sorted_grouped_entries,
         active_group_by=group_by_attr_name,
+        sort_in_group=sort_in_group,
         STD_DOZZLE_URL=app.config['std_dozzle_url'],
         total_entries=len(entries),
         widget_values=widget_values,
