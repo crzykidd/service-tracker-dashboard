@@ -120,6 +120,7 @@ class ServiceEntry(db.Model):
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
     widget = db.relationship('Widget', backref='services', lazy=True)
+    sort_priority = db.Column(db.Integer, nullable=True, default=None)
 
 # fields for backup
     def to_dict(self):
@@ -147,6 +148,7 @@ class ServiceEntry(db.Model):
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
+            'sort_priority': self.sort_priority,
         }
 
         # Add inline widget info if attached
@@ -221,6 +223,9 @@ def dashboard():
     sort = request.args.get('sort', 'group_name')
     direction = request.args.get('dir', 'asc')
     group_by = request.args.get('group_by', 'group_name')
+    sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
+
+    
     msg = request.args.get('msg')
 
     # Build query and sort direction
@@ -248,7 +253,18 @@ def dashboard():
             key = str(raw_key) if raw_key else "zz_none"
         grouped_entries[key].append(entry)
 
-    # Custom sort: prioritize "Static" over "Dynamic", then alphabetical
+    # Sort each group by priority (lower number = higher priority), then alphabetically by container name
+    for key in grouped_entries:
+        if sort_in_group == 'alphabetical':
+            grouped_entries[key].sort(key=lambda e: e.container_name.lower())
+        else:  # default to priority
+            grouped_entries[key].sort(key=lambda e: (
+                e.sort_priority if e.sort_priority is not None else 9999,
+                e.container_name.lower()
+            ))
+
+
+    # Sort the group keys
     if group_by == "is_static":
         sort_order = {"Static": 0, "Dynamic": 1}
         grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: sort_order.get(item[0], 99)))
@@ -269,7 +285,8 @@ def dashboard():
         STD_DOZZLE_URL=settings.get("std_dozzle_url"),
         display_tools=settings.get("display_tools", False),
         widget_values=widget_values,
-        widget_fields=widget_fields
+        widget_fields=widget_fields,
+        sort_in_group=sort_in_group,
 
     )
 
@@ -282,6 +299,7 @@ from collections import defaultdict # Ensure this is imported at the top of your
 @app.route('/tiled_dash')
 def tiled_dashboard():
     group_by_param = request.args.get('group_by', 'group_name')
+    sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
 
     if hasattr(ServiceEntry, group_by_param):
         group_by_attr_name = group_by_param
@@ -292,15 +310,15 @@ def tiled_dashboard():
 
     entries = ServiceEntry.query.order_by(group_by_attr_for_query.asc(), ServiceEntry.container_name.asc()).all()
 
-    # === NEW: Preload widget values ===
+    # === Preload widget values ===
     widget_value_rows = WidgetValue.query.all()
     widget_values = {}
-
-    for wv in widget_value_rows:  # Use the rows you've already fetched
+    for wv in widget_value_rows:
         if wv.widget_id not in widget_values:
             widget_values[wv.widget_id] = {}
         widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
 
+    # === Group entries ===
     grouped_entries_dict = defaultdict(list)
     for entry in entries:
         key_value = getattr(entry, group_by_attr_name)
@@ -312,23 +330,37 @@ def tiled_dashboard():
             key = str(key_value)
         grouped_entries_dict[key].append(entry)
 
-    # ✅ Sort entries WITHIN each group (widgets first, then container name)
+    # === Sort entries within each group ===
     for key, group_entries in grouped_entries_dict.items():
-        grouped_entries_dict[key] = sorted(
-            group_entries,
-            key=lambda e: (e.widget_id is None, e.container_name.lower())
-        )
+        if sort_in_group == "alphabetical":
+            grouped_entries_dict[key] = sorted(
+                group_entries, key=lambda e: e.container_name.lower()
+            )
+        else:  # default to priority
+            grouped_entries_dict[key] = sorted(
+                group_entries,
+                key=lambda e: (
+                    e.sort_priority if e.sort_priority is not None else 9999,
+                    e.container_name.lower()
+                )
+            )
 
-
-    # === Group sorting (unchanged) ===
+    # === Sort groups themselves ===
     if group_by_attr_name == "is_static":
         sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0])))
+        sorted_grouped_entries = dict(sorted(
+            grouped_entries_dict.items(),
+            key=lambda item: (sort_order.get(item[0], 99), item[0])
+        ))
     elif group_by_attr_name in ["group_name", "host", "stack_name"]:
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower())))
+        sorted_grouped_entries = dict(sorted(
+            grouped_entries_dict.items(),
+            key=lambda item: (item[0] == "Ungrouped", item[0].lower())
+        ))
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
+    # === Pass to template ===
     widget_fields = {
         widget.id: widget.widget_fields for widget in Widget.query.all()
     }
@@ -336,6 +368,7 @@ def tiled_dashboard():
         "tiled_dash.html",
         grouped_entries=sorted_grouped_entries,
         active_group_by=group_by_attr_name,
+        sort_in_group=sort_in_group,
         STD_DOZZLE_URL=app.config['std_dozzle_url'],
         total_entries=len(entries),
         widget_values=widget_values,
@@ -606,6 +639,15 @@ def compact_dash():
         else:
             key = str(key_value)
         grouped_entries_dict[key].append(entry)
+    # Sort each group's entries by priority then name
+    for key in grouped_entries_dict:
+        grouped_entries_dict[key] = sorted(
+            grouped_entries_dict[key],
+            key=lambda e: (
+                e.sort_priority if e.sort_priority is not None else 9999,
+                e.container_name.lower()
+            )
+        )
 
     # Sort group names
     if group_by_attr_name == "is_static":
@@ -708,6 +750,16 @@ def add_entry():
             else:
                 logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'.")
 
+        # Optional sort priority (must be an int if provided)
+        sort_priority_raw = request.form.get('sort_priority', '').strip()
+        sort_priority = None
+        if sort_priority_raw:
+            try:
+                sort_priority = int(sort_priority_raw)
+            except ValueError:
+                flash("Sort priority must be a number.", 'danger')
+                return render_template("add_entry.html", msg='error', entry=request.form)
+
         # === CREATE ENTRY ===
         entry = ServiceEntry(
             host=host,
@@ -719,6 +771,7 @@ def add_entry():
             internal_health_check_enabled=internal_health_check_enabled,
             external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
+            sort_priority=sort_priority,
             is_static=is_static
         )
 
@@ -771,7 +824,7 @@ def api_register():
             "stack_name", "docker_status", "group_name", "group", "started_at",
             "internal_health_check_enabled", "external_health_check_enabled",
             "internal.health", "external.health",
-            "image_name", "image_icon", "timestamp"
+            "image_name", "image_icon", "timestamp", "sort.priority"
         }
         # Include remapped fields (e.g., group → group_name)
         known_fields.update(label_key_map.values())
@@ -815,6 +868,12 @@ def api_register():
             return jsonify({"status": "skipped", "reason": "static lock"}), 200
         entry.last_updated = datetime.now()
         entry.last_api_update = datetime.now()
+        if "sort.priority" in data:
+            try:
+                entry.sort_priority = int(data["sort.priority"])
+            except (TypeError, ValueError):
+                logger.warning(f"⚠️ Invalid sort priority: {data['sort.priority']}")
+
 
         if data.get("container_id"):
             entry.container_id = data["container_id"]
@@ -969,6 +1028,13 @@ def edit_entry(id):
         entry.internalurl = request.form.get('internalurl', '').strip() or None
         entry.externalurl = request.form.get('externalurl', '').strip() or None
         entry.group_name = request.form.get('group_name', '').strip() or None
+        # Handle sort priority (optional integer field)
+        sort_priority_raw = request.form.get('sort_priority', '').strip()
+        try:
+            entry.sort_priority = int(sort_priority_raw) if sort_priority_raw else None
+        except ValueError:
+            entry.sort_priority = None
+            flash("Sort priority must be a number. Value ignored.", "warning")
 
 
         # Handle widget selection and update logic

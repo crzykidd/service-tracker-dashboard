@@ -88,7 +88,14 @@
                     <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
                     <input type="text" name="group_name" id="group_name" class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., Production">
                 </div>
-
+                <!-- Sort Priority -->
+                <div class="mb-5">
+                    <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
+                    <input type="number" name="sort_priority" id="sort_priority"
+                        class="form-input w-full px-4 py-2.5 rounded-lg text-sm"
+                        placeholder="Optional — lower = higher priority">
+                    <p class="mt-1 text-xs text-dashboard-secondary">Optional. Entries are sorted by this within groups. Leave blank to auto-sort by name.</p>
+                </div>
                 <!-- Icon Image -->
                 <div class="mb-5">
                     <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>

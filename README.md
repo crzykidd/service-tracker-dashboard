@@ -120,11 +120,12 @@ If you're using an external tool to send events (like `docker-api-notifier`), yo
 
 ```yaml
 labels:
-  - "dockernotifier.notifiers=service-tracker-dashboard"
-  - "dockernotifier.std.internalurl=http://nginx:80"
-  - "dockernotifier.std.externalurl=https://nginx.domain.com"
-  - "dockernotifier.std.group=web"
-  - "dockernotifier.std.internal.health=true"
+  dockernotifier.notifiers: service-tracker-dashboard"
+  dockernotifier.std.internalurl: http://nginx:80"
+  dockernotifier.std.externalurl: https://nginx.domain.com"
+  dockernotifier.std.group: web
+  dockernotifier.std.internal.health: true
+  dockernotifier.std.sort.priority: 1   
 ```
 
 ---
