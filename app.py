@@ -20,6 +20,8 @@ from image_utils import fetch_icon_if_missing
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy.orm import joinedload, column_property
+from sqlalchemy import select, func
 import json
 
 DATABASE_PATH = '/config/services.db'
@@ -200,6 +202,13 @@ class Group(db.Model):
     group_icon = db.Column(db.String(255), nullable=True)
 
     services = db.relationship('ServiceEntry', backref='group', lazy=True)
+
+    services_count = column_property(
+        select(func.count(ServiceEntry.id))
+        .where(ServiceEntry.group_id == id)
+        .correlate_except(ServiceEntry)
+        .scalar_subquery()
+    )
 
 
 
@@ -404,6 +413,8 @@ def settings():
     BACKUP_DIR = settings.get("backup_path", "/config/backups")
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
     os.makedirs(BACKUP_DIR, exist_ok=True)
+    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -537,15 +548,31 @@ def settings():
                         container_name=item['container_name'],
                         host=item['host']
                     ).first()
-                    group_name = item.get('group_name') or "none"
-                    group_obj = Group.query.filter_by(group_name=group_name).first()
 
-                    if not group_obj:
-                        group_obj = Group(group_name=group_name)
-                        db.session.add(group_obj)
-                        db.session.flush()  # gets group_obj.id
+                    group_name = item.get('group_name')
+                    group_obj = None
 
-                    entry.group_id = group_obj.id
+                    if group_name:
+                        group_obj = Group.query.filter_by(group_name=group_name).first()
+                        if not group_obj:
+                            group_obj = Group(group_name=group_name)
+                            db.session.add(group_obj)
+                            db.session.flush()
+
+                    # Fetch or create entry
+                    entry = ServiceEntry.query.filter_by(
+                        container_name=item['container_name'],
+                        host=item['host']
+                    ).first()
+
+                    if not entry:
+                        entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
+                        db.session.add(entry)
+
+                    # Assign group_id only now (after entry exists)
+                    entry.group_id = group_obj.id if group_obj else None
+
+
                     if entry: # Entry exists in DB
                         # Rule: Protect existing static entries in DB from being overwritten by non-static items
                         # during a 'restore all' operation.
@@ -626,7 +653,8 @@ def settings():
          server_backup_files=server_backup_files,
          version_info=read_version_info(),
          widgets=widgets,
-         missing_icons=missing_icons 
+         missing_icons=missing_icons,
+         groups=groups
     )
 
 # Helper to check if flash messages are already present (to avoid duplicates)
@@ -634,6 +662,67 @@ def settings():
 def flash_is_present(req):
     return '_flashes' in req.environ.get('flask._flashes', [])
 
+
+@app.route('/update_group', methods=['POST'])
+def update_group():
+    group_id = request.form.get("group_id")
+    group = Group.query.get(group_id)
+
+    if group:
+        group.group_name = request.form.get("group_name", group.group_name)
+        group.group_icon = request.form.get("group_icon", group.group_icon)
+        priority_val = request.form.get("group_sort_priority")
+        group.group_sort_priority = int(priority_val) if priority_val and priority_val.isdigit() else None
+
+        db.session.commit()
+        flash(f"✅ Group {group.group_name} updated successfully.", "success")
+    else:
+        flash("❌ Group not found.", "danger")
+
+    return redirect(url_for("settings", section="groups"))
+
+@app.route('/add_group', methods=['POST'])
+def add_group():
+    name = request.form.get("group_name")
+    icon = request.form.get("group_icon")
+    priority = request.form.get("group_sort_priority")
+
+    if not name:
+        flash("❌ Group name is required.", "danger")
+        return redirect(url_for("settings", section="groups"))
+
+    existing = Group.query.filter_by(group_name=name).first()
+    if existing:
+        flash("❌ Group with that name already exists.", "danger")
+        return redirect(url_for("settings", section="groups"))
+
+    new_group = Group(
+        group_name=name,
+        group_icon=icon or None,
+        group_sort_priority=int(priority) if priority and priority.isdigit() else None
+    )
+
+    db.session.add(new_group)
+    db.session.commit()
+    flash(f"✅ Group '{name}' created.", "success")
+    return redirect(url_for("settings", section="groups"))
+
+@app.route('/delete_group', methods=['POST'])
+def delete_group():
+    group_id = request.form.get('group_id')
+    group = Group.query.get(group_id)
+
+    if group:
+        if len(group.services) == 0:
+            db.session.delete(group)
+            db.session.commit()
+            flash(f"🗑️ Group '{group.group_name}' deleted successfully.", "success")
+        else:
+            flash("❌ Cannot delete group that has services.", "danger")
+    else:
+        flash("❌ Group not found.", "danger")
+
+    return redirect(url_for('settings', section='groups'))
 
 @app.route('/compact_dash')
 def compact_dash():
@@ -989,7 +1078,7 @@ def widget_config(widget_name):
             return jsonify([])
         
 
-from sqlalchemy.orm import joinedload
+
 
 @app.route('/widgets')
 def list_widgets():
