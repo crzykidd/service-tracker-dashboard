@@ -91,6 +91,16 @@
                     <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
                     <input type="text" name="group_name" id="group_name" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.group_name or '' }}">
                 </div>
+                <div class="mb-5">
+                    <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
+                    <input type="number"
+                        name="sort_priority"
+                        id="sort_priority"
+                        class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                        value="{{ entry.sort_priority if entry.sort_priority is not none else '' }}"
+                        placeholder="e.g. 1 (lower = higher priority)">
+                    <p class="mt-1 text-xs text-dashboard-secondary">Optional. Lower numbers show up higher in group listings.</p>
+                </div>
 
                 <div class="mb-5">
                     <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>

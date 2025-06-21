@@ -32,6 +32,7 @@
         <th>Image Icon</th>
         <th>Image Tag</th>
         <th>Static</th>
+        <th>Priority</th> <!-- ✅ New column -->
         <th>Last API Update</th>
       </tr>
     </thead>
@@ -54,6 +55,7 @@
         <td>{{ entry.image_icon }}</td>
         <td>{{ entry.image_tag }}</td>
         <td>{{ 'Yes' if entry.is_static else 'No' }}</td>
+        <td>{{ entry.sort_priority if entry.sort_priority is not none else '' }}</td> <!-- ✅ New row field -->
         <td>{{ entry.last_api_update }}</td>
       </tr>
       {% endfor %}
