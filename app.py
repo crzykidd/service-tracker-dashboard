@@ -121,6 +121,7 @@ class ServiceEntry(db.Model):
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
     widget = db.relationship('Widget', backref='services', lazy=True)
     sort_priority = db.Column(db.Integer, nullable=True, default=None)
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
 
 # fields for backup
     def to_dict(self):
@@ -149,6 +150,7 @@ class ServiceEntry(db.Model):
             'image_icon': self.image_icon,
             'is_static': self.is_static,
             'sort_priority': self.sort_priority,
+            
         }
 
         # Add inline widget info if attached
@@ -188,6 +190,16 @@ class WidgetValue(db.Model):
 
     def __repr__(self):
         return f'<WidgetValue {self.widget_id}, {self.widget_value_key}>'    
+
+class Group(db.Model):
+    __tablename__ = 'group'
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_name = db.Column(db.String(100), unique=True, nullable=False)
+    group_sort_priority = db.Column(db.Integer, nullable=True, default=None)
+    group_icon = db.Column(db.String(255), nullable=True)
+
+    services = db.relationship('ServiceEntry', backref='group', lazy=True)
 
 
 
@@ -525,6 +537,15 @@ def settings():
                         container_name=item['container_name'],
                         host=item['host']
                     ).first()
+                    group_name = item.get('group_name') or "none"
+                    group_obj = Group.query.filter_by(group_name=group_name).first()
+
+                    if not group_obj:
+                        group_obj = Group(group_name=group_name)
+                        db.session.add(group_obj)
+                        db.session.flush()  # gets group_obj.id
+
+                    entry.group_id = group_obj.id
                     if entry: # Entry exists in DB
                         # Rule: Protect existing static entries in DB from being overwritten by non-static items
                         # during a 'restore all' operation.
