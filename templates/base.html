@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Service Tracker Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <style>
+    .input-clean {
+        background-color: #1f2937; /* Tailwind's gray-800 */
+        color: #e2e8f0; /* light text */
+        border: 1px solid #4b5563; /* gray-600 */
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        width: 100%;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .input-clean::placeholder {
+        color: #94a3b8; /* Tailwind's slate-400 */
+    }
+
+    .input-clean:focus {
+        border-color: #3b82f6; /* blue-500 */
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        outline: none;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+
+<body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans">
+  <div class="max-w-screen-2xl mx-auto">
+
+    <!-- Header -->
+    <div class="text-xl font-semibold text-white mb-4">Service Tracker Dashboard</div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-700 mb-4">
+      <nav class="flex space-x-4" aria-label="Tabs">
+        <a href="/" class="px-3 py-2 text-sm font-medium {% if active_tab == 'dashboard' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Dashboard</a>
+        <a href="/tiled_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'tiled' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Tiled</a>
+        <a href="/compact_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'compact' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Compact</a>
+        <a href="/add" class="px-3 py-2 text-sm font-medium {% if active_tab == 'add' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Add</a>
+        <a href="/settings" class="px-3 py-2 text-sm font-medium {% if active_tab == 'settings' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Settings</a>
+      </nav>
+    </div>
+
+    <!-- Filter Bar -->
+    {% block filter_bar %}
+    <!-- Optional: Let individual pages override this -->
+    {% endblock %}
+
+    <!-- Main Content -->
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

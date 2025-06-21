@@ -1,88 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Service Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <style>
-    .logo-icon {
-      height: 40px;
-      max-width: 40px;
-      filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
-      transition: transform 0.2s ease-in-out;
-    }
-    .logo-icon:hover {
-      transform: scale(1.1);
-    }
-    .icon-placeholder {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      background-color: #3d3d3d;
-      border-radius: 4px;
-      font-size: 20px;
-      color: #9e9e9e;
-    }
-  </style>
-</head>
-<body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans">
-  <div class="max-w-screen-2xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-      <div class="text-xl font-semibold text-white">Service Tracker Dashboard</div>
-      <div class="flex gap-2">
-        <a href="/add" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Add Record</a>
-        <a href="/tiled_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Tile View</a>
-        <a href="/compact_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Compact View</a>
-        <a href="/settings" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Settings</a>
-      </div>
-    </div>
+{% extends "base.html" %}
+{% set active_tab = 'dashboard' %}
 
+{% block head %}
+<style>
+  .logo-icon {
+    height: 40px;
+    max-width: 40px;
+    filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+    transition: transform 0.2s ease-in-out;
+  }
+  .logo-icon:hover {
+    transform: scale(1.1);
+  }
+  .icon-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: #3d3d3d;
+    border-radius: 4px;
+    font-size: 20px;
+    color: #9e9e9e;
+  }
+</style>
+{% endblock %}
 
-    <div class="flex flex-col sm:flex-row sm:justify-between gap-4 mb-4 items-start sm:items-center">
-      <div class="flex gap-4 items-center flex-wrap">
-        <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
-        
-        <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-          <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
-          <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
-          <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
-          <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
-        </select>
-        In Group Sort: 
-        <select id="sortInGroupSelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-          <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
-          <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
-        </select> 
-        <span class="text-sm text-gray-400 ml-2">
-          Total Services: {{ grouped_entries.values() | map('length') | sum }}
-        </span>
-      </div>
+{% block filter_bar %}
+  {% include "partials/filter_bar.html" %}
+{% endblock %}
 
-      <div class="flex gap-2 items-center mt-2 sm:mt-0">
-        <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
-        <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
-          <option value="30">30s</option>
-          <option value="60">1m</option>
-          <option value="300">5m</option>
-          <option value="600">10m</option>
-          <option value="0">Never</option>
-        </select>
-     
-        <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
-      </div>
-    </div>
+{% block content %}
+{% if msg == 'deleted' %}
+  <div class="bg-red-700 text-white px-4 py-2 rounded mb-4">Entry deleted successfully.</div>
+{% elif msg == 'added' %}
+  <div class="bg-green-700 text-white px-4 py-2 rounded mb-4">Entry added successfully.</div>
+{% endif %}
 
-    {% if msg == 'deleted' %}
-      <div class="bg-red-700 text-white px-4 py-2 rounded mb-4">Entry deleted successfully.</div>
-    {% elif msg == 'added' %}
-      <div class="bg-green-700 text-white px-4 py-2 rounded mb-4">Entry added successfully.</div>
-    {% endif %}
-
-    <div class="overflow-x-auto">
+<div class="overflow-x-auto">
       <table class="min-w-full table-auto text-sm text-left border-collapse">
         <thead class="bg-gray-700 text-gray-200">
           <tr>
@@ -306,44 +261,32 @@
         </tbody>
         {% endfor %}
       </table>
-    </div>
-  </div>
+      
+</div>
+{% endblock %}
 
-  <script>
-    let secondsSinceRefresh = 0;
-    let refreshInterval = 60; // default
+{% block extra_scripts %}
+<script>
+  let secondsSinceRefresh = 0;
+  let refreshInterval = 60;
 
-    document.addEventListener('DOMContentLoaded', function () {
-      const filterInput = document.getElementById('filterInput');
-      const refreshLabel = document.getElementById('refreshTimer');
-      const refreshDropdown = document.getElementById('refreshInterval');
-      const groupBySelect = document.getElementById('groupBySelect');
-      if (groupBySelect) {
-        groupBySelect.addEventListener('change', function () {
-          const selected = this.value;
-          const params = new URLSearchParams(window.location.search);
-          params.set('group_by', selected);
-          window.location.search = params.toString();
-        });
-      }
-      const rows = document.querySelectorAll('table tbody tr[data-entry]');
+  document.addEventListener('DOMContentLoaded', function () {
+    const filterInput = document.getElementById('filterInput');
+    const refreshLabel = document.getElementById('refreshTimer');
+    const refreshDropdown = document.getElementById('refreshInterval');
+    const groupBySelect = document.getElementById('groupBySelect');
+    const sortInGroupSelect = document.getElementById('sortInGroupSelect');
 
-      // Load saved interval or default
-      const savedInterval = localStorage.getItem('refreshInterval');
-      if (savedInterval !== null) {
-        refreshInterval = parseInt(savedInterval);
-        if (refreshDropdown) refreshDropdown.value = savedInterval;
-      }
+    if (groupBySelect) {
+      groupBySelect.addEventListener('change', function () {
+        const params = new URLSearchParams(window.location.search);
+        params.set('group_by', this.value);
+        window.location.search = params.toString();
+      });
+    }
 
-      // Listen for dropdown change
-      if (refreshDropdown) {
-        refreshDropdown.addEventListener('change', function () {
-          refreshInterval = parseInt(this.value);
-          localStorage.setItem('refreshInterval', this.value);
-        });
-      }
-
-      // Filtering rows
+    const rows = document.querySelectorAll('table tbody tr[data-entry]');
+    if (filterInput) {
       filterInput.addEventListener('input', function () {
         const filter = this.value.toLowerCase();
         rows.forEach(row => {
@@ -353,79 +296,79 @@
           row.style.display = (group.includes(filter) || name.includes(filter) || stack.includes(filter)) ? '' : 'none';
         });
       });
+    }
 
-      // Update refresh timer and handle auto-reload
-      setInterval(() => {
-        secondsSinceRefresh++;
-        if (refreshLabel) {
-          const m = Math.floor(secondsSinceRefresh / 60);
-          const s = secondsSinceRefresh % 60;
-          refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
-        }
+    const savedInterval = localStorage.getItem('refreshInterval');
+    if (savedInterval !== null) {
+      refreshInterval = parseInt(savedInterval);
+      if (refreshDropdown) refreshDropdown.value = savedInterval;
+    }
 
-        if (refreshInterval > 0 && secondsSinceRefresh >= refreshInterval) {
-          window.location.reload();
-        }
-      }, 1000);
-
-      // Restore group toggle state
-      const allGroups = document.querySelectorAll('[id^="toggle-icon-"]');
-      allGroups.forEach(iconEl => {
-        const groupId = iconEl.id.replace('toggle-icon-', '');
-        const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
-        const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
-        entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
-        iconEl.textContent = isCollapsed ? '▶' : '▼';
+    if (refreshDropdown) {
+      refreshDropdown.addEventListener('change', function () {
+        refreshInterval = parseInt(this.value);
+        localStorage.setItem('refreshInterval', this.value);
       });
-    });
+    }
 
-    function toggleGroup(groupId) {
+    setInterval(() => {
+      secondsSinceRefresh++;
+      if (refreshLabel) {
+        const m = Math.floor(secondsSinceRefresh / 60);
+        const s = secondsSinceRefresh % 60;
+        refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
+      }
+      if (refreshInterval > 0 && secondsSinceRefresh >= refreshInterval) {
+        window.location.reload();
+      }
+    }, 1000);
+
+    // Restore group collapse
+    const allGroups = document.querySelectorAll('[id^="toggle-icon-"]');
+    allGroups.forEach(iconEl => {
+      const groupId = iconEl.id.replace('toggle-icon-', '');
+      const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
       const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
-      const icon = document.getElementById(`toggle-icon-${groupId}`);
-      let isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
+      entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
+      iconEl.textContent = isCollapsed ? '▶' : '▼';
+    });
 
-      const newState = !isCollapsed;
-      entries.forEach(row => row.style.display = newState ? 'none' : '');
-      if (icon) icon.textContent = newState ? '▶' : '▼';
+    if (sortInGroupSelect) {
+      const savedSort = localStorage.getItem('sortInGroup');
+      if (!savedSort) {
+        localStorage.setItem('sortInGroup', sortInGroupSelect.value);
+      } else if (sortInGroupSelect.value !== savedSort) {
+        sortInGroupSelect.value = savedSort;
+        const params = new URLSearchParams(window.location.search);
+        params.set('sort_in_group', savedSort);
+        window.location.search = params.toString();
+      }
 
-      localStorage.setItem(`group-collapsed-${groupId}`, newState);
-    }
-
-    function copyToClipboard(text, el) {
-      navigator.clipboard.writeText(text).then(() => {
-        const original = el.innerHTML;
-        el.innerHTML = "<em>Copied!</em>";
-        setTimeout(() => el.innerHTML = original, 1000);
+      sortInGroupSelect.addEventListener('change', function () {
+        localStorage.setItem('sortInGroup', this.value);
+        const params = new URLSearchParams(window.location.search);
+        params.set('sort_in_group', this.value);
+        window.location.search = params.toString();
       });
     }
-  const sortInGroupSelect = document.getElementById('sortInGroupSelect');
-  if (sortInGroupSelect) {
-    // If no localStorage value, save the one rendered by backend
-    if (!localStorage.getItem('sortInGroup')) {
-      localStorage.setItem('sortInGroup', sortInGroupSelect.value);
-    }
+  });
 
-    // Always use localStorage to override the dropdown value
-    const savedSort = localStorage.getItem('sortInGroup');
-    if (savedSort && sortInGroupSelect.value !== savedSort) {
-      sortInGroupSelect.value = savedSort;
-
-      // Force refresh with correct value if mismatch
-      const params = new URLSearchParams(window.location.search);
-      params.set('sort_in_group', savedSort);
-      window.location.search = params.toString();
-    }
-
-    // On change, update URL and localStorage
-    sortInGroupSelect.addEventListener('change', function () {
-      localStorage.setItem('sortInGroup', this.value);
-      const params = new URLSearchParams(window.location.search);
-      params.set('sort_in_group', this.value);
-      window.location.search = params.toString();
-    });
+  function toggleGroup(groupId) {
+    const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
+    const icon = document.getElementById(`toggle-icon-${groupId}`);
+    let isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
+    const newState = !isCollapsed;
+    entries.forEach(row => row.style.display = newState ? 'none' : '');
+    if (icon) icon.textContent = newState ? '▶' : '▼';
+    localStorage.setItem(`group-collapsed-${groupId}`, newState);
   }
 
-    </script>
-
-</body>
-</html>
+  function copyToClipboard(text, el) {
+    navigator.clipboard.writeText(text).then(() => {
+      const original = el.innerHTML;
+      el.innerHTML = "<em>Copied!</em>";
+      setTimeout(() => el.innerHTML = original, 1000);
+    });
+  }
+</script>
+{% endblock %}
