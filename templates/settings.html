@@ -1,75 +1,55 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
+{% extends "base.html" %}
+
+{% block head %}
   <title>Settings</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
-    body {
-      font-family: 'Inter', sans-serif;
+    .form-input {
+      background-color: #1f2937;
+      color: #e2e8f0;
+      border: 1px solid #4a5568;
+      padding: 0.625rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      width: 100%;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .form-input::placeholder {
+      color: #94a3b8;
+    }
+    .form-input:focus {
+      border-color: #3b82f6;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
     }
   </style>
-</head>
-<body class="bg-gray-900 text-gray-200 min-h-screen flex flex-col">
-<!-- Top Navigation Bar -->
-<header class="w-full bg-gray-800 px-6 py-4 shadow-md">
-  <div class="max-w-screen-2xl mx-auto flex justify-between items-center">
-    <div class="text-xl font-semibold text-white">Service Tracker</div>
-    <div class="flex gap-2">
-      <a href="/" class="text-sm px-3 py-1 rounded bg-gray-700 text-gray-200 hover:bg-gray-600">Full</a>
-      <a href="/tiled_dash" class="text-sm px-3 py-1 rounded bg-gray-700 text-gray-200 hover:bg-gray-600">Tile</a>
-      <a href="/compact_dash" class="text-sm px-3 py-1 rounded bg-gray-700 text-gray-200 hover:bg-gray-600">Compact</a>
-      <a href="/add" class="text-sm px-3 py-1 rounded bg-gray-700 text-gray-200 hover:bg-gray-600">Add</a>
-      <a href="/settings" class="text-sm px-3 py-1 rounded bg-gray-700 text-gray-200 hover:bg-gray-600">Settings</a>
-    </div>
-  </div>
-</header>
-<main class="flex flex-1 px-6 py-6 max-w-screen-2xl mx-auto w-full gap-8">
-  
-  <!-- === Sidebar Navigation === -->
-  <aside class="w-64 bg-gray-800 p-6 space-y-4 border-r border-gray-700">
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col md:flex-row max-w-screen-2xl mx-auto py-8 px-6 gap-6">
+  <!-- Sidebar Navigation -->
+  <aside class="w-full md:w-64 bg-gray-800 p-6 border border-gray-700 rounded-lg">
     <h2 class="text-xl font-semibold mb-4">Settings</h2>
-    <!-- Nav: Info -->
-    <button onclick="showSection('info')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-info">
-      Info
-    </button>
-    <!-- Nav: Backup -->
-    <button onclick="showSection('backup')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-backup">
-      Backup
-    </button>
-    <!-- Nav: Widgets -->
-    <button onclick="showSection('widgets')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-widgets">
-      Widgets
-    </button>
-    <!-- Nav: Groups -->
-    <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">
-      Groups
-    </button>
+    <button onclick="showSection('info')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-info">Info</button>
+    <button onclick="showSection('backup')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-backup">Backup</button>
+    <button onclick="showSection('widgets')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-widgets">Widgets</button>
+    <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">Groups</button>
   </aside>
 
-  <!-- === Main Content Area === -->
-
-  <div class="flex-1 p-8 space-y-10">
-
-    <!-- === Show messages === -->
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          <div id="flash-container" class="space-y-2 mb-6">
-            {% for category, message in messages %}
-              <div class="flash-alert flex items-center justify-between text-sm px-4 py-2 rounded shadow bg-green-600 text-white">
-                <div class="flex items-center gap-2">
-                  
-                  <span>{{ message }}</span>
-                </div>
-                <button class="text-white hover:text-gray-300" onclick="this.parentElement.remove()">×</button>
-              </div>
-            {% endfor %}
-          </div>
-        {% endif %}
-      {% endwith %}
-
+  <!-- Main Content Area -->
+  <div class="flex-1 space-y-10">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div id="flash-container" class="space-y-2">
+          {% for category, message in messages %}
+            <div class="flash-alert flex items-center justify-between text-sm px-4 py-2 rounded shadow bg-green-600 text-white">
+              <span>{{ message }}</span>
+              <button class="text-white hover:text-gray-300" onclick="this.parentElement.remove()">×</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    
     <!-- === Info Section === -->
     <section id="section-info" class="section">
       <h2 class="text-2xl font-semibold mb-4">Service Info</h2>
@@ -279,10 +259,11 @@
       <h2 class="text-2xl font-semibold mb-4">Groups</h2>
       <p class="text-gray-400">Coming Soon</p>
     </section>
-<!-- Your settings content goes here -->
   </div>
-  </main>
+</div>
+{% endblock %}
 
+{% block extra_scripts %}
 <script>
   function showSection(id) {
     document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
@@ -298,21 +279,17 @@
     const section = urlParams.get('section') || 'info';
     showSection(section);
   });
-</script>
-<script>
-function copyToClipboard(inputId) {
-  const input = document.getElementById(inputId);
-  if (input) {
-    navigator.clipboard.writeText(input.value)
-      .then(() => {
-        input.classList.add('ring-2', 'ring-green-400');
-        setTimeout(() => input.classList.remove('ring-2', 'ring-green-400'), 1000);
-      })
-      .catch(err => console.error('Copy failed:', err));
+
+  function copyToClipboard(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) {
+      navigator.clipboard.writeText(input.value)
+        .then(() => {
+          input.classList.add('ring-2', 'ring-green-400');
+          setTimeout(() => input.classList.remove('ring-2', 'ring-green-400'), 1000);
+        })
+        .catch(err => console.error('Copy failed:', err));
+    }
   }
-}
 </script>
-
-
-</body>
-</html>
+{% endblock %}

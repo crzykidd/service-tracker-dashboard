@@ -1,288 +1,200 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Service Entry</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .bg-dashboard-dark { background-color: #1a202c; }
-        .bg-dashboard-card { background-color: #2d3748; }
-        .bg-dashboard-info-box { background-color: #252f3e; }
-        .text-dashboard-primary { color: #e2e8f0; }
-        .text-dashboard-secondary { color: #a0aec0; }
-        .border-dashboard-accent { border-color: #4a5568; }
-        .btn-primary { background-color: #4299e1; color: white; }
-        .btn-primary:hover { background-color: #3182ce; }
-        .btn-secondary { background-color: #4a5568; color: white; }
-        .btn-secondary:hover { background-color: #2d3748; }
-        .form-input {
-            background-color: #1a202c;
-            border-color: #4a5568;
-            color: #e2e8f0;
-        }
-        .form-input:focus {
-            border-color: #4299e1;
-            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
-            outline: none;
-        }
-        .form-checkbox { color: #4299e1; }
-        .info-field-label {
-            font-weight: 500;
-            color: #cbd5e0;
-            min-width: 200px;
-            display: inline-block;
-        }
-        .info-field-value {
-            color: #e2e8f0;
-            word-break: break-all;
-        }
-    </style>
-</head>
-<body class="bg-dashboard-dark text-dashboard-primary flex items-center justify-center min-h-screen p-4 sm:p-6">
-    <div class="w-full max-w-2xl">
-        <div class="w-full max-w-4xl flex justify-end gap-2 mb-4">
-            <a href="/tiled_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Tile View</a>
-            <a href="/" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Dashboard</a>
-            <a href="/add" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Add Record</a>
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+  .form-input {
+    background-color: #1f2937;
+    color: #e2e8f0;
+    border: 1px solid #4a5568;
+    padding: 0.625rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    width: 100%;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .form-input::placeholder {
+    color: #94a3b8;
+  }
+  .form-input:focus {
+    border-color: #3b82f6;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  }
+  .form-checkbox {
+    color: #3b82f6;
+    background-color: #1f2937;
+    border-color: #4a5568;
+  }
+  .btn-primary {
+    background-color: #4299e1;
+    color: white;
+  }
+  .btn-primary:hover {
+    background-color: #3182ce;
+  }
+  .btn-secondary {
+    background-color: #4a5568;
+    color: white;
+  }
+  .btn-secondary:hover {
+    background-color: #2d3748;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex justify-center px-4 py-8">
+  <div class="w-full max-w-3xl">
+    <h1 class="text-3xl font-bold text-center mb-8">Edit Service Entry</h1>
+    <form action="{{ url_for('edit_entry', id=entry.id, ref=ref) }}" method="POST">
+      <input type="hidden" name="force_update_icon" value="true">
+
+      <div class="space-y-5">
+        <div>
+          <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
+          <input type="text" name="host" id="host" class="form-input" value="{{ entry.host }}">
         </div>
 
-        <div class="bg-dashboard-card shadow-2xl rounded-xl p-6 sm:p-8 md:p-10 mb-6">
-            <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Edit Service Entry</h1>
-            <form action="{{ url_for('edit_entry', id=entry.id, ref=ref) }}" method="POST">
-                <input type="hidden" name="force_update_icon" value="true">
-
-                <div class="mb-5">
-                    <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
-                    <input type="text" name="host" id="host" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.host }}">
-                </div>
-
-                <div class="mb-5">
-                    <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
-                    <input type="text" name="container_name" id="application" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.container_name }}">
-                </div>
-
-                <div class="mb-5">
-                    <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
-                    <div class="flex items-center space-x-3">
-                        <input type="url" name="internalurl" id="internal_url" class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.internalurl or '' }}">
-                        <div class="flex items-center">
-                            <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500" {% if entry.internal_health_check_enabled %}checked{% endif %}>
-                            <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mb-5">
-                    <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
-                    <div class="flex items-center space-x-3">
-                        <input type="url" name="externalurl" id="external_url" class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.externalurl or '' }}">
-                        <div class="flex items-center">
-                            <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500" {% if entry.external_health_check_enabled %}checked{% endif %}>
-                            <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mb-5">
-                    <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
-                    <input type="text" name="group_name" id="group_name" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.group_name or '' }}">
-                </div>
-                <div class="mb-5">
-                    <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
-                    <input type="number"
-                        name="sort_priority"
-                        id="sort_priority"
-                        class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                        value="{{ entry.sort_priority if entry.sort_priority is not none else '' }}"
-                        placeholder="e.g. 1 (lower = higher priority)">
-                    <p class="mt-1 text-xs text-dashboard-secondary">Optional. Lower numbers show up higher in group listings.</p>
-                </div>
-
-                <div class="mb-5">
-                    <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
-                    <input type="text" name="image_icon" id="icon_image" class="form-input w-full px-4 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" value="{{ entry.image_icon or '' }}">
-                    <p class="mt-1 text-xs text-dashboard-secondary">Enter the filename of the SVG icon (e.g., service.svg).</p>
-                    <p class="mt-1 text-xs text-dashboard-secondary">(will try to match automatically from application above.)</p>
-                </div>
-
-                <div class="mb-6 sm:mb-8">
-                    <div class="flex items-center">
-                        <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-5 w-5 rounded border-dashboard-accent focus:ring-blue-500" {% if entry.is_static %}checked{% endif %}>
-                        <label for="locked" class="ml-2 text-sm font-medium text-dashboard-secondary">Locked (Static Entry)</label>
-                    </div>
-                    <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by automated API calls.</p>
-                </div>
- 
-                <!-- Add this section in the form for widget selection -->
-                <!-- Start of widgets -->
-                <div id="tab-widgets" class="tab-content">
-                <div class="flex justify-center">
-                    <div class="max-w-4xl w-full bg-gray-800 shadow-2xl rounded-lg p-6 md:p-8">
-                    <div class="bg-gray-700 text-gray-200 p-6 rounded shadow-md">
-                        <h2 class="text-xl font-semibold mb-4">Widget Settings</h2>
-                        <p class="text-gray-400 text-sm mb-4">Manage widget-related settings here.</p>
-
-                        <!-- Add or Edit Widget -->
-                        <h3 class="text-lg font-semibold mb-4">Edit Widget for Service</h3>
-                        
-                        <!-- Widget Dropdown -->
-                        <div class="mb-4">
-                        <label for="widget_id" class="block text-gray-300">Select Widget</label>
-
-                        <select name="widget_name" id="widget_name" class="w-full p-2 rounded bg-gray-600 text-white border border-gray-500">
-
-                        <option value="none" {% if not selected_widget %}selected{% endif %}>None</option>
-                        {% for name in available_widgets %}
-                            <option value="{{ name }}" {% if selected_widget and selected_widget.widget_name == name %}selected{% endif %}>
-                            {{ name|capitalize }}
-                            </option>
-                        {% endfor %}
-                        </select>
-     
-
-                        </div>
-
-
-          <!-- Widget Info -->
-            <div class="mb-4">
-            <label for="widget_url" class="block text-gray-300">API URL</label>
-            <input type="text" name="widget_url" id="widget_url"
-                    value="{{ selected_widget.widget_url if selected_widget else '' }}"
-                    class="w-full p-2 rounded bg-gray-600 text-white">
-            </div>
-
-            <div class="mb-4">
-            <label for="widget_api_key" class="block text-gray-300">API Key</label>
-            <input type="text" name="widget_api_key" id="widget_api_key"
-                    value="{{ selected_widget.widget_api_key if selected_widget else '' }}"
-                    class="w-full p-2 rounded bg-gray-600 text-white">
-            </div>
-            <div class="mb-4" id="widget_fields_container">
-            <!-- Checkboxes for widget fields will be loaded here -->
-            </div>
-
-
-          <p class="text-xs text-gray-400 mt-2">Changes to widget settings will be saved when you click “Update Entry”.</p>
-
-
-      </div> <!-- inner card -->
-    </div>   <!-- wrapper box -->
-  </div>     <!-- flex container -->
-</div>
-<!-- End of widgets -->
-
-
-
-
-                <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
-                    <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Update Entry</button>
-                    <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">Cancel</button>
-                </div>
-
-                <hr class="my-6 border-dashboard-accent">
-                
-                <div class="mt-6 bg-dashboard-info-box rounded-lg p-4">
-                    <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
-                    <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
-                    <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
-                        Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
-                    </label>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <input type="text" name="delete_confirmation" id="delete_confirmation"
-                            placeholder="Type container name to confirm" 
-                            class="form-input w-full sm:w-auto px-4 py-2 rounded-lg text-sm">
-                        <button type="submit" name="delete" value="true"
-                                class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm transition duration-150 ease-in-out">
-                            Delete Entry
-                        </button>
-                    </div>
-                </div>
-                </form>
-
-                
+        <div>
+          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
+          <input type="text" name="container_name" id="application" class="form-input" value="{{ entry.container_name }}">
         </div>
 
-        <div class="bg-dashboard-info-box shadow-xl rounded-xl p-6 sm:p-8">
-            <h2 class="text-xl sm:text-2xl font-semibold mb-4 sm:mb-6 text-dashboard-primary">Additional Information</h2>
-            <div class="space-y-4">
-                <div><span class="info-field-label">Entry ID:</span><span class="info-field-value ml-2">{{ entry.id }}</span></div>
-                <div><span class="info-field-label">Container ID:</span><span class="info-field-value ml-2">{{ entry.container_id }}</span></div>
-                <div><span class="info-field-label">Stack Name:</span><span class="info-field-value ml-2">{{ entry.stack_name }}</span></div>
-                <div><span class="info-field-label">Docker Status:</span><span class="info-field-value ml-2">{{ entry.docker_status }}</span></div>
-                <div><span class="info-field-label">Started At:</span><span class="info-field-value ml-2">{{ entry.started_at }}</span></div>
-                <div><span class="info-field-label">Last Updated:</span><span class="info-field-value ml-2">{{ entry.last_updated }}</span></div>
-                <div><span class="info-field-label">Last API Update:</span><span class="info-field-value ml-2">{{ entry.last_api_update }}</span></div>
-                <div><span class="info-field-label">Internal Health Status:</span><span class="info-field-value ml-2">{{ entry.internal_health_status }}</span></div>
-                <div><span class="info-field-label">Internal Health Last Check:</span><span class="info-field-value ml-2">{{ entry.internal_health_update }}</span></div>
-                <div><span class="info-field-label">External Health Status:</span><span class="info-field-value ml-2">{{ entry.external_health_status }}</span></div>
-                <div><span class="info-field-label">External Health Last Check:</span><span class="info-field-value ml-2">{{ entry.external_health_update }}</span></div>
-                <div><span class="info-field-label">Image Registry:</span><span class="info-field-value ml-2">{{ entry.image_registry }}</span></div>
-                <div><span class="info-field-label">Image Owner:</span><span class="info-field-value ml-2">{{ entry.image_owner }}</span></div>
-                <div><span class="info-field-label">Image Name:</span><span class="info-field-value ml-2">{{ entry.image_name }}</span></div>
-                <div><span class="info-field-label">Image Tag:</span><span class="info-field-value ml-2">{{ entry.image_tag }}</span></div>
+        <div>
+          <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
+          <div class="flex items-center space-x-3">
+            <input type="url" name="internalurl" id="internal_url" class="form-input flex-grow" value="{{ entry.internalurl or '' }}">
+            <div class="flex items-center">
+              <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-5 w-5" {% if entry.internal_health_check_enabled %}checked{% endif %}>
+              <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
             </div>
+          </div>
         </div>
+
+        <div>
+          <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
+          <div class="flex items-center space-x-3">
+            <input type="url" name="externalurl" id="external_url" class="form-input flex-grow" value="{{ entry.externalurl or '' }}">
+            <div class="flex items-center">
+              <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-5 w-5" {% if entry.external_health_check_enabled %}checked{% endif %}>
+              <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
+          <input type="text" name="group_name" id="group_name" class="form-input" value="{{ entry.group_name or '' }}">
+        </div>
+
+        <div>
+          <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
+          <input type="number" name="sort_priority" id="sort_priority" class="form-input" value="{{ entry.sort_priority if entry.sort_priority is not none else '' }}">
+          <p class="mt-1 text-xs text-dashboard-secondary">Optional. Lower numbers show up higher in group listings.</p>
+        </div>
+
+        <div>
+          <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
+          <input type="text" name="image_icon" id="icon_image" class="form-input" value="{{ entry.image_icon or '' }}">
+          <p class="mt-1 text-xs text-dashboard-secondary">Enter the filename of the SVG icon (e.g., service.svg). Will try to match automatically from application above.</p>
+        </div>
+
+        <div class="flex items-center">
+          <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-5 w-5" {% if entry.is_static %}checked{% endif %}>
+          <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Locked (Static Entry)</label>
+        </div>
+
+        <div class="pt-6">
+          <h2 class="text-lg font-semibold text-dashboard-primary mb-2">Widget Settings</h2>
+          <label for="widget_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Select Widget</label>
+          <select name="widget_name" id="widget_name" class="form-input">
+            <option value="none" {% if not selected_widget %}selected{% endif %}>None</option>
+            {% for name in available_widgets %}
+            <option value="{{ name }}" {% if selected_widget and selected_widget.widget_name == name %}selected{% endif %}>{{ name|capitalize }}</option>
+            {% endfor %}
+          </select>
+
+          <div class="mt-4">
+            <label for="widget_url" class="block text-sm font-medium text-dashboard-secondary mb-1">API URL</label>
+            <input type="text" name="widget_url" id="widget_url" class="form-input" value="{{ selected_widget.widget_url if selected_widget else '' }}">
+          </div>
+
+          <div class="mt-4">
+            <label for="widget_api_key" class="block text-sm font-medium text-dashboard-secondary mb-1">API Key</label>
+            <input type="text" name="widget_api_key" id="widget_api_key" class="form-input" value="{{ selected_widget.widget_api_key if selected_widget else '' }}">
+          </div>
+
+          <div class="mt-4" id="widget_fields_container"></div>
+        </div>
+      </div>
+
+      <div class="flex justify-end space-x-4 mt-8">
+        <button type="submit" class="btn-primary px-6 py-2.5 rounded-lg font-medium text-sm">Update Entry</button>
+        <button type="button" onclick="window.history.back();" class="btn-secondary px-6 py-2.5 rounded-lg font-medium text-sm">Cancel</button>
+      </div>
+    </form>
+
+    <hr class="my-10 border-dashboard-accent">
+
+    <div class="bg-dashboard-info-box rounded-lg p-6">
+      <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
+      <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
+      <form action="{{ url_for('edit_entry', id=entry.id, ref=ref) }}" method="POST">
+        <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
+          Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
+        </label>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+          <input type="text" name="delete_confirmation" id="delete_confirmation" placeholder="Type container name to confirm" class="form-input w-full sm:w-auto">
+          <button type="submit" name="delete" value="true" class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Delete Entry</button>
+        </div>
+      </form>
     </div>
+  </div>
+</div>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const widgetSelect = document.getElementById('widget_name');
-        const container = document.getElementById('widget_fields_container');
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const widgetSelect = document.getElementById('widget_name');
+  const container = document.getElementById('widget_fields_container');
 
-        function loadWidgetFields(widgetName, preselected = []) {
-            container.innerHTML = '';
-            console.log("📦 Loading widget:", widgetName); // ✅ moved here
+  function loadWidgetFields(widgetName, preselected = []) {
+    container.innerHTML = '';
+    if (!widgetName || widgetName === 'none') return;
 
-            if (!widgetName || widgetName === 'none') return;
+    fetch(`/widget_config/${widgetName}`)
+      .then(response => response.json())
+      .then(fields => {
+        if (!Array.isArray(fields)) return;
 
-            fetch(`/widget_config/${widgetName}`)
-                .then(response => response.json())
-                .then(fields => {
-                    console.log("✅ Fields loaded:", fields); // ✅ moved here
-                    if (!Array.isArray(fields)) return;
+        fields.forEach(field => {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.name = 'widget_fields';
+          checkbox.value = field.key;
+          checkbox.className = 'mr-2';
+          if (preselected.includes(field.key)) checkbox.checked = true;
 
-                    fields.forEach(field => {
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.name = 'widget_fields';
-                        checkbox.value = field.key;
-                        checkbox.className = 'mr-2';
-                        if (preselected.includes(field.key)) {
-                            checkbox.checked = true;
-                        }
+          const label = document.createElement('label');
+          label.className = 'block mb-2 text-sm text-white';
+          label.innerHTML = `<strong>${field.label}</strong><br><span class="text-gray-400">${field.description}</span>`;
+          label.prepend(checkbox);
 
-                        const label = document.createElement('label');
-                        label.className = 'block mb-2 text-sm text-white';
-                        label.innerHTML = `<strong>${field.label}</strong><br><span class="text-gray-400">${field.description}</span>`;
-                        label.prepend(checkbox);
-
-                        container.appendChild(label);
-                    });
-                })
-                .catch(err => {
-                    console.error("❌ Error loading widget config:", err);
-                });
-        }
-
-        widgetSelect.addEventListener('change', function () {
-            loadWidgetFields(this.value);
+          container.appendChild(label);
         });
+      })
+      .catch(err => console.error("❌ Error loading widget config:", err));
+  }
 
-        // Preload on edit
-        
-        {% if selected_widget and selected_widget.widget_name %}
-            loadWidgetFields(
-                '{{ selected_widget.widget_name }}',
-                {{ selected_widget.widget_fields | tojson | safe }}
-            );
-        {% endif %}
-            });
-    </script>
+  widgetSelect.addEventListener('change', function () {
+    loadWidgetFields(this.value);
+  });
 
-
-</body>
-</html>
+  {% if selected_widget and selected_widget.widget_name %}
+  loadWidgetFields(
+    '{{ selected_widget.widget_name }}',
+    {{ selected_widget.widget_fields | tojson | safe }}
+  );
+  {% endif %}
+});
+</script>
+{% endblock %}

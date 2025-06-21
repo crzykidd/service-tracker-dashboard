@@ -1,125 +1,86 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add New Service Entry</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .bg-dashboard-dark { background-color: #1a202c; }
-        .bg-dashboard-card { background-color: #2d3748; }
-        .text-dashboard-primary { color: #e2e8f0; }
-        .text-dashboard-secondary { color: #a0aec0; }
-        .border-dashboard-accent { border-color: #4a5568; }
-        .btn-primary { background-color: #4299e1; color: white; }
-        .btn-primary:hover { background-color: #3182ce; }
-        .btn-secondary { background-color: #4a5568; color: white; }
-        .btn-secondary:hover { background-color: #2d3748; }
-        .form-input {
-            background-color: #1a202c;
-            border-color: #4a5568;
-            color: #e2e8f0;
-        }
-        .form-input:focus {
-            border-color: #4299e1;
-            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
-            outline: none;
-        }
-        .form-checkbox {
-            color: #4299e1;
-        }
-    </style>
-</head>
-<body class="bg-dashboard-dark text-dashboard-primary flex items-center justify-center min-h-screen p-4 sm:p-6">
-    <div class="w-full max-w-4xl">
-        <div class="w-full flex justify-end gap-2 mb-6">
-            <a href="/tiled_dash" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Tile View</a>
-            <a href="/" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Dashboard</a>
-            <a href="/settings" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white transition">Settings</a>
+{% extends "base.html" %}
+
+{% block head %}
+<title>Add New Service Entry</title>
+{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="bg-gray-800 shadow-2xl rounded-xl p-6 sm:p-8 md:p-10">
+    <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
+
+    <form action="{{ url_for('add_entry') }}" method="POST">
+      <!-- Host -->
+      <div class="mb-5">
+        <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Host</label>
+        <input type="text" name="host" id="host" required class="input-clean" placeholder="e.g., server01.example.com">
+      </div>
+
+      <!-- Application -->
+      <div class="mb-5">
+        <label for="application" class="block text-sm font-medium text-gray-400 mb-1">Application (Container Name)</label>
+        <input type="text" name="application" id="application" required class="input-clean" placeholder="e.g., proxmox">
+      </div>
+
+      <!-- Internal URL + Health Check -->
+      <div class="mb-5">
+        <label for="internal_url" class="block text-sm font-medium text-gray-400 mb-1">Internal URL</label>
+        <div class="flex items-center space-x-3">
+          <input type="url" name="internal_url" id="internal_url" class="input-clean" placeholder="http://localhost:8080">
+          <div class="flex items-center">
+            <input type="checkbox" name="internal_health_check" id="internal_health_check" class="form-checkbox h-5 w-5 rounded border-gray-600">
+            <label for="internal_health_check" class="ml-2 text-sm text-gray-400">Health Check</label>
+          </div>
         </div>
+      </div>
 
-        <div class="bg-dashboard-card shadow-2xl rounded-xl p-6 sm:p-8 md:p-10">
-            <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
-
-            <form action="{{ url_for('add_entry') }}" method="POST">
-                <!-- Host -->
-                <div class="mb-5">
-                    <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
-                    <input type="text" name="host" id="host" required class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., server01.example.com">
-                </div>
-
-                <!-- Application -->
-                <div class="mb-5">
-                    <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
-                    <input type="text" name="application" id="application" required class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., proxmox">
-                </div>
-
-                <!-- Internal URL + Health Check -->
-                <div class="mb-5">
-                    <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
-                    <div class="flex items-center space-x-3">
-                        <input type="url" name="internal_url" id="internal_url" class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm" placeholder="http://localhost:8080">
-                        <div class="flex items-center">
-                            <input type="checkbox" name="internal_health_check" id="internal_health_check" class="form-checkbox h-5 w-5 rounded border-dashboard-accent">
-                            <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- External URL + Health Check -->
-                <div class="mb-5">
-                    <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
-                    <div class="flex items-center space-x-3">
-                        <input type="url" name="external_url" id="external_url" class="form-input flex-grow px-4 py-2.5 rounded-lg text-sm" placeholder="https://example.com">
-                        <div class="flex items-center">
-                            <input type="checkbox" name="external_health_check" id="external_health_check" class="form-checkbox h-5 w-5 rounded border-dashboard-accent">
-                            <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Group Name -->
-                <div class="mb-5">
-                    <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
-                    <input type="text" name="group_name" id="group_name" class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., Production">
-                </div>
-                <!-- Sort Priority -->
-                <div class="mb-5">
-                    <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
-                    <input type="number" name="sort_priority" id="sort_priority"
-                        class="form-input w-full px-4 py-2.5 rounded-lg text-sm"
-                        placeholder="Optional — lower = higher priority">
-                    <p class="mt-1 text-xs text-dashboard-secondary">Optional. Entries are sorted by this within groups. Leave blank to auto-sort by name.</p>
-                </div>
-                <!-- Icon Image -->
-                <div class="mb-5">
-                    <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
-                    <input type="text" name="icon_image" id="icon_image" class="form-input w-full px-4 py-2.5 rounded-lg text-sm" placeholder="e.g., app.svg">
-                    <p class="mt-1 text-xs text-dashboard-secondary">Will attempt auto-match if left blank.</p>
-                </div>
-
-                <!-- Locked Checkbox -->
-                <div class="mb-6">
-                    <div class="flex items-center">
-                        <input type="checkbox" name="locked" id="locked" class="form-checkbox h-5 w-5 rounded border-dashboard-accent">
-                        <label for="locked" class="ml-2 text-sm font-medium text-dashboard-secondary">Locked (Static Entry)</label>
-                    </div>
-                    <p class="mt-1 text-xs text-dashboard-secondary">If checked, this entry will not be updated by the API.</p>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
-                    <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Add Entry</button>
-                    <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Cancel</button>
-                </div>
-                
-            </form>
+      <!-- External URL + Health Check -->
+      <div class="mb-5">
+        <label for="external_url" class="block text-sm font-medium text-gray-400 mb-1">External URL</label>
+        <div class="flex items-center space-x-3">
+          <input type="url" name="external_url" id="external_url" class="input-clean" placeholder="https://example.com">
+          <div class="flex items-center">
+            <input type="checkbox" name="external_health_check" id="external_health_check" class="form-checkbox h-5 w-5 rounded border-gray-600">
+            <label for="external_health_check" class="ml-2 text-sm text-gray-400">Health Check</label>
+          </div>
         </div>
-    </div>
-</body>
-</html>
+      </div>
+
+      <!-- Group Name -->
+      <div class="mb-5">
+        <label for="group_name" class="block text-sm font-medium text-gray-400 mb-1">Group Name</label>
+        <input type="text" name="group_name" id="group_name" class="input-clean" placeholder="e.g., Production">
+      </div>
+
+      <!-- Sort Priority -->
+      <div class="mb-5">
+        <label for="sort_priority" class="block text-sm font-medium text-gray-400 mb-1">Sort Priority</label>
+        <input type="number" name="sort_priority" id="sort_priority" class="input-clean" placeholder="Optional — lower = higher priority">
+        <p class="mt-1 text-xs text-gray-500">Entries are sorted by this within groups. Leave blank to auto-sort by name.</p>
+      </div>
+
+      <!-- Icon Image -->
+      <div class="mb-5">
+        <label for="icon_image" class="block text-sm font-medium text-gray-400 mb-1">Icon Image</label>
+        <input type="text" name="icon_image" id="icon_image" class="input-clean" placeholder="e.g., app.svg">
+        <p class="mt-1 text-xs text-gray-500">Will attempt auto-match if left blank.</p>
+      </div>
+
+      <!-- Locked Checkbox -->
+      <div class="mb-6">
+        <div class="flex items-center">
+          <input type="checkbox" name="locked" id="locked" class="form-checkbox h-5 w-5 rounded border-gray-600">
+          <label for="locked" class="ml-2 text-sm font-medium text-gray-400">Locked (Static Entry)</label>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">If checked, this entry will not be updated by the API.</p>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
+        <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Add Entry</button>
+        <button type="button" onclick="window.history.back();" class="btn-secondary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

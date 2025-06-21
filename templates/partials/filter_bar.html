@@ -1,0 +1,53 @@
+<div class="flex flex-col sm:flex-row sm:justify-between gap-4 mb-4 items-start sm:items-center">
+  <div class="flex gap-4 items-center flex-wrap">
+    <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
+
+    <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+      <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
+      <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
+      <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
+      <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
+    </select>
+
+    In Group Sort:
+    <select id="sortInGroupSelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+      <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
+      <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
+    </select>
+
+    <span class="text-sm text-gray-400 ml-2">
+      Total Services:
+      {% if grouped_entries is defined %}
+        {{ grouped_entries.values() | map('length') | sum }}
+      {% elif total_entries is defined %}
+        {{ total_entries }}
+      {% else %}
+        N/A
+      {% endif %}
+    </span>
+  </div>
+
+  <div class="flex gap-2 items-center mt-2 sm:mt-0">
+    {% if active_tab == 'tiled' %}
+    <div class="flex items-center gap-3">
+      <label for="toggleWidgets" class="text-sm text-gray-300">Show Widgets:</label>
+      <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="toggleWidgets" class="sr-only peer">
+        <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer-checked:bg-blue-600 transition-all"></div>
+        <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform transform peer-checked:translate-x-full"></div>
+      </label>
+    </div>
+    {% endif %}
+
+    <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
+    <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
+      <option value="30">30s</option>
+      <option value="60">1m</option>
+      <option value="300">5m</option>
+      <option value="600">10m</option>
+      <option value="0">Never</option>
+    </select>
+
+    <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
+  </div>
+</div>

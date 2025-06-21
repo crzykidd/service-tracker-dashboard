@@ -287,6 +287,7 @@ def dashboard():
         widget_values=widget_values,
         widget_fields=widget_fields,
         sort_in_group=sort_in_group,
+        active_tab='dashboard',
 
     )
 
@@ -616,8 +617,9 @@ def flash_is_present(req):
 @app.route('/compact_dash')
 def compact_dash():
     group_by_param = request.args.get('group_by', 'group_name')
+    sort_in_group = request.args.get('sort_in_group', 'alphabetical')  # ✅ added
 
-    # Validate and extract group_by field
+    # Validate group_by
     if hasattr(ServiceEntry, group_by_param):
         group_by_attr_name = group_by_param
         group_by_attr_for_query = getattr(ServiceEntry, group_by_param)
@@ -639,15 +641,22 @@ def compact_dash():
         else:
             key = str(key_value)
         grouped_entries_dict[key].append(entry)
-    # Sort each group's entries by priority then name
+
+    # 🔁 Sort group entries based on sort_in_group
     for key in grouped_entries_dict:
-        grouped_entries_dict[key] = sorted(
-            grouped_entries_dict[key],
-            key=lambda e: (
-                e.sort_priority if e.sort_priority is not None else 9999,
-                e.container_name.lower()
+        if sort_in_group == 'priority':
+            grouped_entries_dict[key] = sorted(
+                grouped_entries_dict[key],
+                key=lambda e: (
+                    e.sort_priority if e.sort_priority is not None else 9999,
+                    e.container_name.lower()
+                )
             )
-        )
+        else:
+            grouped_entries_dict[key] = sorted(
+                grouped_entries_dict[key],
+                key=lambda e: e.container_name.lower()
+            )
 
     # Sort group names
     if group_by_attr_name == "is_static":
@@ -658,7 +667,7 @@ def compact_dash():
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
-    # Flatten entries for columnar flow with group label shown once per segment
+    # Flatten for rendering
     flattened_entries = []
     for group_name, group_entries in sorted_grouped_entries.items():
         flattened_entries.append({
@@ -678,8 +687,12 @@ def compact_dash():
         "compact_dash.html",
         flattened_entries=flattened_entries,
         total_entries=len(entries),
-        show_host=show_host
+        show_host=show_host,
+        group_by=group_by_param,  # ✅ so dropdown reflects selection
+        sort_in_group=sort_in_group,  # ✅ so dropdown reflects selection
+        active_tab="compact"
     )
+
 
 
 
@@ -781,7 +794,7 @@ def add_entry():
         flash(f"✅ Service entry '{container_name}' added successfully!", 'success')
         return redirect(url_for('tiled_dashboard'))
 
-    return render_template("add_entry.html", msg='', entry={})
+    return render_template("add_entry.html", msg='', entry={}, active_tab="add")
 
 @app.route('/api/register', methods=['POST'])
 def api_register():

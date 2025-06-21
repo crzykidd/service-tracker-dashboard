@@ -1,94 +1,88 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Compact Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: #1e1e1e;
-      color: #e0e0e0;
-      padding: 15px;
-    }
-    .tile {
-      background-color: #2c2c2c;
-      border: 1px solid #444;
-      border-radius: 6px;
-      padding: 6px 8px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      transition: background-color 0.2s ease-in-out;
-      cursor: pointer;
-    }
-    .tile:hover {
-      background-color: #3a3a3a;
-    }
-    .tile img {
-      width: 28px;
-      height: 28px;
-      border-radius: 4px;
-    }
-    .container-name {
-      font-weight: 600;
-      color: #ffffff;
-      font-size: 0.85rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .host-name {
-      font-size: 0.7rem;
-      color: #aaaaaa;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .tile-content {
-      overflow: hidden;
-    }
-  </style>
-</head>
-<body>
+{% extends "base.html" %}
 
-<div class="flex justify-end gap-2 mb-4">
-  <a href="/add" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white">Add Record</a>
-  <a href="/" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white">Dashboard</a>
-  <a href="/settings" class="border border-gray-500 text-gray-300 text-sm px-2 py-0.5 rounded hover:bg-gray-600 hover:text-white">Settings</a>
-</div>
+{% block head %}
+<style>
+  .tile {
+    background-color: #1f2937; /* Tailwind's bg-gray-800 */
+    border: 1px solid #374151; /* Tailwind's border-gray-700 */
+    border-radius: 0.5rem;      /* Tailwind's rounded-lg */
+    padding: 0.5rem 0.75rem;    /* Tailwind's px-3 py-2 */
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s ease-in-out;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4); /* subtle inner shadow */
+  }
+  .tile.group-header {
+    background-color: #111827; /* Darker than regular tile (Tailwind's gray-900) */
+    border: 1px solid #4b5563; /* Tailwind's gray-600 */
+    border-left: 4px solid #3b82f6; /* Accent bar (blue-500) */
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-weight: 700;
+    font-size: 1rem;
+    color: #ffffff;
+    text-align: center;
+    justify-content: center;
+    grid-column: span 1 / span 1;
+  }
+  .tile:hover {
+    background-color: #374151; /* Tailwind's bg-gray-700 */
+  }
+  .tile img {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+  }
+  .container-name {
+    font-weight: 600;
+    color: #ffffff;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .host-name {
+    font-size: 0.7rem;
+    color: #aaaaaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tile-content {
+    overflow: hidden;
+  }
+  input[type="text"],
+  input[type="url"],
+  input[type="number"] {
+    background-color: #2d2d2d; /* Slight soft gray */
+    color: #e2e8f0;
+    border: 1px solid #4a5568;
+  }
 
-<div class="page-header mb-4">
-  <h1 class="text-2xl font-bold">Compact Dashboard</h1>
-</div>
+  input[type="text"]:focus,
+  input[type="url"]:focus,
+  input[type="number"]:focus {
+    border-color: #4299e1;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.5);
+  }
+</style>
+{% endblock %}
 
-<div class="controls-container text-gray-300 mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-  <div class="grouping-controls flex items-center space-x-4 flex-wrap">
-    <div class="flex items-center space-x-2">
-      <label for="groupBySelect" class="text-sm">Group by:</label>
-      <select id="groupBySelect" class="bg-gray-800 text-gray-200 border border-gray-600 rounded px-2 py-1 text-sm">
-        <option value="group_name">Group Name</option>
-        <option value="host">Docker Host</option>
-        <option value="stack_name">Stack Name</option>
-      </select>
-      In group sort: <select id="sortInGroupSelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-        <option value="alphabetical">Alphabetical</option>
-        <option value="priority">Priority</option>
-      </select>
-    </div>
-    <div class="text-sm text-gray-400">Total Resources: {{ total_entries }}</div>
-  </div>
-</div>
+{% block filter_bar %}
+  {% include "partials/filter_bar.html" %}
+{% endblock %}
 
+{% block content %}
 {% if flattened_entries %}
 <div class="grid auto-cols-max grid-flow-col gap-x-6" style="grid-template-rows: repeat(10, auto);">
   {% for item in flattened_entries %}
     {% if item.is_group_header %}
-    <div class="tile bg-gray-800 border border-gray-600 justify-center items-center text-center">
-    <div class="text-lg font-bold text-white truncate w-full">{{ item.group }}</div>
-    </div>
+      <div class="tile group-header">
+        {{ item.group }}
+      </div>
     {% else %}
       <div class="tile"
            onclick="window.open('{{ item.entry.internalurl if item.entry.internalurl else item.entry.externalurl }}', '_blank')">
@@ -111,11 +105,12 @@
     {% endif %}
   {% endfor %}
 </div>
-
 {% else %}
   <p class="text-center mt-6 text-gray-400">No entries found for this view.</p>
 {% endif %}
+{% endblock %}
 
+{% block extra_scripts %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     const groupBySelect = document.getElementById('groupBySelect');
@@ -127,8 +122,17 @@
       urlParams.set('group_by', this.value);
       window.location.search = urlParams.toString();
     });
+
+    const sortSelect = document.getElementById('sortInGroupSelect');
+    const sortParam = urlParams.get('sort_in_group') || 'alphabetical';
+    if (sortSelect) {
+      sortSelect.value = sortParam;
+      sortSelect.addEventListener('change', function () {
+        urlParams.set('group_by', document.getElementById('groupBySelect').value);
+        urlParams.set('sort_in_group', this.value);
+        window.location.search = urlParams.toString();
+      });
+    }
   });
 </script>
-
-</body>
-</html>
+{% endblock %}
