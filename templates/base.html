@@ -27,25 +27,62 @@
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
         outline: none;
     }
+    .form-input {
+      background-color: #1f2937;
+      color: #e2e8f0;
+      border: 1px solid #4a5568;
+      padding: 0.625rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      width: 100%;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .form-input::placeholder {
+      color: #94a3b8;
+    }
+
+    .form-input:focus {
+      border-color: #3b82f6;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+    }    
   </style>
   {% block head %}{% endblock %}
 </head>
 
 <body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans">
   <div class="max-w-screen-2xl mx-auto">
-
+<!-- DEBUG -->
+<div class="text-sm text-gray-400 mb-2">
+  {% if current_user.is_authenticated %}
+    Logged in as: {{ current_user.username }}
+  {% else %}
+    Not logged in
+  {% endif %}
+</div>
     <!-- Header -->
     <div class="text-xl font-semibold text-white mb-4">Service Tracker Dashboard</div>
 
     <!-- Tabs -->
     <div class="border-b border-gray-700 mb-4">
-      <nav class="flex space-x-4" aria-label="Tabs">
-        <a href="/" class="px-3 py-2 text-sm font-medium {% if active_tab == 'dashboard' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Dashboard</a>
-        <a href="/tiled_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'tiled' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Tiled</a>
-        <a href="/compact_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'compact' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Compact</a>
-        <a href="/add" class="px-3 py-2 text-sm font-medium {% if active_tab == 'add' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Add</a>
-        <a href="/settings" class="px-3 py-2 text-sm font-medium {% if active_tab == 'settings' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Settings</a>
-      </nav>
+      <div class="flex justify-between items-center">
+        <nav class="flex space-x-4" aria-label="Tabs">
+          <a href="/" class="px-3 py-2 text-sm font-medium {% if active_tab == 'dashboard' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Dashboard</a>
+          <a href="/tiled_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'tiled' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Tiled</a>
+          <a href="/compact_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'compact' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Compact</a>
+          <a href="/add" class="px-3 py-2 text-sm font-medium {% if active_tab == 'add' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Add</a>
+          <a href="/settings" class="px-3 py-2 text-sm font-medium {% if active_tab == 'settings' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Settings</a>
+        </nav>
+
+        {% if current_user.is_authenticated %}
+        <form method="POST" action="{{ url_for('logout') }}">
+          <button type="submit" class="ml-4 bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1 rounded">
+            Logout
+          </button>
+        </form>
+        {% endif %}
+      </div>
     </div>
 
     <!-- Filter Bar -->

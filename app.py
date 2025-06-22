@@ -14,9 +14,10 @@ import requests
 import humanize
 import yaml
 from dateutil import parser
-from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response
+from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -61,10 +62,32 @@ app.debug = IS_DEBUG
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "changeme-in-prod")
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=settings.get("user_session_length", 120))
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=int(settings.get("user_session_length", 120)))
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+from flask_login import current_user
 
 db.init_app(app)
 
+
+def is_admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return login_manager.unauthorized()
+        if not current_user.is_admin:
+            abort(403)  # Forbidden
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.context_processor
 def inject_now():
@@ -283,7 +306,9 @@ scheduler = BackgroundScheduler()
 
 
 @app.route('/')
+@login_required
 def dashboard():
+
     sort = request.args.get('sort', 'group_name')
     direction = request.args.get('dir', 'asc')
     group_by = request.args.get('group_by', 'group_name')
@@ -388,6 +413,7 @@ def dashboard():
 
 
 @app.route('/tiled_dash')
+@login_required
 def tiled_dashboard():
     group_by_param = request.args.get('group_by', 'group_name')
     sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
@@ -480,12 +506,108 @@ def tiled_dashboard():
         widget_fields=widget_fields
     )
 
+@app.route('/compact_dash')
+@login_required
+def compact_dash():
+    group_by_param = request.args.get('group_by', 'group_name')
+    sort_in_group = request.args.get('sort_in_group', 'alphabetical')
+
+    group_by_attr_name = group_by_param
+
+    # Explicitly join Group to allow sorting by Group.group_name
+    entries = (
+        ServiceEntry.query
+        .options(joinedload(ServiceEntry.group))
+        .join(Group, isouter=True)
+        .order_by(
+            nullslast(Group.group_sort_priority.asc()),
+            ServiceEntry.container_name.asc()
+        )
+        .all()
+    )
+
+    # Group entries
+    grouped_entries_dict = defaultdict(list)
+    for entry in entries:
+        if group_by_attr_name == "is_static":
+            key = "Static Entries" if entry.is_static else "Dynamic Entries"
+        elif group_by_attr_name == "group_name":
+            key = entry.group.group_name if entry.group else "Ungrouped"
+        else:
+            raw_value = getattr(entry, group_by_attr_name, None)
+            key = "Ungrouped" if raw_value in [None, '', 'None'] else str(raw_value)
+        grouped_entries_dict[key].append(entry)
+
+    # Sort entries within each group
+    for key in grouped_entries_dict:
+        if sort_in_group == 'priority':
+            grouped_entries_dict[key] = sorted(
+                grouped_entries_dict[key],
+                key=lambda e: (
+                    e.sort_priority if e.sort_priority is not None else 9999,
+                    e.container_name.lower()
+                )
+            )
+        else:
+            grouped_entries_dict[key] = sorted(
+                grouped_entries_dict[key],
+                key=lambda e: e.container_name.lower()
+            )
+
+    # Sort group names
+    if group_by_attr_name == "group_name":
+        group_meta = {
+            g.group_name: g.group_sort_priority if g.group_sort_priority is not None else 9999
+            for g in Group.query.all()
+        }
+
+        def sort_key(item):
+            name = item[0]
+            if name == "Ungrouped":
+                return (float('inf'), "")  # put ungrouped last
+            return (group_meta.get(name, 9999), name.lower())
+
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=sort_key))
+
+    elif group_by_attr_name in ["host", "stack_name"]:
+        sorted_grouped_entries = dict(
+            sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
+        )
+
+    elif group_by_attr_name == "is_static":
+        sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
+        sorted_grouped_entries = dict(
+            sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0]))
+        )
+
+    else:
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
 
+    # Flatten for rendering
+    flattened_entries = []
+    for group_name, group_entries in sorted_grouped_entries.items():
+        flattened_entries.append({'is_group_header': True, 'group': group_name})
+        for entry in group_entries:
+            flattened_entries.append({'is_group_header': False, 'entry': entry})
 
+    unique_hosts = set(e.host for e in entries if e.host)
+    show_host = len(unique_hosts) > 1
+
+    return render_template(
+        "compact_dash.html",
+        flattened_entries=flattened_entries,
+        total_entries=len(entries),
+        show_host=show_host,
+        group_by=group_by_param,
+        sort_in_group=sort_in_group,
+        active_tab="compact"
+    )
 
 
 @app.route("/dbdump")
+@login_required
+@is_admin_required
 def db_dump():
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)    
@@ -497,10 +619,9 @@ def login():
         password = request.form["password"]
         user = User.query.filter_by(username=username).first()
 
-        if user and user.active and check_password_hash(user.password_hash, password):
-            session["user_id"] = user.id
+        if user and user.is_active and check_password_hash(user.password_hash, password):
+            login_user(user)  # <-- This is the key line you’re missing
             session.permanent = True
-            app.permanent_session_lifetime = timedelta(minutes=app.config.get("PERMANENT_SESSION_LIFETIME", 120))
             flash("Logged in successfully.", "success")
             return redirect(url_for("dashboard"))
         else:
@@ -508,7 +629,8 @@ def login():
 
     return render_template("login.html")
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
+@login_required
 def logout():
     session.clear()
     flash("You’ve been logged out.", "info")
@@ -516,6 +638,8 @@ def logout():
 
 
 @app.route('/settings', methods=['GET', 'POST'])
+@login_required
+@is_admin_required
 def settings():
     settings, config_from_env, config_from_file = load_settings()
     BACKUP_DIR = settings.get("backup_path", "/config/backups")
@@ -784,6 +908,8 @@ def flash_is_present(req):
 
 
 @app.route('/update_group', methods=['POST'])
+@login_required
+@is_admin_required
 def update_group():
     group_id = request.form.get("group_id")
     group = Group.query.get(group_id)
@@ -802,6 +928,8 @@ def update_group():
     return redirect(url_for("settings", section="groups"))
 
 @app.route('/add_group', methods=['POST'])
+@login_required
+@is_admin_required
 def add_group():
     name = request.form.get("group_name")
     icon = request.form.get("group_icon")
@@ -828,6 +956,8 @@ def add_group():
     return redirect(url_for("settings", section="groups"))
 
 @app.route('/delete_group', methods=['POST'])
+@login_required
+@is_admin_required
 def delete_group():
     group_id = request.form.get('group_id')
     group = Group.query.get(group_id)
@@ -845,6 +975,8 @@ def delete_group():
     return redirect(url_for('settings', section='groups'))
 
 @app.route("/add_user", methods=["POST"])
+@login_required
+@is_admin_required
 def add_user():
     username = request.form.get("username")
     email = request.form.get("email")
@@ -865,6 +997,8 @@ def add_user():
     return redirect(url_for("settings", section="users"))
 
 @app.route("/reset_user_password", methods=["POST"])
+@login_required
+@is_admin_required
 def reset_user_password():
     user_id = request.form.get("user_id")
     user = User.query.get(user_id)
@@ -877,6 +1011,8 @@ def reset_user_password():
     return redirect(url_for("settings", section="users"))
 
 @app.route("/delete_user", methods=["POST"])
+@login_required
+@is_admin_required
 def delete_user():
     user_id = request.form.get("user_id")
     user = User.query.get(user_id)
@@ -888,112 +1024,17 @@ def delete_user():
         flash("❌ Cannot delete admin or invalid user", "danger")
     return redirect(url_for("settings", section="users"))
 
-
-@app.route('/compact_dash')
-def compact_dash():
-    group_by_param = request.args.get('group_by', 'group_name')
-    sort_in_group = request.args.get('sort_in_group', 'alphabetical')
-
-    group_by_attr_name = group_by_param
-
-    # Explicitly join Group to allow sorting by Group.group_name
-    entries = (
-        ServiceEntry.query
-        .options(joinedload(ServiceEntry.group))
-        .join(Group, isouter=True)
-        .order_by(
-            nullslast(Group.group_sort_priority.asc()),
-            ServiceEntry.container_name.asc()
-        )
-        .all()
-    )
-
-    # Group entries
-    grouped_entries_dict = defaultdict(list)
-    for entry in entries:
-        if group_by_attr_name == "is_static":
-            key = "Static Entries" if entry.is_static else "Dynamic Entries"
-        elif group_by_attr_name == "group_name":
-            key = entry.group.group_name if entry.group else "Ungrouped"
-        else:
-            raw_value = getattr(entry, group_by_attr_name, None)
-            key = "Ungrouped" if raw_value in [None, '', 'None'] else str(raw_value)
-        grouped_entries_dict[key].append(entry)
-
-    # Sort entries within each group
-    for key in grouped_entries_dict:
-        if sort_in_group == 'priority':
-            grouped_entries_dict[key] = sorted(
-                grouped_entries_dict[key],
-                key=lambda e: (
-                    e.sort_priority if e.sort_priority is not None else 9999,
-                    e.container_name.lower()
-                )
-            )
-        else:
-            grouped_entries_dict[key] = sorted(
-                grouped_entries_dict[key],
-                key=lambda e: e.container_name.lower()
-            )
-
-    # Sort group names
-    if group_by_attr_name == "group_name":
-        group_meta = {
-            g.group_name: g.group_sort_priority if g.group_sort_priority is not None else 9999
-            for g in Group.query.all()
-        }
-
-        def sort_key(item):
-            name = item[0]
-            if name == "Ungrouped":
-                return (float('inf'), "")  # put ungrouped last
-            return (group_meta.get(name, 9999), name.lower())
-
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=sort_key))
-
-    elif group_by_attr_name in ["host", "stack_name"]:
-        sorted_grouped_entries = dict(
-            sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
-        )
-
-    elif group_by_attr_name == "is_static":
-        sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
-        sorted_grouped_entries = dict(
-            sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0]))
-        )
-
-    else:
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
-
-
-    # Flatten for rendering
-    flattened_entries = []
-    for group_name, group_entries in sorted_grouped_entries.items():
-        flattened_entries.append({'is_group_header': True, 'group': group_name})
-        for entry in group_entries:
-            flattened_entries.append({'is_group_header': False, 'entry': entry})
-
-    unique_hosts = set(e.host for e in entries if e.host)
-    show_host = len(unique_hosts) > 1
-
-    return render_template(
-        "compact_dash.html",
-        flattened_entries=flattened_entries,
-        total_entries=len(entries),
-        show_host=show_host,
-        group_by=group_by_param,
-        sort_in_group=sort_in_group,
-        active_tab="compact"
-    )
-
-
 @app.route('/images/<path:filename>')
+@login_required
+
 def serve_image(filename):
     response = make_response(send_from_directory(IMAGE_DIR, filename))
     response.headers['Cache-Control'] = 'public, max-age=86400'  # cache for 1 day
     return response
 
 @app.route('/add', methods=['GET', 'POST'])
+@login_required
+@is_admin_required
 def add_entry():
     raw_referrer = request.args.get('ref', '/')
     parsed = urlparse(raw_referrer)
@@ -1278,6 +1319,8 @@ def api_register():
 
 
 @app.route('/widget_config/<widget_name>')
+@login_required
+@is_admin_required
 def widget_config(widget_name):
     path = os.path.join('/app/widgets', widget_name, 'settings.json')
     if not os.path.exists(path):
@@ -1291,16 +1334,13 @@ def widget_config(widget_name):
             app.logger.warning(f"Failed to load widget settings for {widget_name}: {e}")
             return jsonify([])
         
-
-
-
-@app.route('/widgets')
-def list_widgets():
-    widgets = Widget.query.options(joinedload(Widget.widget_values)).all()
-    return render_template("widget_list.html", widgets=widgets)
-
+@app.errorhandler(403)
+def forbidden_error(error):
+    return render_template("403.html"), 403
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+@is_admin_required
 def edit_entry(id):
     entry = ServiceEntry.query.get_or_404(id)
 
