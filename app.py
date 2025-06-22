@@ -751,32 +751,32 @@ def delete_group():
 @app.route('/compact_dash')
 def compact_dash():
     group_by_param = request.args.get('group_by', 'group_name')
-    sort_in_group = request.args.get('sort_in_group', 'alphabetical')  # ✅ added
+    sort_in_group = request.args.get('sort_in_group', 'alphabetical')
 
-    # Validate group_by
-    if hasattr(ServiceEntry, group_by_param):
-        group_by_attr_name = group_by_param
-        group_by_attr_for_query = getattr(ServiceEntry, group_by_param)
-    else:
-        group_by_attr_name = 'group_name'
-        group_by_attr_for_query = ServiceEntry.group_name
+    group_by_attr_name = group_by_param
 
-    entries = ServiceEntry.query.order_by(group_by_attr_for_query.asc(), ServiceEntry.container_name.asc()).all()
+    # Explicitly join Group to allow sorting by Group.group_name
+    entries = (
+        ServiceEntry.query
+        .options(joinedload(ServiceEntry.group))
+        .join(Group, isouter=True)
+        .order_by(Group.group_name.asc(), ServiceEntry.container_name.asc())
+        .all()
+    )
 
     # Group entries
-    from collections import defaultdict
     grouped_entries_dict = defaultdict(list)
     for entry in entries:
-        key_value = getattr(entry, group_by_attr_name)
         if group_by_attr_name == "is_static":
-            key = "Static Entries" if key_value else "Dynamic Entries"
-        elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "None":
-            key = "Ungrouped"
+            key = "Static Entries" if entry.is_static else "Dynamic Entries"
+        elif group_by_attr_name == "group_name":
+            key = entry.group.group_name if entry.group else "Ungrouped"
         else:
-            key = str(key_value)
+            raw_value = getattr(entry, group_by_attr_name, None)
+            key = "Ungrouped" if raw_value in [None, '', 'None'] else str(raw_value)
         grouped_entries_dict[key].append(entry)
 
-    # 🔁 Sort group entries based on sort_in_group
+    # Sort entries within each group
     for key in grouped_entries_dict:
         if sort_in_group == 'priority':
             grouped_entries_dict[key] = sorted(
@@ -795,24 +795,22 @@ def compact_dash():
     # Sort group names
     if group_by_attr_name == "is_static":
         sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0])))
+        sorted_grouped_entries = dict(
+            sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0]))
+        )
     elif group_by_attr_name in ["group_name", "host", "stack_name"]:
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower())))
+        sorted_grouped_entries = dict(
+            sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
+        )
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
     # Flatten for rendering
     flattened_entries = []
     for group_name, group_entries in sorted_grouped_entries.items():
-        flattened_entries.append({
-            'is_group_header': True,
-            'group': group_name
-        })
+        flattened_entries.append({'is_group_header': True, 'group': group_name})
         for entry in group_entries:
-            flattened_entries.append({
-                'is_group_header': False,
-                'entry': entry
-            })
+            flattened_entries.append({'is_group_header': False, 'entry': entry})
 
     unique_hosts = set(e.host for e in entries if e.host)
     show_host = len(unique_hosts) > 1
@@ -822,13 +820,10 @@ def compact_dash():
         flattened_entries=flattened_entries,
         total_entries=len(entries),
         show_host=show_host,
-        group_by=group_by_param,  # ✅ so dropdown reflects selection
-        sort_in_group=sort_in_group,  # ✅ so dropdown reflects selection
+        group_by=group_by_param,
+        sort_in_group=sort_in_group,
         active_tab="compact"
     )
-
-
-
 
 
 @app.route('/images/<path:filename>')
