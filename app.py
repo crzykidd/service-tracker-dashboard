@@ -1591,9 +1591,26 @@ if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     # Start any background threads too
     threading.Thread(target=health_check_loop, daemon=True).start()
 
-
+def create_default_admin():
+    with app.app_context():
+        existing_admin = User.query.filter_by(username="admin").first()
+        if not existing_admin:
+            admin = User(
+                username="admin",
+                email="admin@example.com",
+                is_admin=True,
+                is_active=True
+            )
+            admin.set_password("changeme123")
+            admin.generate_session_token()
+            db.session.add(admin)
+            db.session.commit()
+            logger.info("🛠️ Default admin user created (username: admin, password: changeme123)")
+        else:
+            logger.info("👤 Admin user already exists.")
 
 if __name__ == '__main__':
+    create_default_admin()
     logger.info("🔍 Verifying icon files for all ServiceEntry records...")
     verify_and_fetch_missing_icons()
 
