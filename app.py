@@ -637,6 +637,24 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/settings/users/<int:user_id>/set_password", methods=["POST"])
+@is_admin_required
+def set_user_password(user_id):
+    new_password = request.form.get("new_password", "").strip()
+    if not new_password or len(new_password) < 6:
+        flash("Password must be at least 6 characters", "error")
+        return redirect(url_for("settings"))
+
+    user = User.query.get(user_id)
+    if not user:
+        flash("User not found", "error")
+        return redirect(url_for("settings"))
+
+    user.set_password(new_password)
+    db.session.commit()
+    flash(f"Password updated for {user.username}", "success")
+    return redirect(url_for("settings"))
+
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
