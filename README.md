@@ -1,5 +1,5 @@
 # 🧭 Service Tracker Dashboard
-# Breaking Change in v0.3.2
+# Breaking Change in v0.4.9
 you must backup (or not) and delete your db on start.  then restore. 
 
 A simple Flask web app that helps you track, organize, and monitor Docker containers across your lab or home setup. You can view service details, run health checks, group entries, and manage everything through a clean web UI or via API. Built for small environments, but flexible enough to grow with your stack.  
