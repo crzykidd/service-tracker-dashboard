@@ -253,7 +253,7 @@ def dashboard():
     if sort == 'group_name':
         # Join to Group and sort by group.group_name
         query = ServiceEntry.query.options(joinedload(ServiceEntry.group)) \
-            .join(Group, ServiceEntry.group_id == Group.id) \
+            .join(Group, isouter=True) \
             .order_by(asc(Group.group_name) if direction == 'asc' else desc(Group.group_name))
     else:
         sort_attr = getattr(ServiceEntry, sort, None)
