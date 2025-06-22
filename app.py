@@ -253,7 +253,7 @@ def dashboard():
     if sort == 'group_name':
         # Join to Group and sort by group.group_name
         query = ServiceEntry.query.options(joinedload(ServiceEntry.group)) \
-            .join(Group, ServiceEntry.group_id == Group.id) \
+            .join(Group, isouter=True) \
             .order_by(asc(Group.group_name) if direction == 'asc' else desc(Group.group_name))
     else:
         sort_attr = getattr(ServiceEntry, sort, None)
@@ -1106,7 +1106,8 @@ def api_register():
         if data.get("docker_status"):
             entry.docker_status = data["docker_status"]
 
-        entry.group_id = group_obj.id if group_obj else None
+        if "group_name" in data:
+            entry.group_id = group_obj.id if group_obj else None
 
         if data.get("started_at"):
             entry.started_at = data["started_at"]
