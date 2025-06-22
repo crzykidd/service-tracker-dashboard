@@ -490,6 +490,30 @@ def db_dump():
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)    
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.active and check_password_hash(user.password_hash, password):
+            session["user_id"] = user.id
+            session.permanent = True
+            app.permanent_session_lifetime = timedelta(minutes=app.config.get("PERMANENT_SESSION_LIFETIME", 120))
+            flash("Logged in successfully.", "success")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Invalid username or password.", "error")
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You’ve been logged out.", "info")
+    return redirect(url_for("login"))
+
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
