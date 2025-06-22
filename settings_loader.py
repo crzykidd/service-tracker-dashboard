@@ -17,13 +17,15 @@ VALID_KEYS = {
     "api_token": str,
     "std_dozzle_url": str,
     "url_healthcheck_interval": int,
-    "widget_background_reload": int
+    "widget_background_reload": int,
+    "user_session_length": int
 }
 DEFAULT_VALUES = {
     "backup_path": "/config/backups",
     "backup_days_to_keep": 7,
     "url_healthcheck_interval": 300,
-    "widget_background_reload": 900
+    "widget_background_reload": 900,
+    "user_session_length": 120
 }
 def load_settings():
     file_config = {}

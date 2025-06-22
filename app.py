@@ -10,8 +10,6 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta
 from collections import defaultdict
 from urllib.parse import urlparse, urljoin
-
-# Third-party packages
 import requests
 import humanize
 import yaml
@@ -26,7 +24,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import joinedload, column_property
 from sqlalchemy import select, func, asc, desc, nullslast
 
+
 # Local application modules
+from extensions import db
 from settings_loader import load_settings
 from image_utils import resolve_image_metadata, parse_bool, fetch_icon_if_missing
 
@@ -53,14 +53,17 @@ logger.addHandler(log_handler)
 logger.addHandler(console_handler)
 unauthorized_log_tracker = {}
 
+# Load settings before app config
+settings, config_from_env, config_from_file = load_settings()
 
 app = Flask(__name__)
 app.debug = IS_DEBUG
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "changeme-in-prod")
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=settings.get("user_session_length", 120))
 
-db = SQLAlchemy(app)
+db.init_app(app)
 
 
 @app.context_processor
