@@ -117,7 +117,7 @@ class ServiceEntry(db.Model):
     image_name = db.Column(db.String(100), nullable=True)
     image_tag = db.Column(db.String(100), nullable=True)
     image_icon = db.Column(db.String(100), nullable=True)
-    group_name = db.Column(db.String(20), nullable=True, default="zz_none")
+    group_name = db.Column(db.String(20), nullable=True, default="None")
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
@@ -147,7 +147,7 @@ class ServiceEntry(db.Model):
             'image_owner': self.image_owner,
             'image_name': self.image_name,
             'image_tag': self.image_tag,
-            'group_name': self.group_name or "zz_none",
+            'group_name': self.group_name or "None",
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
@@ -271,7 +271,7 @@ def dashboard():
         if isinstance(raw_key, bool):
             key = "Static" if raw_key else "Dynamic"
         else:
-            key = str(raw_key) if raw_key else "zz_none"
+            key = str(raw_key) if raw_key else "None"
         grouped_entries[key].append(entry)
 
     # Sort each group by priority (lower number = higher priority), then alphabetically by container name
@@ -346,7 +346,7 @@ def tiled_dashboard():
         key_value = getattr(entry, group_by_attr_name)
         if group_by_attr_name == "is_static":
             key = "Static Entries" if key_value else "Dynamic Entries"
-        elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "zz_none":
+        elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "None":
             key = "Ungrouped"
         else:
             key = str(key_value)
@@ -424,7 +424,17 @@ def settings():
             
             # Backup is always for all entries now
             entries = ServiceEntry.query.all()
-            data = [e.to_dict() for e in entries]
+            data = []
+            for e in entries:
+                entry_data = e.to_dict()
+
+                # Add authoritative group_name from the relationship if group is linked
+                if e.group:
+                    entry_data['group_name'] = e.group.group_name
+                else:
+                    entry_data['group_name'] = None  # fallback for safety
+
+                data.append(entry_data)
 
 
             try:
@@ -746,7 +756,7 @@ def compact_dash():
         key_value = getattr(entry, group_by_attr_name)
         if group_by_attr_name == "is_static":
             key = "Static Entries" if key_value else "Dynamic Entries"
-        elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "zz_none":
+        elif key_value is None or str(key_value).strip() == "" or str(key_value).lower() == "None":
             key = "Ungrouped"
         else:
             key = str(key_value)
@@ -828,7 +838,18 @@ def add_entry():
         container_name = request.form.get('application')
         internalurl = request.form.get('internal_url')
         externalurl = request.form.get('external_url')
-        group_name = request.form.get('group_name')
+        group_mode = request.form.get('group_mode')  # 'existing' or 'new'
+        group_name = None
+
+        if group_mode == 'existing':
+            group_name = request.form.get('group_name_existing')
+        elif group_mode == 'new':
+            group_name = request.form.get('group_name_new')
+
+        if not group_name:
+            group_name = "None"
+        
+
         image_icon_raw = request.form.get('icon_image', '').strip().lower()
         if image_icon_raw and not image_icon_raw.endswith('.svg'):
             image_icon = f"{image_icon_raw}.svg"
@@ -881,22 +902,30 @@ def add_entry():
                 sort_priority = int(sort_priority_raw)
             except ValueError:
                 flash("Sort priority must be a number.", 'danger')
-                return render_template("add_entry.html", msg='error', entry=request.form)
+                return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
         # === CREATE ENTRY ===
+        # Look up or create group
+        group_obj = Group.query.filter_by(group_name=group_name).first()
+        if not group_obj:
+            group_obj = Group(group_name=group_name)
+            db.session.add(group_obj)
+            db.session.flush()  # ensures group_obj.id is populated before use
+
+        # Now create entry with group_id
         entry = ServiceEntry(
             host=host,
             container_name=container_name,
             internalurl=internalurl,
             externalurl=externalurl,
             last_updated=datetime.now(),
-            group_name=group_name if group_name else "zz_none",
+            group_id=group_obj.id if group_obj else None,
             internal_health_check_enabled=internal_health_check_enabled,
             external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             sort_priority=sort_priority,
             is_static=is_static
-        )
+)
 
         db.session.add(entry)
         db.session.commit()
@@ -904,7 +933,8 @@ def add_entry():
         flash(f"✅ Service entry '{container_name}' added successfully!", 'success')
         return redirect(url_for('tiled_dashboard'))
 
-    return render_template("add_entry.html", msg='', entry={}, active_tab="add")
+    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+    return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups)
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
@@ -984,7 +1014,18 @@ def api_register():
     image_icon = image_meta["image_icon"]
 
     # Update or create entry
+    # Handle group assignment
+    group_name = data.get("group_name")
+    group_obj = None
+
+    if group_name:
+        group_obj = Group.query.filter_by(group_name=group_name).first()
+        if not group_obj:
+            group_obj = Group(group_name=group_name)
+            db.session.add(group_obj)
+            db.session.flush()  # ensure group_obj.id is available
     entry = ServiceEntry.query.filter_by(container_name=data['container_name'], host=data['host']).first()
+    
     if entry:
         if entry.is_static:
             logger.info(f"Skipping update for '{entry.container_name}' on '{entry.host}' — static lock enabled.")
@@ -1008,8 +1049,9 @@ def api_register():
             entry.stack_name = data["stack_name"]
         if data.get("docker_status"):
             entry.docker_status = data["docker_status"]
-        if data.get("group_name"):
-            entry.group_name = data["group_name"]
+
+        entry.group_id = group_obj.id if group_obj else None
+
         if data.get("started_at"):
             entry.started_at = data["started_at"]
 
@@ -1047,7 +1089,7 @@ def api_register():
             docker_status=data.get('docker_status'),
             internal_health_check_enabled=parse_bool(data.get('internal_health_check_enabled')),
             external_health_check_enabled=parse_bool(data.get('external_health_check_enabled')),
-            group_name=data.get('group_name') or "zz_none",
+            group_id=group_obj.id if group_obj else None,
             started_at=data.get('started_at'),
             last_updated=datetime.now(),
             last_api_update=datetime.now(),
@@ -1058,6 +1100,7 @@ def api_register():
             image_tag=tag
         )
         db.session.add(entry)
+
 
     db.session.commit()
     return jsonify(entry.to_dict()), 200 if entry else 201
