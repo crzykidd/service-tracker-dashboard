@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-md mx-auto mt-20 p-6 bg-gray-800 text-white rounded shadow">
+  <h2 class="text-2xl font-semibold mb-4">Login</h2>
+  <form method="POST" class="space-y-4">
+    <div>
+      <label class="block text-sm mb-1" for="username">Username</label>
+      <input type="text" id="username" name="username" required class="form-input w-full">
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="password">Password</label>
+      <input type="password" id="password" name="password" required class="form-input w-full">
+    </div>
+    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded w-full">Login</button>
+  </form>
+</div>
+{% endblock %}

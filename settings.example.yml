@@ -22,3 +22,7 @@ url_refresh_interval: 300
 
 # How often do we reload the widget data default 300 seconds
 widget_background_reload: 900
+
+# how long to default the user session, default is 120 minutes
+# can be set as USER_SESSION_LENGTH in ENV
+user_session_length: 120
