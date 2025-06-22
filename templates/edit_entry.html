@@ -83,8 +83,26 @@
         </div>
 
         <div>
-          <label for="group_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Group Name</label>
-          <input type="text" name="group_name" id="group_name" class="form-input" value="{{ entry.group_name or '' }}">
+          <label class="block text-sm font-medium text-dashboard-secondary mb-1">Group</label>
+
+          <div class="flex items-center space-x-3 mb-2">
+            <input type="radio" id="select_existing" name="group_mode" value="existing" checked onclick="toggleGroupMode()" class="form-radio text-blue-600">
+            <label for="select_existing" class="text-sm text-gray-300">Select Existing</label>
+
+            <input type="radio" id="add_new" name="group_mode" value="new" onclick="toggleGroupMode()" class="form-radio text-blue-600 ml-4">
+            <label for="add_new" class="text-sm text-gray-300">Add New</label>
+          </div>
+
+          <select name="group_name_existing" id="group_name_existing" class="form-input">
+            <option value="">-- Select Group --</option>
+            {% for group in groups %}
+            <option value="{{ group.group_name }}" {% if entry.group_name == group.group_name %}selected{% endif %}>
+              {{ group.group_name }}
+            </option>
+            {% endfor %}
+          </select>
+
+          <input type="text" name="group_name_new" id="group_name_new" class="form-input mt-2 hidden" placeholder="e.g., New Group Name">
         </div>
 
         <div>
@@ -151,9 +169,11 @@
     </div>
   </div>
 </div>
-
+{% endblock %}
+{% block extra_scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  // === Widget Field Logic ===
   const widgetSelect = document.getElementById('widget_name');
   const container = document.getElementById('widget_fields_container');
 
@@ -185,16 +205,35 @@ document.addEventListener('DOMContentLoaded', function () {
       .catch(err => console.error("❌ Error loading widget config:", err));
   }
 
-  widgetSelect.addEventListener('change', function () {
-    loadWidgetFields(this.value);
-  });
+  if (widgetSelect) {
+    widgetSelect.addEventListener('change', function () {
+      loadWidgetFields(this.value);
+    });
 
-  {% if selected_widget and selected_widget.widget_name %}
-  loadWidgetFields(
-    '{{ selected_widget.widget_name }}',
-    {{ selected_widget.widget_fields | tojson | safe }}
-  );
-  {% endif %}
+    {% if selected_widget and selected_widget.widget_name %}
+    loadWidgetFields(
+      '{{ selected_widget.widget_name }}',
+      {{ selected_widget.widget_fields | tojson | safe }}
+    );
+    {% endif %}
+  }
+
+  // === Group Toggle Logic ===
+  function toggleGroupMode() {
+    const useExisting = document.getElementById('select_existing').checked;
+    document.getElementById('group_name_existing').classList.toggle('hidden', !useExisting);
+    document.getElementById('group_name_new').classList.toggle('hidden', useExisting);
+  }
+
+  const selectExisting = document.getElementById('select_existing');
+  const addNew = document.getElementById('add_new');
+
+  if (selectExisting && addNew) {
+    toggleGroupMode();
+    selectExisting.addEventListener('change', toggleGroupMode);
+    addNew.addEventListener('change', toggleGroupMode);
+  }
 });
 </script>
 {% endblock %}
+

@@ -257,7 +257,82 @@
     <!-- === Groups Section === -->
     <section id="section-groups" class="section hidden">
       <h2 class="text-2xl font-semibold mb-4">Groups</h2>
-      <p class="text-gray-400">Coming Soon</p>
+      {% if groups %}
+        <div class="overflow-x-auto">
+          <table id="group-table" class="sortable w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="px-4 py-2 cursor-pointer" onclick="sortTable(0)">Group ID</th>
+                <th class="px-4 py-2 cursor-pointer" onclick="sortTable(1)">Group Name</th>
+                <th class="px-4 py-2 cursor-pointer" onclick="sortTable(2)">Group Icon</th>
+                <th class="px-4 py-2 cursor-pointer" onclick="sortTable(3)">Priority</th>
+                <th class="px-4 py-2 cursor-pointer" onclick="sortTable(4)">Services</th>
+                <th class="px-4 py-2 text-center">Controls</th>
+              </tr>
+            </thead>
+              <tbody class="divide-y divide-gray-700 bg-gray-900">
+                {% for group in groups %}
+                <tr class="hover:bg-gray-800">
+                  <td class="px-4 py-2">{{ group.id }}</td>
+                  <td class="px-4 py-2">
+                    <form method="POST" action="{{ url_for('update_group') }}">
+                      <input type="hidden" name="group_id" value="{{ group.id }}">
+                      <input type="text" name="group_name" value="{{ group.group_name }}" class="form-input">
+                  </td>
+                  <td class="px-4 py-2">
+                      <input type="text" name="group_icon" value="{{ group.group_icon or '' }}" class="form-input">
+                  </td>
+                  <td class="px-4 py-2">
+                      <input type="number" name="group_sort_priority" value="{{ group.group_sort_priority or '' }}" class="form-input">
+                  </td>
+                  <td class="px-4 py-2 text-center">
+                    {{ group.services_count }}
+                  </td>
+                  
+                  <td class="px-4 py-2 text-right">
+                    <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                      <form method="POST" action="{{ url_for('update_group') }}">
+                        <input type="hidden" name="group_id" value="{{ group.id }}">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs">Save</button>
+                      </form>
+
+                      {% if group.services_count == 0 %}
+                      <form method="POST" action="{{ url_for('delete_group') }}">
+                        <input type="hidden" name="group_id" value="{{ group.id }}">
+                        <button type="submit" onclick="return confirm('Are you sure you want to delete this group?')"
+                                class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete</button>
+                      </form>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>                
+                {% endfor %}
+                <tr class="bg-gray-900 border-t border-gray-700">
+                <form method="POST" action="{{ url_for('add_group') }}">
+                  <td class="px-4 py-2 text-gray-500 italic">new</td>
+                  <td class="px-4 py-2">
+                    <input type="text" name="group_name" placeholder="New group name" class="form-input" required>
+                  </td>
+                  <td class="px-4 py-2">
+                    <input type="text" name="group_icon" placeholder="Optional icon" class="form-input">
+                  </td>
+                  <td class="px-4 py-2">
+                    <input type="number" name="group_sort_priority" placeholder="Optional priority" class="form-input">
+                  </td>
+                  <td class="px-4 py-2">
+                     
+                  </td>
+                  <td class="px-4 py-2 text-right">
+                    <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Add</button>
+                  </td>
+                </form>
+              </tr>
+              </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-gray-400">No groups found in the database.</p>
+      {% endif %}
     </section>
   </div>
 </div>
@@ -290,6 +365,33 @@
         })
         .catch(err => console.error('Copy failed:', err));
     }
+  }
+
+  function sortTable(columnIndex) {
+    const table = document.getElementById("group-table");
+    const tbody = table.querySelector("tbody");
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+    const ascending = table.getAttribute("data-sort-dir") !== "asc";
+    table.setAttribute("data-sort-dir", ascending ? "asc" : "desc");
+
+    rows.sort((a, b) => {
+      let aCell = a.children[columnIndex];
+      let bCell = b.children[columnIndex];
+
+      let aValue = aCell.querySelector("input") ? aCell.querySelector("input").value : aCell.innerText.trim();
+      let bValue = bCell.querySelector("input") ? bCell.querySelector("input").value : bCell.innerText.trim();
+
+      const isNumeric = !isNaN(aValue) && aValue.trim() !== "" && !isNaN(bValue);
+
+      if (isNumeric) {
+        aValue = parseFloat(aValue);
+        bValue = parseFloat(bValue);
+      }
+
+      return (aValue < bValue ? -1 : aValue > bValue ? 1 : 0) * (ascending ? 1 : -1);
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
   }
 </script>
 {% endblock %}

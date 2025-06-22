@@ -20,7 +20,9 @@
         <th>Host</th>
         <th>Container</th>
         <th>Container ID</th>
+        <th>Group ID</th>
         <th>Group</th>
+        <th>Group Icon</th>
         <th>Stack</th>
         <th>Internal URL</th>
         <th>External URL</th>
@@ -43,7 +45,9 @@
         <td>{{ entry.host }}</td>
         <td>{{ entry.container_name }}</td>
         <td>{{ entry.container_id }}</td>
+        <td>{{ entry.group_id or '' }}</td>
         <td>{{ entry.group_name }}</td>
+        <td>{{ entry.group.group_icon if entry.group else '' }}</td>
         <td>{{ entry.stack_name }}</td>
         <td>{{ entry.internalurl }}</td>
         <td>{{ entry.externalurl }}</td>
