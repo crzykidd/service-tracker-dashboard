@@ -44,6 +44,8 @@ I wrote this as 90% of my stuff runs in docker, but you can manually add other h
 
 You can configure the app using environment variables or a `settings.yml` file inside `/config`. ENV vars take priority over the file. If `settings.yml` doesn’t exist, it’ll be created from a default template.
 
+default user is admin with a password of changeme123 
+
 ### Supported Settings
 
 | Setting Name            | Type   | ENV Variable Name         | What it does                                      |
