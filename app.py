@@ -1,29 +1,35 @@
 # Config
+# Standard library
 import os
-import logging
-from logging.handlers import RotatingFileHandler
-from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
-import humanize
-from dateutil import parser
-import sqlite3
+import json
 import threading
 import time
-import requests
+import sqlite3
+import logging
+from logging.handlers import RotatingFileHandler
+from datetime import datetime, timedelta
 from collections import defaultdict
-import yaml
-from settings_loader import load_settings
-from image_utils import resolve_image_metadata, parse_bool
 from urllib.parse import urlparse, urljoin
-from image_utils import fetch_icon_if_missing
+
+# Third-party packages
+import requests
+import humanize
+import yaml
+from dateutil import parser
+from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import joinedload, column_property
 from sqlalchemy import select, func, asc, desc, nullslast
-from collections import defaultdict 
-import json
+
+# Local application modules
+from settings_loader import load_settings
+from image_utils import resolve_image_metadata, parse_bool, fetch_icon_if_missing
+
 
 DATABASE_PATH = '/config/services.db'
 LOGFILE = '/config/std.log'
@@ -209,6 +215,40 @@ class Group(db.Model):
         .scalar_subquery()
     )
 
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Basic info
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+
+    # Security & status
+    is_active = db.Column(db.Boolean, default=True)
+    is_admin = db.Column(db.Boolean, default=False)
+
+    # Audit fields
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login_at = db.Column(db.DateTime)
+    password_changed_at = db.Column(db.DateTime)
+
+    # OAuth fields
+    oauth_provider = db.Column(db.String(64), nullable=True)
+    oauth_id = db.Column(db.String(128), nullable=True)
+
+    # API session/token field (e.g., for internal API calls or bearer auth)
+    session_token = db.Column(db.String(128), unique=True, nullable=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+        self.password_changed_at = datetime.utcnow()
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def generate_session_token(self):
+        import secrets
+        self.session_token = secrets.token_urlsafe(64)
 
 
 # Add this inside the ServiceEntry class in your app.py

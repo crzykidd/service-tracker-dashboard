@@ -1,5 +1,6 @@
 flask
 flask_sqlalchemy
+flask_login
 python-dotenv
 humanize
 requests
