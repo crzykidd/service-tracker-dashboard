@@ -642,7 +642,7 @@ def settings():
 
                     group_name = item.get('group_name')
                     group_obj = None
-
+                    
                     if group_name:
                         group_obj = Group.query.filter_by(group_name=group_name).first()
                         if not group_obj:
@@ -736,6 +736,7 @@ def settings():
             if icon and not os.path.exists(os.path.join(IMAGE_DIR, icon)):
                 missing_icons.append(f"{entry.container_name} → {icon}")            
     widgets = Widget.query.all()
+    users = User.query.order_by(User.username.asc()).all()
     return render_template(
         'settings.html',
          current_config=settings,
@@ -745,7 +746,8 @@ def settings():
          version_info=read_version_info(),
          widgets=widgets,
          missing_icons=missing_icons,
-         groups=groups
+         groups=groups,
+         users=users
     )
 
 # Helper to check if flash messages are already present (to avoid duplicates)
@@ -814,6 +816,51 @@ def delete_group():
         flash("❌ Group not found.", "danger")
 
     return redirect(url_for('settings', section='groups'))
+
+@app.route("/add_user", methods=["POST"])
+def add_user():
+    username = request.form.get("username")
+    email = request.form.get("email")
+    password = request.form.get("password")
+    is_admin = request.form.get("is_admin") == "on"
+
+    if User.query.filter((User.username == username) | (User.email == email)).first():
+        flash("User already exists with this username or email", "danger")
+        return redirect(url_for("settings", section="users"))
+
+    user = User(username=username, email=email, is_admin=is_admin)
+    user.set_password(password)
+    user.generate_session_token()
+    db.session.add(user)
+    db.session.commit()
+
+    flash(f"✅ User '{username}' created", "success")
+    return redirect(url_for("settings", section="users"))
+
+@app.route("/reset_user_password", methods=["POST"])
+def reset_user_password():
+    user_id = request.form.get("user_id")
+    user = User.query.get(user_id)
+    if user:
+        user.set_password("changeme123")
+        db.session.commit()
+        flash(f"🔁 Password reset for {user.username} to 'changeme123'", "info")
+    else:
+        flash("❌ User not found", "danger")
+    return redirect(url_for("settings", section="users"))
+
+@app.route("/delete_user", methods=["POST"])
+def delete_user():
+    user_id = request.form.get("user_id")
+    user = User.query.get(user_id)
+    if user and not user.is_admin:
+        db.session.delete(user)
+        db.session.commit()
+        flash(f"🗑️ User {user.username} deleted", "success")
+    else:
+        flash("❌ Cannot delete admin or invalid user", "danger")
+    return redirect(url_for("settings", section="users"))
+
 
 @app.route('/compact_dash')
 def compact_dash():
