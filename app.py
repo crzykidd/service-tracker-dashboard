@@ -401,11 +401,24 @@ def tiled_dashboard():
             grouped_entries_dict.items(),
             key=lambda item: (sort_order.get(item[0], 99), item[0])
         ))
+
     elif group_by_attr_name == "group_name":
-        sorted_grouped_entries = dict(sorted(
-            grouped_entries_dict.items(),
-            key=lambda item: (item[0] == "Ungrouped", item[0].lower())
-        ))
+        group_meta = {
+            g.group_name: (
+                g.group_sort_priority if g.group_sort_priority is not None else 9999,
+                g.group_name.lower()
+            )
+            for g in Group.query.all()
+        }
+
+        def group_sort_key(item):
+            name = item[0]
+            if name == "Ungrouped":
+                return (float('inf'), 'zzz')  # Always last
+            return group_meta.get(name, (9999, name.lower()))
+
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=group_sort_key))
+
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
 
