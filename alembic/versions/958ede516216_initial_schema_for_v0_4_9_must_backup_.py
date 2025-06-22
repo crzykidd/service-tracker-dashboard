@@ -1,8 +1,8 @@
-"""initial schema for v0.4.9 restore needed
+"""Initial schema for v0.4.9 must backup and restore
 
-Revision ID: 04fc4bf6ccad
+Revision ID: 958ede516216
 Revises: 
-Create Date: 2025-06-21 23:09:43.931476
+Create Date: 2025-06-22 01:03:23.394228
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '04fc4bf6ccad'
+revision: str = '958ede516216'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -59,7 +59,6 @@ def upgrade() -> None:
     sa.Column('image_name', sa.String(length=100), nullable=True),
     sa.Column('image_tag', sa.String(length=100), nullable=True),
     sa.Column('image_icon', sa.String(length=100), nullable=True),
-    sa.Column('group_name', sa.String(length=20), nullable=True),
     sa.Column('is_static', sa.Boolean(), nullable=False),
     sa.Column('started_at', sa.String(length=100), nullable=True),
     sa.Column('widget_id', sa.Integer(), nullable=True),

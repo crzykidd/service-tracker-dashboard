@@ -21,7 +21,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import joinedload, column_property
-from sqlalchemy import select, func
+from sqlalchemy import select, func, asc, desc
+from collections import defaultdict 
 import json
 
 DATABASE_PATH = '/config/services.db'
@@ -117,7 +118,6 @@ class ServiceEntry(db.Model):
     image_name = db.Column(db.String(100), nullable=True)
     image_tag = db.Column(db.String(100), nullable=True)
     image_icon = db.Column(db.String(100), nullable=True)
-    group_name = db.Column(db.String(20), nullable=True, default="None")
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
@@ -147,7 +147,6 @@ class ServiceEntry(db.Model):
             'image_owner': self.image_owner,
             'image_name': self.image_name,
             'image_tag': self.image_tag,
-            'group_name': self.group_name or "None",
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
@@ -237,44 +236,59 @@ def time_since(dt):
     return humanize.naturaltime(now - dt)
 
 
-from collections import defaultdict
 scheduler = BackgroundScheduler()
+
+
 @app.route('/')
 def dashboard():
     sort = request.args.get('sort', 'group_name')
     direction = request.args.get('dir', 'asc')
     group_by = request.args.get('group_by', 'group_name')
     sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
-
-    
     msg = request.args.get('msg')
 
-    # Build query and sort direction
-    sort_attr = getattr(ServiceEntry, sort)
-    sort_attr = sort_attr.asc() if direction == 'asc' else sort_attr.desc()
-    entries = ServiceEntry.query.order_by(sort_attr).all()
+    sort = request.args.get('sort', 'group_name')
+    direction = request.args.get('dir', 'asc')
 
+    if sort == 'group_name':
+        # Join to Group and sort by group.group_name
+        query = ServiceEntry.query.options(joinedload(ServiceEntry.group)) \
+            .join(Group, ServiceEntry.group_id == Group.id) \
+            .order_by(asc(Group.group_name) if direction == 'asc' else desc(Group.group_name))
+    else:
+        sort_attr = getattr(ServiceEntry, sort, None)
+        if not sort_attr:
+            sort_attr = ServiceEntry.container_name
+        query = ServiceEntry.query.order_by(sort_attr.asc() if direction == 'asc' else sort_attr.desc())
+
+    entries = query.all()
+
+    # Group lookup for ID → name
+    groups = Group.query.all()
+    group_lookup = {g.id: g.group_name for g in groups}
+
+    # Widget values
     widget_value_rows = WidgetValue.query.all()
     widget_values = {}
-
     for wv in widget_value_rows:
         if wv.widget_id not in widget_values:
             widget_values[wv.widget_id] = {}
         widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
 
-    
-
-    # Group entries
+    # Group entries by group_id (not group_name) so the template lookup works
     grouped_entries = defaultdict(list)
     for entry in entries:
-        raw_key = getattr(entry, group_by)
-        if isinstance(raw_key, bool):
-            key = "Static" if raw_key else "Dynamic"
+        if group_by == 'group_name':
+            raw_key = entry.group_id  # group by ID for name lookup
+        elif group_by == 'is_static':
+            raw_key = "Static" if entry.is_static else "Dynamic"
         else:
-            key = str(raw_key) if raw_key else "None"
-        grouped_entries[key].append(entry)
+            raw_key = getattr(entry, group_by)
+            raw_key = str(raw_key) if raw_key is not None else "None"
 
-    # Sort each group by priority (lower number = higher priority), then alphabetically by container name
+        grouped_entries[raw_key].append(entry)
+
+    # Sort entries within each group
     for key in grouped_entries:
         if sort_in_group == 'alphabetical':
             grouped_entries[key].sort(key=lambda e: e.container_name.lower())
@@ -284,17 +298,20 @@ def dashboard():
                 e.container_name.lower()
             ))
 
-
-    # Sort the group keys
+    # Sort group headers
     if group_by == "is_static":
         sort_order = {"Static": 0, "Dynamic": 1}
         grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: sort_order.get(item[0], 99)))
+    elif group_by == "group_name":
+        # sort group IDs by group_name via group_lookup
+        grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: group_lookup.get(item[0], "zzz").lower()))
     else:
         grouped_entries = dict(sorted(grouped_entries.items()))
 
     widget_fields = {
         widget.id: widget.widget_fields for widget in Widget.query.all()
     }
+
     return render_template(
         "dashboard.html",
         entries=entries,
@@ -309,13 +326,13 @@ def dashboard():
         widget_fields=widget_fields,
         sort_in_group=sort_in_group,
         active_tab='dashboard',
-
+        group_lookup=group_lookup,
     )
 
 
 
 
-from collections import defaultdict # Ensure this is imported at the top of your app.py
+
 
 
 @app.route('/tiled_dash')
@@ -1139,89 +1156,112 @@ def edit_entry(id):
     referrer = parsed.path
     if parsed.query:
         referrer += '?' + parsed.query
-
-    # Safety check: prevent open redirect attacks
     if not referrer.startswith('/'):
         referrer = '/'
 
-    # Fetch all available widgets from the widgets directory
+    # Discover available widgets
     widgets_dir = '/app/widgets'
     available_widgets = []
-
     if os.path.exists(widgets_dir):
-        # Log the path of the directory being scanned
-        logger.debug(f"Scanning directory for widgets: {widgets_dir}")
-        
-        # List directories in the widgets folder (one directory per widget)
         available_widgets = [
             d for d in os.listdir(widgets_dir)
             if os.path.isdir(os.path.join(widgets_dir, d)) and d != '__pycache__'
         ]
-        
-        # Log the number of widgets found and their directory names
-        if available_widgets:
-            logger.debug(f"Found {len(available_widgets)} widget(s) in directory: {widgets_dir}")
-            logger.debug(f"Widgets found: {', '.join(available_widgets)}")  # Log directory names (widget names)
-        else:
-            logger.debug(f"No widgets found in directory: {widgets_dir}")
+        logger.debug(f"Widgets found: {', '.join(available_widgets)}") if available_widgets else logger.debug("No widgets found.")
     else:
         logger.warning(f"Widgets directory not found: {widgets_dir}")
 
-    # Fetch the current widget info if a widget is associated
+    # Fetch current widget association
     selected_widget = None
     if entry.widget_id:
         selected_widget = Widget.query.get(entry.widget_id)
         if selected_widget:
-            logger.debug(f"Selected widget for entry {entry.id}: {selected_widget.widget_name}")
+            logger.debug(f"Selected widget: {selected_widget.widget_name}")
         else:
-            logger.warning(f"No widget found for entry {entry.id} with widget_id: {entry.widget_id}")
+            logger.warning(f"Widget ID {entry.widget_id} not found")
 
+    # Handle form submission
     if request.method == 'POST':
-        # Handle delete action
-        if 'delete' in request.form and request.form.get('delete_confirmation') == entry.container_name:
-            logger.info(f"\U0001f5d1️ Deleting entry ID {id}: {entry.container_name} on {entry.host}")
-            db.session.delete(entry)
-            db.session.commit()
-            flash(f"Service entry '{entry.container_name}' deleted successfully.", 'success')
-            return redirect(referrer)
-        elif 'delete' in request.form:
-            flash(f"Deletion not confirmed for '{entry.container_name}'. Please type the name to confirm.", 'warning')
-            return render_template("edit_entry.html", entry=entry, ref=referrer, available_widgets=available_widgets, selected_widget=selected_widget)
+        # === DELETE ACTION ===
+        if 'delete' in request.form:
+            if request.form.get('delete_confirmation') == entry.container_name:
+                Widget.query.filter_by(service_entry_id=entry.id).delete()
+                db.session.delete(entry)
+                db.session.commit()
+                flash(f"Deleted entry: {entry.container_name}", 'success')
+                return redirect(referrer)
+            else:
+                flash("Confirmation name does not match. Entry not deleted.", "warning")
+                return redirect(url_for('edit_entry', id=id, ref=referrer))
 
-        # Update all editable fields
+        # === BASIC FIELDS ===
         entry.host = request.form.get('host', '').strip()
         entry.container_name = request.form.get('container_name', '').strip()
         entry.internalurl = request.form.get('internalurl', '').strip() or None
         entry.externalurl = request.form.get('externalurl', '').strip() or None
-        entry.group_name = request.form.get('group_name', '').strip() or None
-        # Handle sort priority (optional integer field)
+        entry.internal_health_check_enabled = 'internal_health_check_enabled' in request.form
+        entry.external_health_check_enabled = 'external_health_check_enabled' in request.form
+        entry.is_static = 'is_static' in request.form
+
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:
             entry.sort_priority = int(sort_priority_raw) if sort_priority_raw else None
         except ValueError:
             entry.sort_priority = None
-            flash("Sort priority must be a number. Value ignored.", "warning")
+            flash("Sort priority must be a number.", "warning")
 
+        # === GROUP HANDLING ===
+        group_mode = request.form.get('group_mode')
+        group_name = None
+        if group_mode == 'existing':
+            group_name = request.form.get('group_name_existing')
+        elif group_mode == 'new':
+            group_name = request.form.get('group_name_new')
 
-        # Handle widget selection and update logic
-        widget_name = request.form.get('widget_name')  # always the actual name (e.g. 'sonarr')
-        widget_url = request.form.get('widget_url', '').strip()
-        widget_api_key = request.form.get('widget_api_key', '').strip()
+        if not group_name:
+            group_name = "zz_none"
+
+        group = Group.query.filter_by(group_name=group_name).first()
+        if not group:
+            group = Group(group_name=group_name)
+            db.session.add(group)
+            db.session.commit()
+        entry.group_name = group.group_name
+        entry.group_id = group.id
+
+        # === ICON ===
+        raw_icon = request.form.get('image_icon', '').strip().lower()
+        entry.image_icon = f"{raw_icon}.svg" if raw_icon and not raw_icon.endswith('.svg') else raw_icon
+        icon_path = os.path.join(IMAGE_DIR, entry.image_icon) if entry.image_icon else ''
+        if entry.image_icon and not os.path.exists(icon_path):
+            try:
+                icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{entry.image_icon}"
+                response = requests.get(icon_url, timeout=5)
+                if response.status_code == 200:
+                    with open(icon_path, 'wb') as f:
+                        f.write(response.content)
+                    logger.info(f"Downloaded icon: {entry.image_icon}")
+                else:
+                    logger.warning(f"Icon not found at {icon_url}")
+            except Exception as e:
+                logger.warning(f"Error fetching icon: {e}")
+        elif not entry.image_icon and request.form.get('force_update_icon') == 'true':
+            derived_icon_name = entry.container_name.lower().replace(" ", "-")
+            fetched_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger, debug=app.debug)
+            if fetched_icon:
+                entry.image_icon = fetched_icon
+
+        # === WIDGET LOGIC ===
+        widget_name = request.form.get('widget_name')
+        widget_url = request.form.get('widget_url') or None
+        widget_api_key = request.form.get('widget_api_key') or None
         widget_fields = request.form.getlist('widget_fields')
 
-        if not widget_name or widget_name == "none":
+        if widget_name == 'none':
             if entry.widget_id:
-                # Delete associated widget values
                 WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
-
-                # Delete the widget itself
-                widget_to_delete = Widget.query.get(entry.widget_id)
-                if widget_to_delete:
-                    db.session.delete(widget_to_delete)
-
-                logger.info(f"🗑️ Deleted widget ID {entry.widget_id} and its values for entry ID {entry.id}")
-
-            entry.widget_id = None
+                Widget.query.filter_by(id=entry.widget_id).delete()
+                entry.widget_id = None
         else:
             if entry.widget_id:
                 widget = Widget.query.get(entry.widget_id)
@@ -1229,95 +1269,40 @@ def edit_entry(id):
                     widget.widget_name = widget_name
                     widget.widget_url = widget_url
                     widget.widget_api_key = widget_api_key
-                    widget.widget_fields = widget_fields  
+                    widget.widget_fields = widget_fields
                 else:
-                    logger.warning(f"Entry has widget_id={entry.widget_id}, but it doesn't exist. Creating new widget.")
-                    new_widget = Widget(
-                        widget_name=widget_name,
-                        widget_url=widget_url,
-                        widget_api_key=widget_api_key,
-                        widget_fields=widget_fields,  
-                    )
-                    db.session.add(new_widget)
+                    widget = Widget(widget_name=widget_name, widget_url=widget_url,
+                                    widget_api_key=widget_api_key, widget_fields=widget_fields)
+                    db.session.add(widget)
                     db.session.flush()
-                    entry.widget_id = new_widget.id
+                    entry.widget_id = widget.id
             else:
-                new_widget = Widget(
-                    widget_name=widget_name,
-                    widget_url=widget_url,
-                    widget_api_key=widget_api_key,
-                    widget_fields=widget_fields,  
-                )
-                db.session.add(new_widget)
+                widget = Widget(widget_name=widget_name, widget_url=widget_url,
+                                widget_api_key=widget_api_key, widget_fields=widget_fields)
+                db.session.add(widget)
                 db.session.flush()
-                entry.widget_id = new_widget.id
-
-
-
-
-
-        # Handle the image icon
-        raw = request.form.get('image_icon', '').strip().lower()
-        if raw and not raw.endswith('.svg'):
-            new_image_icon = f"{raw}.svg"
-        else:
-            new_image_icon = raw
-
-        entry.image_icon = new_image_icon  # Always set explicitly, even blank
-
-        # Icon logic (as you already have)
-        if new_image_icon:
-            icon_path = os.path.join(IMAGE_DIR, new_image_icon)
-            if not os.path.exists(icon_path):
-                try:
-                    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{new_image_icon}"
-                    response = requests.get(icon_url, timeout=5)
-                    if response.status_code == 200:
-                        with open(icon_path, 'wb') as f:
-                            f.write(response.content)
-                        logger.info(f"\U0001f4e5 Downloaded manually supplied icon: {new_image_icon}")
-                    else:
-                        msg = f"Icon not found (HTTP {response.status_code}) at {icon_url}"
-                        if app.debug:
-                            logger.debug(msg)
-                        else:
-                            logger.warning(f"⚠️ {msg}")
-                except Exception as e:
-                    msg = f"Exception while downloading icon '{new_image_icon}': {e}"
-                    if app.debug:
-                        logger.debug(msg)
-                    else:
-                        logger.warning(f"⚠️ {msg}")
-
-        elif not new_image_icon and request.form.get('force_update_icon') == 'true':
-            derived_icon_name = entry.container_name.lower().replace(" ", "-")
-            fetched_icon = fetch_icon_if_missing(derived_icon_name, IMAGE_DIR, logger, debug=app.debug)
-            if fetched_icon:
-                entry.image_icon = fetched_icon
-                logger.info(f"\U0001f4a1 Auto-fetched icon '{fetched_icon}' during edit for '{entry.container_name}'.")
-
-        # Boolean fields
-        entry.internal_health_check_enabled = request.form.get('internal_health_check_enabled') == 'on'
-        entry.external_health_check_enabled = request.form.get('external_health_check_enabled') == 'on'
-        entry.is_static = request.form.get('is_static') == 'on'
+                entry.widget_id = widget.id
 
         entry.last_updated = datetime.now()
 
         try:
             db.session.commit()
-            flash(f"Service entry '{entry.container_name}' updated successfully!", 'success')
+            flash(f"✅ Entry '{entry.container_name}' updated!", "success")
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Error updating entry {entry.id}: {e}")
-            flash(f"Error updating entry: {str(e)}", 'danger')
+            logger.error(f"Update error: {e}")
+            flash("Error saving changes", "danger")
 
         return redirect(referrer)
-    all_widgets = Widget.query.all()
-    return render_template("edit_entry.html", entry=entry, ref=referrer, available_widgets=available_widgets, selected_widget=selected_widget, widgets=all_widgets)
 
+    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+    return render_template("edit_entry.html",
+                           entry=entry,
+                           ref=referrer,
+                           groups=groups,
+                           available_widgets=available_widgets,
+                           selected_widget=selected_widget)
 
-# widget checks
-from widgets.sonarr.fetch_data import fetch_widget_data  # You may want to import dynamically if many widgets
 
 def update_widget_data_periodically():
     with app.app_context():

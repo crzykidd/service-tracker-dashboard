@@ -64,7 +64,12 @@
             <tr class="bg-gray-800 font-semibold cursor-pointer" onclick="toggleGroup('{{ group_index }}')">
               <td colspan="11" class="px-4 py-2">
                 <span id="toggle-icon-{{ group_index }}">▼</span>
-                  {{ group }} <span class="text-sm text-gray-400 ml-2">({{ group_entries|length }})</span>
+                  {% if group_by == 'group_name' %}
+                    {{ group_lookup[group] if group in group_lookup else 'Unknown Group' }}
+                  {% else %}
+                    {{ group }}
+                  {% endif %}
+                  <span class="text-sm text-gray-400 ml-2">({{ group_entries|length }})</span>
 
               </td>
             </tr>
@@ -73,7 +78,7 @@
             {% for entry in group_entries %}
             <tr class="border-b border-gray-700 group-entry"
                 data-group-id="{{ group_index }}"
-                data-entry data-group="{{ entry.group_name }}"
+                data-entry data-group="{{ group_lookup[entry.group_id] if entry.group_id in group_lookup else 'Unknown' }}"
                 data-container="{{ entry.container_name }}"
                 data-stack="{{ entry.stack_name }}">
 
@@ -101,7 +106,7 @@
               </div>
             </td>
 
-            <td class="px-3 py-2">{{ entry.group_name }}</td>
+            <td class="px-3 py-2">{{ group_lookup[entry.group_id] if entry.group_id in group_lookup else 'Unknown' }}</td>
             
             <td class="px-3 py-2">
               {% set target_url = entry.internalurl or entry.externalurl %}
