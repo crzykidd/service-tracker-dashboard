@@ -21,7 +21,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import joinedload, column_property
-from sqlalchemy import select, func, asc, desc
+from sqlalchemy import select, func, asc, desc, nullslast
 from collections import defaultdict 
 import json
 
@@ -303,8 +303,22 @@ def dashboard():
         sort_order = {"Static": 0, "Dynamic": 1}
         grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: sort_order.get(item[0], 99)))
     elif group_by == "group_name":
-        # sort group IDs by group_name via group_lookup
-        grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: group_lookup.get(item[0], "zzz").lower()))
+        group_meta = {
+            g.id: (
+                g.group_sort_priority if g.group_sort_priority is not None else 9999,
+                g.group_name.lower()
+            )
+            for g in groups
+        }
+
+        def group_sort_key(item):
+            group_id = item[0]
+            if group_id is None:
+                return (float('inf'), 'zzz')  # Ungrouped last
+            return group_meta.get(group_id, (9999, 'zzz'))
+
+        grouped_entries = dict(sorted(grouped_entries.items(), key=group_sort_key))
+
     else:
         grouped_entries = dict(sorted(grouped_entries.items()))
 
@@ -760,7 +774,10 @@ def compact_dash():
         ServiceEntry.query
         .options(joinedload(ServiceEntry.group))
         .join(Group, isouter=True)
-        .order_by(Group.group_name.asc(), ServiceEntry.container_name.asc())
+        .order_by(
+            nullslast(Group.group_sort_priority.asc()),
+            ServiceEntry.container_name.asc()
+        )
         .all()
     )
 
@@ -793,17 +810,34 @@ def compact_dash():
             )
 
     # Sort group names
-    if group_by_attr_name == "is_static":
+    if group_by_attr_name == "group_name":
+        group_meta = {
+            g.group_name: g.group_sort_priority if g.group_sort_priority is not None else 9999
+            for g in Group.query.all()
+        }
+
+        def sort_key(item):
+            name = item[0]
+            if name == "Ungrouped":
+                return (float('inf'), "")  # put ungrouped last
+            return (group_meta.get(name, 9999), name.lower())
+
+        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=sort_key))
+
+    elif group_by_attr_name in ["host", "stack_name"]:
+        sorted_grouped_entries = dict(
+            sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
+        )
+
+    elif group_by_attr_name == "is_static":
         sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
         sorted_grouped_entries = dict(
             sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0]))
         )
-    elif group_by_attr_name in ["group_name", "host", "stack_name"]:
-        sorted_grouped_entries = dict(
-            sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
-        )
+
     else:
         sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
+
 
     # Flatten for rendering
     flattened_entries = []
