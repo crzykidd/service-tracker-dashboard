@@ -12,8 +12,9 @@ I wrote this as 90% of my stuff runs in docker, but you can manually add other h
 
 ## 🚀 What It Does
 
-- Table and tile-style dashboards (`/` and `/tiled_dash`)
-- Internal + external health checks every 60 seconds
+- Multiple Dash views from full to tiled to compact
+- tiled dash looks great on mobile device
+- Internal + external health checks every x seconds
 - Auto-downloads container icons from [Homarr Labs](https://github.com/homarr-labs/dashboard-icons)
 - API support for pushing container metadata
 - Simple SQLite database backend
@@ -22,18 +23,22 @@ I wrote this as 90% of my stuff runs in docker, but you can manually add other h
 - Dozzle log integration (optional)
 - Clean UI with dark mode support
 - Designed to run cleanly in Docker
+- Now supports local user management
+- Supports sort priority in groups
+- Supports grouping items together and sorting by group.
+
 
 ---
 
 ## Screenshots
 
-<a href="STD-MainDash.png">
-  <img src="STD-MainDash.png" alt="Main Dashboard" width="300"/>
-</a>
-<a href="STD-Tiled_mobile.png">
-  <img src="STD-Tiled_mobile.png" alt="Tiled Mobile Dashboard" width="200"/>
-</a>
+| Main Dashboard | Tiled View | Compact View |
+|---|---|---|
+| [![](std_main_dashboard.png)](std_main_dashboard.png) | [![](std_tile_dashboard.png)](std_tile_dashboard.png) | [![](std_compact_dashboard.png)](std_compact_dashboard.png) |
 
+| Mobile View | Widgets | Settings |
+|---|---|---|
+| [![](std_mobile.png)](std_mobile.png) | [![](std_widgets.png)](std_widgets.png) | [![](std_settings.png)](std_settings.png) |
 
 ## 🔧 Config Overview
 
@@ -48,6 +53,7 @@ You can configure the app using environment variables or a `settings.yml` file i
 | `backup_path`           | string | `BACKUP_PATH`              | Directory to store YAML backups                   |
 | `backup_days_to_keep`   | int    | `BACKUP_DAYS_TO_KEEP`      | How long to keep daily backups (in days)          |
 | `url_healthcheck_interval` | int  | `URL_HEALTHCHECK_INTERVAL` | How long between health checks on URLs           |
+| `user_session_length`  | int  | `USER_SESSION_LENGTH`  | what is the default user session length                  |
 
 ### Example `settings.yml`
 
@@ -56,6 +62,7 @@ api_token: supersecrettoken
 std_dozzle_url: http://dozzle.local
 backup_path: /config/backups
 backup_days_to_keep: 7
+user_session_length: 120 # in minutes
 ```
 
 ---
