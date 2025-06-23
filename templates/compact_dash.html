@@ -110,18 +110,20 @@
 {% endif %}
 {% endblock %}
 
+
 {% block extra_scripts %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     const groupBySelect = document.getElementById('groupBySelect');
     const urlParams = new URLSearchParams(window.location.search);
     const currentGroup = urlParams.get('group_by') || 'group_name';
-    groupBySelect.value = currentGroup;
-
-    groupBySelect.addEventListener('change', function () {
-      urlParams.set('group_by', this.value);
-      window.location.search = urlParams.toString();
-    });
+    if (groupBySelect) {
+      groupBySelect.value = currentGroup;
+      groupBySelect.addEventListener('change', function () {
+        urlParams.set('group_by', this.value);
+        window.location.search = urlParams.toString();
+      });
+    }
 
     const sortSelect = document.getElementById('sortInGroupSelect');
     const sortParam = urlParams.get('sort_in_group') || 'alphabetical';
@@ -133,6 +135,30 @@
         window.location.search = urlParams.toString();
       });
     }
+
+    // Filter tiles by input text
+    const filterInput = document.getElementById('filterInput');
+    if (filterInput) {
+      filterInput.addEventListener('input', function () {
+        const filter = this.value.toLowerCase();
+        const tiles = document.querySelectorAll('.tile:not(.group-header)');
+
+        tiles.forEach(tile => {
+          const containerName = tile.querySelector('.container-name')?.textContent?.toLowerCase() || '';
+          const hostName = tile.querySelector('.host-name')?.textContent?.toLowerCase() || '';
+          const groupHeader = tile.previousElementSibling?.classList.contains('group-header')
+            ? tile.previousElementSibling.textContent.toLowerCase()
+            : '';
+
+          const matches = containerName.includes(filter) ||
+                          hostName.includes(filter) ||
+                          groupHeader.includes(filter);
+
+          tile.style.display = matches ? '' : 'none';
+        });
+      });
+    }
   });
 </script>
 {% endblock %}
+

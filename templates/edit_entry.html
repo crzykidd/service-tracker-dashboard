@@ -93,10 +93,10 @@
             <label for="add_new" class="text-sm text-gray-300">Add New</label>
           </div>
 
-          <select name="group_name_existing" id="group_name_existing" class="form-input">
+          <select name="group_id_existing" id="group_id_existing" class="form-input">
             <option value="">-- Select Group --</option>
             {% for group in groups %}
-            <option value="{{ group.group_name }}" {% if entry.group_name == group.group_name %}selected{% endif %}>
+            <option value="{{ group.id }}" {% if entry.group_id == group.id %}selected{% endif %}>
               {{ group.group_name }}
             </option>
             {% endfor %}
@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // === Group Toggle Logic ===
   function toggleGroupMode() {
     const useExisting = document.getElementById('select_existing').checked;
-    document.getElementById('group_name_existing').classList.toggle('hidden', !useExisting);
+    document.getElementById('group_id_existing').classList.toggle('hidden', !useExisting);
     document.getElementById('group_name_new').classList.toggle('hidden', useExisting);
   }
 

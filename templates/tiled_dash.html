@@ -450,7 +450,26 @@ document.addEventListener('DOMContentLoaded', function () {
             window.location.search = params.toString();
         });
     }
-  
+    // Filter tiles by input text
+    const filterInput = document.getElementById('filterInput');
+    if (filterInput) {
+      filterInput.addEventListener('input', function () {
+        const filter = this.value.toLowerCase();
+        const tiles = document.querySelectorAll('.tile-wrapper');
+
+        tiles.forEach(tile => {
+          const containerName = tile.querySelector('.container-name')?.textContent?.toLowerCase() || '';
+          const hostName = tile.querySelector('.host-name')?.textContent?.toLowerCase() || '';
+          const groupHeader = tile.closest('[data-group-container]')?.previousElementSibling?.textContent?.toLowerCase() || '';
+
+          const matches = containerName.includes(filter) ||
+                          hostName.includes(filter) ||
+                          groupHeader.includes(filter);
+
+          tile.style.display = matches ? '' : 'none';
+        });
+      });
+    }
 });
 
 </script>
