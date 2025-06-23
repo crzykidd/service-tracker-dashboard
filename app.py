@@ -1424,22 +1424,34 @@ def edit_entry(id):
 
         # === GROUP HANDLING ===
         group_mode = request.form.get('group_mode')
-        group_name = None
+
+
+        group = None
+
         if group_mode == 'existing':
-            group_name = request.form.get('group_name_existing')
+            group_id = request.form.get('group_id_existing')
+            if group_id:
+                group = Group.query.get(int(group_id))  # safely cast to int
+
         elif group_mode == 'new':
-            group_name = request.form.get('group_name_new')
+            group_name = request.form.get('group_name_new', '').strip()
+            if group_name:
+                group = Group.query.filter_by(group_name=group_name).first()
+                if not group:
+                    group = Group(group_name=group_name)
+                    db.session.add(group)
+                    db.session.commit()
 
-        if not group_name:
-            group_name = "zz_none"
-
-        group = Group.query.filter_by(group_name=group_name).first()
+        # fallback if none found
         if not group:
-            group = Group(group_name=group_name)
-            db.session.add(group)
-            db.session.commit()
-        entry.group_name = group.group_name
+            group = Group.query.filter_by(group_name="zz_none").first()
+            if not group:
+                group = Group(group_name="zz_none")
+                db.session.add(group)
+                db.session.commit()
+
         entry.group_id = group.id
+        entry.group_name = group.group_name
 
         # === ICON ===
         raw_icon = request.form.get('image_icon', '').strip().lower()
