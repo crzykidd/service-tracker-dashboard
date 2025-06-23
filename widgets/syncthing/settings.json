@@ -1,0 +1,34 @@
+{
+  "widget_name": "syncthing",
+  "description": "Syncthing Folder Sync Monitor",
+  "available_fields": [
+    {
+      "key": "total_folders",
+      "label": "Folders",
+      "description": "Total number of folders configured",
+      "api_path": "/rest/config",
+      "response_path": "folders"
+    },
+    {
+      "key": "folders_syncing",
+      "label": "Syncing",
+      "description": "Number of folders currently syncing",
+      "api_path": "/rest/config",
+      "response_path": "folders_syncing"
+    },
+    {
+      "key": "remaining_mb",
+      "label": "Remaining MB",
+      "description": "Total size left to sync (in MB)",
+      "api_path": "/rest/config",
+      "response_path": "remaining_mb"
+    },
+    {
+      "key": "total_mb",
+      "label": "Total MB",
+      "description": "Total size of all shared folders (MB)",
+      "api_path": "/rest/config",
+      "response_path": "total_mb"
+    }
+  ]
+}
