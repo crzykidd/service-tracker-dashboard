@@ -46,9 +46,9 @@ def fetch_widget_data(api_url, api_key, widget_fields, available_fields):
         if "folders_syncing" in widget_fields:
             results["folders_syncing"] = syncing_count
         if "remaining_mb" in widget_fields:
-            results["remaining_mb"] = round(total_need_bytes / (1024 * 1024), 2)
+            results["remaining_mb"] = int(round(total_need_bytes / (1024 * 1024)))
         if "total_mb" in widget_fields:
-            results["total_mb"] = round(total_global_bytes / (1024 * 1024), 2)
+            results["total_mb"] = int(round(total_global_bytes / (1024 * 1024)))
 
     except Exception as e:
         logger.error(f"❌ Error fetching Syncthing stats: {e}")
