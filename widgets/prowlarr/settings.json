@@ -1,0 +1,46 @@
+{
+  "widget_name": "prowlarr",
+  "description": "Prowlarr Indexer Stats",
+  "available_fields": [
+    {
+      "key": "total_grabs",
+      "label": "Total Grabs",
+      "description": "Total successful grabs from all indexers"
+    },
+    {
+      "key": "total_failures",
+      "label": "Total Failures",
+      "description": "Total failed grabs from all indexers"
+    },
+    {
+      "key": "total_queries",
+      "label": "Total Queries",
+      "description": "Total queries made to all indexers"
+    },
+    {
+      "key": "total_failed_queries",
+      "label": "Failed Queries",
+      "description": "Total failed queries to indexers"
+    },
+    {
+      "key": "recent_grabs_7d",
+      "label": "Grabs (7d)",
+      "description": "Number of successful grabs in the past 7 days"
+    },
+    {
+      "key": "recent_failures_7d",
+      "label": "Failures (7d)",
+      "description": "Failed grabs in the past 7 days"
+    },
+    {
+      "key": "recent_queries_7d",
+      "label": "Queries (7d)",
+      "description": "Total indexer queries in the last 7 days"
+    },
+    {
+      "key": "recent_failed_queries_7d",
+      "label": "Failed Queries (7d)",
+      "description": "Failed indexer queries in the past 7 days"
+    }
+  ]
+}
