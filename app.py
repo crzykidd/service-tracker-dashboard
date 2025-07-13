@@ -1397,7 +1397,19 @@ def edit_entry(id):
         # === DELETE ACTION ===
         if 'delete' in request.form:
             if request.form.get('delete_confirmation') == entry.container_name:
-                Widget.query.filter_by(service_entry_id=entry.id).delete()
+                
+
+                # Delete the associated widget if no other services use it
+                if entry.widget_id:
+                    other_services = ServiceEntry.query.filter(
+                        ServiceEntry.widget_id == entry.widget_id,
+                        ServiceEntry.id != entry.id
+                    ).count()
+
+                    if other_services == 0:
+                        WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
+                        Widget.query.filter_by(id=entry.widget_id).delete()
+
                 db.session.delete(entry)
                 db.session.commit()
                 flash(f"Deleted entry: {entry.container_name}", 'success')
