@@ -24,6 +24,7 @@ config.py
 config/
 images/
 docker-compose.override.yml
+docker-compose-dev.yml
 
 # Virtual environments
 venv/
