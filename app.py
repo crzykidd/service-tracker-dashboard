@@ -1716,9 +1716,15 @@ def verify_and_fetch_missing_icons():
                         missing_count += 1
         logger.info(f"🔁 Icon verification complete. Missing count: {missing_count}")
 
+# Re-bind module-level `settings` after `def settings(...)` at line 661
+# shadowed the dict. Route handlers read `settings.get(...)` from module
+# globals, so this needs to be a dict at module level. Phase 4 will move
+# routes onto app.config and remove this footgun entirely.
+settings, _, _ = load_settings()
+
+
 def start_background_workers():
     scheduler = BackgroundScheduler()
-    settings, _, _ = load_settings()
     reload_seconds = settings.get("widget_background_reload")
     if not isinstance(reload_seconds, int) or reload_seconds <= 0:
         reload_seconds = 300  # default fallback
