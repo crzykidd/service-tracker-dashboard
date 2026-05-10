@@ -61,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `journal_mode` was the SQLite default (`delete`), so the documented
   backup rules around the WAL sidecar didn't reflect actual on-disk
   state.
+- `alembic/env.py` now imports the application module so SQLAlchemy
+  model classes register with `db.metadata`. Previously
+  `db.metadata.tables` was empty during alembic runs, which would have
+  caused `alembic revision --autogenerate` to silently produce empty
+  no-op migrations. A guard now raises if metadata is empty rather
+  than letting the schema silently drift.
 
 ---
 
