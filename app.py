@@ -93,7 +93,6 @@ def is_admin_required(f):
 def inject_now():
     return {'now': datetime.now}
 
-settings, config_from_env, config_from_file = load_settings()
 # Set STD_DOZZLE_URL from environment first, fallback to settings file
 app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", settings.get("STD_DOZZLE_URL", ""))
 
@@ -659,7 +658,6 @@ def set_user_password(user_id):
 @login_required
 @is_admin_required
 def settings():
-    settings, config_from_env, config_from_file = load_settings()
     BACKUP_DIR = settings.get("backup_path", "/config/backups")
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -1604,8 +1602,6 @@ def update_widget_data_periodically():
 
 # Background health check loop
 def health_check_loop():
-    from settings_loader import load_settings
-    settings, _, _ = load_settings()
     URL_HEALTHCHECK_INTERVAL = settings.get("url_healthcheck_interval", 60)
 
     with app.app_context():
@@ -1651,7 +1647,6 @@ def health_check_loop():
 
 def run_scheduled_backup():
     with app.app_context():
-        settings, _, _ = load_settings()
         backup_dir = settings.get("backup_path", "/config/backups")
         days_to_keep = int(settings.get("backup_days_to_keep", 7))
 
