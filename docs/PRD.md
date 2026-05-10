@@ -221,7 +221,7 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 | D3  | Icon fetch dup.     | Icon fetching is duplicated between `image_utils.py` and inline calls in `/add`, `/edit`. |
 | D4  | Auth half-finished  | `User.session_token` never written or read. |
 | D5  | Dead code           | `is_docker_status_stale` property never used. |
-| D6  | Settings drift      | `settings.example.yml` says `url_refresh_interval`; code reads `url_healthcheck_interval`. |
+| D6  | Settings drift      | `settings.example.yml` says `url_refresh_interval`; code reads `url_healthcheck_interval`. *(Resolved in v0.5.0.)* |
 | D7  | Retention           | `widget_value` table grows unbounded. |
 | D8  | Schema              | No indexes beyond PKs; `(host, container_name)` is the upsert key. |
 | D9  | Settings reload     | `load_settings()` is called at module level **and** inside some route handlers. Single load at startup is the right shape. |
