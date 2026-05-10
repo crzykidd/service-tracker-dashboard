@@ -60,7 +60,7 @@ endpoint notifier v0.3.0 will target).
 - Phase 5 — pydantic register schemas + `/api/v1/register`: NOT STARTED
 - Phase 6 — Compat shim on `/api/register` with deprecation headers: NOT STARTED
 - Phase 7 — Job error handling + concurrency lock: NOT STARTED
-- Phase 8 — Stray `v.0.4.6` tag removal: NOT STARTED
+- Phase 8 — Stray `v.0.4.6` tag removal: DONE
 
 ## Git Workflow
 
