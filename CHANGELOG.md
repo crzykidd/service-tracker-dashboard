@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Register endpoint contract documented and enforced via pydantic
   schemas; no more silent key remapping.
+- Shell scripts pinned to LF line endings via `.gitattributes`.
+  Prevents the container failing to start with
+  `exec /entrypoint.sh: no such file or directory` when the repo is
+  cloned on Windows with `core.autocrlf=true`.
 
 ---
 
