@@ -63,11 +63,11 @@ through the web UI or directly via API.
 
 | Main Dashboard | Tiled View | Compact View |
 |---|---|---|
-| [![](std_main_dashboard.png)](std_main_dashboard.png) | [![](std_tile_dashboard.png)](std_tile_dashboard.png) | [![](std_compact_dashboard.png)](std_compact_dashboard.png) |
+| [![](docs/screenshots/std_main_dashboard.png)](docs/screenshots/std_main_dashboard.png) | [![](docs/screenshots/std_tile_dashboard.png)](docs/screenshots/std_tile_dashboard.png) | [![](docs/screenshots/std_compact_dashboard.png)](docs/screenshots/std_compact_dashboard.png) |
 
 | Mobile View | Widgets | Settings |
 |---|---|---|
-| [![](std_mobile.png)](std_mobile.png) | [![](std_widgets.png)](std_widgets.png) | [![](std_settings.png)](std_settings.png) |
+| [![](docs/screenshots/std_mobile.png)](docs/screenshots/std_mobile.png) | [![](docs/screenshots/std_widgets.png)](docs/screenshots/std_widgets.png) | [![](docs/screenshots/std_settings.png)](docs/screenshots/std_settings.png) |
 
 ---
 

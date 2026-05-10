@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads (`url_healthcheck_interval`, not `url_refresh_interval`).
 - `load_settings()` is called once at startup; route handlers read
   from the resolved app config.
+- Repo layout cleaned up: dashboard screenshots moved from the repo
+  root into `docs/screenshots/`; `test-widget.py` moved to
+  `scripts/test_widget.py`. README image links updated.
 
 ### Deprecated
 - `/api/register` endpoint and all legacy key variants
@@ -53,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Run alembic via `docker compose exec <service> alembic ...`
   against the running app container instead. Workflow documented in
   the new "Database Migrations" section of `README.md`.
+- `READMEOLD.md` — pre-v0.4.9 README, superseded by the rewritten
+  `README.md`.
 
 ### Fixed
 - Register endpoint contract documented and enforced via pydantic
