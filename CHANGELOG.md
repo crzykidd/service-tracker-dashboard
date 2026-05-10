@@ -48,6 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dead `is_docker_status_stale` property on `Service`.
 - Unused `session_token` field on `User`.
 - Stray git tag `v.0.4.6` (extra dot) — replaced by `v0.4.6`.
+- `docker-compose-alembic.yml` — a one-shot from June 2025 with a
+  hardcoded migration message and a maintainer-specific host path.
+  Run alembic via `docker compose exec <service> alembic ...`
+  against the running app container instead. Workflow documented in
+  the new "Database Migrations" section of `README.md`.
 
 ### Fixed
 - Register endpoint contract documented and enforced via pydantic

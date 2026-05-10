@@ -29,14 +29,15 @@ through the web UI or directly via API.
 2. [Screenshots](#screenshots)
 3. [Configuration](#configuration)
 4. [Docker Compose Setup](#docker-compose-setup)
-5. [API: Registering Services](#api-registering-services)
-6. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
-7. [Files and Paths](#files-and-paths)
-8. [Health Checks](#health-checks)
-9. [Routes](#routes)
-10. [Widgets](#widgets)
-11. [Behavior Notes](#behavior-notes)
-12. [Versioning & Releases](#versioning--releases)
+5. [Database Migrations](#database-migrations)
+6. [API: Registering Services](#api-registering-services)
+7. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
+8. [Files and Paths](#files-and-paths)
+9. [Health Checks](#health-checks)
+10. [Routes](#routes)
+11. [Widgets](#widgets)
+12. [Behavior Notes](#behavior-notes)
+13. [Versioning & Releases](#versioning--releases)
 
 ---
 
@@ -123,6 +124,33 @@ services:
     volumes:
       - ./config:/config
     restart: unless-stopped
+```
+
+---
+
+## Database Migrations
+
+Schema changes are tracked with [Alembic](https://alembic.sqlalchemy.org/).
+Migrations live in `alembic/versions/` and `alembic upgrade head` runs
+automatically on container start (see `entrypoint.sh`).
+
+To create a new migration after changing models, exec into a running
+container:
+
+```bash
+docker compose exec <service-name> \
+  alembic revision --autogenerate -m "describe the change"
+```
+
+The new revision file lands under `alembic/versions/`. Review it before
+committing — autogenerate doesn't catch every kind of change
+(constraint renames, default-only changes, SQLite-specific quirks).
+
+To check whether models and the live database have diverged without
+writing a migration:
+
+```bash
+docker compose exec <service-name> alembic check
 ```
 
 ---
