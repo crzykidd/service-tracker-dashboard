@@ -1,23 +1,25 @@
 name: Build and Push Docker Image
 
+# Trigger matrix:
+#   push → dev           builds :dev and :sha-<short> (work-in-progress)
+#   push → main          builds :latest and :sha-<short> (CI-verified pre-release)
+#   pull_request → main  build only — no push (gates branch protection)
+#   release published    builds :latest, :<semver>, :<major> (production-ready)
+
 on:
   push:
-    branches:
-      - main
-      - dev
-    tags:
-      - 'v*'
+    branches: [main, dev]
   pull_request:
-    branches:
-      - main
-      - dev
+    branches: [main]
+  release:
+    types: [published]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -30,19 +32,22 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Compute tags
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: crzykidd/service-tracker-dashboard
+          flavor: latest=false
           tags: |
-            type=ref,event=branch
-            type=ref,event=branch,suffix=-{{sha}}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref_name == 'dev' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_name == 'main' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Build and push Docker image
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
