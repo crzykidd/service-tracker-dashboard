@@ -264,19 +264,12 @@ class User(db.Model, UserMixin):
     oauth_provider = db.Column(db.String(64), nullable=True)
     oauth_id = db.Column(db.String(128), nullable=True)
 
-    # API session/token field (e.g., for internal API calls or bearer auth)
-    session_token = db.Column(db.String(128), unique=True, nullable=True)
-
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
         self.password_changed_at = datetime.utcnow()
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
-
-    def generate_session_token(self):
-        import secrets
-        self.session_token = secrets.token_urlsafe(64)
 
 
 # Add this inside the ServiceEntry class in your app.py
@@ -1008,7 +1001,6 @@ def add_user():
 
     user = User(username=username, email=email, is_admin=is_admin)
     user.set_password(password)
-    user.generate_session_token()
     db.session.add(user)
     db.session.commit()
 
@@ -1748,7 +1740,6 @@ def create_default_admin():
                 is_active=True
             )
             admin.set_password("changeme123")
-            admin.generate_session_token()
             db.session.add(admin)
             db.session.commit()
             logger.info("🛠️ Default admin user created (username: admin, password: changeme123)")

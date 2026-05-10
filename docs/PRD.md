@@ -190,7 +190,7 @@ Four core SQLAlchemy models in `app.py`:
 |-----|-------|
 | S1  | No indexes beyond primary keys. `(host, container_name)` is hit on every register call and needs an index. |
 | S2  | `widget_value` has no retention. At ~45 services × frequent samples, this grows unboundedly. |
-| S3  | `User.session_token` is never read or written — half-finished feature; remove. |
+| S3  | `User.session_token` is never read (it is *written* by `generate_session_token()` on user creation, but no code ever reads it back) — half-finished feature; remove. *(Resolved in v0.5.0.)* |
 | S4  | ~~`is_docker_status_stale` property exists on `Service` but is never referenced — dead code.~~ Corrected: the property is consumed by `templates/tiled_dash.html` when deciding the "stale" tile colour, so it is **not** dead code. No removal in v0.5.0. |
 
 ---
@@ -219,7 +219,7 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 | D1  | `app.py` size       | ~1,775 lines holding 4 models, ~20 routes, 3 background jobs, template filters, and init code. Hard to navigate and review. |
 | D2  | View duplication    | `/`, `/tiled_dash`, `/compact_dash` duplicate ~150 lines of grouping/sorting logic. |
 | D3  | Icon fetch dup.     | Icon fetching is duplicated between `image_utils.py` and inline calls in `/add`, `/edit`. |
-| D4  | Auth half-finished  | `User.session_token` never written or read. |
+| D4  | Auth half-finished  | `User.session_token` written on user creation but never read. *(Resolved in v0.5.0.)* |
 | D5  | Dead code           | ~~`is_docker_status_stale` property never used.~~ Corrected: referenced by `templates/tiled_dash.html` for stale tile styling. Not actually dead; not removed in v0.5.0. |
 | D6  | Settings drift      | `settings.example.yml` says `url_refresh_interval`; code reads `url_healthcheck_interval`. *(Resolved in v0.5.0.)* |
 | D7  | Retention           | `widget_value` table grows unbounded. |
