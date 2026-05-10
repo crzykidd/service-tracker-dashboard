@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh release *)",
+      "Bash(git stash *)",
+      "Bash(git fetch *)",
+      "Bash(docker compose *)",
+      "Bash(docker build *)",
+      "Bash(docker run *)",
+      "Bash(python -c *)",
+      "Bash(pip install *)",
+      "Bash(alembic *)",
+      "Bash(flask *)",
+      "Bash(curl -s http://localhost:8815/*)",
+      "Bash(curl -s http://localhost:8815/api/*)"
+    ],
+    "additionalDirectories": [
+      "C:\\projects\\service-tracker-dashboard\\alembic\\versions"
+    ]
+  }
+}
