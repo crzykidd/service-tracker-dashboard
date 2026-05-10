@@ -48,7 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   must upgrade `docker-api-notifier` to v0.3.0+ before v0.6.0.
 
 ### Removed
-- Dead `is_docker_status_stale` property on `Service`.
 - Unused `session_token` field on `User`.
 - Stray git tag `v.0.4.6` (extra dot) — replaced by `v0.4.6`.
 - `docker-compose-alembic.yml` — a one-shot from June 2025 with a
