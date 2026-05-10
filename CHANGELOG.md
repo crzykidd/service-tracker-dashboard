@@ -72,6 +72,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caused `alembic revision --autogenerate` to silently produce empty
   no-op migrations. A guard now raises if metadata is empty rather
   than letting the schema silently drift.
+- Background scheduler and URL health-check thread now start only when
+  `app.py` is run as the main process, not at module import time.
+  Previously they spawned during `alembic upgrade head` in production
+  (where `app.debug` is False) and briefly raced alembic for the SQLite
+  write lock before being killed when the alembic process exited.
+- Removed a duplicate `health_check_loop` thread start that had two
+  daemon threads racing each other on every production startup.
 
 ---
 

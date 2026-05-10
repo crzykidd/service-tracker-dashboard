@@ -1716,11 +1716,7 @@ def verify_and_fetch_missing_icons():
                         missing_count += 1
         logger.info(f"🔁 Icon verification complete. Missing count: {missing_count}")
 
-if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-    threading.Thread(target=health_check_loop, daemon=True).start()
-
-# === APScheduler Setup with Debug-Safe Guard ===
-if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+def start_background_workers():
     scheduler = BackgroundScheduler()
     settings, _, _ = load_settings()
     reload_seconds = settings.get("widget_background_reload")
@@ -1733,7 +1729,6 @@ if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         name='Update widget values periodically',
         replace_existing=True
     )
-
     scheduler.add_job(
         run_scheduled_backup,
         CronTrigger(hour=0, minute=5),
@@ -1741,10 +1736,8 @@ if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         name='Run daily backup',
         replace_existing=True
     )
-
     scheduler.start()
 
-    # Start any background threads too
     threading.Thread(target=health_check_loop, daemon=True).start()
 
 def create_default_admin():
@@ -1769,6 +1762,11 @@ if __name__ == '__main__':
     create_default_admin()
     logger.info("🔍 Verifying icon files for all ServiceEntry records...")
     verify_and_fetch_missing_icons()
+
+    # In Werkzeug's debug reloader the script runs twice (supervisor + child).
+    # Only the child (WERKZEUG_RUN_MAIN=true) should own the workers.
+    if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_background_workers()
 
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
     app.run(host='0.0.0.0', port=8815, debug=app.debug)
