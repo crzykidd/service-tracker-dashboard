@@ -101,8 +101,11 @@ logger.info("🔧 Loaded settings:")
 for k, v in settings.items():
     logger.info(f"    {k} = {v}")
 
-# Optionally populate into app.config if you use `Flask config`
 app.config.update(settings)
+# Snapshot the full loaded dict for the /settings page to render. The page
+# iterates current_config to display every loaded key, so we can't just
+# point it at app.config (that also holds Flask-internal keys).
+app.config['LOADED_SETTINGS'] = settings
 
 logger.info("⚙️ Flask config (from settings):")
 for k in settings:
@@ -401,8 +404,8 @@ def dashboard():
         direction=direction,
         group_by=group_by,
         msg=msg,
-        STD_DOZZLE_URL=settings.get("std_dozzle_url"),
-        display_tools=settings.get("display_tools", False),
+        STD_DOZZLE_URL=app.config.get("std_dozzle_url"),
+        display_tools=app.config.get("display_tools", False),
         widget_values=widget_values,
         widget_fields=widget_fields,
         sort_in_group=sort_in_group,
@@ -658,7 +661,7 @@ def set_user_password(user_id):
 @login_required
 @is_admin_required
 def settings():
-    BACKUP_DIR = settings.get("backup_path", "/config/backups")
+    BACKUP_DIR = app.config.get("backup_path", "/config/backups")
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
     os.makedirs(BACKUP_DIR, exist_ok=True)
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
@@ -906,7 +909,7 @@ def settings():
     users = User.query.order_by(User.username.asc()).all()
     return render_template(
         'settings.html',
-         current_config=settings,
+         current_config=app.config['LOADED_SETTINGS'],
          config_from_env=config_from_env,
          config_from_file=config_from_file,
          server_backup_files=server_backup_files,
@@ -1602,7 +1605,7 @@ def update_widget_data_periodically():
 
 # Background health check loop
 def health_check_loop():
-    URL_HEALTHCHECK_INTERVAL = settings.get("url_healthcheck_interval", 60)
+    URL_HEALTHCHECK_INTERVAL = app.config.get("url_healthcheck_interval", 60)
 
     with app.app_context():
         while True:
@@ -1647,8 +1650,8 @@ def health_check_loop():
 
 def run_scheduled_backup():
     with app.app_context():
-        backup_dir = settings.get("backup_path", "/config/backups")
-        days_to_keep = int(settings.get("backup_days_to_keep", 7))
+        backup_dir = app.config.get("backup_path", "/config/backups")
+        days_to_keep = int(app.config.get("backup_days_to_keep", 7))
 
         os.makedirs(backup_dir, exist_ok=True)
 
@@ -1711,16 +1714,9 @@ def verify_and_fetch_missing_icons():
                         missing_count += 1
         logger.info(f"🔁 Icon verification complete. Missing count: {missing_count}")
 
-# Re-bind module-level `settings` after `def settings(...)` at line 661
-# shadowed the dict. Route handlers read `settings.get(...)` from module
-# globals, so this needs to be a dict at module level. Phase 4 will move
-# routes onto app.config and remove this footgun entirely.
-settings, _, _ = load_settings()
-
-
 def start_background_workers():
     scheduler = BackgroundScheduler()
-    reload_seconds = settings.get("widget_background_reload")
+    reload_seconds = app.config.get("widget_background_reload")
     if not isinstance(reload_seconds, int) or reload_seconds <= 0:
         reload_seconds = 300  # default fallback
     scheduler.add_job(
