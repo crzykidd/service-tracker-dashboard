@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Prevents the container failing to start with
   `exec /entrypoint.sh: no such file or directory` when the repo is
   cloned on Windows with `core.autocrlf=true`.
+- SQLite WAL mode is now actually enabled at runtime via a connect-time
+  PRAGMA in `extensions.py`. Prior releases documented WAL mode but
+  `journal_mode` was the SQLite default (`delete`), so the documented
+  backup rules around the WAL sidecar didn't reflect actual on-disk
+  state.
 
 ---
 
