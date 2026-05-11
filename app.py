@@ -102,6 +102,19 @@ def create_app():
     app.config['CONFIG_FROM_FILE'] = config_from_file
     app.config['VERSION_INFO'] = read_version_info()
 
+    # Validate register_field_ownership once at startup. An operator
+    # typo would otherwise silently behave as user_wins per the
+    # upsert_service default; logging it makes the misconfig visible.
+    _valid_ownership_modes = {"user_wins", "notifier_wins"}
+    ownership_mode = app.config.get("register_field_ownership", "user_wins")
+    if ownership_mode not in _valid_ownership_modes:
+        logger.warning(
+            f"⚠️ Invalid register_field_ownership={ownership_mode!r}; "
+            f"falling back to 'user_wins'. Valid values: "
+            f"{sorted(_valid_ownership_modes)}."
+        )
+        app.config['register_field_ownership'] = "user_wins"
+
     logger.info("⚙️ Flask config (from settings):")
     for k in settings:
         logger.info(f"    {k} = {app.config.get(k)}")

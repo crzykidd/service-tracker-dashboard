@@ -28,6 +28,19 @@ widget_background_reload: 900
 # deleted by a daily background job (00:15 server local time).
 widget_value_retention_days: 30
 
+# How to handle conflicts between user UI edits and incoming notifier
+# registers for the same service:
+#   user_wins     — UI edits stick; the notifier won't overwrite
+#                   user-overridable fields (group_name, sort_priority)
+#                   on existing rows. Default.
+#   notifier_wins — Every notifier register overwrites everything,
+#                   including UI edits. Choose this if your container
+#                   labels are the source of truth and you don't want
+#                   UI edits to persist across notifier updates.
+# Regardless of which mode is set, the notifier_reported_* columns
+# always capture what the notifier most recently sent.
+register_field_ownership: user_wins
+
 # how long to default the user session, default is 120 minutes
 # can be set as USER_SESSION_LENGTH in ENV
 user_session_length: 120

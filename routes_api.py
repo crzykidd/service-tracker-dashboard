@@ -211,9 +211,10 @@ def upsert_service(canonical, app):
         debug=app.debug,
     )
 
-    # Commit 6 replaces this hard-coded mode with a read from
-    # app.config.get("register_field_ownership", "user_wins").
-    mode = "user_wins"
+    # `register_field_ownership` is validated once at startup in
+    # create_app(); an invalid setting has already been replaced
+    # with "user_wins" before any request hits this function.
+    mode = app.config.get("register_field_ownership", "user_wins")
 
     with _UPSERT_LOCK:
         group_obj = None

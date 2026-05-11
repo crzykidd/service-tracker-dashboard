@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the new `widget_value_retention_days` setting (default 30).
 - Application-level mutex around the register upsert to serialize
   near-simultaneous writes for the same logical service.
+- New `register_field_ownership` setting (`user_wins` default, or
+  `notifier_wins`). Controls whether a notifier register call may
+  overwrite a non-NULL UI-edited value for `group_name` or
+  `sort_priority` on an existing row. New rows always take
+  everything the payload carries. Regardless of mode, the
+  `notifier_reported_*` capture columns record what the notifier
+  said. Invalid values fall back to `user_wins` with a startup
+  WARNING.
 - `Deprecation: true` response header on `/api/register`, plus a
   `Link: </api/v1/register>; rel="successor-version"` pointer. A
   per-IP-per-hour rate-limited WARNING log fires when a legacy
