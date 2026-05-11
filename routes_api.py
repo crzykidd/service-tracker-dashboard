@@ -1,22 +1,29 @@
 """Register API.
 
-Owns the `api` blueprint. Today this is just the legacy
-`/api/register` endpoint that notifier (and any other producer)
-pushes container metadata to.
+Owns the `api` blueprint. Surfaces:
+- `/api/v1/register` (v0.5.0+) — canonical-keys-only, pydantic-
+  validated. The contract notifier v0.3.0 targets.
+- `/api/register` (legacy) — compat shim that remaps legacy keys
+  and calls the same shared upsert. Emits `Deprecation: true`.
+  Will be removed in v0.6.0.
+
+Both routes call into `upsert_service(canonical, app)` — there is
+exactly one place where the upsert logic lives.
 
 Module-level state local to this surface:
 - `unauthorized_log_tracker` — rate-limits the unauthorized-access
-  WARNING log line to once per IP every 2 minutes. Only this
-  handler reads/writes it, so it doesn't need to live in app.py.
+  WARNING log line to once per IP every 2 minutes.
 - `failed_icon_cache` / `RETRY_INTERVAL` — passed through to
   `image_utils.resolve_image_metadata` to throttle repeated icon
-  download attempts. Same scope rationale.
-
-Phase 5 will add `/api/v1/register` (canonical keys, pydantic-
-validated) alongside this; this file is its home.
+  download attempts.
+- `_UPSERT_LOCK` — single `threading.Lock` serializing the
+  find-or-create + merge + commit critical section in
+  `upsert_service`. Coarse (one lock for all keys) and that's
+  intentional — see the function docstring.
 """
 
 import logging
+import threading
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
@@ -34,6 +41,183 @@ unauthorized_log_tracker = {}
 # Throttle for repeated icon-download failures. Used by resolve_image_metadata.
 failed_icon_cache = {}  # image_icon -> last_failed_time
 RETRY_INTERVAL = timedelta(minutes=60)
+
+# Serializes the upsert critical section across all register calls.
+# See upsert_service docstring for the rationale.
+_UPSERT_LOCK = threading.Lock()
+
+
+def upsert_service(canonical, app):
+    """Apply a canonical register payload to the service_entry row
+    for `(host, container_name)`. Returns `(body_dict, http_status)`.
+
+    Caller is responsible for auth and for translating wire-format
+    keys to canonical (the pydantic schema does this for
+    /api/v1/register; the legacy-key remap function does it for
+    /api/register).
+
+    Concurrency
+    -----------
+    Holds `_UPSERT_LOCK` across the find-or-create + merge + commit.
+    Two concurrent register calls — same or different services —
+    serialize. Coarse: one lock for all keys, not per-key. Chosen
+    because:
+
+    - The homelab-scale workload is one Flask process with a low
+      write rate (~50 services, register calls measured in dozens
+      per minute peak). Contention on a single lock is negligible.
+    - Per-key locking adds a dict-of-locks plus its own outer mutex
+      for safe insertion, and the bookkeeping isn't free.
+
+    Image-metadata resolution may issue an HTTP icon download, so
+    it runs BEFORE the lock — holding the lock across HTTP would
+    serialize every register behind one slow CDN response.
+
+    Caveat: under Gunicorn with multiple workers, this in-process
+    lock does not serialize across workers. SQLite's WAL single-
+    writer behavior is the actual cross-process safety net. The
+    deployment documented in docker-compose.yml is a single-process
+    Flask server, so the in-process lock is sufficient there.
+
+    Field ownership
+    ---------------
+    Notifier-owned fields (container_id, URLs, stack_name,
+    docker_status, started_at, health-check toggles, image_*) are
+    overwritten on update whenever the payload carries them.
+
+    User-overridable fields (group_name -> group_id, sort_priority)
+    are governed by a per-deployment mode. v0.5.0 hard-codes
+    "user_wins" here; commit 6 wires it to the
+    `register_field_ownership` setting:
+    - "user_wins" — existing non-NULL values are preserved on
+      update. New rows are written with whatever the payload says.
+    - "notifier_wins" — payload always wins.
+
+    Regardless of mode, the `notifier_reported_*` capture columns
+    record what the notifier actually sent, so a future
+    overridden-labels export can compare against the user's value.
+
+    is_static rows short-circuit with a 200 + skipped body — that
+    behavior is unchanged from v0.4.x.
+    """
+    image_meta = resolve_image_metadata(
+        image_raw=canonical.get("image_name"),
+        image_icon_override=canonical.get("image_icon"),
+        fallback_name=canonical.get("container_name"),
+        image_dir=app.config['IMAGE_DIR'],
+        failed_icon_cache=failed_icon_cache,
+        retry_interval=RETRY_INTERVAL,
+        logger=logger,
+        debug=app.debug,
+    )
+
+    # Commit 6 replaces this hard-coded mode with a read from
+    # app.config.get("register_field_ownership", "user_wins").
+    mode = "user_wins"
+
+    with _UPSERT_LOCK:
+        group_obj = None
+        group_name = canonical.get("group_name")
+        if group_name:
+            group_obj = Group.query.filter_by(group_name=group_name).first()
+            if not group_obj:
+                group_obj = Group(group_name=group_name)
+                db.session.add(group_obj)
+                db.session.flush()
+
+        entry = ServiceEntry.query.filter_by(
+            host=canonical['host'],
+            container_name=canonical['container_name'],
+        ).first()
+
+        if entry is not None:
+            if entry.is_static:
+                logger.info(
+                    f"Skipping update for '{entry.container_name}' on "
+                    f"'{entry.host}' — static lock enabled."
+                )
+                return {"status": "skipped", "reason": "static lock"}, 200
+
+            now = datetime.now()
+            entry.last_updated = now
+            entry.last_api_update = now
+
+            # Notifier-owned fields — always overwrite when payload carries them.
+            if canonical.get("container_id"):
+                entry.container_id = canonical["container_id"]
+            if canonical.get("internalurl"):
+                entry.internalurl = canonical["internalurl"]
+            if canonical.get("externalurl"):
+                entry.externalurl = canonical["externalurl"]
+            if canonical.get("stack_name"):
+                entry.stack_name = canonical["stack_name"]
+            if canonical.get("docker_status"):
+                entry.docker_status = canonical["docker_status"]
+            if canonical.get("started_at"):
+                entry.started_at = canonical["started_at"]
+
+            if "internal_health_check_enabled" in canonical:
+                parsed = parse_bool(canonical["internal_health_check_enabled"])
+                if parsed is not None:
+                    entry.internal_health_check_enabled = parsed
+            if "external_health_check_enabled" in canonical:
+                parsed = parse_bool(canonical["external_health_check_enabled"])
+                if parsed is not None:
+                    entry.external_health_check_enabled = parsed
+
+            if image_meta["registry"]:
+                entry.image_registry = image_meta["registry"]
+            if image_meta["owner"]:
+                entry.image_owner = image_meta["owner"]
+            if image_meta["image_name"]:
+                entry.image_name = image_meta["image_name"]
+            if image_meta["image_icon"]:
+                entry.image_icon = image_meta["image_icon"]
+            if image_meta["image_tag"]:
+                entry.image_tag = image_meta["image_tag"]
+
+            # User-overridable fields. Always record what the notifier
+            # reported into the capture columns; whether the live
+            # column gets the new value depends on `mode`.
+            if "group_name" in canonical and canonical["group_name"] is not None:
+                entry.notifier_reported_group_name = canonical["group_name"]
+                if mode == "notifier_wins" or entry.group_id is None:
+                    entry.group_id = group_obj.id if group_obj else None
+
+            if "sort_priority" in canonical and canonical["sort_priority"] is not None:
+                entry.notifier_reported_sort_priority = canonical["sort_priority"]
+                if mode == "notifier_wins" or entry.sort_priority is None:
+                    entry.sort_priority = canonical["sort_priority"]
+        else:
+            # New row — every field from the payload, plus the capture columns.
+            now = datetime.now()
+            entry = ServiceEntry(
+                host=canonical['host'],
+                container_name=canonical['container_name'],
+                container_id=canonical.get('container_id'),
+                internalurl=canonical.get('internalurl'),
+                externalurl=canonical.get('externalurl'),
+                stack_name=canonical.get('stack_name'),
+                docker_status=canonical.get('docker_status'),
+                internal_health_check_enabled=parse_bool(canonical.get('internal_health_check_enabled')),
+                external_health_check_enabled=parse_bool(canonical.get('external_health_check_enabled')),
+                group_id=group_obj.id if group_obj else None,
+                started_at=canonical.get('started_at'),
+                last_updated=now,
+                last_api_update=now,
+                image_registry=image_meta["registry"],
+                image_owner=image_meta["owner"],
+                image_name=image_meta["image_name"],
+                image_icon=image_meta["image_icon"],
+                image_tag=image_meta["image_tag"],
+                sort_priority=canonical.get('sort_priority'),
+                notifier_reported_group_name=canonical.get('group_name'),
+                notifier_reported_sort_priority=canonical.get('sort_priority'),
+            )
+            db.session.add(entry)
+
+        db.session.commit()
+        return entry.to_dict(), 200
 
 
 @api_bp.route('/api/register', methods=['POST'])
