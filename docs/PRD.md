@@ -183,25 +183,45 @@ The configuration surface is documented in the `README.md`.
 
 ---
 
-## 5. Data Model (current, v0.4.14)
+## 5. Data Model
 
-Four core SQLAlchemy models in `app.py`:
+Five SQLAlchemy models (defined in `models.py` from v0.5.0 onward;
+they lived in `app.py` through v0.4.14):
 
-| Model         | Purpose                                                   |
-|---------------|-----------------------------------------------------------|
-| `Service`     | One row per registered service. PK on `id`; logical key on `(host, container_name)`. Holds URLs, health flags, group, sort priority, status, last-checked timestamps, image metadata, icon, etc. |
-| `User`        | Local user accounts for the web UI. Includes a `session_token` field that is currently unused. |
-| `WidgetValue` | Time-series of widget samples. Grows unbounded today.     |
-| `Setting`     | Persisted UI/admin settings.                              |
+| Model         | Table          | Purpose                                                   |
+|---------------|----------------|-----------------------------------------------------------|
+| `ServiceEntry`| `service_entry`| One row per registered service. PK on `id`; logical key on `(host, container_name)` — indexed from v0.5.0. Holds URLs, health flags, group_id (FK), sort_priority, status, last-checked timestamps, image metadata, icon, the `is_static` flag, and the v0.5.0 `notifier_reported_group_name` / `notifier_reported_sort_priority` capture columns. |
+| `Group`       | `group`        | Optional grouping. Unique `group_name`, optional `group_sort_priority` and `group_icon`. Referenced by `ServiceEntry.group_id`. |
+| `Widget`      | `widget`       | Widget configuration (name, URL, API key, JSON-encoded field list). Referenced by `ServiceEntry.widget_id`. |
+| `WidgetValue` | `widget_value` | Most-recent value per `(widget_id, widget_value_key)` — upserted in place by the widget refresh job, not a time series. The retention job (v0.5.0+) prunes rows whose `last_updated` is older than `widget_value_retention_days`. |
+| `User`        | `user`         | Local user accounts for the web UI.                       |
 
-### 5.1 Schema gaps targeted for v0.5.0
+There is no `Setting` model — operator settings live in
+`settings.yml` and are loaded into `app.config` at startup.
 
-| ID  | Issue |
-|-----|-------|
-| S1  | No indexes beyond primary keys. `(host, container_name)` is hit on every register call and needs an index. |
-| S2  | `widget_value` has no retention. At ~45 services × frequent samples, this grows unboundedly. |
-| S3  | `User.session_token` is never read (it is *written* by `generate_session_token()` on user creation, but no code ever reads it back) — half-finished feature; remove. *(Resolved in v0.5.0.)* |
-| S4  | `is_docker_status_stale` property was defined at the wrong indentation level and silently attached to `User` instead of `ServiceEntry`. `templates/tiled_dash.html` references `entry.is_docker_status_stale` on `ServiceEntry` rows, so Jinja resolved it to `Undefined` (always falsy) and the stale tile styling never fired. *(Fixed in v0.5.0: property re-attached to `ServiceEntry`.)* |
+### 5.1 v0.5.0 schema changes
+
+| Change | Detail |
+|--------|--------|
+| Index  | Non-unique `ix_service_entry_host_container_name` on `service_entry(host, container_name)`. Concurrency safety lives in the application-level register mutex, not in a database constraint, so duplicate cleanup is deferrable. |
+| Column | `service_entry.notifier_reported_group_name` (`String(100)`, nullable). Captures what the notifier most recently sent for the `group` label. |
+| Column | `service_entry.notifier_reported_sort_priority` (`Integer`, nullable). Captures what the notifier most recently sent for the `sort.priority` label. |
+| Drop   | `user.session_token` removed (see §5.2 S3). |
+
+The two `notifier_reported_*` columns are populated by the v0.5.0
+register handler on every register call. No reader yet — they exist
+so a planned overridden-labels export can compare the user's edited
+value against the notifier's latest report. Restoring from a v0.4.x
+backup leaves them NULL; the next register call fills them in.
+
+### 5.2 Schema gaps from v0.4.14 (status)
+
+| ID  | Issue | Status |
+|-----|-------|--------|
+| S1  | No indexes beyond primary keys. `(host, container_name)` is hit on every register call and needs an index. | Resolved in v0.5.0 (`ix_service_entry_host_container_name`). |
+| S2  | `widget_value` has no retention. At ~45 services × frequent samples, this grows unboundedly. | Resolved in v0.5.0 (configurable retention prune job, default 30 days). |
+| S3  | `User.session_token` is never read (it is *written* by `generate_session_token()` on user creation, but no code ever reads it back) — half-finished feature; remove. | Resolved in v0.5.0. |
+| S4  | `is_docker_status_stale` property was defined at the wrong indentation level and silently attached to `User` instead of `ServiceEntry`. `templates/tiled_dash.html` references `entry.is_docker_status_stale` on `ServiceEntry` rows, so Jinja resolved it to `Undefined` (always falsy) and the stale tile styling never fired. | Fixed in v0.5.0: property re-attached to `ServiceEntry`. |
 
 ---
 
@@ -232,8 +252,8 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 | D4  | Auth half-finished  | `User.session_token` written on user creation but never read. *(Resolved in v0.5.0.)* |
 | D5  | Stale styling broken | `is_docker_status_stale` property indented onto `User` instead of `ServiceEntry`. Template references it on `ServiceEntry`, so stale tile styling never fired. *(Resolved in v0.5.0.)* |
 | D6  | Settings drift      | `settings.example.yml` says `url_refresh_interval`; code reads `url_healthcheck_interval`. *(Resolved in v0.5.0.)* |
-| D7  | Retention           | `widget_value` table grows unbounded. |
-| D8  | Schema              | No indexes beyond PKs; `(host, container_name)` is the upsert key. |
+| D7  | Retention           | `widget_value` table grows unbounded. *(Resolved in v0.5.0.)* |
+| D8  | Schema              | No indexes beyond PKs; `(host, container_name)` is the upsert key. *(Resolved in v0.5.0.)* |
 | D9  | Settings reload     | `load_settings()` is called at module level **and** inside some route handlers. Single load at startup is the right shape. *(Resolved in v0.5.0.)* |
 | D10 | Job error handling  | URL health check loop has no top-level try/except; one bad URL or transient error can kill the loop until restart. |
 | D11 | Register contract   | `/api/register` quietly remaps `group ↔ group_name`, `internal.health ↔ internal_health_check_enabled`, `docker_host ↔ host`, etc. Contract drift; no canonical schema. |
@@ -248,7 +268,7 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 
 ### 7.1 Goals
 
-- Resolve every issue in §5.1 and §6.2.
+- Resolve every issue in §5.2 and §6.2.
 - Establish a stable, canonical register contract with a clear sunset
   for legacy keys.
 - Split `app.py` into reviewable modules without changing observable
@@ -277,7 +297,12 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
   the resolved app-level config dict.
 - URL health check loop wrapped in a top-level try/except so a
   transient exception in one pass doesn't kill the loop.
-- `(host, container_name)` index added.
+- `(host, container_name)` index added (`ix_service_entry_host_container_name`,
+  non-unique).
+- `notifier_reported_group_name` and `notifier_reported_sort_priority`
+  capture columns added to `service_entry`. Populated by the v0.5.0
+  register handler; not read in v0.5.0 itself — forward-compat for
+  the planned overridden-labels export.
 - Application-level mutex around the register upsert to serialize
   near-simultaneous writes for the same logical service.
 - `widget_value` retention: rolling 30-day window enforced by a
