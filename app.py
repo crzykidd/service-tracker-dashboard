@@ -14,11 +14,9 @@ import requests
 import humanize
 import yaml
 from dateutil import parser
-from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response, session, abort
+from flask import Flask, request, send_file, flash, jsonify, render_template, redirect, url_for, send_from_directory, make_response
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, login_user, login_required, logout_user, current_user
-from functools import wraps
-from werkzeug.security import check_password_hash
+from flask_login import login_required
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -27,11 +25,12 @@ from sqlalchemy import asc, desc, nullslast
 
 
 # Local application modules
-from extensions import db
+from extensions import db, login_manager
 from settings_loader import load_settings
 from image_utils import resolve_image_metadata, parse_bool, fetch_icon_if_missing
 from models import Group, ServiceEntry, User, Widget, WidgetValue
 from health import health_bp
+from routes_auth import auth_bp, is_admin_required
 
 
 DATABASE_PATH = '/config/services.db'
@@ -66,32 +65,13 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=int(settings.get("user_session_length", 120)))
 
-login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'
-
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-from flask_login import current_user
 
 db.init_app(app)
 
 app.register_blueprint(health_bp)
+app.register_blueprint(auth_bp)
 
-
-def is_admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return login_manager.unauthorized()
-        if not current_user.is_admin:
-            abort(403)  # Forbidden
-        return f(*args, **kwargs)
-    return decorated_function
 
 @app.context_processor
 def inject_now():
@@ -456,49 +436,6 @@ def db_dump():
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)    
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        user = User.query.filter_by(username=username).first()
-
-        if user and user.is_active and check_password_hash(user.password_hash, password):
-            login_user(user)  # <-- This is the key line you’re missing
-            session.permanent = True
-            flash("Logged in successfully.", "success")
-            return redirect(url_for("dashboard"))
-        else:
-            flash("Invalid username or password.", "error")
-
-    return render_template("login.html")
-
-@app.route("/logout", methods=["POST"])
-@login_required
-def logout():
-    session.clear()
-    flash("You’ve been logged out.", "info")
-    return redirect(url_for("login"))
-
-
-@app.route("/settings/users/<int:user_id>/set_password", methods=["POST"])
-@is_admin_required
-def set_user_password(user_id):
-    new_password = request.form.get("new_password", "").strip()
-    if not new_password or len(new_password) < 6:
-        flash("Password must be at least 6 characters", "error")
-        return redirect(url_for("settings"))
-
-    user = User.query.get(user_id)
-    if not user:
-        flash("User not found", "error")
-        return redirect(url_for("settings"))
-
-    user.set_password(new_password)
-    db.session.commit()
-    flash(f"Password updated for {user.username}", "success")
-    return redirect(url_for("settings"))
-
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
@@ -834,55 +771,6 @@ def delete_group():
         flash("❌ Group not found.", "danger")
 
     return redirect(url_for('settings', section='groups'))
-
-@app.route("/add_user", methods=["POST"])
-@login_required
-@is_admin_required
-def add_user():
-    username = request.form.get("username")
-    email = request.form.get("email")
-    password = request.form.get("password")
-    is_admin = request.form.get("is_admin") == "on"
-
-    if User.query.filter((User.username == username) | (User.email == email)).first():
-        flash("User already exists with this username or email", "danger")
-        return redirect(url_for("settings", section="users"))
-
-    user = User(username=username, email=email, is_admin=is_admin)
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
-
-    flash(f"✅ User '{username}' created", "success")
-    return redirect(url_for("settings", section="users"))
-
-@app.route("/reset_user_password", methods=["POST"])
-@login_required
-@is_admin_required
-def reset_user_password():
-    user_id = request.form.get("user_id")
-    user = User.query.get(user_id)
-    if user:
-        user.set_password("changeme123")
-        db.session.commit()
-        flash(f"🔁 Password reset for {user.username} to 'changeme123'", "info")
-    else:
-        flash("❌ User not found", "danger")
-    return redirect(url_for("settings", section="users"))
-
-@app.route("/delete_user", methods=["POST"])
-@login_required
-@is_admin_required
-def delete_user():
-    user_id = request.form.get("user_id")
-    user = User.query.get(user_id)
-    if user and not user.is_admin:
-        db.session.delete(user)
-        db.session.commit()
-        flash(f"🗑️ User {user.username} deleted", "success")
-    else:
-        flash("❌ Cannot delete admin or invalid user", "danger")
-    return redirect(url_for("settings", section="users"))
 
 @app.route('/images/<path:filename>')
 @login_required

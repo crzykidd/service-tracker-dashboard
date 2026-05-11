@@ -1,11 +1,15 @@
 # extensions.py
 import sqlite3
 
+from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
 db = SQLAlchemy()
+
+login_manager = LoginManager()
+login_manager.login_view = "auth.login"
 
 
 @event.listens_for(Engine, "connect")
