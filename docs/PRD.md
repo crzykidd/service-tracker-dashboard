@@ -123,16 +123,21 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
 ### 3.1 Module layout (target, v0.5.0)
 
 ```
-app.py              ← thin Flask app factory; wires extensions, blueprints, jobs
-extensions.py       ← SQLAlchemy, login manager, scheduler instances
-models.py           ← SQLAlchemy models (Service, User, WidgetValue, ...)
-schemas.py          ← pydantic request/response schemas (register payloads, etc.)
-routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>
-routes_api.py       ← /api/v1/register, /api/register (compat)
-routes_widgets.py   ← widget endpoints
-routes_auth.py      ← /login, /logout, user mgmt
-jobs.py             ← health check loop, widget refresh loop, backup + retention
-health.py           ← /healthz (liveness), /readyz (readiness)
+app.py              ← thin Flask app factory; wires extensions, blueprints
+extensions.py       ← SQLAlchemy + Flask-Login singletons
+models.py           ← SQLAlchemy models (ServiceEntry, User, Widget, WidgetValue, Group)
+schemas.py          ← pydantic request/response schemas (populated in Phase 5)
+routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
+                      /add, /edit/<id>, group CRUD, /images/<filename>
+routes_api.py       ← /api/register (Phase 5 adds canonical /api/v1/register)
+routes_widgets.py   ← /widget_config/<widget_name>
+routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
+                      Flask-Login user_loader
+jobs.py             ← URL health-check loop, widget refresh loop,
+                      daily backup (+ retention prune in Phase 3),
+                      verify-and-fetch-missing-icons startup sweep
+health.py           ← /healthz (liveness). /readyz deferred to a later
+                      release.
 settings_loader.py  ← unchanged in spirit; loaded once at startup
 image_utils.py      ← icon fetch + cache
 templates/          ← Jinja templates
@@ -145,17 +150,22 @@ alembic/            ← migrations
 
 - **`app.py`** — `create_app()` factory: load settings once, init
   extensions, register blueprints, register error handlers, register
-  template filters, schedule jobs.
-- **`extensions.py`** — extension singletons. No app context here; the
-  factory binds them.
+  template filters. Does not start background work on import —
+  `start_background_workers(app)` is invoked from the `__main__`
+  block once migrations have completed.
+- **`extensions.py`** — extension singletons (`db`, `login_manager`).
+  No app context here; the factory binds them.
 - **`models.py`** — SQLAlchemy models. Single source of truth for the
   schema; migrations track changes.
 - **`schemas.py`** — pydantic schemas for inbound payloads (register
   endpoint specifically). Decouples wire format from DB columns.
+  Empty in this release; populated in Phase 5.
 - **`routes_*.py`** — Flask blueprints. Each file is one cohesive
   surface area; routes don't reach into unrelated tables.
-- **`jobs.py`** — APScheduler-driven background work. Single place to
-  define schedules, named jobs, and shutdown hooks.
+- **`jobs.py`** — APScheduler-driven background work plus the
+  startup icon-verification sweep. Each function takes the app
+  explicitly and pushes its own context, so jobs.py keeps no
+  module-level `app` reference.
 - **`health.py`** — process-level health for ops/monitoring; not the
   same as URL health checks (those live in `jobs.py`).
 
