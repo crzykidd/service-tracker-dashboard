@@ -23,6 +23,11 @@ url_healthcheck_interval: 300
 # How often do we reload the widget data default 300 seconds
 widget_background_reload: 900
 
+# Number of days of widget value history to retain. Rows in the
+# widget_value table whose last_updated is older than this are
+# deleted by a daily background job (00:15 server local time).
+widget_value_retention_days: 30
+
 # how long to default the user session, default is 120 minutes
 # can be set as USER_SESSION_LENGTH in ENV
 user_session_length: 120

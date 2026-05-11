@@ -8,13 +8,11 @@ reference here.
 
 Public entry points:
 - `start_background_workers(app)` — registers the APScheduler jobs
-  (widget refresh, daily backup) and starts the URL health-check
-  thread. Called once from the __main__ block after migrations.
+  (widget refresh, daily backup, widget_value retention prune) and
+  starts the URL health-check thread. Called once from the __main__
+  block after migrations.
 - `verify_and_fetch_missing_icons(app)` — one-shot icon sweep run
   at startup.
-
-Phase 3 (a later phase) will add the widget_value retention job to
-this file.
 """
 
 import importlib
@@ -23,7 +21,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 
 import requests
@@ -194,6 +192,41 @@ def run_scheduled_backup(app):
             logger.info(f"🧹 Removed {removed} expired backup(s) from {backup_dir}")
 
 
+def prune_widget_values(app):
+    """Delete widget_value rows whose last_updated is older than the
+    configured retention window.
+
+    The widget refresh loop upserts in place — one row per
+    (widget_id, widget_value_key) — so old `last_updated` timestamps
+    mean the key has been abandoned (widget configuration removed the
+    field). Pruning keeps the table from growing unbounded.
+
+    Wrapped in try/except so a transient DB error never kills the
+    scheduler. Follows the same pattern Phase 7a applied to the URL
+    health-check loop.
+    """
+    with app.app_context():
+        try:
+            retention_days = int(app.config.get("widget_value_retention_days", 30))
+            cutoff = datetime.utcnow() - timedelta(days=retention_days)
+            deleted = (
+                WidgetValue.query
+                .filter(WidgetValue.last_updated < cutoff)
+                .delete(synchronize_session=False)
+            )
+            db.session.commit()
+            logger.info(
+                f"🧹 Pruned {deleted} widget_value row(s) older than "
+                f"{retention_days} days (cutoff: {cutoff.isoformat()})."
+            )
+        except Exception:
+            logger.exception("Widget value retention prune failed; rolling back.")
+            try:
+                db.session.rollback()
+            except Exception:
+                logger.exception("Failed to roll back session after prune error")
+
+
 # Check images at startup
 def verify_and_fetch_missing_icons(app):
     image_dir = app.config['IMAGE_DIR']
@@ -233,6 +266,13 @@ def start_background_workers(app):
         CronTrigger(hour=0, minute=5),
         id='scheduled_backup_job',
         name='Run daily backup',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        partial(prune_widget_values, app),
+        CronTrigger(hour=0, minute=15),
+        id='widget_value_prune_job',
+        name='Prune widget_value rows past retention window',
         replace_existing=True
     )
     scheduler.start()

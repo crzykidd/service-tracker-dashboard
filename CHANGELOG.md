@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields, so a planned "export overridden labels" feature can diff
   the user's edited value against the notifier's. Not surfaced in
   the UI in v0.5.0.
-- 30-day rolling retention for `widget_value`, enforced by a scheduled
-  prune job.
+- Rolling retention for `widget_value`, enforced by a scheduled
+  daily prune job (00:15 server local time). Window is configurable
+  via the new `widget_value_retention_days` setting (default 30).
 - Application-level mutex around the register upsert to serialize
   near-simultaneous writes for the same logical service.
 - `Deprecation` and `Sunset` response headers on `/api/register`.
