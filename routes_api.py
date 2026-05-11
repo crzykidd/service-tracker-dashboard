@@ -52,9 +52,11 @@ _UPSERT_LOCK = threading.Lock()
 def _check_bearer_auth(endpoint_label):
     """Validate the Authorization header against `api_token`.
 
-    Returns None on success, or a Flask (response, status) tuple on
-    failure. Shared between /api/v1/register and /api/register so
-    the auth contract stays in one place.
+    Returns None on success, or a 401 Flask Response on failure.
+    Shared between /api/v1/register and /api/register so the auth
+    contract stays in one place. The compat shim wraps the failure
+    response with the deprecation headers; the v1 endpoint returns
+    it as-is.
     """
     auth_header = request.headers.get("Authorization", "")
     expected = f"Bearer {current_app.config['api_token']}"
@@ -70,7 +72,79 @@ def _check_bearer_auth(endpoint_label):
         logger.warning(f"⚠️ Repeated unauthorized access from {client_ip}")
         unauthorized_log_tracker[client_ip] = now
 
-    return jsonify({"error": "Unauthorized"}), 401
+    response = jsonify({"error": "Unauthorized"})
+    response.status_code = 401
+    return response
+
+
+# Legacy → canonical key remap. The compat shim is the ONLY place
+# this happens. /api/v1/register does not look at these names — a
+# producer that sends a legacy key against v1 gets a 400.
+_LEGACY_KEY_MAP = {
+    "group": "group_name",
+    "internal_health": "internal_health_check_enabled",
+    "internal.health": "internal_health_check_enabled",
+    "external_health": "external_health_check_enabled",
+    "external.health": "external_health_check_enabled",
+    "docker_host": "host",
+    "icon": "image_icon",
+    "sort.priority": "sort_priority",
+}
+
+
+def _remap_legacy_to_canonical(data):
+    """Translate a legacy /api/register payload to a canonical dict.
+
+    - Canonical keys present in `data` are passed through.
+    - Legacy keys are remapped to their canonical name, but only
+      when the canonical key is not already explicitly set (so a
+      producer that sends both `group_name` and `group` gets the
+      `group_name` value).
+    - Keys not in the canonical schema and not in the legacy map
+      are silently dropped — matches v0.4.x behavior (the existing
+      handler ignored them; in debug it logged a warning).
+
+    Bool coercion is NOT done here — upsert_service runs values
+    through `parse_bool` itself, which handles both real bools and
+    the "true"/"false" string variants that legacy producers send.
+    """
+    canonical = {}
+    schema_fields = RegisterPayload.model_fields
+    for key, value in data.items():
+        if key in schema_fields:
+            canonical[key] = value
+    for legacy_key, canonical_key in _LEGACY_KEY_MAP.items():
+        if legacy_key in data and canonical_key not in canonical:
+            canonical[canonical_key] = data[legacy_key]
+    return canonical
+
+
+# Per-IP rate limit on the deprecation warning log. Logging every
+# /api/register call would drown out everything else; once per
+# producer per hour is enough to drive the migration conversation.
+_DEPRECATION_LOG_TRACKER = {}
+
+
+def _maybe_log_deprecation(client_ip):
+    now = datetime.utcnow()
+    last_log = _DEPRECATION_LOG_TRACKER.get(client_ip)
+    if not last_log or (now - last_log) > timedelta(hours=1):
+        logger.warning(
+            f"⚠️ Deprecated /api/register called by {client_ip}; "
+            f"migrate this producer to /api/v1/register before v0.6.0."
+        )
+        _DEPRECATION_LOG_TRACKER[client_ip] = now
+
+
+def _add_deprecation_headers(response):
+    """Attach Deprecation + successor-version Link to a Response.
+
+    No Sunset header in v0.5.0 — a wrong Sunset date is worse than
+    none. v0.6.0 with a firm cutover timeline can add it.
+    """
+    response.headers['Deprecation'] = 'true'
+    response.headers['Link'] = '</api/v1/register>; rel="successor-version"'
+    return response
 
 
 def upsert_service(canonical, app):
@@ -291,170 +365,55 @@ def api_v1_register():
 
 @api_bp.route('/api/register', methods=['POST'])
 def api_register():
+    """Legacy compat shim. Deprecated; will be removed in v0.6.0.
 
-    auth_header = request.headers.get("Authorization", "")
-    expected = f"Bearer {current_app.config['api_token']}"
-    client_ip = request.remote_addr
-    now = datetime.utcnow()
+    Remaps the historical key spellings to canonical and calls the
+    same shared upsert as /api/v1/register. The remap is the ONE
+    place legacy keys are interpreted; no other code in this file
+    looks at `group`, `docker_host`, `internal.health`, etc.
 
-    # Rate-limit unauthorized logs to once every 2 minutes per IP
-    if auth_header != expected:
-        logger.info(f"401 - Unauthorized API access from {client_ip} to /api/register")
+    Unlike the v1 endpoint, this shim does NOT route through the
+    pydantic schema: real-world v0.4.x payloads may carry keys
+    pydantic-strict would reject (e.g., experimental `timestamp`
+    variants), and the goal of the shim is translation, not
+    enforcement. Unknown keys are silently dropped by the remap.
 
-        # Rate-limited WARNING (optional)
-        last_log_time = unauthorized_log_tracker.get(client_ip)
-        if not last_log_time or (now - last_log_time) > timedelta(minutes=2):
-            logger.warning(f"⚠️ Repeated unauthorized access from {client_ip}")
-            unauthorized_log_tracker[client_ip] = now
+    Every response includes `Deprecation: true` and a Link header
+    pointing to /api/v1/register. A per-IP rate-limited warning is
+    logged once per hour to drive producer migration without
+    flooding the log.
+    """
+    auth_failure = _check_bearer_auth("/api/register")
+    if auth_failure is not None:
+        return _add_deprecation_headers(auth_failure)
 
-        return jsonify({"error": "Unauthorized"}), 401
+    _maybe_log_deprecation(request.remote_addr)
 
-    data = request.get_json()
-    # 🔁 Remap STD-style keys to internal DB fields
-    label_key_map = {
-        "group": "group_name",
-        "internal_health": "internal_health_check_enabled",
-        "internal.health": "internal_health_check_enabled",  # Add this
-        "external_health": "external_health_check_enabled",
-        "external.health": "external_health_check_enabled",  # Add this
-        "docker_host": "host",
-        "icon": "image_icon",
-    }
-    for src_key, target_key in label_key_map.items():
-        if src_key in data and target_key not in data:
-            data[target_key] = data[src_key]
-    # For debug: log any unexpected fields (not known or remapped)
-    if current_app.debug:
-        known_fields = {
-            "host", "docker_host", "container_name", "container_id", "internalurl", "externalurl",
-            "stack_name", "docker_status", "group_name", "group", "started_at",
-            "internal_health_check_enabled", "external_health_check_enabled",
-            "internal.health", "external.health",
-            "image_name", "image_icon", "timestamp", "sort.priority"
-        }
-        # Include remapped fields (e.g., group → group_name)
-        known_fields.update(label_key_map.values())
-
-        for key in data:
-            if key not in known_fields:
-                logger.warning(f"⚠️ Unexpected STD label received (ignored): {key} = {data[key]}")
-
+    raw = request.get_json(silent=True)
+    if not isinstance(raw, dict):
+        response = jsonify({"error": "Request body must be a JSON object"})
+        response.status_code = 400
+        return _add_deprecation_headers(response)
 
     if current_app.debug:
-        logger.info("🔍 Received API payload:")
-        for k, v in data.items():
+        logger.info("🔍 Received /api/register payload:")
+        for k, v in raw.items():
             logger.info(f"    {k}: {v}")
+        unknown = [
+            k for k in raw
+            if k not in RegisterPayload.model_fields and k not in _LEGACY_KEY_MAP
+        ]
+        if unknown:
+            logger.warning(f"⚠️ Unknown keys in legacy payload (dropped): {unknown}")
 
-    if not data.get('host') or not data.get('container_name'):
-        return jsonify({"error": "Missing host or container_name"}), 400
+    canonical = _remap_legacy_to_canonical(raw)
 
-    # ✅ Use shared metadata resolver
-    image_meta = resolve_image_metadata(
-        image_raw=data.get("image_name"),
-        image_icon_override=data.get("image_icon"),
-        fallback_name=data.get("container_name"),
-        image_dir=current_app.config['IMAGE_DIR'],
-        failed_icon_cache=failed_icon_cache,
-        retry_interval=RETRY_INTERVAL,
-        logger=logger,
-        debug=current_app.debug
-    )
+    if not canonical.get('host') or not canonical.get('container_name'):
+        response = jsonify({"error": "Missing host or container_name"})
+        response.status_code = 400
+        return _add_deprecation_headers(response)
 
-    registry = image_meta["registry"]
-    owner = image_meta["owner"]
-    img_name = image_meta["image_name"]
-    tag = image_meta["image_tag"]
-    image_icon = image_meta["image_icon"]
-
-    # Update or create entry
-    # Handle group assignment
-    group_name = data.get("group_name")
-    group_obj = None
-
-    if group_name:
-        group_obj = Group.query.filter_by(group_name=group_name).first()
-        if not group_obj:
-            group_obj = Group(group_name=group_name)
-            db.session.add(group_obj)
-            db.session.flush()  # ensure group_obj.id is available
-    entry = ServiceEntry.query.filter_by(container_name=data['container_name'], host=data['host']).first()
-
-    if entry:
-        if entry.is_static:
-            logger.info(f"Skipping update for '{entry.container_name}' on '{entry.host}' — static lock enabled.")
-            return jsonify({"status": "skipped", "reason": "static lock"}), 200
-        entry.last_updated = datetime.now()
-        entry.last_api_update = datetime.now()
-        if "sort.priority" in data:
-            try:
-                entry.sort_priority = int(data["sort.priority"])
-            except (TypeError, ValueError):
-                logger.warning(f"⚠️ Invalid sort priority: {data['sort.priority']}")
-
-
-        if data.get("container_id"):
-            entry.container_id = data["container_id"]
-        if data.get("internalurl"):
-            entry.internalurl = data["internalurl"]
-        if data.get("externalurl"):
-            entry.externalurl = data["externalurl"]
-        if data.get("stack_name"):
-            entry.stack_name = data["stack_name"]
-        if data.get("docker_status"):
-            entry.docker_status = data["docker_status"]
-
-        if "group_name" in data:
-            entry.group_id = group_obj.id if group_obj else None
-
-        if data.get("started_at"):
-            entry.started_at = data["started_at"]
-
-        if "internal_health_check_enabled" in data:
-            parsed = parse_bool(data["internal_health_check_enabled"])
-            if parsed is not None:
-                entry.internal_health_check_enabled = parsed
-
-        if "external_health_check_enabled" in data:
-            parsed = parse_bool(data["external_health_check_enabled"])
-            if parsed is not None:
-                entry.external_health_check_enabled = parsed
-
-        if registry:
-            entry.image_registry = registry
-        if owner:
-            entry.image_owner = owner
-        if img_name:
-            entry.image_name = img_name
-        if image_icon:
-            entry.image_icon = image_icon
-        if tag:
-            entry.image_tag = tag
-
-
-
-    else:
-        entry = ServiceEntry(
-            host=data['host'],
-            container_name=data['container_name'],
-            container_id=data.get('container_id'),
-            internalurl=data.get('internalurl'),
-            externalurl=data.get('externalurl'),
-            stack_name=data.get('stack_name'),
-            docker_status=data.get('docker_status'),
-            internal_health_check_enabled=parse_bool(data.get('internal_health_check_enabled')),
-            external_health_check_enabled=parse_bool(data.get('external_health_check_enabled')),
-            group_id=group_obj.id if group_obj else None,
-            started_at=data.get('started_at'),
-            last_updated=datetime.now(),
-            last_api_update=datetime.now(),
-            image_registry=registry,
-            image_owner=owner,
-            image_name=img_name,
-            image_icon=image_icon,
-            image_tag=tag
-        )
-        db.session.add(entry)
-
-
-    db.session.commit()
-    return jsonify(entry.to_dict()), 200 if entry else 201
+    body, status = upsert_service(canonical, current_app._get_current_object())
+    response = jsonify(body)
+    response.status_code = status
+    return _add_deprecation_headers(response)

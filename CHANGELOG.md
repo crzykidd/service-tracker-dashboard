@@ -29,7 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the new `widget_value_retention_days` setting (default 30).
 - Application-level mutex around the register upsert to serialize
   near-simultaneous writes for the same logical service.
-- `Deprecation` and `Sunset` response headers on `/api/register`.
+- `Deprecation: true` response header on `/api/register`, plus a
+  `Link: </api/v1/register>; rel="successor-version"` pointer. A
+  per-IP-per-hour rate-limited WARNING log fires when a legacy
+  producer hits the shim. (No `Sunset` header in v0.5.0 — a wrong
+  Sunset date is worse than none. v0.6.0 will add it once its
+  release timeline is firm.)
 - `/healthz` liveness endpoint returning `{"status": "ok"}` (HTTP 200)
   as long as the WSGI worker is up. Unauthenticated; intended for
   container orchestrators and external uptime checks.
