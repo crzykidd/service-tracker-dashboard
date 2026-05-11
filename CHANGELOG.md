@@ -20,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prune job.
 - Application-level mutex around the register upsert to serialize
   near-simultaneous writes for the same logical service.
-- Top-level error handling around the URL health check loop so a
-  transient failure in one pass doesn't kill the loop.
 - `Deprecation` and `Sunset` response headers on `/api/register`.
 
 ### Changed
@@ -83,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write lock before being killed when the alembic process exited.
 - Removed a duplicate `health_check_loop` thread start that had two
   daemon threads racing each other on every production startup.
+- URL health-check loop wrapped in a per-iteration `try / except` so a
+  transient `requests` failure, DNS hiccup, or unexpected exception no
+  longer escapes the worker thread and silently kills health checks
+  until the process restarts. The exception is logged with a full
+  traceback and the loop continues.
 
 ---
 

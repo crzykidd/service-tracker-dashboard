@@ -1600,44 +1600,60 @@ def health_check_loop():
     URL_HEALTHCHECK_INTERVAL = app.config.get("url_healthcheck_interval", 60)
 
     with app.app_context():
+        iteration = 0
         while True:
             time.sleep(URL_HEALTHCHECK_INTERVAL)
-            log_output = ["\U0001f504 Running internal health checks..."]
-            entries = ServiceEntry.query.all()
+            iteration += 1
+            try:
+                log_output = ["\U0001f504 Running internal health checks..."]
+                entries = ServiceEntry.query.all()
 
-            for entry in entries:
-                show_log = False
-                internal_status = ""
-                external_status = ""
+                for entry in entries:
+                    show_log = False
+                    internal_status = ""
+                    external_status = ""
 
-                if entry.internal_health_check_enabled and entry.internalurl:
-                    show_log = True
-                    try:
-                        response = requests.get(entry.internalurl, timeout=5)
-                        internal_status = str(response.status_code)
-                        entry.internal_health_check_status = internal_status
-                    except Exception as e:
-                        internal_status = f"Error: {type(e).__name__}"
-                        entry.internal_health_check_status = internal_status
-                    entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    if entry.internal_health_check_enabled and entry.internalurl:
+                        show_log = True
+                        try:
+                            response = requests.get(entry.internalurl, timeout=5)
+                            internal_status = str(response.status_code)
+                            entry.internal_health_check_status = internal_status
+                        except Exception as e:
+                            internal_status = f"Error: {type(e).__name__}"
+                            entry.internal_health_check_status = internal_status
+                        entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                if entry.external_health_check_enabled and entry.externalurl:
-                    show_log = True
-                    try:
-                        response = requests.get(entry.externalurl, timeout=5)
-                        external_status = str(response.status_code)
-                        entry.external_health_check_status = external_status
-                    except Exception as e:
-                        external_status = f"Error: {type(e).__name__}"
-                        entry.external_health_check_status = external_status
-                    entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    if entry.external_health_check_enabled and entry.externalurl:
+                        show_log = True
+                        try:
+                            response = requests.get(entry.externalurl, timeout=5)
+                            external_status = str(response.status_code)
+                            entry.external_health_check_status = external_status
+                        except Exception as e:
+                            external_status = f"Error: {type(e).__name__}"
+                            entry.external_health_check_status = external_status
+                        entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                if show_log:
-                    log_output.append(f"{entry.container_name} - Internal: {internal_status or 'N/A'} External: {external_status or 'N/A'}")
+                    if show_log:
+                        log_output.append(f"{entry.container_name} - Internal: {internal_status or 'N/A'} External: {external_status or 'N/A'}")
 
-            db.session.commit()
-            for line in log_output:
-                logger.info(line)
+                db.session.commit()
+                for line in log_output:
+                    logger.info(line)
+            except Exception:
+                # Safety net: keep the worker thread alive across unexpected
+                # failures (DB errors, surprise requests exceptions, etc.).
+                service_count = len(entries) if "entries" in locals() else -1
+                logger.exception(
+                    "Health-check iteration %d failed (services=%d); continuing.",
+                    iteration,
+                    service_count,
+                )
+                try:
+                    db.session.rollback()
+                except Exception:
+                    logger.exception("Failed to roll back session after health-check error")
 
 
 def run_scheduled_backup():
