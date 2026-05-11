@@ -88,7 +88,7 @@
            onclick="window.open('{{ item.entry.internalurl if item.entry.internalurl else item.entry.externalurl }}', '_blank')">
         <div>
           {% if item.entry.image_icon %}
-            <img src="{{ url_for('serve_image', filename=item.entry.image_icon) }}"
+            <img src="{{ url_for('dashboard.serve_image', filename=item.entry.image_icon) }}"
                  alt="icon"
                  onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'text-gray-500\'>📦</span>';">
           {% else %}

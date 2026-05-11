@@ -62,7 +62,7 @@ def login():
             login_user(user)  # <-- This is the key line you’re missing
             session.permanent = True
             flash("Logged in successfully.", "success")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("dashboard.dashboard"))
         else:
             flash("Invalid username or password.", "error")
 
@@ -83,17 +83,17 @@ def set_user_password(user_id):
     new_password = request.form.get("new_password", "").strip()
     if not new_password or len(new_password) < 6:
         flash("Password must be at least 6 characters", "error")
-        return redirect(url_for("settings"))
+        return redirect(url_for("dashboard.settings"))
 
     user = User.query.get(user_id)
     if not user:
         flash("User not found", "error")
-        return redirect(url_for("settings"))
+        return redirect(url_for("dashboard.settings"))
 
     user.set_password(new_password)
     db.session.commit()
     flash(f"Password updated for {user.username}", "success")
-    return redirect(url_for("settings"))
+    return redirect(url_for("dashboard.settings"))
 
 
 @auth_bp.route("/add_user", methods=["POST"])
@@ -107,7 +107,7 @@ def add_user():
 
     if User.query.filter((User.username == username) | (User.email == email)).first():
         flash("User already exists with this username or email", "danger")
-        return redirect(url_for("settings", section="users"))
+        return redirect(url_for("dashboard.settings", section="users"))
 
     user = User(username=username, email=email, is_admin=is_admin)
     user.set_password(password)
@@ -115,7 +115,7 @@ def add_user():
     db.session.commit()
 
     flash(f"✅ User '{username}' created", "success")
-    return redirect(url_for("settings", section="users"))
+    return redirect(url_for("dashboard.settings", section="users"))
 
 
 @auth_bp.route("/reset_user_password", methods=["POST"])
@@ -130,7 +130,7 @@ def reset_user_password():
         flash(f"🔁 Password reset for {user.username} to 'changeme123'", "info")
     else:
         flash("❌ User not found", "danger")
-    return redirect(url_for("settings", section="users"))
+    return redirect(url_for("dashboard.settings", section="users"))
 
 
 @auth_bp.route("/delete_user", methods=["POST"])
@@ -145,4 +145,4 @@ def delete_user():
         flash(f"🗑️ User {user.username} deleted", "success")
     else:
         flash("❌ Cannot delete admin or invalid user", "danger")
-    return redirect(url_for("settings", section="users"))
+    return redirect(url_for("dashboard.settings", section="users"))

@@ -111,7 +111,7 @@
         <div class="bg-gray-800 rounded shadow p-6">
           <h3 class="text-lg font-semibold text-white mb-2 border-b border-gray-600 pb-1">Backup Service Data</h3>
           <p class="text-sm text-gray-400 mb-4">Manage YAML backups of all your service entries.</p>
-          <form action="{{ url_for('settings') }}" method="POST" class="space-y-4">
+          <form action="{{ url_for('dashboard.settings') }}" method="POST" class="space-y-4">
             <input type="hidden" name="action" value="backup">
             <button type="submit" name="backup_operation" value="download_all"
                     class="w-64 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 px-4 rounded-md shadow">
@@ -128,7 +128,7 @@
         <div class="bg-gray-800 rounded shadow p-6">
           <h3 class="text-lg font-semibold text-white mb-2 border-b border-gray-600 pb-1">Restore Service Data</h3>
           <p class="text-sm text-gray-400 mb-4">Restore service entries from a YAML backup file.</p>
-          <form action="{{ url_for('settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+          <form action="{{ url_for('dashboard.settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
             <input type="hidden" name="action" value="restore">
 
             <!-- Restore Source Choice -->
@@ -277,7 +277,7 @@
                 <tr class="hover:bg-gray-800">
                   <td class="px-4 py-2">{{ group.id }}</td>
                   <td class="px-4 py-2">
-                    <form method="POST" action="{{ url_for('update_group') }}">
+                    <form method="POST" action="{{ url_for('dashboard.update_group') }}">
                       <input type="hidden" name="group_id" value="{{ group.id }}">
                       <input type="text" name="group_name" value="{{ group.group_name }}" class="form-input">
                   </td>
@@ -293,13 +293,13 @@
                   
                   <td class="px-4 py-2 text-right">
                     <div class="flex gap-2 items-center justify-end whitespace-nowrap">
-                      <form method="POST" action="{{ url_for('update_group') }}">
+                      <form method="POST" action="{{ url_for('dashboard.update_group') }}">
                         <input type="hidden" name="group_id" value="{{ group.id }}">
                         <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs">Save</button>
                       </form>
 
                       {% if group.services_count == 0 %}
-                      <form method="POST" action="{{ url_for('delete_group') }}">
+                      <form method="POST" action="{{ url_for('dashboard.delete_group') }}">
                         <input type="hidden" name="group_id" value="{{ group.id }}">
                         <button type="submit" onclick="return confirm('Are you sure you want to delete this group?')"
                                 class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete</button>
@@ -310,7 +310,7 @@
                 </tr>                
                 {% endfor %}
                 <tr class="bg-gray-900 border-t border-gray-700">
-                <form method="POST" action="{{ url_for('add_group') }}">
+                <form method="POST" action="{{ url_for('dashboard.add_group') }}">
                   <td class="px-4 py-2 text-gray-500 italic">new</td>
                   <td class="px-4 py-2">
                     <input type="text" name="group_name" placeholder="New group name" class="form-input" required>

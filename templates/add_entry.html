@@ -9,7 +9,7 @@
   <div class="bg-gray-800 shadow-2xl rounded-xl p-6 sm:p-8 md:p-10">
     <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
 
-    <form action="{{ url_for('add_entry') }}" method="POST">
+    <form action="{{ url_for('dashboard.add_entry') }}" method="POST">
       <!-- Host -->
       <div class="mb-5">
         <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Host</label>

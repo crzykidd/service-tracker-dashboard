@@ -46,7 +46,7 @@
 <div class="flex justify-center px-4 py-8">
   <div class="w-full max-w-3xl">
     <h1 class="text-3xl font-bold text-center mb-8">Edit Service Entry</h1>
-    <form action="{{ url_for('edit_entry', id=entry.id, ref=ref) }}" method="POST">
+    <form action="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}" method="POST">
       <input type="hidden" name="force_update_icon" value="true">
 
       <div class="space-y-5">
@@ -157,7 +157,7 @@
     <div class="bg-dashboard-info-box rounded-lg p-6">
       <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
       <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
-      <form action="{{ url_for('edit_entry', id=entry.id, ref=ref) }}" method="POST">
+      <form action="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}" method="POST">
         <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
           Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
         </label>

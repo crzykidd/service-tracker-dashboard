@@ -89,13 +89,13 @@
                   {% set target_url = entry.internalurl or entry.externalurl %}
                   {% if target_url %}
                     <a href="{{ target_url }}" target="_blank">
-                      <img src="{{ url_for('serve_image', filename=entry.image_icon) }}"
+                      <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
                           class="logo-icon"
                           alt="Logo"
                           onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
                     </a>
                   {% else %}
-                    <img src="{{ url_for('serve_image', filename=entry.image_icon) }}"
+                    <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
                         class="logo-icon"
                         alt="Logo"
                         onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
@@ -256,7 +256,7 @@
 
 
             <td class="px-3 py-2">
-              <a href="{{ url_for('edit_entry', id=entry.id, ref=request.full_path) }}" class="border border-yellow-400 text-yellow-300 text-xs px-2 py-0.5 rounded hover:bg-yellow-400 hover:text-black transition">Edit</a>
+              <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}" class="border border-yellow-400 text-yellow-300 text-xs px-2 py-0.5 rounded hover:bg-yellow-400 hover:text-black transition">Edit</a>
               {% if entry.is_static %}
                 <span title="Static entry — API updates blocked" class="ml-2">🔒</span>
               {% endif %}
