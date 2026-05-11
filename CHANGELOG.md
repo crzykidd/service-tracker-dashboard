@@ -14,8 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `/api/v1/register` endpoint accepting canonical key names
   (`host`, `group`, `internal_health_check_enabled`, ...) validated by
   pydantic schemas.
-- Composite index on `(host, container_name)` — the logical key for
-  the register upsert path.
+- Composite index on `service_entry(host, container_name)` — the
+  logical key for the register upsert path. Non-unique; concurrency
+  safety comes from the application-level mutex (see below), not
+  from a database constraint.
+- New `notifier_reported_group_name` and `notifier_reported_sort_priority`
+  columns on `service_entry`. The v0.5.0 register handler writes
+  what the notifier most recently reported for these user-overridable
+  fields, so a planned "export overridden labels" feature can diff
+  the user's edited value against the notifier's. Not surfaced in
+  the UI in v0.5.0.
 - 30-day rolling retention for `widget_value`, enforced by a scheduled
   prune job.
 - Application-level mutex around the register upsert to serialize

@@ -43,6 +43,17 @@ class ServiceEntry(db.Model):
     widget = db.relationship('Widget', backref='services', lazy=True)
     sort_priority = db.Column(db.Integer, nullable=True, default=None)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
+    # Captured from the most recent notifier register payload for this
+    # service. Lets the planned "export overridden labels" feature
+    # diff the user-edited value against what the notifier reported,
+    # without losing one to the other on every register call.
+    # Populated by the v0.5.0 register handler; read by no one yet.
+    notifier_reported_group_name = db.Column(db.String(100), nullable=True)
+    notifier_reported_sort_priority = db.Column(db.Integer, nullable=True, default=None)
+
+    __table_args__ = (
+        db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
+    )
 
 # fields for backup
     def to_dict(self):
