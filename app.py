@@ -31,6 +31,7 @@ from extensions import db
 from settings_loader import load_settings
 from image_utils import resolve_image_metadata, parse_bool, fetch_icon_if_missing
 from models import Group, ServiceEntry, User, Widget, WidgetValue
+from health import health_bp
 
 
 DATABASE_PATH = '/config/services.db'
@@ -78,6 +79,8 @@ def load_user(user_id):
 from flask_login import current_user
 
 db.init_app(app)
+
+app.register_blueprint(health_bp)
 
 
 def is_admin_required(f):

@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Application-level mutex around the register upsert to serialize
   near-simultaneous writes for the same logical service.
 - `Deprecation` and `Sunset` response headers on `/api/register`.
+- `/healthz` liveness endpoint returning `{"status": "ok"}` (HTTP 200)
+  as long as the WSGI worker is up. Unauthenticated; intended for
+  container orchestrators and external uptime checks.
 
 ### Changed
 - `app.py` split into focused modules: `routes_dashboard.py`,
