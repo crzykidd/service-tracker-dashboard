@@ -199,6 +199,17 @@ class ServiceEntry(db.Model):
 
         return data
 
+    @property
+    def is_docker_status_stale(self):
+        if self.is_static:  # Static entries might not receive frequent API updates
+            return False
+        if self.last_api_update:
+            # Consider stale if last_api_update is older than 5 minutes
+            return (datetime.now() - self.last_api_update) > timedelta(minutes=5)
+        # If no API update has ever been recorded, and it's not static, consider it stale or unknown.
+        # For a newly added dynamic entry, this would be True until the first API update.
+        return True
+
 
 class Widget(db.Model):
     __tablename__ = 'widget'
@@ -271,19 +282,6 @@ class User(db.Model, UserMixin):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-
-# Add this inside the ServiceEntry class in your app.py
-
-    @property
-    def is_docker_status_stale(self):
-        if self.is_static:  # Static entries might not receive frequent API updates
-            return False
-        if self.last_api_update:
-            # Consider stale if last_api_update is older than 5 minutes
-            return (datetime.now() - self.last_api_update) > timedelta(minutes=5)
-        # If no API update has ever been recorded, and it's not static, consider it stale or unknown.
-        # For a newly added dynamic entry, this would be True until the first API update.
-        return True
 
 @app.template_filter('time_since')
 def time_since(dt):

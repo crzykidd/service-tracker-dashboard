@@ -86,6 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer escapes the worker thread and silently kills health checks
   until the process restarts. The exception is logged with a full
   traceback and the loop continues.
+- "Stale" tile styling on `/tiled_dash` now actually fires.
+  `is_docker_status_stale` was defined at the wrong indentation level
+  and silently attached to `User` instead of `ServiceEntry`, so the
+  template's reference resolved to `Undefined` (always falsy) and stale
+  tiles never received the stale colour class. Property is now
+  correctly attached to `ServiceEntry`.
 
 ---
 

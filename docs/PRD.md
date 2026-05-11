@@ -191,7 +191,7 @@ Four core SQLAlchemy models in `app.py`:
 | S1  | No indexes beyond primary keys. `(host, container_name)` is hit on every register call and needs an index. |
 | S2  | `widget_value` has no retention. At ~45 services × frequent samples, this grows unboundedly. |
 | S3  | `User.session_token` is never read (it is *written* by `generate_session_token()` on user creation, but no code ever reads it back) — half-finished feature; remove. *(Resolved in v0.5.0.)* |
-| S4  | ~~`is_docker_status_stale` property exists on `Service` but is never referenced — dead code.~~ Corrected: the property is consumed by `templates/tiled_dash.html` when deciding the "stale" tile colour, so it is **not** dead code. No removal in v0.5.0. |
+| S4  | `is_docker_status_stale` property was defined at the wrong indentation level and silently attached to `User` instead of `ServiceEntry`. `templates/tiled_dash.html` references `entry.is_docker_status_stale` on `ServiceEntry` rows, so Jinja resolved it to `Undefined` (always falsy) and the stale tile styling never fired. *(Fixed in v0.5.0: property re-attached to `ServiceEntry`.)* |
 
 ---
 
@@ -220,7 +220,7 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 | D2  | View duplication    | `/`, `/tiled_dash`, `/compact_dash` duplicate ~150 lines of grouping/sorting logic. |
 | D3  | Icon fetch dup.     | Icon fetching is duplicated between `image_utils.py` and inline calls in `/add`, `/edit`. |
 | D4  | Auth half-finished  | `User.session_token` written on user creation but never read. *(Resolved in v0.5.0.)* |
-| D5  | Dead code           | ~~`is_docker_status_stale` property never used.~~ Corrected: referenced by `templates/tiled_dash.html` for stale tile styling. Not actually dead; not removed in v0.5.0. |
+| D5  | Stale styling broken | `is_docker_status_stale` property indented onto `User` instead of `ServiceEntry`. Template references it on `ServiceEntry`, so stale tile styling never fired. *(Resolved in v0.5.0.)* |
 | D6  | Settings drift      | `settings.example.yml` says `url_refresh_interval`; code reads `url_healthcheck_interval`. *(Resolved in v0.5.0.)* |
 | D7  | Retention           | `widget_value` table grows unbounded. |
 | D8  | Schema              | No indexes beyond PKs; `(host, container_name)` is the upsert key. |
@@ -274,8 +274,9 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
   scheduled prune job.
 - Dead code removed: `User.session_token` (never read; the half-finished
   auth feature it was meant for never landed).
-  (`is_docker_status_stale` was originally on this list but is actually
-  used by `templates/tiled_dash.html` and stays.)
+- `is_docker_status_stale` re-attached to `ServiceEntry` (previously
+  bound to `User` via an indentation bug, which made the template's
+  stale tile styling silently dead).
 
 ### 7.4 Out of scope for v0.5.0
 
