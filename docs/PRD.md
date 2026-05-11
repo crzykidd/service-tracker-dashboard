@@ -278,13 +278,27 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 
 ### 7.2 Behavior changes visible to operators
 
-- `/api/v1/register` is the new canonical endpoint.
-- `/api/register` continues to work but emits a deprecation warning
-  per request and adds `Deprecation` + `Sunset` response headers.
-- The web UI, dashboard views, login flow, and existing settings keys
-  work unchanged.
+- `/api/v1/register` is the new canonical endpoint. Strict: unknown
+  keys are rejected with 400 + the list of offending keys.
+- `/api/register` continues to work but emits `Deprecation: true`
+  and a `Link` header pointing to `/api/v1/register` on every
+  response. A WARNING log fires at most once per client IP per
+  hour. No `Sunset` header in v0.5.0 — a wrong Sunset date is
+  worse than none. v0.6.0 will add one.
+- The `sort.priority` legacy key (with the dot) now actually populates
+  `sort_priority`. The v0.4.x handler read it directly with the dot
+  but never wired it to the canonical name, so payloads that sent
+  `sort.priority` silently had no effect. Now they do.
+- New rows still take every field the payload carries. Existing
+  rows: `register_field_ownership` (default `user_wins`) decides
+  whether the notifier may overwrite UI-edited `group_name` and
+  `sort_priority`. The `notifier_reported_*` capture columns are
+  written either way.
+- The web UI, dashboard views, login flow, and existing settings
+  keys work unchanged.
 - `settings.example.yml` is corrected to match the keys the code
-  actually reads.
+  actually reads, and documents the two new settings
+  (`widget_value_retention_days`, `register_field_ownership`).
 
 ### 7.3 Internal changes
 
@@ -304,9 +318,19 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
   register handler; not read in v0.5.0 itself — forward-compat for
   the planned overridden-labels export.
 - Application-level mutex around the register upsert to serialize
-  near-simultaneous writes for the same logical service.
-- `widget_value` retention: rolling 30-day window enforced by a
-  scheduled prune job.
+  near-simultaneous writes for the same logical service. Coarse
+  (single `threading.Lock` covering all keys); homelab-scale write
+  rate doesn't justify per-key locking. In-process only — under
+  Gunicorn with multiple workers, SQLite's WAL single-writer
+  behavior is the actual cross-process safety net.
+- New `register_field_ownership` setting (`user_wins` default or
+  `notifier_wins`) controls whether the notifier may overwrite a
+  non-NULL UI-edited value for `group_name` or `sort_priority` on
+  an existing row. Invalid values fall back to `user_wins` with a
+  startup WARNING.
+- `widget_value` retention: rolling window enforced by a daily
+  prune job at 00:15. Window configurable via
+  `widget_value_retention_days` (default 30).
 - Dead code removed: `User.session_token` (never read; the half-finished
   auth feature it was meant for never landed).
 - `is_docker_status_stale` re-attached to `ServiceEntry` (previously

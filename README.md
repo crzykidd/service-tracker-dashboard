@@ -90,6 +90,8 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
+| `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
+| `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
 | `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. |
 
@@ -102,6 +104,8 @@ backup_path: /config/backups
 backup_days_to_keep: 7
 url_healthcheck_interval: 300
 widget_background_reload: 900
+widget_value_retention_days: 30
+register_field_ownership: user_wins
 user_session_length: 120
 ```
 
@@ -177,15 +181,16 @@ Content-Type: application/json
   "container_name": "nginx",
   "container_id": "abc123...",
   "image_name": "ghcr.io/user/nginx:latest",
+  "image_icon": "nginx.svg",
   "docker_status": "running",
   "stack_name": "frontend",
   "started_at": "2026-05-10T12:34:56Z",
-  "internal_url": "http://nginx:80",
-  "external_url": "https://my.domain.com",
+  "timestamp": "2026-05-10T12:35:00Z",
+  "internalurl": "http://nginx:80",
+  "externalurl": "https://my.domain.com",
   "internal_health_check_enabled": true,
   "external_health_check_enabled": true,
-  "group": "web",
-  "image_icon": "nginx.svg",
+  "group_name": "web",
   "sort_priority": 1
 }
 ```
@@ -198,23 +203,57 @@ Content-Type: application/json
 Everything else is optional. STD applies sensible defaults for any
 field that's missing.
 
+`/api/v1/register` is **strict** — unknown keys are rejected with a
+400 and the list of offending keys in the response body. Migrate
+producers off legacy keys before pointing them at the v1 endpoint.
+
+### Field ownership: user_wins vs notifier_wins
+
+`group_name` and `sort_priority` can be edited in the web UI. When a
+notifier register arrives for a row whose UI value differs, the
+`register_field_ownership` setting decides who wins:
+
+- **`user_wins`** (default) — UI edits stick. The notifier may
+  populate these fields on a new row or one where they're still
+  NULL, but it won't overwrite a value the operator has set.
+- **`notifier_wins`** — every register call overwrites everything,
+  including UI edits. Choose this if your container labels are the
+  source of truth.
+
+Regardless of mode, STD records what the notifier sent in
+`notifier_reported_group_name` and `notifier_reported_sort_priority`
+columns. These columns aren't surfaced in the UI yet — they support
+a planned overridden-labels export.
+
 ### Legacy support (deprecated, removed in v0.6.0)
 
-The `/api/register` endpoint accepts both canonical and legacy key
-variants:
+The `/api/register` endpoint accepts canonical keys plus these
+legacy variants:
 
-| Legacy key                  | Canonical key                     |
-|-----------------------------|-----------------------------------|
-| `docker_host`               | `host`                            |
-| `group_name`                | `group`                           |
-| `internal.health`           | `internal_health_check_enabled`   |
-| `external.health`           | `external_health_check_enabled`   |
-| `internalurl`               | `internal_url`                    |
-| `externalurl`               | `external_url`                    |
+| Legacy key        | Canonical key                     |
+|-------------------|-----------------------------------|
+| `docker_host`     | `host`                            |
+| `group`           | `group_name`                      |
+| `internal_health` | `internal_health_check_enabled`   |
+| `internal.health` | `internal_health_check_enabled`   |
+| `external_health` | `external_health_check_enabled`   |
+| `external.health` | `external_health_check_enabled`   |
+| `icon`            | `image_icon`                      |
+| `sort.priority`   | `sort_priority`                   |
+
+(`internalurl` and `externalurl` are canonical — they have always
+been single-word in STD. No remap.)
 
 The compat shim normalizes legacy keys to canonical and emits a
-deprecation warning per request (server log + `Deprecation` and
-`Sunset` response headers).
+`Deprecation: true` response header plus
+`Link: </api/v1/register>; rel="successor-version"`. There is no
+`Sunset` header in v0.5.0 — it will be added in v0.6.0 once the
+removal date is firm. The server also logs a deprecation WARNING
+once per client IP per hour, so the migration conversation gets
+driven without flooding the log.
+
+Unknown keys in legacy payloads are silently dropped (matches
+v0.4.x behavior). In `FLASK_DEBUG=1` they're logged.
 
 ---
 
