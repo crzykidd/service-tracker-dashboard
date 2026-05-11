@@ -27,10 +27,12 @@ import threading
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
+from pydantic import ValidationError
 
 from extensions import db
 from image_utils import parse_bool, resolve_image_metadata
 from models import Group, ServiceEntry
+from schemas import RegisterPayload
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,30 @@ RETRY_INTERVAL = timedelta(minutes=60)
 # Serializes the upsert critical section across all register calls.
 # See upsert_service docstring for the rationale.
 _UPSERT_LOCK = threading.Lock()
+
+
+def _check_bearer_auth(endpoint_label):
+    """Validate the Authorization header against `api_token`.
+
+    Returns None on success, or a Flask (response, status) tuple on
+    failure. Shared between /api/v1/register and /api/register so
+    the auth contract stays in one place.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    expected = f"Bearer {current_app.config['api_token']}"
+    if auth_header == expected:
+        return None
+
+    client_ip = request.remote_addr
+    now = datetime.utcnow()
+    logger.info(f"401 - Unauthorized API access from {client_ip} to {endpoint_label}")
+
+    last_log_time = unauthorized_log_tracker.get(client_ip)
+    if not last_log_time or (now - last_log_time) > timedelta(minutes=2):
+        logger.warning(f"⚠️ Repeated unauthorized access from {client_ip}")
+        unauthorized_log_tracker[client_ip] = now
+
+    return jsonify({"error": "Unauthorized"}), 401
 
 
 def upsert_service(canonical, app):
@@ -218,6 +244,49 @@ def upsert_service(canonical, app):
 
         db.session.commit()
         return entry.to_dict(), 200
+
+
+@api_bp.route('/api/v1/register', methods=['POST'])
+def api_v1_register():
+    """Canonical register endpoint (v0.5.0+).
+
+    Strict: pydantic validates with `extra="forbid"`, so any key not
+    in `RegisterPayload` triggers a 400 with the list of offending
+    keys. `host` and `container_name` are required; everything else
+    is optional.
+
+    Notifier v0.3.0 targets this endpoint. The legacy /api/register
+    compat shim remains available through v0.6.0.
+    """
+    auth_failure = _check_bearer_auth("/api/v1/register")
+    if auth_failure is not None:
+        return auth_failure
+
+    raw = request.get_json(silent=True)
+    if not isinstance(raw, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
+    try:
+        payload = RegisterPayload.model_validate(raw)
+    except ValidationError as e:
+        errors = e.errors()
+        unknown_keys = [
+            err["loc"][0] for err in errors
+            if err.get("type") == "extra_forbidden" and err.get("loc")
+        ]
+        body = {"error": "Invalid register payload", "details": errors}
+        if unknown_keys:
+            body["unknown_keys"] = unknown_keys
+        return jsonify(body), 400
+
+    if current_app.debug:
+        logger.info("🔍 Received /api/v1/register payload:")
+        for k, v in payload.model_dump(exclude_none=True).items():
+            logger.info(f"    {k}: {v}")
+
+    canonical = payload.model_dump()
+    body, status = upsert_service(canonical, current_app._get_current_object())
+    return jsonify(body), status
 
 
 @api_bp.route('/api/register', methods=['POST'])
