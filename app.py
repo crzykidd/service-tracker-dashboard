@@ -31,6 +31,7 @@ from image_utils import resolve_image_metadata, parse_bool, fetch_icon_if_missin
 from models import Group, ServiceEntry, User, Widget, WidgetValue
 from health import health_bp
 from routes_auth import auth_bp, is_admin_required
+from routes_widgets import widgets_bp
 
 
 DATABASE_PATH = '/config/services.db'
@@ -71,6 +72,7 @@ db.init_app(app)
 
 app.register_blueprint(health_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(widgets_bp)
 
 
 @app.context_processor
@@ -1066,22 +1068,6 @@ def api_register():
     return jsonify(entry.to_dict()), 200 if entry else 201
 
 
-@app.route('/widget_config/<widget_name>')
-@login_required
-@is_admin_required
-def widget_config(widget_name):
-    path = os.path.join('/app/widgets', widget_name, 'settings.json')
-    if not os.path.exists(path):
-        return jsonify([])  # Or 404 if you prefer
-
-    with open(path) as f:
-        try:
-            config = json.load(f)
-            return jsonify(config.get("available_fields", []))  # ✅ FIXED
-        except Exception as e:
-            app.logger.warning(f"Failed to load widget settings for {widget_name}: {e}")
-            return jsonify([])
-        
 @app.errorhandler(403)
 def forbidden_error(error):
     return render_template("403.html"), 403
