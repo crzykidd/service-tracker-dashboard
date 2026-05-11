@@ -11,13 +11,11 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from extensions import db
 
-# Import the application module so SQLAlchemy model classes register
+# Import the models module so SQLAlchemy model classes register
 # themselves with db.metadata. Without this, db.metadata is empty and
 # `alembic revision --autogenerate` silently produces no-op migrations,
 # causing schema drift between the codebase and the database.
-# Phase 4 will move model definitions into models.py; once that lands,
-# replace this with `import models  # noqa: F401`.
-import app  # noqa: F401
+import models  # noqa: F401
 
 target_metadata = db.metadata
 
