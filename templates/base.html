@@ -68,7 +68,7 @@
         </nav>
 
         {% if current_user.is_authenticated %}
-        <form method="POST" action="{{ url_for('logout') }}">
+        <form method="POST" action="{{ url_for('auth.logout') }}">
           <button type="submit" class="ml-4 bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1 rounded">
             Logout
           </button>

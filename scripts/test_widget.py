@@ -21,7 +21,7 @@ def load_settings(widget_module):
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage:\n  python test-widget.py <widget_module> <url> <api_key>")
+        print("Usage:\n  python scripts/test_widget.py <widget_module> <url> <api_key>")
         sys.exit(1)
 
     widget_module = sys.argv[1]

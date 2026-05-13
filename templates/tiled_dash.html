@@ -186,7 +186,7 @@
                         data-externalurl="{{ entry.externalurl if entry.externalurl else '' }}">
                         <div class="tile-icon">
                             {% if entry.image_icon %}
-                                <img src="{{ url_for('serve_image', filename=entry.image_icon) }}"
+                                <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
                                      alt="{{ entry.container_name }} icon"
                                      onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
                             {% else %}

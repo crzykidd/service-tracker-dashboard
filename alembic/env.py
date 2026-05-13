@@ -11,7 +11,21 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from extensions import db
 
+# Import the models module so SQLAlchemy model classes register
+# themselves with db.metadata. Without this, db.metadata is empty and
+# `alembic revision --autogenerate` silently produces no-op migrations,
+# causing schema drift between the codebase and the database.
+import models  # noqa: F401
+
 target_metadata = db.metadata
+
+if not target_metadata.tables:
+    raise RuntimeError(
+        "alembic env.py: db.metadata is empty — model imports failed to "
+        "register tables. Refusing to run alembic; autogenerate would "
+        "produce empty migrations and online migrations would target an "
+        "empty schema."
+    )
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
