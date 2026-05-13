@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> Targeting v0.5.0. **Must ship before notifier v0.3.0** — this release
-> introduces `/api/v1/register`, which notifier v0.3.0 will target.
+---
+
+## [0.5.0] — 2026-05-12
 
 ### Added
 - New `/api/v1/register` endpoint accepting canonical key names
@@ -179,7 +180,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.4.14...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.5.0
 [0.4.14]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.14
 [0.4.13]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.13
 [0.4.12]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.12

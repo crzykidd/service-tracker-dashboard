@@ -120,16 +120,16 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               └─────────────────────────────────────────┘
 ```
 
-### 3.1 Module layout (target, v0.5.0)
+### 3.1 Module layout (v0.5.0)
 
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints
 extensions.py       ← SQLAlchemy + Flask-Login singletons
 models.py           ← SQLAlchemy models (ServiceEntry, User, Widget, WidgetValue, Group)
-schemas.py          ← pydantic request/response schemas (populated in Phase 5)
+schemas.py          ← pydantic request/response schemas
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
                       /add, /edit/<id>, group CRUD, /images/<filename>
-routes_api.py       ← /api/register (Phase 5 adds canonical /api/v1/register)
+routes_api.py       ← /api/v1/register and /api/register (compat shim)
 routes_widgets.py   ← /widget_config/<widget_name>
 routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
                       Flask-Login user_loader
@@ -159,7 +159,6 @@ alembic/            ← migrations
   schema; migrations track changes.
 - **`schemas.py`** — pydantic schemas for inbound payloads (register
   endpoint specifically). Decouples wire format from DB columns.
-  Empty in this release; populated in Phase 5.
 - **`routes_*.py`** — Flask blueprints. Each file is one cohesive
   surface area; routes don't reach into unrelated tables.
 - **`jobs.py`** — APScheduler-driven background work plus the
@@ -242,28 +241,28 @@ an extra dot will be deleted as part of v0.5.0 housekeeping.)
 - Daily YAML backups.
 - Icon auto-fetch from Homarr Labs CDN.
 
-### 6.2 Known issues at v0.4.14 (targeted for v0.5.0)
+### 6.2 Known issues at v0.4.14 (resolved in v0.5.0)
 
 | ID  | Area                | Issue |
 |-----|---------------------|-------|
-| D1  | `app.py` size       | ~1,775 lines holding 4 models, ~20 routes, 3 background jobs, template filters, and init code. Hard to navigate and review. |
-| D2  | View duplication    | `/`, `/tiled_dash`, `/compact_dash` duplicate ~150 lines of grouping/sorting logic. |
-| D3  | Icon fetch dup.     | Icon fetching is duplicated between `image_utils.py` and inline calls in `/add`, `/edit`. |
+| D1  | `app.py` size       | ~1,775 lines holding 4 models, ~20 routes, 3 background jobs, template filters, and init code. Hard to navigate and review. *(Resolved in v0.5.0.)* |
+| D2  | View duplication    | `/`, `/tiled_dash`, `/compact_dash` duplicate ~150 lines of grouping/sorting logic. *(Resolved in v0.5.0.)* |
+| D3  | Icon fetch dup.     | Icon fetching is duplicated between `image_utils.py` and inline calls in `/add`, `/edit`. *(Resolved in v0.5.0.)* |
 | D4  | Auth half-finished  | `User.session_token` written on user creation but never read. *(Resolved in v0.5.0.)* |
 | D5  | Stale styling broken | `is_docker_status_stale` property indented onto `User` instead of `ServiceEntry`. Template references it on `ServiceEntry`, so stale tile styling never fired. *(Resolved in v0.5.0.)* |
 | D6  | Settings drift      | `settings.example.yml` says `url_refresh_interval`; code reads `url_healthcheck_interval`. *(Resolved in v0.5.0.)* |
 | D7  | Retention           | `widget_value` table grows unbounded. *(Resolved in v0.5.0.)* |
 | D8  | Schema              | No indexes beyond PKs; `(host, container_name)` is the upsert key. *(Resolved in v0.5.0.)* |
 | D9  | Settings reload     | `load_settings()` is called at module level **and** inside some route handlers. Single load at startup is the right shape. *(Resolved in v0.5.0.)* |
-| D10 | Job error handling  | URL health check loop has no top-level try/except; one bad URL or transient error can kill the loop until restart. |
-| D11 | Register contract   | `/api/register` quietly remaps `group ↔ group_name`, `internal.health ↔ internal_health_check_enabled`, `docker_host ↔ host`, etc. Contract drift; no canonical schema. |
-| D12 | Concurrency         | `/api/register` upsert has no locking. With multiple notifier hosts, two near-simultaneous registers for the same `(host, container_name)` can race. |
+| D10 | Job error handling  | URL health check loop has no top-level try/except; one bad URL or transient error can kill the loop until restart. *(Resolved in v0.5.0.)* |
+| D11 | Register contract   | `/api/register` quietly remaps `group ↔ group_name`, `internal.health ↔ internal_health_check_enabled`, `docker_host ↔ host`, etc. Contract drift; no canonical schema. *(Resolved in v0.5.0.)* |
+| D12 | Concurrency         | `/api/register` upsert has no locking. With multiple notifier hosts, two near-simultaneous registers for the same `(host, container_name)` can race. *(Resolved in v0.5.0.)* |
 
 ---
 
 ## 7. v0.5.0 — Cleanup Release
 
-**Ships before notifier v0.3.0.** STD v0.5.0 introduces the
+**Shipped before notifier v0.3.0.** STD v0.5.0 introduces the
 `/api/v1/register` endpoint that notifier v0.3.0 will target.
 
 ### 7.1 Goals
