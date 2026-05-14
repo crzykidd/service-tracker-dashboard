@@ -1,18 +1,62 @@
 """pydantic schemas for the register API wire contract.
 
-Source of truth for what /api/v1/register accepts. The legacy
-/api/register compat shim does NOT route through these schemas —
-it remaps legacy keys to canonical and calls upsert_service
-directly, since legacy payloads may contain shapes the strict
-schema would reject. See routes_api.py for the shared upsert path.
-
-v0.6.0 removes /api/register and these schemas become the only
-accepted shape.
+Source of truth for what /api/v1/register accepts. From v0.6.0 onward
+this is the only register surface — the legacy /api/register compat
+shim has been removed.
 """
 
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
+
+
+class NetworkMembership(BaseModel):
+    """One Docker network the container is attached to.
+
+    Names only — IPs and gateway info are SSH/debugger territory, not
+    dashboard territory. Aliases are captured because they reveal
+    compose service names, which future logical-service-identity work
+    will want.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    aliases: List[str] = []
+
+
+class PublishedPort(BaseModel):
+    """One host-to-container port mapping (compose `ports:`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    container_port: int
+    protocol: str
+    host_ip: str
+    host_port: int
+
+
+class ExposureObservation(BaseModel):
+    """One interpreter's read of how a container is exposed.
+
+    Produced by the notifier's YAML interpreters (v0.4.0+). Each
+    interpreter that recognizes a container emits one observation
+    here; the same container can be seen by multiple interpreters
+    (e.g. Traefik + Dockflare on the same hostname).
+
+    `layer` is the interpreter identifier — lowercase, underscore-
+    separated by convention. STD's synthesizer maps layer to
+    direction (internal/external/neither) per operator settings.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    layer: str
+    hostname: Optional[str] = None
+    tls: Optional[bool] = None
+    path_prefix: Optional[str] = None
+    auth: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class RegisterPayload(BaseModel):
@@ -54,3 +98,18 @@ class RegisterPayload(BaseModel):
     # `register_field_ownership` setting at upsert time)
     group_name: Optional[str] = None
     sort_priority: Optional[int] = None
+
+    # Optional — observed container facts (v0.6.0+). Pure observation,
+    # overwritten on every register. Notifier v0.3.2+ populates these.
+    networks: Optional[List[NetworkMembership]] = None
+    exposed_ports: Optional[List[str]] = None
+    published_ports: Optional[List[PublishedPort]] = None
+
+    # Optional — interpreter outputs (v0.6.0 — exposure synthesis).
+    # Notifier v0.4.0+ runs YAML interpreters and emits one entry per
+    # interpreter that recognizes the container. None means "no
+    # update — leave existing rows alone" (used by pre-v0.4.0
+    # notifiers and operators who turn interpreters off). [] means
+    # "this container has no interpreter matches — clear all
+    # existing rows."
+    exposure_observations: Optional[List[ExposureObservation]] = None

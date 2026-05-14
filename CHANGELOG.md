@@ -7,8 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> Targeting v0.5.0. **Must ship before notifier v0.3.0** — this release
-> introduces `/api/v1/register`, which notifier v0.3.0 will target.
+## [0.6.0] — 2026-05-14
+
+### Added
+- **View controls** above the service grid on `/`, `/tiled_dash`, and
+  `/compact_dash`, sharing one UI partial:
+  - `Group by` axis selector with `group` (default), `stack`, and
+    `host`. Designed as an N-axis selector so future axes drop in
+    without rework. `axis=stack` collects rows with no `stack_name`
+    into an "Unstacked" bucket rendered last; `axis=host` collects
+    rows with no host into "Unknown host"; `axis=group` keeps
+    "Ungrouped" last as before.
+  - `Show URL-less` checkbox (default on). Unchecking hides services
+    where both `internalurl` and `externalurl` are null/empty.
+- View-control state is URL-driven
+  (`?group_by=stack&show_urlless=false&sort_in_group=alphabetical`),
+  so dashboards stay bookmarkable and shareable. No per-user
+  preference persistence in this release.
+- **Network & ports capture (v0.6.0).** Three new optional fields on
+  `/api/v1/register`, populated by notifier v0.3.2+:
+  - `networks` — list of `{"name", "aliases"}` objects, one per
+    Docker network the container is attached to. Names only; IPs
+    intentionally not captured.
+  - `exposed_ports` — list of `"<port>/<proto>"` strings declared
+    via `EXPOSE` in the image or `expose:` in compose.
+  - `published_ports` — list of `{"container_port", "protocol",
+    "host_ip", "host_port"}` objects describing host-to-container
+    port mappings from compose `ports:`.
+- Three new nullable JSON columns on `service_entry`
+  (`networks`, `exposed_ports`, `published_ports`) storing the above.
+  Rows that haven't received a v0.3.2+ register stay NULL — that's
+  the expected state, not a bug.
+- New "Reported by notifier" section at the bottom of `/edit/<id>`,
+  read-only, showing networks, exposed ports, and published ports
+  with "Not reported" placeholders when data is absent.
+- **Exposure interpreter mechanism.** STD now consumes structured
+  exposure observations emitted by notifier YAML interpreters
+  (Traefik, Dockflare, etc.), synthesizes `internalurl` /
+  `externalurl` from them, and surfaces them as tile badges. Six
+  interlocking pieces:
+  - New optional `exposure_observations` field on
+    `/api/v1/register`, validated by a strict pydantic
+    `ExposureObservation` model (`extra="forbid"`). Notifier v0.4.0+
+    populates this. `null` in the payload means "no update"; `[]`
+    means "clear all observations for this service."
+  - New `service_exposure` table (one row per (service, interpreter
+    layer) observation), with FK + index on `service_entry_id`.
+    Replaced wholesale per service on each register that carries
+    `exposure_observations`.
+  - New synthesizer module (`synthesizer.py`) that combines
+    exposure observations + per-interpreter direction settings to
+    produce `internalurl` and `externalurl`. Tiebreaker: TLS over
+    non-TLS, no path prefix over path prefix, layer name
+    alphabetical (stable). Runs on every register and on settings
+    save.
+  - URL provenance: two new columns on `service_entry`
+    (`internalurl_source`, `externalurl_source`) tracking which
+    actor last wrote each URL. Ordering: `ui_edit` >
+    `explicit_label` > `synthesized` > NULL. Operator UI edits and
+    explicit `dockernotifier.std.internalurl` labels are never
+    overwritten by the synthesizer.
+  - New DB-stored settings table (`setting`) and module
+    (`settings_store.py`). First operator-editable runtime settings
+    in STD; backs the per-interpreter direction mapping
+    (`traefik = internal`, `dockflare = external`, ...) with
+    per-host overrides.
+  - New "Exposure" tab on `/settings` showing discovered interpreter
+    layers with a direction dropdown each (internal / external /
+    neither, defaulting to neither) and a per-host overrides
+    section. Saving recomputes synthesized URLs for every service.
+- **Exposure badges** on the tiled and table dashboards — small
+  pills per `service_exposure` row showing layer name, TLS status
+  (🔒), and auth-required indicator (🔑). Capped at 3 visible per
+  service with a `+N` overflow indicator.
+- **Headless rendering** — services with no exposure observations
+  and no URLs render without click affordance on the tiled and
+  compact dashboards. Status display falls back to `docker_status`.
+- URL source indicator next to the URL inputs on `/edit/<id>` —
+  shows whether each URL was edited in the UI, set via explicit
+  label, or synthesized. Clearing the field resets provenance and
+  re-allows synthesis on the next register.
+
+### Changed
+- Grouping/sorting logic for the three dashboard views consolidated
+  into `view_helpers.group_and_sort_services` — a single helper that
+  takes `(services, axis, show_urlless, sort_in_group)` and returns
+  the bucketed list the templates render. (Resolves D2 from PRD §6.2,
+  which was deferred from v0.5.0 despite the v0.5.0 changelog
+  claiming otherwise.)
+- Group buckets are now keyed canonically by `group_id` across all
+  three views (was a mix of `group_id` and `group_name`). Two
+  distinct `Group` rows that happen to share a display name yield
+  two distinct buckets.
+- The dashboard view-controls dropdown values changed from
+  `group_name`/`stack_name` to `group`/`stack`. Bookmarks built
+  against the v0.5.0 query strings will fall back to the default
+  `group` axis (logged at DEBUG).
+- `RegisterPayload` validates nested `networks` and `published_ports`
+  structures with dedicated pydantic models (extra="forbid" applies
+  to each). Malformed payloads are rejected at the schema boundary.
+
+### Removed
+- **`/api/register` endpoint and the legacy-key compat shim.** Routes
+  that used to translate `docker_host`, `group`, `internal.health`,
+  `external.health`, `icon`, `sort.priority`, etc. into canonical
+  keys are gone. The per-IP deprecation log tracker and the
+  `Deprecation: true` / `Link: rel="successor-version"` response
+  headers are also removed — they had nowhere to attach. Operators
+  must run `docker-api-notifier` v0.3.0 or later; older notifiers
+  will see 404 at `/api/register`.
+
+### Fixed
+- `compact_dash` tile click handler no longer opens a literal "None"
+  URL when both `internalurl` and `externalurl` are empty. Tiles
+  without a URL now render as non-clickable text (consistent with the
+  headless rendering rule).
+
+---
+
+## [0.5.0] — 2026-05-12
 
 ### Added
 - New `/api/v1/register` endpoint accepting canonical key names
@@ -52,8 +169,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `routes_api.py`, `routes_widgets.py`, `routes_auth.py`, `models.py`,
   `schemas.py`, `jobs.py`, `health.py`. `app.py` becomes a Flask app
   factory.
-- Grouping/sorting logic for `/`, `/tiled_dash`, `/compact_dash`
-  consolidated into a single helper.
 - Icon fetch consolidated; `image_utils.py` is the single path used by
   `/add`, `/edit`, and the register handler.
 - `settings.example.yml` updated to match the keys the code actually
@@ -179,7 +294,9 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.4.14...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.0
+[0.5.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.5.0
 [0.4.14]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.14
 [0.4.13]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.13
 [0.4.12]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.12

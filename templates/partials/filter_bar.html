@@ -2,28 +2,29 @@
   <div class="flex gap-4 items-center flex-wrap">
     <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
 
-    <select id="groupBySelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-      <option value="group_name" {% if group_by == 'group_name' %}selected{% endif %}>Group</option>
-      <option value="stack_name" {% if group_by == 'stack_name' %}selected{% endif %}>Stack</option>
+    <label for="groupBySelect" class="text-sm text-gray-300">Group by:</label>
+    <select id="groupBySelect" data-param="group_by" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+      <option value="group" {% if group_by == 'group' %}selected{% endif %}>Group</option>
+      <option value="stack" {% if group_by == 'stack' %}selected{% endif %}>Stack</option>
       <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
-      <option value="is_static" {% if group_by == 'is_static' %}selected{% endif %}>Static</option>
     </select>
 
-    In Group Sort:
-    <select id="sortInGroupSelect" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+    <label for="sortInGroupSelect" class="text-sm text-gray-300">Sort:</label>
+    <select id="sortInGroupSelect" data-param="sort_in_group" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
       <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
       <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
     </select>
 
+    <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
+      <input type="checkbox" id="showUrllessToggle" data-param="show_urlless"
+             class="view-control h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+             {% if show_urlless %}checked{% endif %}>
+      Show URL-less
+    </label>
+
     <span class="text-sm text-gray-400 ml-2">
       Total Services:
-      {% if grouped_entries is defined %}
-        {{ grouped_entries.values() | map('length') | sum }}
-      {% elif total_entries is defined %}
-        {{ total_entries }}
-      {% else %}
-        N/A
-      {% endif %}
+      {{ total_entries if total_entries is defined else 'N/A' }}
     </span>
   </div>
 
@@ -51,3 +52,26 @@
     <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
   </div>
 </div>
+
+<script>
+  // Shared submit-on-change handler for all view controls. Each control
+  // has data-param=<query-key>; checkboxes write 'true'/'false', selects
+  // write their value. URL state is the single source of truth so the
+  // dashboard is bookmarkable and shareable.
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.view-control').forEach(function (el) {
+      el.addEventListener('change', function () {
+        var params = new URLSearchParams(window.location.search);
+        var key = this.dataset.param;
+        var value;
+        if (this.type === 'checkbox') {
+          value = this.checked ? 'true' : 'false';
+        } else {
+          value = this.value;
+        }
+        params.set(key, value);
+        window.location.search = params.toString();
+      });
+    });
+  });
+</script>

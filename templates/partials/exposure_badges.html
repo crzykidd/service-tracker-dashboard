@@ -1,0 +1,31 @@
+{# Render up to three exposure badges for a ServiceEntry, plus a
+   "+N" overflow indicator. Caller passes `exposures` (list of
+   ServiceExposure rows). Designed to be lean — the tile's visual
+   budget is tight; a service with five interpreters shouldn't
+   crowd out the container name.
+
+   Visual conventions:
+   - badge text: the layer name (truncated to 8 chars).
+   - TLS-terminated: 🔒 prefix.
+   - auth required (auth not in {null, "none", ""}): 🔑 suffix.
+#}
+{% if exposures %}
+  {% set _shown = exposures[:3] %}
+  {% set _overflow = exposures|length - _shown|length %}
+  <div class="exposure-badges" title="Exposure layers: {{ exposures|map(attribute='layer')|join(', ') }}">
+    {% for ex in _shown %}
+      {% set _label = (ex.layer or '')[:8] %}
+      {% set _auth_required = ex.auth and ex.auth not in ['none', ''] %}
+      <span class="exposure-badge"
+            title="{{ ex.layer }}{% if ex.hostname %} — {{ ex.hostname }}{% endif %}{% if ex.tls %} (TLS){% endif %}{% if _auth_required %} (auth: {{ ex.auth }}){% endif %}">
+        {% if ex.tls %}<span class="exposure-badge-icon">🔒</span>{% endif %}
+        <span class="exposure-badge-label">{{ _label }}</span>
+        {% if _auth_required %}<span class="exposure-badge-icon">🔑</span>{% endif %}
+      </span>
+    {% endfor %}
+    {% if _overflow > 0 %}
+      <span class="exposure-badge exposure-badge-overflow"
+            title="{{ _overflow }} more layer(s): {{ exposures[3:]|map(attribute='layer')|join(', ') }}">+{{ _overflow }}</span>
+    {% endif %}
+  </div>
+{% endif %}

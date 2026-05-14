@@ -60,8 +60,25 @@
           <input type="text" name="container_name" id="application" class="form-input" value="{{ entry.container_name }}">
         </div>
 
+        {# URL source provenance (v0.6.0). Render a small badge next to
+           each URL field telling the operator which actor last set it.
+           "Edit" + "Save" clears the badge to "ui_edit". Clearing the
+           field resets source to NULL so synthesis can re-fill. #}
+        {% macro url_source_badge(source) %}
+          {% if source == 'ui_edit' %}
+            <span class="text-xs text-blue-300 bg-blue-900/40 border border-blue-700 rounded px-2 py-0.5">Edited in UI</span>
+          {% elif source == 'explicit_label' %}
+            <span class="text-xs text-amber-200 bg-amber-900/40 border border-amber-700 rounded px-2 py-0.5">Explicit label</span>
+          {% elif source == 'synthesized' %}
+            <span class="text-xs text-emerald-200 bg-emerald-900/40 border border-emerald-700 rounded px-2 py-0.5">Synthesized</span>
+          {% endif %}
+        {% endmacro %}
+
         <div>
-          <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Internal URL</label>
+          <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">
+            Internal URL
+            {{ url_source_badge(entry.internalurl_source) }}
+          </label>
           <div class="flex items-center space-x-3">
             <input type="url" name="internalurl" id="internal_url" class="form-input flex-grow" value="{{ entry.internalurl or '' }}">
             <div class="flex items-center">
@@ -69,10 +86,16 @@
               <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
             </div>
           </div>
+          <p class="mt-1 text-xs text-dashboard-secondary">
+            Clearing this field resets provenance and re-allows synthesis from exposure observations.
+          </p>
         </div>
 
         <div>
-          <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">External URL</label>
+          <label for="external_url" class="block text-sm font-medium text-dashboard-secondary mb-1">
+            External URL
+            {{ url_source_badge(entry.externalurl_source) }}
+          </label>
           <div class="flex items-center space-x-3">
             <input type="url" name="externalurl" id="external_url" class="form-input flex-grow" value="{{ entry.externalurl or '' }}">
             <div class="flex items-center">
@@ -151,6 +174,87 @@
         <button type="button" onclick="window.history.back();" class="btn-secondary px-6 py-2.5 rounded-lg font-medium text-sm">Cancel</button>
       </div>
     </form>
+
+    <hr class="my-10 border-dashboard-accent">
+
+    <div class="bg-dashboard-info-box rounded-lg p-6">
+      <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Reported by notifier</h2>
+      <p class="text-xs text-dashboard-secondary mb-4">
+        Observed container facts from the most recent register call. Read-only.
+      </p>
+
+      <div class="mb-5">
+        <h3 class="text-sm font-medium text-dashboard-secondary mb-2">Networks</h3>
+        {% if entry.networks %}
+          <ul class="text-sm text-gray-100 space-y-1">
+            {% for net in entry.networks %}
+              <li>
+                <span class="font-mono">{{ net.name }}</span>
+                {% if net.aliases %}
+                  <span class="text-gray-400 text-xs">
+                    [{{ net.aliases | join(', ') }}]
+                  </span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-xs italic text-dashboard-secondary">Not reported.</p>
+        {% endif %}
+      </div>
+
+      <div class="mb-5">
+        <h3 class="text-sm font-medium text-dashboard-secondary mb-2">Exposed Ports</h3>
+        {% if entry.exposed_ports %}
+          <p class="text-sm font-mono text-gray-100">
+            {{ entry.exposed_ports | join(', ') }}
+          </p>
+        {% else %}
+          <p class="text-xs italic text-dashboard-secondary">Not reported.</p>
+        {% endif %}
+      </div>
+
+      <div class="mb-5">
+        <h3 class="text-sm font-medium text-dashboard-secondary mb-2">Published Ports</h3>
+        {% if entry.published_ports %}
+          <ul class="text-sm font-mono text-gray-100 space-y-1">
+            {% for p in entry.published_ports %}
+              <li>
+                {{ p.container_port }}/{{ p.protocol }}
+                &rarr;
+                {% if p.host_ip and p.host_ip != '0.0.0.0' %}{{ p.host_ip }}:{% endif %}{{ p.host_port }}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-xs italic text-dashboard-secondary">Not reported.</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <h3 class="text-sm font-medium text-dashboard-secondary mb-2">Exposure Observations</h3>
+        {% if entry.exposures %}
+          <ul class="text-sm text-gray-100 space-y-2">
+            {% for ex in entry.exposures %}
+              <li class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-blue-300">{{ ex.layer }}</span>
+                {% if ex.hostname %}
+                  <span class="text-gray-300">{{ ex.hostname }}{% if ex.path_prefix %}{{ ex.path_prefix }}{% endif %}</span>
+                {% endif %}
+                {% if ex.tls %}
+                  <span class="text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700 rounded px-1.5 py-0.5">TLS</span>
+                {% endif %}
+                {% if ex.auth and ex.auth not in ['none', ''] %}
+                  <span class="text-xs text-amber-200 bg-amber-900/40 border border-amber-700 rounded px-1.5 py-0.5">auth: {{ ex.auth }}</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-xs italic text-dashboard-secondary">No exposure observations.</p>
+        {% endif %}
+      </div>
+    </div>
 
     <hr class="my-10 border-dashboard-accent">
 

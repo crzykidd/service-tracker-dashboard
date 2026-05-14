@@ -41,6 +41,16 @@ class ServiceEntry(db.Model):
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
     widget = db.relationship('Widget', backref='services', lazy=True)
+    # Exposure observations (v0.6.0 — interpreter mechanism). Many rows
+    # per service possible (one per interpreter layer that sees the
+    # container). Replaced wholesale on register when the payload
+    # carries `exposure_observations`. See ServiceExposure below.
+    exposures = db.relationship(
+        'ServiceExposure',
+        backref='service_entry',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
     sort_priority = db.Column(db.Integer, nullable=True, default=None)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
     # Captured from the most recent notifier register payload for this
@@ -50,6 +60,24 @@ class ServiceEntry(db.Model):
     # Populated by the v0.5.0 register handler; read by no one yet.
     notifier_reported_group_name = db.Column(db.String(100), nullable=True)
     notifier_reported_sort_priority = db.Column(db.Integer, nullable=True, default=None)
+    # Observed container facts, captured from the notifier (v0.6.0+).
+    # Pure observation — overwritten on every register call. Notifier
+    # v0.3.2+ populates these; rows from older notifiers remain NULL.
+    # networks: [{"name": "...", "aliases": ["..."]}]
+    # exposed_ports: ["5173/tcp", "9000/tcp"]
+    # published_ports: [{"container_port": 5173, "protocol": "tcp",
+    #                    "host_ip": "0.0.0.0", "host_port": 8080}]
+    networks = db.Column(db.JSON, nullable=True)
+    exposed_ports = db.Column(db.JSON, nullable=True)
+    published_ports = db.Column(db.JSON, nullable=True)
+
+    # URL provenance (v0.6.0 — exposure interpreter). Tracks which actor
+    # last wrote each URL so the synthesizer doesn't clobber UI edits or
+    # explicit labels. Values: "ui_edit", "explicit_label",
+    # "synthesized", or NULL. Ordering: ui_edit > explicit_label >
+    # synthesized > NULL. See synthesizer.py for the merge rules.
+    internalurl_source = db.Column(db.String(20), nullable=True)
+    externalurl_source = db.Column(db.String(20), nullable=True)
 
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
@@ -81,7 +109,11 @@ class ServiceEntry(db.Model):
             'image_icon': self.image_icon,
             'is_static': self.is_static,
             'sort_priority': self.sort_priority,
-
+            'networks': self.networks,
+            'exposed_ports': self.exposed_ports,
+            'published_ports': self.published_ports,
+            'internalurl_source': self.internalurl_source,
+            'externalurl_source': self.externalurl_source,
         }
 
         # Add inline widget info if attached
@@ -132,6 +164,62 @@ class WidgetValue(db.Model):
 
     def __repr__(self):
         return f'<WidgetValue {self.widget_id}, {self.widget_value_key}>'
+
+class ServiceExposure(db.Model):
+    """One observation from one interpreter layer about how a service
+    is exposed (Traefik sees hostname X with TLS, Dockflare sees
+    hostname Y, etc.). Many rows per ServiceEntry possible — one per
+    layer that recognizes the container.
+
+    Pure observation, owned by the notifier. The register handler
+    replaces all rows for a service wholesale when the payload carries
+    `exposure_observations`. The synthesizer reads these rows to
+    populate ServiceEntry.internalurl / externalurl per operator-
+    configured direction mapping (see settings_store.py).
+    """
+    __tablename__ = 'service_exposure'
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_entry_id = db.Column(
+        db.Integer,
+        db.ForeignKey('service_entry.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    layer = db.Column(db.String(64), nullable=False)
+    hostname = db.Column(db.String(255), nullable=True)
+    tls = db.Column(db.Boolean, nullable=True)
+    path_prefix = db.Column(db.String(255), nullable=True)
+    auth = db.Column(db.String(128), nullable=True)
+    details = db.Column(db.JSON, nullable=True)
+    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ServiceExposure {self.layer} svc={self.service_entry_id} host={self.hostname}>'
+
+
+class Setting(db.Model):
+    """KV-style store for operator-editable runtime settings.
+
+    Distinct from `settings.yml` / `app.config`: those are loaded once
+    at startup and treated as immutable for the lifetime of the
+    process. `Setting` rows can be edited via the web UI and are
+    re-read on every access.
+
+    Introduced in v0.6.0 to back the per-interpreter direction
+    mappings used by the exposure synthesizer. Values are JSON so we
+    can store dicts/lists without inventing a richer schema for one
+    feature.
+    """
+    __tablename__ = 'setting'
+
+    key = db.Column(db.String(64), primary_key=True)
+    value = db.Column(db.JSON, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Setting {self.key}={self.value!r}>'
+
 
 class Group(db.Model):
     __tablename__ = 'group'
