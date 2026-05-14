@@ -84,8 +84,9 @@
         {{ item.group }}
       </div>
     {% else %}
-      <div class="tile"
-           onclick="window.open('{{ item.entry.internalurl if item.entry.internalurl else item.entry.externalurl }}', '_blank')">
+      {% set _target_url = item.entry.internalurl or item.entry.externalurl %}
+      <div class="tile{% if not _target_url %} cursor-default hover:bg-gray-800{% endif %}"
+           {% if _target_url %}onclick="window.open('{{ _target_url }}', '_blank')"{% endif %}>
         <div>
           {% if item.entry.image_icon %}
             <img src="{{ url_for('dashboard.serve_image', filename=item.entry.image_icon) }}"
@@ -114,28 +115,6 @@
 {% block extra_scripts %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    const groupBySelect = document.getElementById('groupBySelect');
-    const urlParams = new URLSearchParams(window.location.search);
-    const currentGroup = urlParams.get('group_by') || 'group_name';
-    if (groupBySelect) {
-      groupBySelect.value = currentGroup;
-      groupBySelect.addEventListener('change', function () {
-        urlParams.set('group_by', this.value);
-        window.location.search = urlParams.toString();
-      });
-    }
-
-    const sortSelect = document.getElementById('sortInGroupSelect');
-    const sortParam = urlParams.get('sort_in_group') || 'alphabetical';
-    if (sortSelect) {
-      sortSelect.value = sortParam;
-      sortSelect.addEventListener('change', function () {
-        urlParams.set('group_by', document.getElementById('groupBySelect').value);
-        urlParams.set('sort_in_group', this.value);
-        window.location.search = urlParams.toString();
-      });
-    }
-
     // Filter tiles by input text
     const filterInput = document.getElementById('filterInput');
     if (filterInput) {

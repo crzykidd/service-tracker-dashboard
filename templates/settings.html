@@ -34,6 +34,7 @@
     <button onclick="showSection('widgets')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-widgets">Widgets</button>
     <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">Groups</button>
     <button onclick="showSection('users')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-users">Users</button>
+    <button onclick="showSection('exposure')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-exposure">Exposure</button>
 
   </aside>
 
@@ -400,6 +401,103 @@
           <label class="text-sm text-gray-300">Make Admin</label>
         </div>
         <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded">Create User</button>
+      </form>
+    </section>
+
+    <!-- === Exposure Section === -->
+    <section id="section-exposure" class="section hidden">
+      <h2 class="text-2xl font-semibold mb-4">Exposure Interpreter</h2>
+      <p class="text-sm text-gray-400 mb-6">
+        Each interpreter layer (Traefik, Dockflare, etc.) emits observations about how a container is exposed.
+        Use this page to declare whether each layer means <em>internal</em> URL, <em>external</em> URL, or neither
+        on this deployment. Saving recomputes synthesized URLs for every service. Operator UI edits and explicit
+        <code class="text-xs bg-gray-700 px-1 rounded">dockernotifier.std.internalurl</code> labels are never
+        overwritten.
+      </p>
+
+      <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}" class="space-y-8">
+        <div class="bg-gray-800 rounded shadow p-6">
+          <h3 class="text-lg font-semibold text-white mb-4 border-b border-gray-600 pb-1">
+            Layer directions (global)
+          </h3>
+          {% if exposure_layers %}
+            <table class="w-full text-sm">
+              <thead class="text-gray-400 text-left">
+                <tr>
+                  <th class="py-2 px-3 w-1/2">Layer</th>
+                  <th class="py-2 px-3">Direction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for layer in exposure_layers %}
+                  {% set current = exposure_layer_directions.get(layer, 'neither') %}
+                  <tr class="border-t border-gray-700">
+                    <td class="py-2 px-3 font-mono">{{ layer }}</td>
+                    <td class="py-2 px-3">
+                      <select name="layer:{{ layer }}" class="form-input w-48">
+                        <option value="neither" {% if current == 'neither' %}selected{% endif %}>neither (ignore for URL synthesis)</option>
+                        <option value="internal" {% if current == 'internal' %}selected{% endif %}>internal</option>
+                        <option value="external" {% if current == 'external' %}selected{% endif %}>external</option>
+                      </select>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="text-sm text-gray-400 italic">
+              No interpreter layers have been observed yet. Once the notifier emits exposure observations
+              (Traefik / Dockflare / etc.) the layers will appear here for configuration.
+            </p>
+          {% endif %}
+        </div>
+
+        {% if exposure_hosts %}
+          <div class="bg-gray-800 rounded shadow p-6">
+            <h3 class="text-lg font-semibold text-white mb-2 border-b border-gray-600 pb-1">
+              Per-host overrides
+            </h3>
+            <p class="text-sm text-gray-400 mb-4">
+              Override the global direction for a specific host. Useful when the same interpreter (e.g.
+              Traefik) means internal on a home host and external on an edge VPS.
+            </p>
+            {% for host in exposure_hosts %}
+              <div class="mb-4">
+                <div class="text-sm text-white font-semibold mb-2 font-mono">{{ host }}</div>
+                <table class="w-full text-sm">
+                  <thead class="text-gray-400 text-left">
+                    <tr>
+                      <th class="py-1 px-3 w-1/2">Layer</th>
+                      <th class="py-1 px-3">Override direction</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for layer in exposure_layers %}
+                      {% set override_current = exposure_host_overrides.get(host, {}).get(layer, '') %}
+                      <tr class="border-t border-gray-700">
+                        <td class="py-1 px-3 font-mono">{{ layer }}</td>
+                        <td class="py-1 px-3">
+                          <select name="override:{{ host }}:{{ layer }}" class="form-input w-48">
+                            <option value="" {% if not override_current %}selected{% endif %}>(use global)</option>
+                            <option value="neither" {% if override_current == 'neither' %}selected{% endif %}>neither</option>
+                            <option value="internal" {% if override_current == 'internal' %}selected{% endif %}>internal</option>
+                            <option value="external" {% if override_current == 'external' %}selected{% endif %}>external</option>
+                          </select>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold py-2 px-6 rounded shadow"
+                {% if not exposure_layers %}disabled{% endif %}>
+          Save & Recompute URLs
+        </button>
       </form>
     </section>
 

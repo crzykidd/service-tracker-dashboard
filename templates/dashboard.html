@@ -56,19 +56,13 @@
           </tr>
         </thead>
 
-          {% for group_data in grouped_entries.items() %}
-          {% set group = group_data[0] %}
-          {% set group_entries = group_data[1] %}
+          {% for group, group_entries in grouped_entries %}
           {% set group_index = loop.index0 %}
           <tbody>
             <tr class="bg-gray-800 font-semibold cursor-pointer" onclick="toggleGroup('{{ group_index }}')">
               <td colspan="11" class="px-4 py-2">
                 <span id="toggle-icon-{{ group_index }}">▼</span>
-                  {% if group_by == 'group_name' %}
-                    {{ group_lookup[group] if group in group_lookup else 'Unknown Group' }}
-                  {% else %}
-                    {{ group }}
-                  {% endif %}
+                  {{ group }}
                   <span class="text-sm text-gray-400 ml-2">({{ group_entries|length }})</span>
 
               </td>
@@ -78,7 +72,7 @@
             {% for entry in group_entries %}
             <tr class="border-b border-gray-700 group-entry"
                 data-group-id="{{ group_index }}"
-                data-entry data-group="{{ group_lookup[entry.group_id] if entry.group_id in group_lookup else 'Unknown' }}"
+                data-entry data-group="{{ entry.group.group_name if entry.group else 'Ungrouped' }}"
                 data-container="{{ entry.container_name }}"
                 data-stack="{{ entry.stack_name }}">
 
@@ -106,7 +100,7 @@
               </div>
             </td>
 
-            <td class="px-3 py-2">{{ group_lookup[entry.group_id] if entry.group_id in group_lookup else 'Unknown' }}</td>
+            <td class="px-3 py-2">{{ entry.group.group_name if entry.group else 'Ungrouped' }}</td>
             
             <td class="px-3 py-2">
               {% set target_url = entry.internalurl or entry.externalurl %}
@@ -123,6 +117,9 @@
                 <code>{{ entry.container_id[:12] }}</code>
               </div>
               {% endif %}
+              {% with exposures = entry.exposures %}
+                {% include "partials/exposure_badges.html" %}
+              {% endwith %}
             </td>
             <td class="px-3 py-2">{{ entry.stack_name or '' }}</td>
             <td class="px-3 py-2">{{ entry.host }}</td>
@@ -279,16 +276,6 @@
     const filterInput = document.getElementById('filterInput');
     const refreshLabel = document.getElementById('refreshTimer');
     const refreshDropdown = document.getElementById('refreshInterval');
-    const groupBySelect = document.getElementById('groupBySelect');
-    const sortInGroupSelect = document.getElementById('sortInGroupSelect');
-
-    if (groupBySelect) {
-      groupBySelect.addEventListener('change', function () {
-        const params = new URLSearchParams(window.location.search);
-        params.set('group_by', this.value);
-        window.location.search = params.toString();
-      });
-    }
 
     const rows = document.querySelectorAll('table tbody tr[data-entry]');
     if (filterInput) {
@@ -338,24 +325,6 @@
       iconEl.textContent = isCollapsed ? '▶' : '▼';
     });
 
-    if (sortInGroupSelect) {
-      const savedSort = localStorage.getItem('sortInGroup');
-      if (!savedSort) {
-        localStorage.setItem('sortInGroup', sortInGroupSelect.value);
-      } else if (sortInGroupSelect.value !== savedSort) {
-        sortInGroupSelect.value = savedSort;
-        const params = new URLSearchParams(window.location.search);
-        params.set('sort_in_group', savedSort);
-        window.location.search = params.toString();
-      }
-
-      sortInGroupSelect.addEventListener('change', function () {
-        localStorage.setItem('sortInGroup', this.value);
-        const params = new URLSearchParams(window.location.search);
-        params.set('sort_in_group', this.value);
-        window.location.search = params.toString();
-      });
-    }
   });
 
   function toggleGroup(groupId) {

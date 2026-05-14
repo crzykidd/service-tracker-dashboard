@@ -13,13 +13,11 @@ kept current by a sidecar process — typically
 posting to STD's register endpoint, but you can also add entries by hand
 through the web UI or directly via API.
 
-> **v0.5.0 introduces a new `/api/v1/register` endpoint with canonical
-> key names.** The old `/api/register` endpoint continues to work with a
-> compat shim that maps legacy keys (`docker_host`, `group_name`,
-> `internal.health`, ...) to canonical names and emits a deprecation
-> warning. **`/api/register` and the legacy keys will be removed in v0.6.0.**
-> If you're running `docker-api-notifier`, upgrade to v0.3.0 or later
-> before STD v0.6.0 ships.
+> **v0.6.0 removes the legacy `/api/register` endpoint.** All registers
+> must use `/api/v1/register` with canonical key names. If you're
+> running `docker-api-notifier`, v0.3.0 or later is required for basic
+> registration; v0.4.0 is the paired release that populates the new
+> network / port / exposure-observation fields.
 
 ---
 
@@ -44,6 +42,10 @@ through the web UI or directly via API.
 ## What It Does
 
 - Three dashboard views (table, tiled, compact). Tiled view is mobile-friendly.
+- **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
+  (`group` / `stack` / `host`) and a `Show URL-less` filter render
+  above the service grid on all three views. State is URL-driven, so
+  dashboards stay bookmarkable.
 - Internal + external URL health checks on a configurable interval.
 - Auto-downloads container icons from
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
@@ -56,6 +58,12 @@ through the web UI or directly via API.
 - Per-entry sort priority within groups; grouping and group sort.
 - Pluggable widget system (Sonarr, Radarr, Bazarr, Overseerr, Prowlarr,
   Syncthing today; more under `widgets/`).
+- **Exposure interpreter (v0.6.0+).** Reads structured exposure
+  observations from the notifier's YAML interpreters (Traefik,
+  Dockflare, etc.) and synthesizes `internalurl` / `externalurl`
+  without requiring operator-written `dockernotifier.std.*` labels.
+  Operator UI edits and explicit labels always win over synthesized
+  values.
 
 ---
 
@@ -84,7 +92,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 
 | Setting                    | Type   | ENV                          | Default            | What it does |
 |----------------------------|--------|------------------------------|--------------------|--------------|
-| `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/register` and `/api/v1/register`. |
+| `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. |
 | `std_dozzle_url`           | string | `STD_DOZZLE_URL`             | —                  | Optional link to a Dozzle instance; enables a Tools section in the UI. |
 | `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where YAML backups are written. |
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
@@ -161,9 +169,10 @@ docker compose exec <service-name> alembic check
 
 ## API: Registering Services
 
-> **v0.5.0+** — prefer `/api/v1/register` with canonical keys. The
-> `/api/register` endpoint still works but emits a deprecation warning
-> and will be removed in v0.6.0.
+`/api/v1/register` is the only register endpoint. The legacy
+`/api/register` shim that bridged v0.4.x producers through v0.5.0
+was removed in v0.6.0; producers must run `docker-api-notifier`
+v0.3.0+ or send canonical-key payloads directly.
 
 ### Endpoint
 
@@ -173,7 +182,7 @@ Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 ```
 
-### Canonical payload (v0.5.0+)
+### Canonical payload
 
 ```json
 {
@@ -191,7 +200,23 @@ Content-Type: application/json
   "internal_health_check_enabled": true,
   "external_health_check_enabled": true,
   "group_name": "web",
-  "sort_priority": 1
+  "sort_priority": 1,
+  "networks": [
+    {"name": "proxy", "aliases": ["frontend"]},
+    {"name": "ammoledger_default", "aliases": ["frontend"]}
+  ],
+  "exposed_ports": ["5173/tcp"],
+  "published_ports": [
+    {"container_port": 5173, "protocol": "tcp",
+     "host_ip": "0.0.0.0", "host_port": 8080}
+  ],
+  "exposure_observations": [
+    {"layer": "traefik", "hostname": "nginx.internal.example",
+     "tls": true, "path_prefix": null, "auth": null, "details": null},
+    {"layer": "dockflare", "hostname": "nginx.example.com",
+     "tls": true, "path_prefix": null,
+     "auth": "cloudflare_access:authenticate", "details": null}
+  ]
 }
 ```
 
@@ -204,8 +229,9 @@ Everything else is optional. STD applies sensible defaults for any
 field that's missing.
 
 `/api/v1/register` is **strict** — unknown keys are rejected with a
-400 and the list of offending keys in the response body. Migrate
-producers off legacy keys before pointing them at the v1 endpoint.
+400 and the list of offending keys in the response body. Nested
+structures (`networks`, `published_ports`) are also validated via
+pydantic; malformed entries are rejected at the schema boundary.
 
 ### Field ownership: user_wins vs notifier_wins
 
@@ -225,35 +251,87 @@ Regardless of mode, STD records what the notifier sent in
 columns. These columns aren't surfaced in the UI yet — they support
 a planned overridden-labels export.
 
-### Legacy support (deprecated, removed in v0.6.0)
+### Network and ports capture (v0.6.0+)
 
-The `/api/register` endpoint accepts canonical keys plus these
-legacy variants:
+The three optional `networks` / `exposed_ports` / `published_ports`
+fields are pure observation — STD overwrites them on every register
+call with no ownership semantics. They're populated by
+`docker-api-notifier` v0.4.0+; pre-v0.4.0 notifiers continue to work
+and just leave the columns NULL.
 
-| Legacy key        | Canonical key                     |
-|-------------------|-----------------------------------|
-| `docker_host`     | `host`                            |
-| `group`           | `group_name`                      |
-| `internal_health` | `internal_health_check_enabled`   |
-| `internal.health` | `internal_health_check_enabled`   |
-| `external_health` | `external_health_check_enabled`   |
-| `external.health` | `external_health_check_enabled`   |
-| `icon`            | `image_icon`                      |
-| `sort.priority`   | `sort_priority`                   |
+The read-only "Reported by notifier" block at the bottom of
+`/edit/<id>` surfaces this data. Empty / NULL columns render as "Not
+reported." Static entries (created manually via the UI) won't have
+this data either, and that's expected.
 
-(`internalurl` and `externalurl` are canonical — they have always
-been single-word in STD. No remap.)
+### Exposure observations + URL synthesis (v0.6.0+)
 
-The compat shim normalizes legacy keys to canonical and emits a
-`Deprecation: true` response header plus
-`Link: </api/v1/register>; rel="successor-version"`. There is no
-`Sunset` header in v0.5.0 — it will be added in v0.6.0 once the
-removal date is firm. The server also logs a deprecation WARNING
-once per client IP per hour, so the migration conversation gets
-driven without flooding the log.
+The optional `exposure_observations` field carries structured output
+from the notifier's YAML interpreters (Traefik, Dockflare, …).
+Notifier v0.4.0+ runs these interpreters and emits one entry per
+interpreter that recognizes the container. STD writes them into the
+new `service_exposure` table and runs a synthesizer that may
+populate `internalurl` / `externalurl` automatically.
 
-Unknown keys in legacy payloads are silently dropped (matches
-v0.4.x behavior). In `FLASK_DEBUG=1` they're logged.
+Operators tell STD what each layer means at `/settings` →
+**Exposure** tab. Each discovered layer (only layers that have been
+observed appear) gets a direction dropdown:
+
+- **internal** — synthesized hostname populates `internalurl`.
+- **external** — synthesized hostname populates `externalurl`.
+- **neither** (default) — STD records the observation and shows a
+  badge, but doesn't synthesize a URL from this layer.
+
+Per-host overrides let you say "Traefik on the home host is
+internal, but Traefik on the edge VPS is external" without writing
+different YAML per host.
+
+#### URL provenance
+
+The two `internalurl` / `externalurl` columns now track who last
+wrote them via two new `_source` columns. Ordering, strongest last:
+
+1. **NULL** — no value, no opinion. Synthesizer is free to fill in.
+2. **`synthesized`** — value came from the synthesizer. Re-runs on
+   every register and on settings save may change it.
+3. **`explicit_label`** — value came from a
+   `dockernotifier.std.internalurl` / `.externalurl` label on the
+   container. Synthesizer won't overwrite. A new explicit label
+   updates it; a UI edit overrides.
+4. **`ui_edit`** — operator typed a value in the web UI. Nothing
+   overrides until another UI edit. Clearing the field resets the
+   source to NULL so synthesis can resume.
+
+The edit page (`/edit/<id>`) shows a small badge next to each URL
+indicating the current source.
+
+#### Wire-level semantics
+
+- `exposure_observations` **absent** or **null** — "no update."
+  Existing exposure rows for the service are preserved. This is the
+  state for pre-v0.4.0 notifiers and any producer that doesn't emit
+  interpreter output.
+- `exposure_observations: []` — "this container has no interpreter
+  matches." All existing exposure rows for the service are
+  cleared. The synthesizer may then clear any URL whose source is
+  `synthesized`.
+- `exposure_observations: [ ... ]` — wholesale replacement. All
+  prior rows for this service are dropped, the new rows are
+  inserted, and the synthesizer recomputes URLs (respecting
+  provenance).
+
+#### Badges and headless rendering
+
+Each tile (tiled view) and row (table view) renders up to three
+exposure badges showing the layer name, a 🔒 if TLS-terminated, and
+a 🔑 if auth is required. A `+N` overflow badge appears when a
+service is observed by more than three interpreters.
+
+Services with no exposure observations **and** no URLs (manual,
+explicit, or synthesized) are considered "headless." Their tiles
+render without click affordance and rely on `docker_status` for
+state. Combine with the `?show_urlless=false` view-control filter
+(v0.6.0) to hide them entirely.
 
 ---
 
@@ -309,11 +387,11 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/compact_dash`      | High-density compact view.               |
 | `/add`               | Manually add a new entry.                |
 | `/edit/<id>`         | Edit or delete an existing entry.        |
-| `/settings`          | Settings + backup/restore UI.            |
+| `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
+| `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
-| `/api/v1/register`   | Register/update entry (v0.5.0+).         |
-| `/api/register`      | Deprecated alias; removed in v0.6.0.     |
+| `/api/v1/register`   | Register/update entry (canonical keys).  |
 | `/login` `/logout`   | Local user auth.                         |
 
 ---
@@ -352,7 +430,7 @@ cached in the `widget_value` table. Retention: rolling 30 days
 - `:latest` follows `main` — CI-verified pre-release.
 - `:dev` follows `dev` — work in progress.
 - `:sha-<short>` published for every push.
-- Semver-tagged images (`:0.5.0`, `:0`) published from GitHub Releases.
+- Semver-tagged images (`:0.6.0`, `:0`) published from GitHub Releases.
 
 Branch protection: PRs into `main` must pass the build check; force-push
 and branch deletion are blocked. Work happens on `dev`, opens a PR to

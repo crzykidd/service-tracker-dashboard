@@ -47,20 +47,35 @@
 
 ## Build Status
 
-Current shipped release: **v0.4.14** (latest tag on `main`)
+Current shipped release: **v0.5.0** (latest tag on `main`)
 
-Next release target: **v0.5.0** — cleanup release. Must ship **before**
-notifier v0.3.0 because v0.5.0 introduces `/api/v1/register` (the
-endpoint notifier v0.3.0 will target).
+Next release target: **v0.6.0** — bundled sunset + capture +
+interpreter release. Three threads of work shipping together:
 
-- Phase 1 — Documentation baseline: IN PROGRESS
-- Phase 2 — Settings + dead code cleanup: NOT STARTED
-- Phase 3 — Schema indexes + retention: NOT STARTED
-- Phase 4 — `app.py` split into focused modules: NOT STARTED
-- Phase 5 — pydantic register schemas + `/api/v1/register`: NOT STARTED
-- Phase 6 — Compat shim on `/api/register` with deprecation headers: NOT STARTED
-- Phase 7 — Job error handling + concurrency lock: NOT STARTED
-- Phase 8 — Stray `v.0.4.6` tag removal: DONE
+1. **Sunset** of `/api/register` and the legacy-key compat shim.
+2. **Network/ports capture** — three new JSON columns on
+   `service_entry` populated by notifier v0.3.2+.
+3. **Exposure interpreter mechanism** — wire contract for
+   interpreter outputs (`exposure_observations` field on the
+   register payload), new `service_exposure` table, URL synthesizer,
+   URL provenance tracking (`*_source` columns), DB-stored
+   per-interpreter direction settings (new `setting` table +
+   `settings_store.py`), exposure badges on the tile/table
+   dashboards, and headless rendering for services with no URL or
+   exposure evidence.
+
+Notifier coordination:
+- Notifier v0.3.0+ is required for any producer (canonical keys).
+- Notifier v0.3.2 ships **after** STD v0.6.0 and populates the
+  capture columns.
+- Notifier v0.4.0 ships **after** STD v0.6.0 and populates
+  `exposure_observations` via YAML interpreters.
+
+Status:
+- v0.5.0 — cleanup release (split, pydantic, retention, indexes): DONE
+- v0.5.x — view controls + grouping helper consolidation: folded into v0.6.0
+- v0.6.0 — sunset + capture + interpreter: IN PROGRESS (on dev)
+- v0.7.0+ — TBD (no scoped features at present)
 
 ## Git Workflow
 
@@ -107,10 +122,19 @@ The contract is:
 - **STD** owns the wire contract for the register endpoint.
 - **Notifier** is a producer — it sends what STD documents.
 - Wire-format changes start here. The notifier follows.
-- For v0.5.0 specifically: this release ships first; notifier v0.3.0
-  switches to canonical keys + `/api/v1/register` afterward.
-- v0.6.0 will remove `/api/register` and the compat shim. Operators
-  must be on notifier v0.3.0+ before v0.6.0.
+- v0.5.0 introduced `/api/v1/register`; notifier v0.3.0 switched to
+  canonical keys against it.
+- v0.6.0 removed `/api/register` and the legacy-key compat shim.
+  Operators must be on notifier v0.3.0+.
+- Notifier v0.3.2 (ships after STD v0.6.0) populates the new
+  `networks` / `exposed_ports` / `published_ports` capture fields.
+  Older notifiers continue to work; those columns stay NULL.
+- Notifier v0.4.0 (ships after STD v0.6.0) introduces YAML
+  interpreters that populate the `exposure_observations` field on
+  `/api/v1/register`. STD's synthesizer reads those observations
+  and writes synthesized URLs into `internalurl` / `externalurl`.
+  Pre-v0.4.0 notifiers don't send the field — STD treats absence as
+  "no update" and leaves any existing exposure rows alone.
 
 ## Database Rules
 
@@ -128,34 +152,50 @@ The contract is:
 - **`widget_value` retention is enforced by a scheduled job** (introduced
   in v0.5.0). Do not write code that assumes unbounded retention.
 
-## Register Contract Rules (v0.5.0+)
+## Register Contract Rules (v0.6.0+)
 
-- **Canonical key names** are the only shape accepted by
-  `/api/v1/register`. No silent remapping.
-- **The compat shim on `/api/register`** is the only place legacy key
-  remapping happens. It's a single, well-defined function — not
-  scattered remapping in multiple route handlers.
+- **Canonical key names** are the only shape accepted. `/api/v1/register`
+  is the only register endpoint; legacy `/api/register` and the
+  remap function were removed in v0.6.0.
 - **pydantic schemas** in `schemas.py` are the source of truth for the
-  wire contract. The README documents what the schema enforces.
-- **Removing legacy support** is a v0.6.0 task. Do not silently start
-  rejecting legacy keys before v0.6.0 — emit deprecation warnings
-  instead.
+  wire contract. Nested structures (`networks`, `published_ports`,
+  `exposure_observations`) use dedicated pydantic models with
+  `extra="forbid"` so malformed payloads are caught at the schema
+  boundary.
+- **Network and port capture columns are pure observation** —
+  overwritten on every register, no ownership semantics. The
+  notifier owns them. Don't add UI editing for these columns.
+- **Exposure observations are wholesale-replaced per register.**
+  `null` in the payload means "no update — leave existing rows
+  alone"; `[]` means "clear all rows for this service." Don't merge
+  partial updates into the existing rows.
+- **URL provenance ordering is `ui_edit` > `explicit_label` >
+  `synthesized` > NULL.** The synthesizer (`synthesizer.py`) only
+  ever writes `synthesized`. The register handler writes
+  `explicit_label` when the payload carries `internalurl` /
+  `externalurl`. The UI edit handler writes `ui_edit`. Never
+  invert this ordering; it's the contract operators rely on to
+  protect their UI edits from being clobbered.
 
-## Module Layout (target, v0.5.0)
+## Module Layout (current, v0.6.0)
 
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints, jobs
 extensions.py       ← SQLAlchemy, login manager, scheduler instances
-models.py           ← SQLAlchemy models (Service, User, WidgetValue, ...)
+models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ...)
 schemas.py          ← pydantic request/response schemas
-routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>
-routes_api.py       ← /api/v1/register, /api/register (compat)
+routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
+                      /settings, /settings/exposure
+routes_api.py       ← /api/v1/register
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
 jobs.py             ← health check loop, widget refresh, backup, retention
 health.py           ← /healthz, /readyz
-settings_loader.py  ← unchanged in spirit; loaded once at startup
+settings_loader.py  ← file/ENV settings; loaded once at startup
+settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
+synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
+view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates
 static/             ← static assets
 widgets/            ← per-widget plugin dirs

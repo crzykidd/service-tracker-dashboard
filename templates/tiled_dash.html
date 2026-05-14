@@ -161,6 +161,12 @@
     background-color: #1f2937;
     border: 1px solid #374151;
   }
+  /* Headless tile — no exposure rows and no URLs. Removes hover
+     border highlight + cursor cue since there's nothing to click.
+     Exposure badge styles live in base.html so they're available on
+     every dashboard view. */
+  .tile.tile-headless { cursor: default; }
+  .tile.tile-headless:hover { border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 </style>
 {% endblock %}
 
@@ -171,7 +177,7 @@
 
 {% block content %}
     {% if grouped_entries %}
-        {% for group_name, entries_in_group in grouped_entries.items() %}
+        {% for group_name, entries_in_group in grouped_entries %}
             <h2 class="group-title flex items-center gap-2 cursor-pointer group-header" data-group="{{ group_name }}">
             <span class="toggle-icon transition-transform duration-200">▾</span>
             <span>{{ group_name }}</span>
@@ -180,8 +186,9 @@
 
             <div class="tile-container" data-group-container="{{ group_name }}">
                 {% for entry in entries_in_group %}
+                    {% set _is_headless = (not entry.internalurl) and (not entry.externalurl) and (not entry.exposures) %}
                     <div class="tile-wrapper">
-                        <div class="tile"
+                        <div class="tile{% if _is_headless %} tile-headless{% endif %}"
                         data-internalurl="{{ entry.internalurl if entry.internalurl else '' }}"
                         data-externalurl="{{ entry.externalurl if entry.externalurl else '' }}">
                         <div class="tile-icon">
@@ -196,6 +203,9 @@
                         <div class="tile-details">
                             <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
                             <small class="host-name" title="{{ entry.host }}">{{ entry.host }}</small>
+                            {% with exposures = entry.exposures %}
+                              {% include "partials/exposure_badges.html" %}
+                            {% endwith %}
                         </div>
 
                         <div class="tile-statuses">
@@ -339,19 +349,6 @@ let secondsSinceRefresh = 0;
 let refreshInterval = 60;
 
 document.addEventListener('DOMContentLoaded', function () {
-    // Group By Dropdown Logic
-    const groupBySelect = document.getElementById('groupBySelect');
-    const urlParams = new URLSearchParams(window.location.search);
-    const activeGroupBy = urlParams.get('group_by') || 'group_name';
-
-    if (groupBySelect) {
-        groupBySelect.value = activeGroupBy;
-        groupBySelect.addEventListener('change', function () {
-        urlParams.set('group_by', this.value);
-        window.location.search = urlParams.toString();
-        });
-}
-
   // Tile Clickability
   const tiles = document.querySelectorAll('.tile');
   tiles.forEach(tile => {
@@ -437,19 +434,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }, 1000);
 
-    // Sort In Group Logic
-    const sortSelect = document.getElementById('sortInGroupSelect');
-    const sortParam = new URLSearchParams(window.location.search).get('sort_in_group') || 'priority';
-    if (sortSelect) {
-        sortSelect.value = sortParam;
-
-        sortSelect.addEventListener('change', function () {
-            const params = new URLSearchParams(window.location.search);
-            params.set('group_by', document.getElementById('groupBySelect').value);
-            params.set('sort_in_group', this.value);
-            window.location.search = params.toString();
-        });
-    }
     // Filter tiles by input text
     const filterInput = document.getElementById('filterInput');
     if (filterInput) {

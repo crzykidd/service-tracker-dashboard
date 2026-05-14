@@ -2,13 +2,11 @@
 
 Owns the `api` blueprint. Surfaces:
 - `/api/v1/register` (v0.5.0+) — canonical-keys-only, pydantic-
-  validated. The contract notifier v0.3.0 targets.
-- `/api/register` (legacy) — compat shim that remaps legacy keys
-  and calls the same shared upsert. Emits `Deprecation: true`.
-  Will be removed in v0.6.0.
+  validated. The contract notifier v0.3.0+ targets.
 
-Both routes call into `upsert_service(canonical, app)` — there is
-exactly one place where the upsert logic lives.
+The legacy `/api/register` compat shim that bridged v0.4.x producers
+through v0.5.x was removed in v0.6.0. Operators must run notifier
+v0.3.0 or later.
 
 Module-level state local to this surface:
 - `unauthorized_log_tracker` — rate-limits the unauthorized-access
@@ -29,6 +27,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
+import synthesizer
 from extensions import db
 from image_utils import parse_bool, resolve_image_metadata
 from models import Group, ServiceEntry
@@ -53,10 +52,6 @@ def _check_bearer_auth(endpoint_label):
     """Validate the Authorization header against `api_token`.
 
     Returns None on success, or a 401 Flask Response on failure.
-    Shared between /api/v1/register and /api/register so the auth
-    contract stays in one place. The compat shim wraps the failure
-    response with the deprecation headers; the v1 endpoint returns
-    it as-is.
     """
     auth_header = request.headers.get("Authorization", "")
     expected = f"Bearer {current_app.config['api_token']}"
@@ -77,84 +72,13 @@ def _check_bearer_auth(endpoint_label):
     return response
 
 
-# Legacy → canonical key remap. The compat shim is the ONLY place
-# this happens. /api/v1/register does not look at these names — a
-# producer that sends a legacy key against v1 gets a 400.
-_LEGACY_KEY_MAP = {
-    "group": "group_name",
-    "internal_health": "internal_health_check_enabled",
-    "internal.health": "internal_health_check_enabled",
-    "external_health": "external_health_check_enabled",
-    "external.health": "external_health_check_enabled",
-    "docker_host": "host",
-    "icon": "image_icon",
-    "sort.priority": "sort_priority",
-}
-
-
-def _remap_legacy_to_canonical(data):
-    """Translate a legacy /api/register payload to a canonical dict.
-
-    - Canonical keys present in `data` are passed through.
-    - Legacy keys are remapped to their canonical name, but only
-      when the canonical key is not already explicitly set (so a
-      producer that sends both `group_name` and `group` gets the
-      `group_name` value).
-    - Keys not in the canonical schema and not in the legacy map
-      are silently dropped — matches v0.4.x behavior (the existing
-      handler ignored them; in debug it logged a warning).
-
-    Bool coercion is NOT done here — upsert_service runs values
-    through `parse_bool` itself, which handles both real bools and
-    the "true"/"false" string variants that legacy producers send.
-    """
-    canonical = {}
-    schema_fields = RegisterPayload.model_fields
-    for key, value in data.items():
-        if key in schema_fields:
-            canonical[key] = value
-    for legacy_key, canonical_key in _LEGACY_KEY_MAP.items():
-        if legacy_key in data and canonical_key not in canonical:
-            canonical[canonical_key] = data[legacy_key]
-    return canonical
-
-
-# Per-IP rate limit on the deprecation warning log. Logging every
-# /api/register call would drown out everything else; once per
-# producer per hour is enough to drive the migration conversation.
-_DEPRECATION_LOG_TRACKER = {}
-
-
-def _maybe_log_deprecation(client_ip):
-    now = datetime.utcnow()
-    last_log = _DEPRECATION_LOG_TRACKER.get(client_ip)
-    if not last_log or (now - last_log) > timedelta(hours=1):
-        logger.warning(
-            f"⚠️ Deprecated /api/register called by {client_ip}; "
-            f"migrate this producer to /api/v1/register before v0.6.0."
-        )
-        _DEPRECATION_LOG_TRACKER[client_ip] = now
-
-
-def _add_deprecation_headers(response):
-    """Attach Deprecation + successor-version Link to a Response.
-
-    No Sunset header in v0.5.0 — a wrong Sunset date is worse than
-    none. v0.6.0 with a firm cutover timeline can add it.
-    """
-    response.headers['Deprecation'] = 'true'
-    response.headers['Link'] = '</api/v1/register>; rel="successor-version"'
-    return response
-
-
 def upsert_service(canonical, app):
     """Apply a canonical register payload to the service_entry row
     for `(host, container_name)`. Returns `(body_dict, http_status)`.
 
     Caller is responsible for auth and for translating wire-format
     keys to canonical (the pydantic schema does this for
-    /api/v1/register; the legacy-key remap function does it for
-    /api/register).
+    /api/v1/register).
 
     Concurrency
     -----------
@@ -182,13 +106,13 @@ def upsert_service(canonical, app):
     Field ownership
     ---------------
     Notifier-owned fields (container_id, URLs, stack_name,
-    docker_status, started_at, health-check toggles, image_*) are
-    overwritten on update whenever the payload carries them.
+    docker_status, started_at, health-check toggles, image_*,
+    networks, exposed_ports, published_ports) are overwritten on
+    update whenever the payload carries them. networks/ports have
+    no ownership semantics — they're pure observation.
 
     User-overridable fields (group_name -> group_id, sort_priority)
-    are governed by a per-deployment mode. v0.5.0 hard-codes
-    "user_wins" here; commit 6 wires it to the
-    `register_field_ownership` setting:
+    are governed by the `register_field_ownership` setting:
     - "user_wins" — existing non-NULL values are preserved on
       update. New rows are written with whatever the payload says.
     - "notifier_wins" — payload always wins.
@@ -196,6 +120,23 @@ def upsert_service(canonical, app):
     Regardless of mode, the `notifier_reported_*` capture columns
     record what the notifier actually sent, so a future
     overridden-labels export can compare against the user's value.
+
+    URL provenance (v0.6.0 — exposure interpreter):
+    When the payload carries a non-empty `internalurl` or
+    `externalurl` it is treated as an explicit label
+    (`dockernotifier.std.internalurl` / `.externalurl`). The
+    register handler writes the value with `_source =
+    "explicit_label"` unless the existing source is `"ui_edit"`
+    (an operator UI edit always wins). Synthesizer-set values
+    (`_source = "synthesized"`) are happily overwritten by an
+    explicit label.
+
+    `exposure_observations` in the payload — when present —
+    replaces all `ServiceExposure` rows for this service. After
+    the replacement the synthesizer recomputes
+    `internalurl` / `externalurl` for any URL whose source is NULL
+    or "synthesized". It never touches ui_edit or explicit_label
+    URLs.
 
     is_static rows short-circuit with a 200 + skipped body — that
     behavior is unchanged from v0.4.x.
@@ -246,10 +187,16 @@ def upsert_service(canonical, app):
             # Notifier-owned fields — always overwrite when payload carries them.
             if canonical.get("container_id"):
                 entry.container_id = canonical["container_id"]
+            # URLs from the payload are explicit-label provenance. They
+            # beat synthesized values and null, but a ui_edit always wins.
             if canonical.get("internalurl"):
-                entry.internalurl = canonical["internalurl"]
+                if entry.internalurl_source != synthesizer.SOURCE_UI_EDIT:
+                    entry.internalurl = canonical["internalurl"]
+                    entry.internalurl_source = synthesizer.SOURCE_EXPLICIT_LABEL
             if canonical.get("externalurl"):
-                entry.externalurl = canonical["externalurl"]
+                if entry.externalurl_source != synthesizer.SOURCE_UI_EDIT:
+                    entry.externalurl = canonical["externalurl"]
+                    entry.externalurl_source = synthesizer.SOURCE_EXPLICIT_LABEL
             if canonical.get("stack_name"):
                 entry.stack_name = canonical["stack_name"]
             if canonical.get("docker_status"):
@@ -277,6 +224,17 @@ def upsert_service(canonical, app):
             if image_meta["image_tag"]:
                 entry.image_tag = image_meta["image_tag"]
 
+            # Observed container facts — pure overwrite, no ownership.
+            # `key in canonical` (rather than a truthy check) so the
+            # notifier can explicitly clear a previously-reported list
+            # by sending [] or null.
+            if "networks" in canonical:
+                entry.networks = canonical["networks"]
+            if "exposed_ports" in canonical:
+                entry.exposed_ports = canonical["exposed_ports"]
+            if "published_ports" in canonical:
+                entry.published_ports = canonical["published_ports"]
+
             # User-overridable fields. Always record what the notifier
             # reported into the capture columns; whether the live
             # column gets the new value depends on `mode`.
@@ -292,12 +250,19 @@ def upsert_service(canonical, app):
         else:
             # New row — every field from the payload, plus the capture columns.
             now = datetime.now()
+            new_internalurl = canonical.get('internalurl') or None
+            new_externalurl = canonical.get('externalurl') or None
             entry = ServiceEntry(
                 host=canonical['host'],
                 container_name=canonical['container_name'],
                 container_id=canonical.get('container_id'),
-                internalurl=canonical.get('internalurl'),
-                externalurl=canonical.get('externalurl'),
+                internalurl=new_internalurl,
+                externalurl=new_externalurl,
+                # If the payload carried a URL on first sight, that's an
+                # explicit label. Otherwise leave source NULL — the
+                # synthesizer may fill it in below.
+                internalurl_source=synthesizer.SOURCE_EXPLICIT_LABEL if new_internalurl else None,
+                externalurl_source=synthesizer.SOURCE_EXPLICIT_LABEL if new_externalurl else None,
                 stack_name=canonical.get('stack_name'),
                 docker_status=canonical.get('docker_status'),
                 internal_health_check_enabled=parse_bool(canonical.get('internal_health_check_enabled')),
@@ -314,8 +279,22 @@ def upsert_service(canonical, app):
                 sort_priority=canonical.get('sort_priority'),
                 notifier_reported_group_name=canonical.get('group_name'),
                 notifier_reported_sort_priority=canonical.get('sort_priority'),
+                networks=canonical.get('networks'),
+                exposed_ports=canonical.get('exposed_ports'),
+                published_ports=canonical.get('published_ports'),
             )
             db.session.add(entry)
+            # Flush so entry.id is available for ServiceExposure FKs
+            # before replace_exposures runs below.
+            db.session.flush()
+
+        # Exposure observations + synthesizer (v0.6.0). Null in the
+        # payload means "no update — leave existing rows alone";
+        # an empty list means "clear all rows". The synthesizer runs
+        # unconditionally so direction-setting changes that arrived
+        # since the last register also take effect here.
+        synthesizer.replace_exposures(entry, canonical.get("exposure_observations"))
+        synthesizer.synthesize_for_entry(entry)
 
         db.session.commit()
         return entry.to_dict(), 200
@@ -329,9 +308,6 @@ def api_v1_register():
     in `RegisterPayload` triggers a 400 with the list of offending
     keys. `host` and `container_name` are required; everything else
     is optional.
-
-    Notifier v0.3.0 targets this endpoint. The legacy /api/register
-    compat shim remains available through v0.6.0.
     """
     auth_failure = _check_bearer_auth("/api/v1/register")
     if auth_failure is not None:
@@ -362,59 +338,3 @@ def api_v1_register():
     canonical = payload.model_dump()
     body, status = upsert_service(canonical, current_app._get_current_object())
     return jsonify(body), status
-
-
-@api_bp.route('/api/register', methods=['POST'])
-def api_register():
-    """Legacy compat shim. Deprecated; will be removed in v0.6.0.
-
-    Remaps the historical key spellings to canonical and calls the
-    same shared upsert as /api/v1/register. The remap is the ONE
-    place legacy keys are interpreted; no other code in this file
-    looks at `group`, `docker_host`, `internal.health`, etc.
-
-    Unlike the v1 endpoint, this shim does NOT route through the
-    pydantic schema: real-world v0.4.x payloads may carry keys
-    pydantic-strict would reject (e.g., experimental `timestamp`
-    variants), and the goal of the shim is translation, not
-    enforcement. Unknown keys are silently dropped by the remap.
-
-    Every response includes `Deprecation: true` and a Link header
-    pointing to /api/v1/register. A per-IP rate-limited warning is
-    logged once per hour to drive producer migration without
-    flooding the log.
-    """
-    auth_failure = _check_bearer_auth("/api/register")
-    if auth_failure is not None:
-        return _add_deprecation_headers(auth_failure)
-
-    _maybe_log_deprecation(request.remote_addr)
-
-    raw = request.get_json(silent=True)
-    if not isinstance(raw, dict):
-        response = jsonify({"error": "Request body must be a JSON object"})
-        response.status_code = 400
-        return _add_deprecation_headers(response)
-
-    if current_app.debug:
-        logger.info("🔍 Received /api/register payload:")
-        for k, v in raw.items():
-            logger.info(f"    {k}: {v}")
-        unknown = [
-            k for k in raw
-            if k not in RegisterPayload.model_fields and k not in _LEGACY_KEY_MAP
-        ]
-        if unknown:
-            logger.warning(f"⚠️ Unknown keys in legacy payload (dropped): {unknown}")
-
-    canonical = _remap_legacy_to_canonical(raw)
-
-    if not canonical.get('host') or not canonical.get('container_name'):
-        response = jsonify({"error": "Missing host or container_name"})
-        response.status_code = 400
-        return _add_deprecation_headers(response)
-
-    body, status = upsert_service(canonical, current_app._get_current_object())
-    response = jsonify(body)
-    response.status_code = status
-    return _add_deprecation_headers(response)

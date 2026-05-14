@@ -7,14 +7,15 @@ Owns the `dashboard` blueprint:
 - Service CRUD: /add, /edit/<id>, /dbdump
 - Static assets: /images/<filename>
 
-Issue D2 from PRD: dashboard, tiled_dashboard, and compact_dash
-duplicate grouping/sorting logic. Deliberate follow-up — not
-deduplicated in this phase per the Phase 4 plan.
+Grouping/sorting for the three dashboard views lives in
+`view_helpers.group_and_sort_services`. The view controls
+(`group_by` axis selector, `show_urlless` filter) are URL-driven
+(`?group_by=stack&show_urlless=false`); each route here just parses
+the query params and hands them to the helper.
 """
 
 import logging
 import os
-from collections import defaultdict
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -33,13 +34,20 @@ from flask import (
     url_for,
 )
 from flask_login import login_required
-from sqlalchemy import asc, desc, nullslast
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
+import settings_store
+import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing
-from models import Group, ServiceEntry, User, Widget, WidgetValue
+from models import Group, ServiceEntry, ServiceExposure, User, Widget, WidgetValue
 from routes_auth import is_admin_required
+from view_helpers import (
+    DEFAULT_SORT_IN_GROUP,
+    group_and_sort_services,
+    normalize_axis,
+    normalize_show_urlless,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,302 +60,134 @@ def flash_is_present(req):
     return '_flashes' in req.environ.get('flask._flashes', [])
 
 
+def _load_widget_values():
+    widget_values = {}
+    for wv in WidgetValue.query.all():
+        widget_values.setdefault(wv.widget_id, {})[wv.widget_value_key] = wv.widget_value
+    widget_fields = {w.id: w.widget_fields for w in Widget.query.all()}
+    return widget_values, widget_fields
+
+
+def _read_view_controls(default_sort_in_group=DEFAULT_SORT_IN_GROUP):
+    axis = normalize_axis(request.args.get("group_by"), logger=logger)
+    show_urlless = normalize_show_urlless(request.args.get("show_urlless"))
+    sort_in_group = request.args.get("sort_in_group", default_sort_in_group)
+    return axis, show_urlless, sort_in_group
+
+
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
-
-    sort = request.args.get('sort', 'group_name')
-    direction = request.args.get('dir', 'asc')
-    group_by = request.args.get('group_by', 'group_name')
-    sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
+    axis, show_urlless, sort_in_group = _read_view_controls()
     msg = request.args.get('msg')
 
-    sort = request.args.get('sort', 'group_name')
-    direction = request.args.get('dir', 'asc')
+    entries = (
+        ServiceEntry.query
+        .options(joinedload(ServiceEntry.group))
+        .options(selectinload(ServiceEntry.exposures))
+        .all()
+    )
 
-    if sort == 'group_name':
-        # Join to Group and sort by group.group_name
-        query = ServiceEntry.query.options(joinedload(ServiceEntry.group)) \
-            .join(Group, isouter=True) \
-            .order_by(asc(Group.group_name) if direction == 'asc' else desc(Group.group_name))
-    else:
-        sort_attr = getattr(ServiceEntry, sort, None)
-        if not sort_attr:
-            sort_attr = ServiceEntry.container_name
-        query = ServiceEntry.query.order_by(sort_attr.asc() if direction == 'asc' else sort_attr.desc())
+    grouped_entries = group_and_sort_services(
+        entries,
+        axis=axis,
+        show_urlless=show_urlless,
+        sort_in_group=sort_in_group,
+    )
 
-    entries = query.all()
-
-    # Group lookup for ID → name
-    groups = Group.query.all()
-    group_lookup = {g.id: g.group_name for g in groups}
-
-    # Widget values
-    widget_value_rows = WidgetValue.query.all()
-    widget_values = {}
-    for wv in widget_value_rows:
-        if wv.widget_id not in widget_values:
-            widget_values[wv.widget_id] = {}
-        widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
-
-    # Group entries by group_id (not group_name) so the template lookup works
-    grouped_entries = defaultdict(list)
-    for entry in entries:
-        if group_by == 'group_name':
-            raw_key = entry.group_id  # group by ID for name lookup
-        elif group_by == 'is_static':
-            raw_key = "Static" if entry.is_static else "Dynamic"
-        else:
-            raw_key = getattr(entry, group_by)
-            raw_key = str(raw_key) if raw_key is not None else "None"
-
-        grouped_entries[raw_key].append(entry)
-
-    # Sort entries within each group
-    for key in grouped_entries:
-        if sort_in_group == 'alphabetical':
-            grouped_entries[key].sort(key=lambda e: e.container_name.lower())
-        else:  # default to priority
-            grouped_entries[key].sort(key=lambda e: (
-                e.sort_priority if e.sort_priority is not None else 9999,
-                e.container_name.lower()
-            ))
-
-    # Sort group headers
-    if group_by == "is_static":
-        sort_order = {"Static": 0, "Dynamic": 1}
-        grouped_entries = dict(sorted(grouped_entries.items(), key=lambda item: sort_order.get(item[0], 99)))
-    elif group_by == "group_name":
-        group_meta = {
-            g.id: (
-                g.group_sort_priority if g.group_sort_priority is not None else 9999,
-                g.group_name.lower()
-            )
-            for g in groups
-        }
-
-        def group_sort_key(item):
-            group_id = item[0]
-            if group_id is None:
-                return (float('inf'), 'zzz')  # Ungrouped last
-            return group_meta.get(group_id, (9999, 'zzz'))
-
-        grouped_entries = dict(sorted(grouped_entries.items(), key=group_sort_key))
-
-    else:
-        grouped_entries = dict(sorted(grouped_entries.items()))
-
-    widget_fields = {
-        widget.id: widget.widget_fields for widget in Widget.query.all()
-    }
+    visible_total = sum(len(es) for _, es in grouped_entries)
+    widget_values, widget_fields = _load_widget_values()
 
     return render_template(
         "dashboard.html",
-        entries=entries,
         grouped_entries=grouped_entries,
-        sort=sort,
-        direction=direction,
-        group_by=group_by,
+        total_entries=visible_total,
+        group_by=axis,
+        show_urlless=show_urlless,
+        sort_in_group=sort_in_group,
         msg=msg,
         STD_DOZZLE_URL=current_app.config.get("std_dozzle_url"),
         display_tools=current_app.config.get("display_tools", False),
         widget_values=widget_values,
         widget_fields=widget_fields,
-        sort_in_group=sort_in_group,
         active_tab='dashboard',
-        group_lookup=group_lookup,
     )
 
 
 @dashboard_bp.route('/tiled_dash')
 @login_required
 def tiled_dashboard():
-    group_by_param = request.args.get('group_by', 'group_name')
-    sort_in_group = request.args.get('sort_in_group', 'priority')  # default to priority
+    axis, show_urlless, sort_in_group = _read_view_controls()
 
-    # Use actual attribute for sorting if valid
-    if hasattr(ServiceEntry, group_by_param):
-        group_by_attr_name = group_by_param
-        group_by_attr_for_query = getattr(ServiceEntry, group_by_param)
-    else:
-        group_by_attr_name = 'group_name'
-        group_by_attr_for_query = ServiceEntry.group_id  # default fallback
+    entries = (
+        ServiceEntry.query
+        .options(joinedload(ServiceEntry.group))
+        .options(selectinload(ServiceEntry.exposures))
+        .all()
+    )
 
-    entries = ServiceEntry.query.order_by(group_by_attr_for_query.asc(), ServiceEntry.container_name.asc()).all()
+    grouped_entries = group_and_sort_services(
+        entries,
+        axis=axis,
+        show_urlless=show_urlless,
+        sort_in_group=sort_in_group,
+    )
 
-    # === Preload widget values ===
-    widget_value_rows = WidgetValue.query.all()
-    widget_values = {}
-    for wv in widget_value_rows:
-        if wv.widget_id not in widget_values:
-            widget_values[wv.widget_id] = {}
-        widget_values[wv.widget_id][wv.widget_value_key] = wv.widget_value
-
-    # === Group entries ===
-    grouped_entries_dict = defaultdict(list)
-    for entry in entries:
-        if group_by_attr_name == "is_static":
-            key = "Static Entries" if entry.is_static else "Dynamic Entries"
-        elif group_by_attr_name == "group_name":
-            key = entry.group.group_name if entry.group else "Ungrouped"
-        else:
-            raw_value = getattr(entry, group_by_attr_name, None)
-            key = "Ungrouped" if raw_value in [None, '', 'None'] else str(raw_value)
-        grouped_entries_dict[key].append(entry)
-
-    # === Sort entries within each group ===
-    for key, group_entries in grouped_entries_dict.items():
-        if sort_in_group == "alphabetical":
-            grouped_entries_dict[key] = sorted(
-                group_entries, key=lambda e: e.container_name.lower()
-            )
-        else:  # default to priority
-            grouped_entries_dict[key] = sorted(
-                group_entries,
-                key=lambda e: (
-                    e.sort_priority if e.sort_priority is not None else 9999,
-                    e.container_name.lower()
-                )
-            )
-
-    # === Sort groups themselves ===
-    if group_by_attr_name == "is_static":
-        sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
-        sorted_grouped_entries = dict(sorted(
-            grouped_entries_dict.items(),
-            key=lambda item: (sort_order.get(item[0], 99), item[0])
-        ))
-
-    elif group_by_attr_name == "group_name":
-        group_meta = {
-            g.group_name: (
-                g.group_sort_priority if g.group_sort_priority is not None else 9999,
-                g.group_name.lower()
-            )
-            for g in Group.query.all()
-        }
-
-        def group_sort_key(item):
-            name = item[0]
-            if name == "Ungrouped":
-                return (float('inf'), 'zzz')  # Always last
-            return group_meta.get(name, (9999, name.lower()))
-
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=group_sort_key))
-
-    else:
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
-
-    widget_fields = {
-        widget.id: widget.widget_fields for widget in Widget.query.all()
-    }
+    visible_total = sum(len(es) for _, es in grouped_entries)
+    widget_values, widget_fields = _load_widget_values()
 
     return render_template(
         "tiled_dash.html",
-        grouped_entries=sorted_grouped_entries,
-        active_group_by=group_by_attr_name,
+        grouped_entries=grouped_entries,
+        group_by=axis,
+        show_urlless=show_urlless,
         sort_in_group=sort_in_group,
         STD_DOZZLE_URL=current_app.config['std_dozzle_url'],
-        total_entries=len(entries),
+        total_entries=visible_total,
         widget_values=widget_values,
-        widget_fields=widget_fields
+        widget_fields=widget_fields,
     )
 
 
 @dashboard_bp.route('/compact_dash')
 @login_required
 def compact_dash():
-    group_by_param = request.args.get('group_by', 'group_name')
-    sort_in_group = request.args.get('sort_in_group', 'alphabetical')
+    axis, show_urlless, sort_in_group = _read_view_controls(
+        default_sort_in_group="alphabetical"
+    )
 
-    group_by_attr_name = group_by_param
-
-    # Explicitly join Group to allow sorting by Group.group_name
     entries = (
         ServiceEntry.query
         .options(joinedload(ServiceEntry.group))
-        .join(Group, isouter=True)
-        .order_by(
-            nullslast(Group.group_sort_priority.asc()),
-            ServiceEntry.container_name.asc()
-        )
+        .options(selectinload(ServiceEntry.exposures))
         .all()
     )
 
-    # Group entries
-    grouped_entries_dict = defaultdict(list)
-    for entry in entries:
-        if group_by_attr_name == "is_static":
-            key = "Static Entries" if entry.is_static else "Dynamic Entries"
-        elif group_by_attr_name == "group_name":
-            key = entry.group.group_name if entry.group else "Ungrouped"
-        else:
-            raw_value = getattr(entry, group_by_attr_name, None)
-            key = "Ungrouped" if raw_value in [None, '', 'None'] else str(raw_value)
-        grouped_entries_dict[key].append(entry)
+    grouped_entries = group_and_sort_services(
+        entries,
+        axis=axis,
+        show_urlless=show_urlless,
+        sort_in_group=sort_in_group,
+    )
 
-    # Sort entries within each group
-    for key in grouped_entries_dict:
-        if sort_in_group == 'priority':
-            grouped_entries_dict[key] = sorted(
-                grouped_entries_dict[key],
-                key=lambda e: (
-                    e.sort_priority if e.sort_priority is not None else 9999,
-                    e.container_name.lower()
-                )
-            )
-        else:
-            grouped_entries_dict[key] = sorted(
-                grouped_entries_dict[key],
-                key=lambda e: e.container_name.lower()
-            )
-
-    # Sort group names
-    if group_by_attr_name == "group_name":
-        group_meta = {
-            g.group_name: g.group_sort_priority if g.group_sort_priority is not None else 9999
-            for g in Group.query.all()
-        }
-
-        def sort_key(item):
-            name = item[0]
-            if name == "Ungrouped":
-                return (float('inf'), "")  # put ungrouped last
-            return (group_meta.get(name, 9999), name.lower())
-
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items(), key=sort_key))
-
-    elif group_by_attr_name in ["host", "stack_name"]:
-        sorted_grouped_entries = dict(
-            sorted(grouped_entries_dict.items(), key=lambda item: (item[0] == "Ungrouped", item[0].lower()))
-        )
-
-    elif group_by_attr_name == "is_static":
-        sort_order = {"Static Entries": 0, "Dynamic Entries": 1, "Ungrouped": 2}
-        sorted_grouped_entries = dict(
-            sorted(grouped_entries_dict.items(), key=lambda item: (sort_order.get(item[0], 99), item[0]))
-        )
-
-    else:
-        sorted_grouped_entries = dict(sorted(grouped_entries_dict.items()))
-
-
-    # Flatten for rendering
     flattened_entries = []
-    for group_name, group_entries in sorted_grouped_entries.items():
-        flattened_entries.append({'is_group_header': True, 'group': group_name})
-        for entry in group_entries:
+    visible_total = 0
+    for label, bucket_entries in grouped_entries:
+        flattened_entries.append({'is_group_header': True, 'group': label})
+        for entry in bucket_entries:
             flattened_entries.append({'is_group_header': False, 'entry': entry})
+            visible_total += 1
 
-    unique_hosts = set(e.host for e in entries if e.host)
+    unique_hosts = {e.host for _, bucket in grouped_entries for e in bucket if e.host}
     show_host = len(unique_hosts) > 1
 
     return render_template(
         "compact_dash.html",
         flattened_entries=flattened_entries,
-        total_entries=len(entries),
+        total_entries=visible_total,
         show_host=show_host,
-        group_by=group_by_param,
+        group_by=axis,
+        show_urlless=show_urlless,
         sort_in_group=sort_in_group,
         active_tab="compact"
     )
@@ -612,6 +452,15 @@ def settings():
                 missing_icons.append(f"{entry.container_name} → {icon}")
     widgets = Widget.query.all()
     users = User.query.order_by(User.username.asc()).all()
+
+    # Exposure interpreter settings (v0.6.0). Only layers that have
+    # been observed get exposed for configuration — the form should
+    # never offer an empty table or invented layer names.
+    exposure_layers = settings_store.discovered_layers()
+    exposure_layer_directions = settings_store.get_layer_directions()
+    exposure_hosts = settings_store.discovered_hosts()
+    exposure_host_overrides = settings_store.get_host_layer_overrides()
+
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -622,8 +471,51 @@ def settings():
          widgets=widgets,
          missing_icons=missing_icons,
          groups=groups,
-         users=users
+         users=users,
+         exposure_layers=exposure_layers,
+         exposure_layer_directions=exposure_layer_directions,
+         exposure_hosts=exposure_hosts,
+         exposure_host_overrides=exposure_host_overrides,
     )
+
+
+@dashboard_bp.route('/settings/exposure', methods=['POST'])
+@login_required
+@is_admin_required
+def save_exposure_settings():
+    """Save per-interpreter direction mappings and trigger
+    synthesizer recompute for all services.
+
+    Form shape: for each discovered layer L, a field named
+    `layer:<L>` with value "internal"/"external"/"neither".
+    For each per-host override, fields named `override:<host>:<L>`
+    with the same values. Empty / missing fields default to
+    "neither" (no override).
+    """
+    layer_directions = {}
+    host_overrides = {}
+    for field, value in request.form.items():
+        if not value:
+            continue
+        if field.startswith("layer:"):
+            layer = field[len("layer:"):]
+            if layer:
+                layer_directions[layer] = value
+        elif field.startswith("override:"):
+            rest = field[len("override:"):]
+            if ":" in rest:
+                host, layer = rest.split(":", 1)
+                if host and layer:
+                    host_overrides.setdefault(host, {})[layer] = value
+
+    settings_store.save_exposure_settings(layer_directions, host_overrides)
+    touched = synthesizer.recompute_all()
+    db.session.commit()
+    flash(
+        f"✅ Exposure settings saved. Recomputed URLs for {touched} service(s).",
+        "success",
+    )
+    return redirect(url_for('dashboard.settings', section='exposure'))
 
 
 @dashboard_bp.route('/update_group', methods=['POST'])
@@ -796,12 +688,16 @@ def add_entry():
             db.session.add(group_obj)
             db.session.flush()  # ensures group_obj.id is populated before use
 
-        # Now create entry with group_id
+        # Now create entry with group_id. URLs typed in the UI get
+        # source=ui_edit so future register calls and the synthesizer
+        # don't clobber them.
         entry = ServiceEntry(
             host=host,
             container_name=container_name,
-            internalurl=internalurl,
-            externalurl=externalurl,
+            internalurl=internalurl or None,
+            externalurl=externalurl or None,
+            internalurl_source=synthesizer.SOURCE_UI_EDIT if internalurl else None,
+            externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(),
             group_id=group_obj.id if group_obj else None,
             internal_health_check_enabled=internal_health_check_enabled,
@@ -887,8 +783,20 @@ def edit_entry(id):
         # === BASIC FIELDS ===
         entry.host = request.form.get('host', '').strip()
         entry.container_name = request.form.get('container_name', '').strip()
-        entry.internalurl = request.form.get('internalurl', '').strip() or None
-        entry.externalurl = request.form.get('externalurl', '').strip() or None
+
+        # URL provenance: setting a URL via UI marks it ui_edit (highest
+        # precedence, the synthesizer won't touch it). Clearing the URL
+        # resets source to null so synthesis can re-fill on the next
+        # register. See synthesizer.py for the ordering rules.
+        new_internalurl = request.form.get('internalurl', '').strip() or None
+        new_externalurl = request.form.get('externalurl', '').strip() or None
+        if new_internalurl != entry.internalurl:
+            entry.internalurl = new_internalurl
+            entry.internalurl_source = synthesizer.SOURCE_UI_EDIT if new_internalurl else None
+        if new_externalurl != entry.externalurl:
+            entry.externalurl = new_externalurl
+            entry.externalurl_source = synthesizer.SOURCE_UI_EDIT if new_externalurl else None
+
         entry.internal_health_check_enabled = 'internal_health_check_enabled' in request.form
         entry.external_health_check_enabled = 'external_health_check_enabled' in request.form
         entry.is_static = 'is_static' in request.form
@@ -986,6 +894,13 @@ def edit_entry(id):
                 entry.widget_id = widget.id
 
         entry.last_updated = datetime.now()
+
+        # If the operator cleared a URL its source is now NULL and the
+        # synthesizer should refill from any remaining exposure rows
+        # without waiting for the next register. Safe to call even when
+        # nothing about URLs changed — it's a no-op when sources are
+        # ui_edit / explicit_label.
+        synthesizer.synthesize_for_entry(entry)
 
         try:
             db.session.commit()
