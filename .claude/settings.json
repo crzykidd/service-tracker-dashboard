@@ -20,7 +20,8 @@
       "Bash(curl -s http://localhost:8815/api/*)",
       "Bash(git config *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "mcp__vexp__run_pipeline"
     ],
     "additionalDirectories": [
       "C:\\projects\\service-tracker-dashboard\\alembic\\versions"
