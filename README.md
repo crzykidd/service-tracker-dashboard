@@ -41,7 +41,7 @@ through the web UI or directly via API.
 
 ## What It Does
 
-- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN).
+- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens a widget-data modal without expanding the full drawer.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so
@@ -52,7 +52,7 @@ through the web UI or directly via API.
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
 - Daily YAML backups with retention.
-- Manual add / edit / delete through the web UI.
+- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
 - Per-entry sort priority within groups; grouping and group sort.

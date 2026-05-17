@@ -7,7 +7,9 @@
     <form action="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}" method="POST">
       <input type="hidden" name="force_update_icon" value="true">
 
-      <div class="space-y-5">
+      {# ── Identity ────────────────────────────────────────── #}
+      <h3 class="edit-section-heading">Identity</h3>
+      <div class="edit-section-fields">
         <div>
           <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
           <input type="text" name="host" id="host" class="form-input" value="{{ entry.host }}">
@@ -17,36 +19,33 @@
           <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
           <input type="text" name="container_name" id="application" class="form-input" value="{{ entry.container_name }}">
         </div>
+      </div>
 
-        {# URL source provenance (v0.6.0). Render a small badge next to
-           each URL field telling the operator which actor last set it.
-           "Edit" + "Save" clears the badge to "ui_edit". Clearing the
-           field resets source to NULL so synthesis can re-fill. #}
-        {% macro url_source_badge(source) %}
-          {% if source == 'ui_edit' %}
-            <span class="text-xs text-blue-300 bg-blue-900/40 border border-blue-700 rounded px-2 py-0.5">Edited in UI</span>
-          {% elif source == 'explicit_label' %}
-            <span class="text-xs text-amber-200 bg-amber-900/40 border border-amber-700 rounded px-2 py-0.5">Explicit label</span>
-          {% elif source == 'synthesized' %}
-            <span class="text-xs text-emerald-200 bg-emerald-900/40 border border-emerald-700 rounded px-2 py-0.5">Synthesized</span>
-          {% endif %}
-        {% endmacro %}
+      {# URL source provenance badge macro #}
+      {% macro url_source_badge(source) %}
+        {% if source == 'ui_edit' %}
+          <span class="text-xs text-blue-300 bg-blue-900/40 border border-blue-700 rounded px-2 py-0.5">Edited in UI</span>
+        {% elif source == 'explicit_label' %}
+          <span class="text-xs text-amber-200 bg-amber-900/40 border border-amber-700 rounded px-2 py-0.5">Explicit label</span>
+        {% elif source == 'synthesized' %}
+          <span class="text-xs text-emerald-200 bg-emerald-900/40 border border-emerald-700 rounded px-2 py-0.5">Synthesized</span>
+        {% endif %}
+      {% endmacro %}
 
+      {# ── URLs & Health ────────────────────────────────────── #}
+      <h3 class="edit-section-heading">URLs &amp; Health</h3>
+      <div class="edit-section-fields">
         <div>
           <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">
             Internal URL
             {{ url_source_badge(entry.internalurl_source) }}
           </label>
-          <div class="flex items-center space-x-3">
-            <input type="url" name="internalurl" id="internal_url" class="form-input flex-grow" value="{{ entry.internalurl or '' }}">
-            <div class="flex items-center">
-              <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-5 w-5" {% if entry.internal_health_check_enabled %}checked{% endif %}>
-              <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
-            </div>
+          <input type="url" name="internalurl" id="internal_url" class="form-input" value="{{ entry.internalurl or '' }}">
+          <div class="flex items-center mt-1.5">
+            <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-4 w-4" {% if entry.internal_health_check_enabled %}checked{% endif %}>
+            <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health check enabled</label>
           </div>
-          <p class="mt-1 text-xs text-dashboard-secondary">
-            Clearing this field resets provenance and re-allows synthesis from exposure observations.
-          </p>
+          <p class="edit-helper">Clearing this field resets provenance and re-allows synthesis from exposure observations.</p>
         </div>
 
         <div>
@@ -54,24 +53,25 @@
             External URL
             {{ url_source_badge(entry.externalurl_source) }}
           </label>
-          <div class="flex items-center space-x-3">
-            <input type="url" name="externalurl" id="external_url" class="form-input flex-grow" value="{{ entry.externalurl or '' }}">
-            <div class="flex items-center">
-              <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-5 w-5" {% if entry.external_health_check_enabled %}checked{% endif %}>
-              <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health Check</label>
-            </div>
+          <input type="url" name="externalurl" id="external_url" class="form-input" value="{{ entry.externalurl or '' }}">
+          <div class="flex items-center mt-1.5">
+            <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-4 w-4" {% if entry.external_health_check_enabled %}checked{% endif %}>
+            <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health check enabled</label>
           </div>
         </div>
+      </div>
 
+      {# ── Grouping & Display ───────────────────────────────── #}
+      <h3 class="edit-section-heading">Grouping &amp; Display</h3>
+      <div class="edit-section-fields">
         <div>
-          <label class="block text-sm font-medium text-dashboard-secondary mb-1">Group</label>
+          <label class="block text-sm font-medium text-dashboard-secondary mb-1.5">Group</label>
 
-          <div class="flex items-center space-x-3 mb-2">
-            <input type="radio" id="select_existing" name="group_mode" value="existing" checked onclick="toggleGroupMode()" class="form-radio text-blue-600">
-            <label for="select_existing" class="text-sm text-gray-300">Select Existing</label>
-
-            <input type="radio" id="add_new" name="group_mode" value="new" onclick="toggleGroupMode()" class="form-radio text-blue-600 ml-4">
-            <label for="add_new" class="text-sm text-gray-300">Add New</label>
+          <div class="group-mode-tabs mb-2">
+            <input type="radio" id="select_existing" name="group_mode" value="existing" checked onclick="toggleGroupMode()" class="sr-only">
+            <label for="select_existing" class="group-tab">Select Existing</label>
+            <input type="radio" id="add_new" name="group_mode" value="new" onclick="toggleGroupMode()" class="sr-only">
+            <label for="add_new" class="group-tab">Add New</label>
           </div>
 
           <select name="group_id_existing" id="group_id_existing" class="form-input">
@@ -89,22 +89,25 @@
         <div>
           <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
           <input type="number" name="sort_priority" id="sort_priority" class="form-input" value="{{ entry.sort_priority if entry.sort_priority is not none else '' }}">
-          <p class="mt-1 text-xs text-dashboard-secondary">Optional. Lower numbers show up higher in group listings.</p>
+          <p class="edit-helper">Optional. Lower numbers show up higher in group listings.</p>
         </div>
 
         <div>
           <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
           <input type="text" name="image_icon" id="icon_image" class="form-input" value="{{ entry.image_icon or '' }}">
-          <p class="mt-1 text-xs text-dashboard-secondary">Enter the filename of the SVG icon (e.g., service.svg). Will try to match automatically from application above.</p>
+          <p class="edit-helper">Filename of the SVG icon (e.g., service.svg). Will try to match automatically from the application name above.</p>
         </div>
 
         <div class="flex items-center">
-          <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-5 w-5" {% if entry.is_static %}checked{% endif %}>
+          <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-4 w-4" {% if entry.is_static %}checked{% endif %}>
           <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Locked (Static Entry)</label>
         </div>
+      </div>
 
-        <div class="pt-6">
-          <h2 class="text-lg font-semibold text-dashboard-primary mb-2">Widget Settings</h2>
+      {# ── Widget ───────────────────────────────────────────── #}
+      <h3 class="edit-section-heading">Widget</h3>
+      <div class="edit-section-fields">
+        <div>
           <label for="widget_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Select Widget</label>
           <select name="widget_name" id="widget_name" class="form-input">
             <option value="none" {% if not selected_widget %}selected{% endif %}>None</option>
@@ -112,29 +115,38 @@
             <option value="{{ name }}" {% if selected_widget and selected_widget.widget_name == name %}selected{% endif %}>{{ name|capitalize }}</option>
             {% endfor %}
           </select>
-
-          <div class="mt-4">
-            <label for="widget_url" class="block text-sm font-medium text-dashboard-secondary mb-1">API URL</label>
-            <input type="text" name="widget_url" id="widget_url" class="form-input" value="{{ selected_widget.widget_url if selected_widget else '' }}">
-          </div>
-
-          <div class="mt-4">
-            <label for="widget_api_key" class="block text-sm font-medium text-dashboard-secondary mb-1">API Key</label>
-            <input type="text" name="widget_api_key" id="widget_api_key" class="form-input" value="{{ selected_widget.widget_api_key if selected_widget else '' }}">
-          </div>
-
-          <div class="mt-4" id="widget_fields_container"></div>
         </div>
+
+        <div>
+          <label for="widget_url" class="block text-sm font-medium text-dashboard-secondary mb-1">API URL</label>
+          <input type="text" name="widget_url" id="widget_url" class="form-input" value="{{ selected_widget.widget_url if selected_widget else '' }}">
+        </div>
+
+        <div>
+          <label for="widget_api_key" class="block text-sm font-medium text-dashboard-secondary mb-1">API Key</label>
+          <input type="text" name="widget_api_key" id="widget_api_key" class="form-input" value="{{ selected_widget.widget_api_key if selected_widget else '' }}">
+        </div>
+
+        <div id="widget_fields_container"></div>
       </div>
 
-      <div class="flex justify-end space-x-4 mt-8">
+      {# ── Form actions ─────────────────────────────────────── #}
+      <div class="flex flex-wrap items-center gap-3 mt-8">
         <button type="submit" class="btn-primary px-6 py-2.5 rounded-lg font-medium text-sm">Update Entry</button>
         <button type="button" onclick="window.history.back();" class="btn-secondary px-6 py-2.5 rounded-lg font-medium text-sm">Cancel</button>
+        <button type="button" id="edit-delete-btn"
+                class="edit-delete-btn ml-auto"
+                data-entry-id="{{ entry.id }}"
+                data-container-name="{{ entry.container_name }}"
+                data-redirect="{{ ref }}">
+          <i class="ti ti-trash" aria-hidden="true"></i> Delete
+        </button>
       </div>
     </form>
 
     <hr class="my-10 border-dashboard-accent">
 
+    {# ── Reported by notifier (read-only) ─────────────────── #}
     <div class="bg-dashboard-info-box rounded-lg p-6">
       <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Reported by notifier</h2>
       <p class="text-xs text-dashboard-secondary mb-4">
@@ -213,22 +225,6 @@
         {% endif %}
       </div>
     </div>
-
-    <hr class="my-10 border-dashboard-accent">
-
-    <div class="bg-dashboard-info-box rounded-lg p-6">
-      <h2 class="text-lg font-semibold text-red-400 mb-3">Danger Zone</h2>
-      <p class="text-sm text-dashboard-secondary mb-2">Deleting this entry is permanent and cannot be undone.</p>
-      <form action="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}" method="POST">
-        <label for="delete_confirmation" class="block text-sm font-medium text-dashboard-secondary mb-1">
-          Type <strong>{{ entry.container_name }}</strong> to confirm deletion:
-        </label>
-        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-          <input type="text" name="delete_confirmation" id="delete_confirmation" placeholder="Type container name to confirm" class="form-input w-full sm:w-auto">
-          <button type="submit" name="delete" value="true" class="btn-secondary bg-red-600 hover:bg-red-700 w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Delete Entry</button>
-        </div>
-      </form>
-    </div>
   </div>
 </div>
 {% endblock %}
@@ -270,7 +266,7 @@
             container.appendChild(label);
           });
         })
-        .catch(err => console.error("❌ Error loading widget config:", err));
+        .catch(err => console.error('Error loading widget config:', err));
     }
 
     if (widgetSelect) {
@@ -295,7 +291,23 @@
       selectExisting.addEventListener('change', toggleGroupMode);
       addNew.addEventListener('change', toggleGroupMode);
     }
+
+    // === Edit-page Delete button → popover ===
+    const deleteBtn = document.getElementById('edit-delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', function () {
+        const entryId       = this.dataset.entryId;
+        const containerName = this.dataset.containerName;
+        const redirectUrl   = this.dataset.redirect || '/';
+        if (typeof showDeletePopover === 'function') {
+          showDeletePopover(this, containerName, () => {
+            fetch(`/api/v1/entries/${entryId}/delete`, { method: 'POST' })
+              .then(r => { if (r.ok) window.location.href = redirectUrl; })
+              .catch(() => alert('Delete failed. Please try again.'));
+          });
+        }
+      });
+    }
   });
 </script>
 {% endblock %}
-

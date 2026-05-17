@@ -176,9 +176,10 @@
 
                                     {# Widget indicator #}
                                     {% if entry.widget_id %}
-                                        <span class="status-icon status-icon-blue" title="Widget data — click chevron to expand">
+                                        <button class="status-icon status-icon-blue tile-widget-btn"
+                                                title="View widget data">
                                             <i class="ti ti-chart-line" aria-hidden="true"></i>
-                                        </span>
+                                        </button>
                                     {% endif %}
                                 </div>{# /tile-icon-row-status #}
 
@@ -201,6 +202,22 @@
                                        onclick="event.stopPropagation()">
                                         <i class="ti ti-edit" aria-hidden="true"></i>
                                     </a>
+
+                                    {# Trash / lock icon #}
+                                    {% if entry.is_static %}
+                                        <span class="status-icon status-icon-muted"
+                                              title="Locked — delete from edit page"
+                                              style="cursor: default;">
+                                            <i class="ti ti-lock" aria-hidden="true"></i>
+                                        </span>
+                                    {% else %}
+                                        <button class="status-icon status-icon-trash tile-trash-btn"
+                                                data-entry-id="{{ entry.id }}"
+                                                data-container-name="{{ entry.container_name }}"
+                                                title="Delete {{ entry.container_name }}">
+                                            <i class="ti ti-trash" aria-hidden="true"></i>
+                                        </button>
+                                    {% endif %}
 
                                     {# Expand chevron #}
                                     <button class="tile-chevron"
@@ -392,12 +409,13 @@
                                     <i class="ti ti-edit" aria-hidden="true"></i> Edit
                                 </a>
 
+                                {% if not entry.is_static %}
                                 <button class="drawer-btn drawer-btn-delete"
                                         data-entry-id="{{ entry.id }}"
-                                        data-container-name="{{ entry.container_name }}"
-                                        data-is-static="{{ 'true' if entry.is_static else 'false' }}">
+                                        data-container-name="{{ entry.container_name }}">
                                     <i class="ti ti-trash" aria-hidden="true"></i> Delete
                                 </button>
+                                {% endif %}
 
                                 {% if _has_dozzle %}
                                 <div class="drawer-tools-wrap">

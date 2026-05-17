@@ -976,6 +976,30 @@ def edit_entry(id):
                            selected_widget=selected_widget)
 
 
+@dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_entry_json(id):
+    """JSON delete endpoint for JS-triggered deletes (tile trash icon, drawer delete button).
+
+    Returns {ok: true} on success. The caller is responsible for DOM cleanup or redirect.
+    """
+    entry = ServiceEntry.query.get_or_404(id)
+
+    if entry.widget_id:
+        other_services = ServiceEntry.query.filter(
+            ServiceEntry.widget_id == entry.widget_id,
+            ServiceEntry.id != entry.id
+        ).count()
+        if other_services == 0:
+            WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
+            Widget.query.filter_by(id=entry.widget_id).delete()
+
+    db.session.delete(entry)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 @dashboard_bp.route('/api/v1/changelog')
 @login_required
 def changelog_api():

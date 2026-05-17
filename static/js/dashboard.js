@@ -2,7 +2,8 @@
    Service Tracker Dashboard — shared JavaScript
    Covers: auto-refresh, group-collapse, view-controls,
    filter-input, tiled tile-click, tile drawers, tools popover,
-   dashboard group-toggle, clipboard copy.
+   dashboard group-toggle, clipboard copy, delete popover,
+   widget modal, refresh-pause while interacting.
    ============================================================ */
 
 (function () {
@@ -11,6 +12,17 @@
   /* ── Auto-refresh ─────────────────────────────────────── */
   let secondsSinceRefresh = 0;
   let refreshInterval = 60;
+
+  function isInteracting() {
+    if (currentOpenDrawer) return true;
+    const widgetModal    = document.getElementById('widget-modal');
+    const changelogModal = document.getElementById('changelog-modal');
+    const deletePopover  = document.getElementById('delete-popover');
+    if (widgetModal    && !widgetModal.classList.contains('hidden'))    return true;
+    if (changelogModal && !changelogModal.classList.contains('hidden')) return true;
+    if (deletePopover  && !deletePopover.classList.contains('hidden'))  return true;
+    return false;
+  }
 
   function initRefresh() {
     const refreshLabel    = document.getElementById('refreshTimer');
@@ -27,6 +39,10 @@
       });
     }
     setInterval(() => {
+      if (isInteracting()) {
+        if (refreshLabel) refreshLabel.textContent = 'Refresh paused (drawer open)';
+        return;
+      }
       secondsSinceRefresh++;
       if (refreshLabel) {
         const m = Math.floor(secondsSinceRefresh / 60);
@@ -155,6 +171,8 @@
       }
       currentOpenDrawer = null;
       currentOpenTile   = null;
+      // Reset refresh timer so next cycle starts fresh
+      secondsSinceRefresh = 0;
     }
   }
 
@@ -216,6 +234,83 @@
     });
   }
 
+  /* ── Delete popover ──────────────────────────────────── */
+  let _deleteOutsideHandler = null;
+  let _deleteEscHandler     = null;
+
+  function hideDeletePopover() {
+    const pop = document.getElementById('delete-popover');
+    if (!pop) return;
+    pop.classList.add('hidden');
+    if (_deleteOutsideHandler) {
+      document.removeEventListener('click', _deleteOutsideHandler, true);
+      _deleteOutsideHandler = null;
+    }
+    if (_deleteEscHandler) {
+      document.removeEventListener('keydown', _deleteEscHandler);
+      _deleteEscHandler = null;
+    }
+  }
+
+  function showDeletePopover(triggerEl, containerName, onConfirm) {
+    hideDeletePopover();
+
+    const pop = document.getElementById('delete-popover');
+    if (!pop) return;
+
+    pop.querySelector('.delete-popover-target').textContent = containerName;
+    pop.classList.remove('hidden');
+
+    // Position: fixed, relative to viewport
+    const rect = triggerEl.getBoundingClientRect();
+    const popW = Math.min(280, window.innerWidth - 32);
+    pop.style.maxWidth = popW + 'px';
+    pop.style.width    = 'auto';
+
+    // Default below; shift above if not enough room
+    const popH = pop.offsetHeight;
+    let top  = rect.bottom + 4;
+    if (top + popH > window.innerHeight - 8) top = rect.top - popH - 4;
+    if (top < 8) top = 8;
+
+    // Align left edge with trigger, shift left if it clips right edge
+    let left = rect.left;
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    if (left < 8) left = 8;
+
+    pop.style.top  = top  + 'px';
+    pop.style.left = left + 'px';
+
+    // Wire buttons (clone to drop any previous listeners)
+    const oldConfirm = pop.querySelector('.delete-popover-confirm');
+    const oldCancel  = pop.querySelector('.delete-popover-cancel');
+    const newConfirm = oldConfirm.cloneNode(true);
+    const newCancel  = oldCancel.cloneNode(true);
+    oldConfirm.replaceWith(newConfirm);
+    oldCancel.replaceWith(newCancel);
+
+    newConfirm.addEventListener('click', () => { hideDeletePopover(); onConfirm(); });
+    newCancel.addEventListener('click',  hideDeletePopover);
+
+    // Click-outside (capture phase so it fires before other handlers)
+    setTimeout(() => {
+      _deleteOutsideHandler = function (e) {
+        if (!pop.contains(e.target) && e.target !== triggerEl) hideDeletePopover();
+      };
+      document.addEventListener('click', _deleteOutsideHandler, true);
+    }, 0);
+
+    _deleteEscHandler = function (e) { if (e.key === 'Escape') hideDeletePopover(); };
+    document.addEventListener('keydown', _deleteEscHandler);
+  }
+
+  /* Shared fetch-delete helper used by tile, drawer, and dashboard row. */
+  function fetchDelete(entryId, onSuccess, onError) {
+    fetch(`/api/v1/entries/${entryId}/delete`, { method: 'POST' })
+      .then(r => r.ok ? onSuccess() : onError())
+      .catch(onError);
+  }
+
   /* ── Tiled drawer: delete action ────────────────────── */
   function initDrawerDelete() {
     document.querySelectorAll('.drawer-btn-delete').forEach(btn => {
@@ -223,37 +318,49 @@
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        const isStatic      = this.dataset.isStatic === 'true';
+        showDeletePopover(this, containerName, () => {
+          fetchDelete(entryId, () => {
+            // Remove the tile-wrapper from the DOM
+            const drawer  = document.getElementById(`drawer-${entryId}`);
+            const wrapper = drawer ? drawer.closest('.tile-wrapper') : null;
+            if (wrapper) wrapper.remove();
+            closeCurrentDrawer();
+          }, () => alert('Delete failed. Please try again.'));
+        });
+      });
+    });
+  }
 
-        let confirmed = false;
-        if (isStatic) {
-          const typed = prompt(
-            `STATIC ENTRY: Type the container name to confirm deletion.\n\n` +
-            `Container: "${containerName}"\n\nThis cannot be undone.`
-          );
-          confirmed = (typed === containerName);
-        } else {
-          confirmed = confirm(`Delete "${containerName}"? This cannot be undone.`);
-        }
+  /* ── Tiled: trash icon on tile ───────────────────────── */
+  function initTileTrash() {
+    document.querySelectorAll('.tile-trash-btn').forEach(btn => {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const entryId       = this.dataset.entryId;
+        const containerName = this.dataset.containerName;
+        showDeletePopover(this, containerName, () => {
+          fetchDelete(entryId, () => {
+            const wrapper = this.closest('.tile-wrapper');
+            if (wrapper) wrapper.remove();
+          }, () => alert('Delete failed. Please try again.'));
+        });
+      });
+    });
+  }
 
-        if (!confirmed) return;
-
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/edit/${entryId}`;
-
-        const addField = (name, value) => {
-          const input = document.createElement('input');
-          input.type  = 'hidden';
-          input.name  = name;
-          input.value = value;
-          form.appendChild(input);
-        };
-        addField('delete', '1');
-        addField('delete_confirmation', containerName);
-
-        document.body.appendChild(form);
-        form.submit();
+  /* ── Dashboard: trash icon on row ────────────────────── */
+  function initDashboardTrash() {
+    document.querySelectorAll('.row-trash-btn').forEach(btn => {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const entryId       = this.dataset.entryId;
+        const containerName = this.dataset.containerName;
+        showDeletePopover(this, containerName, () => {
+          fetchDelete(entryId, () => {
+            const row = this.closest('tr');
+            if (row) row.remove();
+          }, () => alert('Delete failed. Please try again.'));
+        });
       });
     });
   }
@@ -309,6 +416,53 @@
     });
   }
 
+  /* ── Widget modal ────────────────────────────────────── */
+  function initWidgetModal() {
+    const modal    = document.getElementById('widget-modal');
+    const content  = document.getElementById('widget-modal-content');
+    const titleEl  = modal ? modal.querySelector('.widget-modal-title') : null;
+    const closeBtn = modal ? modal.querySelector('.widget-modal-close') : null;
+    const backdrop = modal ? modal.querySelector('.widget-modal-backdrop') : null;
+    if (!modal) return;
+
+    function showWidgetModal(containerName, widgetGrid) {
+      titleEl.textContent = containerName;
+      content.innerHTML = '';
+      if (widgetGrid && widgetGrid.children.length > 0) {
+        content.appendChild(widgetGrid.cloneNode(true));
+      } else {
+        const msg = document.createElement('p');
+        msg.className = 'widget-modal-no-data';
+        msg.textContent = 'No widget data available yet.';
+        content.appendChild(msg);
+      }
+      modal.classList.remove('hidden');
+      document.addEventListener('keydown', onModalEsc);
+    }
+
+    function hideWidgetModal() {
+      modal.classList.add('hidden');
+      secondsSinceRefresh = 0;
+      document.removeEventListener('keydown', onModalEsc);
+    }
+
+    function onModalEsc(e) { if (e.key === 'Escape') hideWidgetModal(); }
+
+    if (closeBtn) closeBtn.addEventListener('click', hideWidgetModal);
+    if (backdrop) backdrop.addEventListener('click', hideWidgetModal);
+
+    document.querySelectorAll('.tile-widget-btn').forEach(btn => {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const wrapper = this.closest('.tile-wrapper');
+        if (!wrapper) return;
+        const containerName = (wrapper.querySelector('.container-name')?.textContent || '').trim();
+        const widgetGrid = wrapper.querySelector('.drawer-widget-grid');
+        showWidgetModal(containerName, widgetGrid);
+      });
+    });
+  }
+
   /* ── Changelog "What's new" modal ───────────────────── */
   function initChangelogModal() {
     const modal   = document.getElementById('changelog-modal');
@@ -338,6 +492,7 @@
     function dismiss() {
       localStorage.setItem(STORAGE_KEY, currentVersion);
       modal.classList.add('hidden');
+      secondsSinceRefresh = 0;
       document.removeEventListener('keydown', onEsc);
     }
 
@@ -361,7 +516,6 @@
         .then(r => r.json())
         .then(data => {
           if (!data.sections || data.sections.length === 0) {
-            // Downgrade case or already current — silently update.
             localStorage.setItem(STORAGE_KEY, currentVersion);
           } else {
             showModal(data.sections);
@@ -370,6 +524,9 @@
         .catch(() => {});
     }
   }
+
+  /* Expose popover API for pages with inline script (e.g. edit_entry.html) */
+  window.showDeletePopover = showDeletePopover;
 
   /* ── Bootstrap ───────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', function () {
@@ -386,8 +543,11 @@
       initDrawers();
       initToolsPopovers();
       initDrawerDelete();
+      initTileTrash();
+      initWidgetModal();
     } else if (view === 'dashboard') {
       initDashboardGroupCollapse();
+      initDashboardTrash();
     }
     // compact has no extra init beyond refresh/filter/view-controls
   });
