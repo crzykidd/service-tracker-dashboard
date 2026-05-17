@@ -29,17 +29,6 @@
   </div>
 
   <div class="flex gap-2 items-center mt-2 sm:mt-0">
-    {% if active_tab == 'tiled' %}
-    <div class="flex items-center gap-3">
-      <label for="toggleWidgets" class="text-sm text-gray-300">Show Widgets:</label>
-      <label class="relative inline-flex items-center cursor-pointer">
-        <input type="checkbox" id="toggleWidgets" class="sr-only peer">
-        <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer-checked:bg-blue-600 transition-all"></div>
-        <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform transform peer-checked:translate-x-full"></div>
-      </label>
-    </div>
-    {% endif %}
-
     <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
     <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
       <option value="30">30s</option>
@@ -52,26 +41,3 @@
     <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
   </div>
 </div>
-
-<script>
-  // Shared submit-on-change handler for all view controls. Each control
-  // has data-param=<query-key>; checkboxes write 'true'/'false', selects
-  // write their value. URL state is the single source of truth so the
-  // dashboard is bookmarkable and shareable.
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('.view-control').forEach(function (el) {
-      el.addEventListener('change', function () {
-        var params = new URLSearchParams(window.location.search);
-        var key = this.dataset.param;
-        var value;
-        if (this.type === 'checkbox') {
-          value = this.checked ? 'true' : 'false';
-        } else {
-          value = this.value;
-        }
-        params.set(key, value);
-        window.location.search = params.toString();
-      });
-    });
-  });
-</script>

@@ -1,179 +1,11 @@
 {% extends "base.html" %}
 {% set active_tab = 'tiled' %}
 
-{% block head %}
-<style>
-  body {
-    background-color: #111827;
-    color: #e5e7eb;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    margin: 0;
-    padding: 15px;
-  }
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #374151;
-  }
-  .page-header h1 {
-    font-size: 1.8em;
-    color: #ffffff;
-    margin: 0;
-  }
-  .group-title {
-    font-size: 1.4em;
-    color: #e5e7eb;
-    margin-top: 25px;
-    margin-bottom: 12px;
-    padding-bottom: 5px;
-    border-bottom: 2px solid #374151;
-  }
-  .tile-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-    gap: 10px;
-  }
-  .tile {
-    display: flex;
-    align-items: center;
-    background-color: #1f2937;
-    border: 1px solid #374151;
-    border-radius: 6px;
-    padding: 10px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-    transition: box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out;
-  }
-  .tile:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-    border-color: #3b82f6;
-  }
-  .tile-icon {
-    flex-shrink: 0;
-    margin-right: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-  }
-  .tile-icon img {
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: 4px;
-  }
-  .icon-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background-color: #374151;
-    border-radius: 4px;
-    font-size: 18px;
-    color: #9ca3af;
-  }
-  .tile-details {
-    flex-grow: 1;
-    margin-right: 8px;
-    overflow: hidden;
-  }
-  .container-name {
-    font-weight: 600;
-    color: #f9fafb;
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 0.95em;
-  }
-  .host-name {
-    font-size: 0.75em;
-    color: #9ca3af;
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tile-statuses {
-    display: flex;
-    align-items: center;
-  }
-  .tile-web-statuses {
-    margin-right: 6px;
-    width: 36px;
-  }
-  .status-button {
-    display: inline-block;
-    vertical-align: middle;
-    border: none;
-    border-radius: 4px;
-    color: white;
-    text-decoration: none;
-    text-align: center;
-    transition: opacity 0.2s;
-    font-weight: 500;
-    box-sizing: border-box;
-  }
-  .status-button:hover {
-    opacity: 0.85;
-  }
-  .tile-web-statuses .status-button {
-    display: block;
-    width: 100%;
-    padding: 3px 0;
-    font-size: 9px;
-    line-height: 1.2;
-    margin-bottom: 2px;
-  }
-  .tile-web-statuses .status-button:last-child {
-    margin-bottom: 0;
-  }
-  .docker-status-button {
-    padding: 3px 7px;
-    font-size: 0.7em;
-    min-width: 55px;
-  }
-  .dozzle-direct-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: 8px;
-    line-height: 0;
-  }
-  .dozzle-icon-img {
-    width: 18px;
-    height: 18px;
-    opacity: 0.65;
-    transition: opacity 0.2s ease-in-out;
-  }
-  .dozzle-direct-link:hover .dozzle-icon-img {
-    opacity: 1;
-  }
-  .status-button-good { background-color: #16a34a; }
-  .status-button-bad { background-color: #dc2626; }
-  .status-button-unknown { background-color: #6b7280; }
-  .status-button-stale { background-color: #f59e0b; color: #fff; }
-  .widget-box {
-    transition: all 0.3s ease-in-out;
-    background-color: #1f2937;
-    border: 1px solid #374151;
-  }
-  /* Headless tile — no exposure rows and no URLs. Removes hover
-     border highlight + cursor cue since there's nothing to click.
-     Exposure badge styles live in base.html so they're available on
-     every dashboard view. */
-  .tile.tile-headless { cursor: default; }
-  .tile.tile-headless:hover { border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
-</style>
-{% endblock %}
+{% block body_data_view %}tiled{% endblock %}
 
 {% block filter_bar %}
   {% include "partials/filter_bar.html" %}
 {% endblock %}
-
 
 {% block content %}
     {% if grouped_entries %}
@@ -186,275 +18,399 @@
 
             <div class="tile-container" data-group-container="{{ group_name }}">
                 {% for entry in entries_in_group %}
-                    {% set _is_headless = (not entry.internalurl) and (not entry.externalurl) and (not entry.exposures) %}
+                    {# ── Pre-compute status classes and tooltips ────────── #}
+                    {% set _is_headless = (not entry.internalurl) and (not entry.externalurl) and (not entry.exposures) and (not entry.widget_id) %}
+
+                    {# Internal URL status #}
+                    {% if not entry.internalurl %}
+                      {% set _int_class   = 'status-icon-muted' %}
+                      {% set _int_tooltip = 'Internal URL not configured' %}
+                      {% set _int_href    = '' %}
+                    {% elif not entry.internal_health_check_enabled %}
+                      {% set _int_class   = 'status-icon-muted' %}
+                      {% set _int_tooltip = 'Internal: monitoring disabled' %}
+                      {% set _int_href    = entry.internalurl %}
+                    {% elif entry.internal_health_check_status == 'Error: SSLError' %}
+                      {% set _int_class   = 'status-icon-warn' %}
+                      {% set _int_tooltip = 'Internal: SSL error (' ~ (entry.internal_health_check_update | time_since) ~ ')' %}
+                      {% set _int_href    = entry.internalurl %}
+                    {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
+                      {% set _int_class   = 'status-icon-ok' %}
+                      {% set _int_tooltip = 'Internal: ' ~ entry.internal_health_check_status ~ ' (' ~ (entry.internal_health_check_update | time_since) ~ ')' %}
+                      {% set _int_href    = entry.internalurl %}
+                    {% elif entry.internal_health_check_status %}
+                      {% set _int_class   = 'status-icon-bad' %}
+                      {% set _int_tooltip = 'Internal: ' ~ entry.internal_health_check_status ~ ' (' ~ (entry.internal_health_check_update | time_since) ~ ')' %}
+                      {% set _int_href    = entry.internalurl %}
+                    {% else %}
+                      {% set _int_class   = 'status-icon-muted' %}
+                      {% set _int_tooltip = 'Internal: no data yet' %}
+                      {% set _int_href    = entry.internalurl %}
+                    {% endif %}
+
+                    {# External URL status #}
+                    {% if not entry.externalurl %}
+                      {% set _ext_class   = 'status-icon-muted' %}
+                      {% set _ext_tooltip = 'External URL not configured' %}
+                      {% set _ext_href    = '' %}
+                    {% elif not entry.external_health_check_enabled %}
+                      {% set _ext_class   = 'status-icon-muted' %}
+                      {% set _ext_tooltip = 'External: monitoring disabled' %}
+                      {% set _ext_href    = entry.externalurl %}
+                    {% elif entry.external_health_check_status == 'Error: SSLError' %}
+                      {% set _ext_class   = 'status-icon-warn' %}
+                      {% set _ext_tooltip = 'External: SSL error (' ~ (entry.external_health_check_update | time_since) ~ ')' %}
+                      {% set _ext_href    = entry.externalurl %}
+                    {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
+                      {% set _ext_class   = 'status-icon-ok' %}
+                      {% set _ext_tooltip = 'External: ' ~ entry.external_health_check_status ~ ' (' ~ (entry.external_health_check_update | time_since) ~ ')' %}
+                      {% set _ext_href    = entry.externalurl %}
+                    {% elif entry.external_health_check_status %}
+                      {% set _ext_class   = 'status-icon-bad' %}
+                      {% set _ext_tooltip = 'External: ' ~ entry.external_health_check_status ~ ' (' ~ (entry.external_health_check_update | time_since) ~ ')' %}
+                      {% set _ext_href    = entry.externalurl %}
+                    {% else %}
+                      {% set _ext_class   = 'status-icon-muted' %}
+                      {% set _ext_tooltip = 'External: no data yet' %}
+                      {% set _ext_href    = entry.externalurl %}
+                    {% endif %}
+
+                    {# Docker status #}
+                    {% set _docker_status_lower = entry.docker_status.lower() if entry.docker_status else 'unknown' %}
+                    {% set _is_good_docker = ('running' in _docker_status_lower and 'unhealthy' not in _docker_status_lower) or 'healthy' in _docker_status_lower %}
+                    {% set _is_bad_docker  = 'exited' in _docker_status_lower or 'dead' in _docker_status_lower or 'unhealthy' in _docker_status_lower or 'restarting' in _docker_status_lower or 'removing' in _docker_status_lower or 'paused' in _docker_status_lower %}
+                    {% set _docker_age_min = ((now() - entry.last_api_update).total_seconds() / 60) if entry.last_api_update else None %}
+
+                    {% if entry.is_static %}
+                      {% set _docker_class   = 'status-icon-muted' %}
+                      {% set _docker_tooltip = 'Static entry' %}
+                    {% elif not entry.last_api_update %}
+                      {% set _docker_class   = 'status-icon-bad' %}
+                      {% set _docker_tooltip = 'Docker: no update received' %}
+                    {% elif entry.is_docker_status_stale or (_is_good_docker and _docker_age_min and _docker_age_min > 120) %}
+                      {% set _docker_class   = 'status-icon-warn' %}
+                      {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — stale (' ~ (entry.last_api_update | time_since) ~ ')' %}
+                    {% elif _is_good_docker %}
+                      {% set _docker_class   = 'status-icon-ok' %}
+                      {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — updated ' ~ (entry.last_api_update | time_since) %}
+                    {% elif _is_bad_docker %}
+                      {% set _docker_class   = 'status-icon-bad' %}
+                      {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — updated ' ~ (entry.last_api_update | time_since) %}
+                    {% else %}
+                      {% set _docker_class   = 'status-icon-muted' %}
+                      {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') %}
+                    {% endif %}
+
+                    {# Dozzle link #}
+                    {% set _dozzle_base = STD_DOZZLE_URL %}
+                    {% set _dozzle_id   = entry.container_id %}
+                    {% set _has_dozzle  = _dozzle_base and _dozzle_id %}
+
+                    {# ── Tile wrapper ──────────────────────────────────── #}
                     <div class="tile-wrapper">
                         <div class="tile{% if _is_headless %} tile-headless{% endif %}"
-                        data-internalurl="{{ entry.internalurl if entry.internalurl else '' }}"
-                        data-externalurl="{{ entry.externalurl if entry.externalurl else '' }}">
-                        <div class="tile-icon">
-                            {% if entry.image_icon %}
-                                <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
-                                     alt="{{ entry.container_name }} icon"
-                                     onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
-                            {% else %}
-                                <span class="icon-placeholder">📦</span>
-                            {% endif %}
-                        </div>
-                        <div class="tile-details">
-                            <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
-                            <small class="host-name" title="{{ entry.host }}">{{ entry.host }}</small>
-                            {% with exposures = entry.exposures %}
-                              {% include "partials/exposure_badges.html" %}
-                            {% endwith %}
-                        </div>
+                             data-internalurl="{{ entry.internalurl if entry.internalurl else '' }}"
+                             data-externalurl="{{ entry.externalurl if entry.externalurl else '' }}">
 
-                        <div class="tile-statuses">
-                            <div class="tile-web-statuses">
-                                {% set internal_status_class =
-                                    'status-button-good' if entry.internal_health_check_status == '200' else
-                                    'status-button-stale' if entry.internal_health_check_status == 'Error: SSLError' else
-                                    'status-button-bad' if entry.internal_health_check_status else
-                                    'status-button-unknown' %}
-
-                                {% set external_status_class =
-                                    'status-button-good' if entry.external_health_check_status == '200' else
-                                    'status-button-stale' if entry.external_health_check_status == 'Error: SSLError' else
-                                    'status-button-bad' if entry.external_health_check_status else
-                                    'status-button-unknown' %}
-
-                                {% if entry.internalurl and entry.internal_health_check_enabled %}
-                                    <a href="{{ entry.internalurl }}" target="_blank"
-                                    class="status-button {{ internal_status_class }}"
-                                    title="Internal: {{ entry.internal_health_check_status or 'N/A' }} ({{ entry.internal_health_check_update | time_since }})">
-                                        INT
-                                    </a>
-                                {% endif %}
-                                
-                                {% if entry.externalurl and entry.external_health_check_enabled %}
-                                    <a href="{{ entry.externalurl }}" target="_blank"
-                                    class="status-button {{ external_status_class }}"
-                                    title="External: {{ entry.external_health_check_status or 'N/A' }} ({{ entry.external_health_check_update | time_since }})">
-                                        EXT
-                                    </a>
+                            {# Icon #}
+                            <div class="tile-icon">
+                                {% if entry.image_icon %}
+                                    <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
+                                         alt="{{ entry.container_name }} icon"
+                                         onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
+                                {% else %}
+                                    <span class="icon-placeholder">📦</span>
                                 {% endif %}
                             </div>
 
-                            {% if not entry.is_static %}
-                            <div class="tile-docker-status">
-                                
-                                {% set docker_status_lower = entry.docker_status.lower() if entry.docker_status else 'unknown' %}
-                                
-                                {% set _is_good_docker = ('running' in docker_status_lower and 'unhealthy' not in docker_status_lower) or 'healthy' in docker_status_lower %}
-                                {% set _is_bad_docker = 'exited' in docker_status_lower or 'dead' in docker_status_lower or 'unhealthy' in docker_status_lower or 'restarting' in docker_status_lower or 'removing' in docker_status_lower or 'paused' in docker_status_lower %}
-                                
-                                {% set docker_age_minutes = ((now() - entry.last_api_update).total_seconds() / 60) if entry.last_api_update else None %}
+                            {# Details column: name + exposure badges #}
+                            <div class="tile-details">
+                                <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
+                                {% with exposures = entry.exposures %}
+                                  {% include "partials/exposure_badges.html" %}
+                                {% endwith %}
+                            </div>
 
-                                {% set docker_class =
-                                    'status-button-stale' if entry.is_docker_status_stale else
-                                    'status-button-stale' if _is_good_docker and docker_age_minutes and docker_age_minutes > 120 else
-                                    'status-button-good' if _is_good_docker else
-                                    'status-button-bad' if _is_bad_docker else
-                                    'status-button-unknown' %}
+                            {# Status icon row #}
+                            <div class="tile-status-row">
 
-                                {% if not entry.last_api_update %}
-                                {% set docker_class = 'status-button-bad' %}
+                                {# Internal URL icon #}
+                                {% if _int_href %}
+                                    <a href="{{ _int_href }}" target="_blank"
+                                       class="status-icon {{ _int_class }}"
+                                       title="{{ _int_tooltip }}"
+                                       onclick="event.stopPropagation()">
+                                        <i class="ti ti-home" aria-hidden="true"></i>
+                                    </a>
                                 {% else %}
-                                {% set docker_class =
-                                    'status-button-stale' if entry.is_docker_status_stale else
-                                    'status-button-stale' if _is_good_docker and docker_age_minutes and docker_age_minutes > 120 else
-                                    'status-button-good' if _is_good_docker else
-                                    'status-button-bad' if _is_bad_docker else
-                                    'status-button-unknown' %}
+                                    <span class="status-icon {{ _int_class }}" title="{{ _int_tooltip }}">
+                                        <i class="ti ti-home" aria-hidden="true"></i>
+                                    </span>
                                 {% endif %}
 
-                                {% set display_docker_status = (entry.docker_status.split('(')[0].strip() if entry.docker_status else 'N/A') %}
-                                
-                                <span
-                                class="status-button docker-status-button {{ docker_class }}"
-                                title="Docker: {{ entry.docker_status or 'N/A' }} — {% if entry.last_api_update %}last updated {{ entry.last_api_update | time_since }}{% else %}no update timestamp{% endif %}">
-                                {{ display_docker_status[:9] }}{{ '…' if display_docker_status|length > 9 else '' }}
+                                {# External URL icon #}
+                                {% if _ext_href %}
+                                    <a href="{{ _ext_href }}" target="_blank"
+                                       class="status-icon {{ _ext_class }}"
+                                       title="{{ _ext_tooltip }}"
+                                       onclick="event.stopPropagation()">
+                                        <i class="ti ti-world" aria-hidden="true"></i>
+                                    </a>
+                                {% else %}
+                                    <span class="status-icon {{ _ext_class }}" title="{{ _ext_tooltip }}">
+                                        <i class="ti ti-world" aria-hidden="true"></i>
+                                    </span>
+                                {% endif %}
+
+                                {# Docker status icon (dynamic entries only) #}
+                                {% if not entry.is_static %}
+                                    <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
+                                        <i class="ti ti-brand-docker" aria-hidden="true"></i>
+                                    </span>
+                                {% else %}
+                                    <span class="status-icon status-icon-muted" title="Static entry">
+                                        <i class="ti ti-brand-docker" aria-hidden="true"></i>
+                                    </span>
+                                {% endif %}
+
+                                <span class="icon-sep" aria-hidden="true"></span>
+
+                                {# Widget indicator #}
+                                {% if entry.widget_id %}
+                                    <span class="status-icon status-icon-blue" title="Widget data — click chevron to expand">
+                                        <i class="ti ti-chart-line" aria-hidden="true"></i>
+                                    </span>
+                                {% endif %}
+
+                                {# Dozzle icon #}
+                                {% if _has_dozzle %}
+                                    <a href="{{ _dozzle_base }}/container/{{ _dozzle_id[:12] }}"
+                                       target="_blank"
+                                       class="status-icon status-icon-muted"
+                                       title="Open logs in Dozzle ({{ _dozzle_id[:12] }})"
+                                       onclick="event.stopPropagation()">
+                                        <i class="ti ti-terminal-2" aria-hidden="true"></i>
+                                    </a>
+                                {% endif %}
+
+                                {# Edit icon #}
+                                <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
+                                   class="status-icon status-icon-muted"
+                                   title="Edit"
+                                   onclick="event.stopPropagation()">
+                                    <i class="ti ti-edit" aria-hidden="true"></i>
+                                </a>
+
+                                {# Expand chevron #}
+                                <button class="tile-chevron"
+                                        data-drawer="drawer-{{ entry.id }}"
+                                        aria-expanded="false"
+                                        aria-label="Expand details for {{ entry.container_name }}"
+                                        title="Expand details">
+                                    <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                                </button>
+                            </div>{# /tile-status-row #}
+
+                        </div>{# /tile #}
+
+                        {# ── Expand drawer ─────────────────────────────── #}
+                        <div class="tile-drawer" id="drawer-{{ entry.id }}">
+
+                            {# ── Info rows ─────────────────────────── #}
+
+                            {# Host #}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Host</span>
+                                <span class="drawer-value">{{ entry.host }}</span>
+                            </div>
+
+                            {# Internal URL #}
+                            {% if entry.internalurl %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Internal</span>
+                                <span class="drawer-value">
+                                    <a href="{{ entry.internalurl }}" target="_blank"
+                                       class="text-blue-400 hover:underline break-all">{{ entry.internalurl }}</a>
+                                    {% if entry.internal_health_check_enabled and entry.internal_health_check_status %}
+                                      <span class="ml-1 text-gray-400 text-xs">
+                                        — {{ entry.internal_health_check_status }}
+                                        {% if entry.internal_health_check_update %}
+                                          ({{ entry.internal_health_check_update | time_since }})
+                                        {% endif %}
+                                      </span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# External URL #}
+                            {% if entry.externalurl %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">External</span>
+                                <span class="drawer-value">
+                                    <a href="{{ entry.externalurl }}" target="_blank"
+                                       class="text-blue-400 hover:underline break-all">{{ entry.externalurl }}</a>
+                                    {% if entry.external_health_check_enabled and entry.external_health_check_status %}
+                                      <span class="ml-1 text-gray-400 text-xs">
+                                        — {{ entry.external_health_check_status }}
+                                        {% if entry.external_health_check_update %}
+                                          ({{ entry.external_health_check_update | time_since }})
+                                        {% endif %}
+                                      </span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# Docker status (dynamic entries only) #}
+                            {% if not entry.is_static %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Docker</span>
+                                <span class="drawer-value">
+                                    {{ entry.docker_status or 'Unknown' }}
+                                    {% if entry.last_api_update %}
+                                      <span class="text-gray-400 text-xs ml-1">({{ entry.last_api_update | time_since }})</span>
+                                    {% endif %}
+                                    {% if entry.image_tag %}
+                                      <span class="text-gray-400 text-xs ml-1">— <code>{{ entry.image_tag }}</code></span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# Networks #}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Networks</span>
+                                <span class="drawer-value">
+                                    {% if entry.networks %}
+                                        {% for net in entry.networks %}
+                                            <span>{{ net.name }}{% if net.aliases %} <span class="text-gray-400">[{{ net.aliases | join(', ') }}]</span>{% endif %}</span>{% if not loop.last %}, {% endif %}
+                                        {% endfor %}
+                                    {% else %}
+                                        <em class="text-gray-500">Not reported</em>
+                                    {% endif %}
                                 </span>
                             </div>
 
-                            {% set dozzle_url = entry.dozzle_url_override if entry.dozzle_url_override else STD_DOZZLE_URL %}
-                            {% set container_id = entry.container_id_override if entry.container_id_override else entry.container_id %}
-                            {% if dozzle_url and container_id %}
-                                <a href="{{ dozzle_url }}/container/{{ container_id[:12] }}"
-                                target="_blank"
-                                class="dozzle-direct-link"
-                                title="Open Logs in Dozzle ({{ container_id[:12] }})">
-                                <img src="{{ url_for('static', filename='dozzle.svg')  }}"
-                                    alt="Dozzle Logs"
-                                    class="dozzle-icon-img">
-                                </a>
-                            {% endif %}
-                            {% endif %}
-
-
-
-                        </div>
-                    </div>
-
-                    {% if entry.widget_id %}
-                        {% set widget_data = widget_values.get(entry.widget_id) %}
-                        {% set last_updated = widget_data.get('last_updated') if widget_data else None %}
-                        <div class="widget-box mt-2 px-2 py-1 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-100 hidden"
-                        data-widget-for="{{ entry.widget_id }}"
-                        {% if last_updated %}
-                            title="Last updated: {{ last_updated }}"
-                        {% endif %}>   
-                            {% if widget_data %}
-                                {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
-                                <div class="grid grid-cols-3 gap-2">
-                                    {% for field, value in widget_data.items() if field in allowed_fields %}
-                                        <div class="bg-gray-700 rounded-md px-2 py-1 text-center shadow-sm border border-gray-600">
-                                            <div class="text-[0.65rem] text-gray-400 uppercase tracking-wide leading-tight">
-                                                {{ field.replace('_', ' ') | title }}
-                                            </div>
-                                            <div class="text-base font-semibold leading-snug" title="{{ value }}">
-                                            {% if value.lower().startswith('error:') %}
-                                                <span class="text-red-500">Error</span>
-                                            {% else %}
-                                                <span class="text-white">{{ value }}</span>
+                            {# Ports #}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Ports</span>
+                                <span class="drawer-value">
+                                    {% set _has_ports = (entry.published_ports and entry.published_ports|length > 0) or (entry.exposed_ports and entry.exposed_ports|length > 0) %}
+                                    {% if _has_ports %}
+                                        {% set ns = namespace(pub_set=[]) %}
+                                        {% if entry.published_ports %}
+                                          <div class="space-y-0.5">
+                                          {% for p in entry.published_ports %}
+                                            {% set _host_part = (p.host_ip ~ ':' if p.host_ip and p.host_ip != '0.0.0.0' else '') ~ p.host_port|string %}
+                                            <div class="text-xs font-mono">{{ p.container_port }}/{{ p.protocol }} → {{ _host_part }}</div>
+                                            {% set ns.pub_set = ns.pub_set + [p.container_port|string ~ '/' ~ p.protocol] %}
+                                          {% endfor %}
+                                          </div>
+                                        {% endif %}
+                                        {% if entry.exposed_ports %}
+                                          {% set _extras = [] %}
+                                          {% for ep in entry.exposed_ports %}
+                                            {% if ep not in ns.pub_set %}
+                                              {% set _extras = _extras + [ep] %}
                                             {% endif %}
-                                            </div>
+                                          {% endfor %}
+                                          {% if _extras %}
+                                            <div class="text-xs font-mono text-gray-400 mt-0.5">{{ _extras | join(', ') }} (exposed)</div>
+                                          {% endif %}
+                                        {% endif %}
+                                    {% else %}
+                                        <em class="text-gray-500">Not reported</em>
+                                    {% endif %}
+                                </span>
+                            </div>
 
+                            {# Exposure observations #}
+                            {% if entry.exposures %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Exposure</span>
+                                <span class="drawer-value">
+                                    <div class="space-y-1">
+                                    {% for ex in entry.exposures %}
+                                        <div class="text-xs">
+                                            <code class="text-blue-400 mr-1">{{ ex.layer }}</code>
+                                            {% if ex.hostname %}{{ ex.hostname }}{% endif %}
+                                            {% if ex.path_prefix %}<span class="text-gray-400">{{ ex.path_prefix }}</span>{% endif %}
+                                            {% if ex.tls %}<span class="ml-1 bg-gray-700 text-gray-300 px-1 rounded text-[0.65rem]"><i class="ti ti-lock" aria-hidden="true"></i> TLS</span>{% endif %}
+                                            {% if ex.auth and ex.auth not in ['none', ''] %}<span class="ml-1 bg-gray-700 text-gray-300 px-1 rounded text-[0.65rem]"><i class="ti ti-key" aria-hidden="true"></i> {{ ex.auth }}</span>{% endif %}
                                         </div>
                                     {% endfor %}
-                                </div>
-                            {% else %}
-                                <div class="text-gray-400 italic">No widget data available.</div>
+                                    </div>
+                                </span>
+                            </div>
                             {% endif %}
-                        </div>
-                    {% endif %}
 
-                    
+                            {# Widget data #}
+                            {% if entry.widget_id %}
+                              {% set widget_data = widget_values.get(entry.widget_id) %}
+                              {% if widget_data %}
+                              <div class="drawer-row">
+                                  <span class="drawer-label">Widget</span>
+                                  <span class="drawer-value">
+                                      {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
+                                      <div class="drawer-widget-grid">
+                                          {% for field, value in widget_data.items() if field in allowed_fields %}
+                                              <div class="drawer-widget-card">
+                                                  <div class="drawer-widget-label">{{ field.replace('_', ' ') | title }}</div>
+                                                  <div class="drawer-widget-value">
+                                                      {% if value.lower().startswith('error:') %}
+                                                          <span class="text-red-500">Error</span>
+                                                      {% else %}
+                                                          {{ value }}
+                                                      {% endif %}
+                                                  </div>
+                                              </div>
+                                          {% endfor %}
+                                      </div>
+                                  </span>
+                              </div>
+                              {% endif %}
+                            {% endif %}
 
-                
-                   
-                        
-                    </div>
+                            <hr class="drawer-divider">
+
+                            {# Action row #}
+                            <div class="drawer-actions">
+                                <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
+                                   class="drawer-btn drawer-btn-edit">
+                                    <i class="ti ti-edit" aria-hidden="true"></i> Edit
+                                </a>
+
+                                <button class="drawer-btn drawer-btn-delete"
+                                        data-entry-id="{{ entry.id }}"
+                                        data-container-name="{{ entry.container_name }}"
+                                        data-is-static="{{ 'true' if entry.is_static else 'false' }}">
+                                    <i class="ti ti-trash" aria-hidden="true"></i> Delete
+                                </button>
+
+                                {% if _has_dozzle %}
+                                <div class="drawer-tools-wrap">
+                                    <button class="drawer-btn drawer-btn-tools">
+                                        <i class="ti ti-tools" aria-hidden="true"></i> Tools
+                                    </button>
+                                    <div class="tools-dropdown">
+                                        <a href="{{ _dozzle_base }}/container/{{ _dozzle_id[:12] }}" target="_blank">
+                                            <i class="ti ti-terminal-2" aria-hidden="true"></i> Dozzle logs
+                                        </a>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                        </div>{# /tile-drawer #}
+
+                    </div>{# /tile-wrapper #}
                 {% else %}
-                    <p>No entries in this group.</p> {% endfor %}
+                    <p>No entries in this group.</p>
+                {% endfor %}
             </div>
         {% endfor %}
     {% else %}
         <p style="text-align: center; margin-top: 30px;">No service entries found or no groups to display based on current selection.</p>
     {% endif %}
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-let secondsSinceRefresh = 0;
-let refreshInterval = 60;
-
-document.addEventListener('DOMContentLoaded', function () {
-  // Tile Clickability
-  const tiles = document.querySelectorAll('.tile');
-  tiles.forEach(tile => {
-    const internalUrl = tile.dataset.internalurl;
-    const externalUrl = tile.dataset.externalurl;
-    if (internalUrl || externalUrl) {
-      tile.style.cursor = 'pointer';
-      tile.addEventListener('click', function (event) {
-        if (event.target.closest('a.status-button') || event.target.closest('a.dozzle-direct-link')) return;
-        if (internalUrl) {
-          window.open(internalUrl, '_blank');
-        } else if (externalUrl) {
-          window.open(externalUrl, '_blank');
-        }
-      });
-    }
-  });
-
-  // Collapse Toggle Persistence
-  const headers = document.querySelectorAll('.group-header');
-  headers.forEach(header => {
-    const groupName = header.dataset.group;
-    const container = document.querySelector(`[data-group-container="${groupName}"]`);
-    const icon = header.querySelector('.toggle-icon');
-    const isCollapsed = localStorage.getItem(`groupCollapse:${groupName}`) === 'true';
-    if (isCollapsed) {
-      container.style.display = 'none';
-      icon.textContent = '▸';
-    }
-    header.addEventListener('click', () => {
-      const collapsed = container.style.display === 'none';
-      container.style.display = collapsed ? '' : 'none';
-      icon.textContent = collapsed ? '▾' : '▸';
-      localStorage.setItem(`groupCollapse:${groupName}`, (!collapsed).toString());
-    });
-  });
-
-  // Auto Refresh Logic
-  const refreshLabel = document.getElementById('refreshTimer');
-  const refreshDropdown = document.getElementById('refreshInterval');
-  const savedInterval = localStorage.getItem('refreshInterval');
-  if (savedInterval !== null) {
-    refreshInterval = parseInt(savedInterval);
-    if (refreshDropdown) refreshDropdown.value = savedInterval;
-  }
-  if (refreshDropdown) {
-    refreshDropdown.addEventListener('change', function () {
-      refreshInterval = parseInt(this.value);
-      localStorage.setItem('refreshInterval', this.value);
-    });
-  }
-// Widget info
-    const toggleWidgets = document.getElementById('toggleWidgets');
-    const widgetBoxes = document.querySelectorAll('.widget-box');
-    const storedWidgetPref = localStorage.getItem('showWidgets') === 'true';
-    // Set initial toggle state
-    if (toggleWidgets) {
-        toggleWidgets.checked = storedWidgetPref;
-        widgetBoxes.forEach(box => {
-            box.classList.toggle('hidden', !storedWidgetPref);
-        });
-
-        toggleWidgets.addEventListener('change', () => {
-            const show = toggleWidgets.checked;
-            widgetBoxes.forEach(box => {
-                box.classList.toggle('hidden', !show);
-            });
-            localStorage.setItem('showWidgets', show);
-        });
-    }
-
-
-  setInterval(() => {
-    secondsSinceRefresh++;
-    if (refreshLabel) {
-      const m = Math.floor(secondsSinceRefresh / 60);
-      const s = secondsSinceRefresh % 60;
-      refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
-    }
-
-    if (refreshInterval > 0 && secondsSinceRefresh >= refreshInterval) {
-      window.location.reload();
-    }
-  }, 1000);
-
-    // Filter tiles by input text
-    const filterInput = document.getElementById('filterInput');
-    if (filterInput) {
-      filterInput.addEventListener('input', function () {
-        const filter = this.value.toLowerCase();
-        const tiles = document.querySelectorAll('.tile-wrapper');
-
-        tiles.forEach(tile => {
-          const containerName = tile.querySelector('.container-name')?.textContent?.toLowerCase() || '';
-          const hostName = tile.querySelector('.host-name')?.textContent?.toLowerCase() || '';
-          const groupHeader = tile.closest('[data-group-container]')?.previousElementSibling?.textContent?.toLowerCase() || '';
-
-          const matches = containerName.includes(filter) ||
-                          hostName.includes(filter) ||
-                          groupHeader.includes(filter);
-
-          tile.style.display = matches ? '' : 'none';
-        });
-      });
-    }
-});
-
-</script>
 {% endblock %}
