@@ -1,75 +1,7 @@
 {% extends "base.html" %}
+{% set active_tab = 'compact' %}
 
-{% block head %}
-<style>
-  .tile {
-    background-color: #1f2937; /* Tailwind's bg-gray-800 */
-    border: 1px solid #374151; /* Tailwind's border-gray-700 */
-    border-radius: 0.5rem;      /* Tailwind's rounded-lg */
-    padding: 0.5rem 0.75rem;    /* Tailwind's px-3 py-2 */
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: background-color 0.2s ease-in-out;
-    cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.4); /* subtle inner shadow */
-  }
-  .tile.group-header {
-    background-color: #111827; /* Darker than regular tile (Tailwind's gray-900) */
-    border: 1px solid #4b5563; /* Tailwind's gray-600 */
-    border-left: 4px solid #3b82f6; /* Accent bar (blue-500) */
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-weight: 700;
-    font-size: 1rem;
-    color: #ffffff;
-    text-align: center;
-    justify-content: center;
-    grid-column: span 1 / span 1;
-  }
-  .tile:hover {
-    background-color: #374151; /* Tailwind's bg-gray-700 */
-  }
-  .tile img {
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-  }
-  .container-name {
-    font-weight: 600;
-    color: #ffffff;
-    font-size: 0.85rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .host-name {
-    font-size: 0.7rem;
-    color: #aaaaaa;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tile-content {
-    overflow: hidden;
-  }
-  input[type="text"],
-  input[type="url"],
-  input[type="number"] {
-    background-color: #2d2d2d; /* Slight soft gray */
-    color: #e2e8f0;
-    border: 1px solid #4a5568;
-  }
-
-  input[type="text"]:focus,
-  input[type="url"]:focus,
-  input[type="number"]:focus {
-    border-color: #4299e1;
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.5);
-  }
-</style>
-{% endblock %}
+{% block body_data_view %}compact{% endblock %}
 
 {% block filter_bar %}
   {% include "partials/filter_bar.html" %}
@@ -80,12 +12,12 @@
 <div class="grid auto-cols-max grid-flow-col gap-x-6" style="grid-template-rows: repeat(10, auto);">
   {% for item in flattened_entries %}
     {% if item.is_group_header %}
-      <div class="tile group-header">
+      <div class="compact-tile group-header">
         {{ item.group }}
       </div>
     {% else %}
       {% set _target_url = item.entry.internalurl or item.entry.externalurl %}
-      <div class="tile{% if not _target_url %} cursor-default hover:bg-gray-800{% endif %}"
+      <div class="compact-tile{% if not _target_url %} cursor-default{% endif %}"
            {% if _target_url %}onclick="window.open('{{ _target_url }}', '_blank')"{% endif %}>
         <div>
           {% if item.entry.image_icon %}
@@ -96,7 +28,7 @@
             <span class="text-gray-500 text-xl">📦</span>
           {% endif %}
         </div>
-        <div class="tile-content">
+        <div style="overflow:hidden;">
           <div class="container-name" title="{{ item.entry.container_name }}">{{ item.entry.container_name }}</div>
           {% if show_host %}
           <div class="host-name" title="{{ item.entry.host }}">{{ item.entry.host }}</div>
@@ -110,34 +42,3 @@
   <p class="text-center mt-6 text-gray-400">No entries found for this view.</p>
 {% endif %}
 {% endblock %}
-
-
-{% block extra_scripts %}
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    // Filter tiles by input text
-    const filterInput = document.getElementById('filterInput');
-    if (filterInput) {
-      filterInput.addEventListener('input', function () {
-        const filter = this.value.toLowerCase();
-        const tiles = document.querySelectorAll('.tile:not(.group-header)');
-
-        tiles.forEach(tile => {
-          const containerName = tile.querySelector('.container-name')?.textContent?.toLowerCase() || '';
-          const hostName = tile.querySelector('.host-name')?.textContent?.toLowerCase() || '';
-          const groupHeader = tile.previousElementSibling?.classList.contains('group-header')
-            ? tile.previousElementSibling.textContent.toLowerCase()
-            : '';
-
-          const matches = containerName.includes(filter) ||
-                          hostName.includes(filter) ||
-                          groupHeader.includes(filter);
-
-          tile.style.display = matches ? '' : 'none';
-        });
-      });
-    }
-  });
-</script>
-{% endblock %}
-
