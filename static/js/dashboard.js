@@ -274,11 +274,74 @@
     });
   };
 
+  /* ── Changelog "What's new" modal ───────────────────── */
+  function initChangelogModal() {
+    const modal   = document.getElementById('changelog-modal');
+    if (!modal) return;
+
+    const currentVersion = document.body.dataset.stdVersion || '';
+    if (!currentVersion || currentVersion === 'unknown') return;
+
+    const STORAGE_KEY = 'std:lastSeenVersion';
+    const lastSeen    = localStorage.getItem(STORAGE_KEY);
+
+    function showModal(sections) {
+      if (!sections || sections.length === 0) return;
+
+      const body = document.getElementById('changelog-content');
+      body.innerHTML = sections.map(s => `
+        <div class="changelog-version-block">
+          <p class="changelog-version-header">v${s.version} — ${s.date}</p>
+          ${s.html}
+        </div>
+      `).join('');
+
+      modal.classList.remove('hidden');
+      document.addEventListener('keydown', onEsc);
+    }
+
+    function dismiss() {
+      localStorage.setItem(STORAGE_KEY, currentVersion);
+      modal.classList.add('hidden');
+      document.removeEventListener('keydown', onEsc);
+    }
+
+    function onEsc(e) {
+      if (e.key === 'Escape') dismiss();
+    }
+
+    modal.querySelector('.changelog-modal-close').addEventListener('click', dismiss);
+    modal.querySelector('.changelog-modal-dismiss').addEventListener('click', dismiss);
+    modal.querySelector('.changelog-modal-backdrop').addEventListener('click', dismiss);
+
+    if (lastSeen === null) {
+      fetch('/api/v1/changelog')
+        .then(r => r.json())
+        .then(data => showModal(data.sections))
+        .catch(() => {});
+    } else if (lastSeen === currentVersion) {
+      // No change — don't pop.
+    } else {
+      fetch(`/api/v1/changelog?since=${encodeURIComponent(lastSeen)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data.sections || data.sections.length === 0) {
+            // Downgrade case or already current — silently update.
+            localStorage.setItem(STORAGE_KEY, currentVersion);
+          } else {
+            showModal(data.sections);
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
   /* ── Bootstrap ───────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', function () {
     initRefresh();
     initViewControls();
     initFilter();
+    initChangelogModal();
 
     const view = document.body.dataset.view;
     if (view === 'tiled') {

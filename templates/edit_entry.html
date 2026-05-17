@@ -1,47 +1,5 @@
 {% extends "base.html" %}
 
-{% block head %}
-<style>
-  .form-input {
-    background-color: #1f2937;
-    color: #e2e8f0;
-    border: 1px solid #4a5568;
-    padding: 0.625rem 1rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    width: 100%;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  }
-  .form-input::placeholder {
-    color: #94a3b8;
-  }
-  .form-input:focus {
-    border-color: #3b82f6;
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-  }
-  .form-checkbox {
-    color: #3b82f6;
-    background-color: #1f2937;
-    border-color: #4a5568;
-  }
-  .btn-primary {
-    background-color: #4299e1;
-    color: white;
-  }
-  .btn-primary:hover {
-    background-color: #3182ce;
-  }
-  .btn-secondary {
-    background-color: #4a5568;
-    color: white;
-  }
-  .btn-secondary:hover {
-    background-color: #2d3748;
-  }
-</style>
-{% endblock %}
-
 {% block content %}
 <div class="flex justify-center px-4 py-8">
   <div class="w-full max-w-3xl">
@@ -276,68 +234,68 @@
 {% endblock %}
 {% block extra_scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-  // === Widget Field Logic ===
-  const widgetSelect = document.getElementById('widget_name');
-  const container = document.getElementById('widget_fields_container');
-
-  function loadWidgetFields(widgetName, preselected = []) {
-    container.innerHTML = '';
-    if (!widgetName || widgetName === 'none') return;
-
-    fetch(`/widget_config/${widgetName}`)
-      .then(response => response.json())
-      .then(fields => {
-        if (!Array.isArray(fields)) return;
-
-        fields.forEach(field => {
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.name = 'widget_fields';
-          checkbox.value = field.key;
-          checkbox.className = 'mr-2';
-          if (preselected.includes(field.key)) checkbox.checked = true;
-
-          const label = document.createElement('label');
-          label.className = 'block mb-2 text-sm text-white';
-          label.innerHTML = `<strong>${field.label}</strong><br><span class="text-gray-400">${field.description}</span>`;
-          label.prepend(checkbox);
-
-          container.appendChild(label);
-        });
-      })
-      .catch(err => console.error("❌ Error loading widget config:", err));
-  }
-
-  if (widgetSelect) {
-    widgetSelect.addEventListener('change', function () {
-      loadWidgetFields(this.value);
-    });
-
-    {% if selected_widget and selected_widget.widget_name %}
-    loadWidgetFields(
-      '{{ selected_widget.widget_name }}',
-      {{ selected_widget.widget_fields | tojson | safe }}
-    );
-    {% endif %}
-  }
-
-  // === Group Toggle Logic ===
   function toggleGroupMode() {
     const useExisting = document.getElementById('select_existing').checked;
     document.getElementById('group_id_existing').classList.toggle('hidden', !useExisting);
     document.getElementById('group_name_new').classList.toggle('hidden', useExisting);
   }
 
-  const selectExisting = document.getElementById('select_existing');
-  const addNew = document.getElementById('add_new');
+  document.addEventListener('DOMContentLoaded', function () {
+    // === Widget Field Logic ===
+    const widgetSelect = document.getElementById('widget_name');
+    const container = document.getElementById('widget_fields_container');
 
-  if (selectExisting && addNew) {
-    toggleGroupMode();
-    selectExisting.addEventListener('change', toggleGroupMode);
-    addNew.addEventListener('change', toggleGroupMode);
-  }
-});
+    function loadWidgetFields(widgetName, preselected = []) {
+      container.innerHTML = '';
+      if (!widgetName || widgetName === 'none') return;
+
+      fetch(`/widget_config/${widgetName}`)
+        .then(response => response.json())
+        .then(fields => {
+          if (!Array.isArray(fields)) return;
+
+          fields.forEach(field => {
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = 'widget_fields';
+            checkbox.value = field.key;
+            checkbox.className = 'mr-2';
+            if (preselected.includes(field.key)) checkbox.checked = true;
+
+            const label = document.createElement('label');
+            label.className = 'block mb-2 text-sm text-white';
+            label.innerHTML = `<strong>${field.label}</strong><br><span class="text-gray-400">${field.description}</span>`;
+            label.prepend(checkbox);
+
+            container.appendChild(label);
+          });
+        })
+        .catch(err => console.error("❌ Error loading widget config:", err));
+    }
+
+    if (widgetSelect) {
+      widgetSelect.addEventListener('change', function () {
+        loadWidgetFields(this.value);
+      });
+
+      {% if selected_widget and selected_widget.widget_name %}
+      loadWidgetFields(
+        '{{ selected_widget.widget_name }}',
+        {{ selected_widget.widget_fields | tojson | safe }}
+      );
+      {% endif %}
+    }
+
+    // === Group Toggle Logic ===
+    const selectExisting = document.getElementById('select_existing');
+    const addNew = document.getElementById('add_new');
+
+    if (selectExisting && addNew) {
+      toggleGroupMode();
+      selectExisting.addEventListener('change', toggleGroupMode);
+      addNew.addEventListener('change', toggleGroupMode);
+    }
+  });
 </script>
 {% endblock %}
 

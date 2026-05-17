@@ -9,3 +9,4 @@ PyYAML
 apscheduler
 alembic
 pydantic>=2,<3
+markdown

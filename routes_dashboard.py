@@ -16,15 +16,18 @@ the query params and hands them to the helper.
 
 import logging
 import os
+import re
 from datetime import datetime
 from urllib.parse import urlparse
 
+import markdown as _md
 import requests
 import yaml
 from flask import (
     Blueprint,
     current_app,
     flash,
+    jsonify,
     make_response,
     redirect,
     render_template,
@@ -52,6 +55,58 @@ from view_helpers import (
 logger = logging.getLogger(__name__)
 
 dashboard_bp = Blueprint("dashboard", __name__)
+
+# Module-level cache for parsed changelog sections. CHANGELOG.md is baked into
+# the image at build time and never changes at runtime, so parse once on first
+# request and reuse.
+_changelog_cache = None
+_CHANGELOG_SECTION_RE = re.compile(
+    r'^## \[(\d+\.\d+\.\d+)\] — (\d{4}-\d{2}-\d{2})',
+    re.MULTILINE,
+)
+
+
+def _parse_version(s):
+    try:
+        return tuple(int(x) for x in s.split('.'))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _get_changelog_sections():
+    global _changelog_cache
+    if _changelog_cache is not None:
+        return _changelog_cache
+
+    try:
+        # CHANGELOG.md is at the same directory as this file in both the
+        # container (COPY . . puts everything under /app) and local dev.
+        changelog_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'CHANGELOG.md')
+        if not os.path.exists(changelog_path):
+            _changelog_cache = []
+            return _changelog_cache
+        with open(changelog_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception:
+        _changelog_cache = []
+        return _changelog_cache
+
+    matches = list(_CHANGELOG_SECTION_RE.finditer(content))
+    sections = []
+    for i, match in enumerate(matches):
+        version = match.group(1)
+        date = match.group(2)
+        body_start = match.end()
+        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+        body = content[body_start:body_end].strip()
+        sections.append({
+            'version': version,
+            'date': date,
+            'html': _md.markdown(body),
+        })
+
+    _changelog_cache = sections
+    return _changelog_cache
 
 
 # Helper to check if flash messages are already present (to avoid duplicates)
@@ -919,3 +974,33 @@ def edit_entry(id):
                            groups=groups,
                            available_widgets=available_widgets,
                            selected_widget=selected_widget)
+
+
+@dashboard_bp.route('/api/v1/changelog')
+@login_required
+def changelog_api():
+    """Return parsed CHANGELOG.md sections as JSON.
+
+    ?since=<version>  — return only sections newer than this version (exclusive).
+    Omitted / invalid since → return only the current version's section.
+    since >= current → empty sections array (downgrade case).
+    """
+    current = current_app.config['VERSION_INFO'].get('version', 'unknown')
+    since_raw = request.args.get('since', '').strip()
+    since_tuple = _parse_version(since_raw)
+    current_tuple = _parse_version(current)
+
+    sections = _get_changelog_sections()
+
+    if since_tuple is None:
+        result = [s for s in sections if s['version'] == current]
+    elif current_tuple is not None and since_tuple >= current_tuple:
+        result = []
+    else:
+        result = [
+            s for s in sections
+            if _parse_version(s['version']) is not None
+            and _parse_version(s['version']) > since_tuple
+        ]
+
+    return jsonify({'current': current, 'sections': result})

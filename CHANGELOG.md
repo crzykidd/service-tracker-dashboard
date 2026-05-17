@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-05-17
+
+Foundations for "UI overhaul, part 2": orphan handler sweep,
+inline-style cleanup completing the v0.6.1 CSS extraction, and a
+"what's new" popup that fires automatically after each version upgrade.
+
+### Added
+
+- **"What's new" popup.** After upgrading STD, operators see a modal on
+  their next page load showing the changelog entries for every version
+  since the one they last acknowledged. Dismissal writes the current
+  version to `localStorage` and closes. New API route
+  `GET /api/v1/changelog?since=<version>` parses `CHANGELOG.md`
+  server-side and returns the relevant sections as rendered HTML.
+- **`markdown` package** added to `requirements.txt` to support
+  server-side rendering of changelog sections.
+
+### Changed
+
+- **Inline `<style>` blocks removed** from `templates/edit_entry.html`
+  and `templates/settings.html`. The v0.6.1 CSS extraction is now
+  complete — `.form-input`, `.form-checkbox`, `.btn-primary`, and
+  `.btn-secondary` are defined only in `static/css/dashboard.css`.
+  `.btn-primary` background normalized from `#4299e1` to
+  `var(--color-accent)` (`#3b82f6`) — minor visible difference on
+  the edit and add pages.
+- **`version_info` is now injected globally** into every template that
+  extends `base.html` via the app context processor (previously only
+  passed explicitly to the settings page). Required by the changelog
+  popup to read the current version.
+
+### Fixed
+
+- **`toggleGroupMode` unreachable from inline `onclick=`** on the
+  edit-entry and add-entry pages. The function was scoped inside a
+  `DOMContentLoaded` closure, making it invisible to inline handler
+  attributes. Hoisted to module scope in both templates.
+
 ## [0.6.2] — 2026-05-16
 
 ### Fixed

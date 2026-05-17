@@ -47,34 +47,16 @@
 
 ## Build Status
 
-Current shipped release: **v0.5.0** (latest tag on `main`)
-
-Next release target: **v0.6.0** — bundled sunset + capture +
-interpreter release. Three threads of work shipping together:
-
-1. **Sunset** of `/api/register` and the legacy-key compat shim.
-2. **Network/ports capture** — three new JSON columns on
-   `service_entry` populated by notifier v0.3.2+.
-3. **Exposure interpreter mechanism** — wire contract for
-   interpreter outputs (`exposure_observations` field on the
-   register payload), new `service_exposure` table, URL synthesizer,
-   URL provenance tracking (`*_source` columns), DB-stored
-   per-interpreter direction settings (new `setting` table +
-   `settings_store.py`), exposure badges on the tile/table
-   dashboards, and headless rendering for services with no URL or
-   exposure evidence.
-
-Notifier coordination:
-- Notifier v0.3.0+ is required for any producer (canonical keys).
-- Notifier v0.3.2 ships **after** STD v0.6.0 and populates the
-  capture columns.
-- Notifier v0.4.0 ships **after** STD v0.6.0 and populates
-  `exposure_observations` via YAML interpreters.
+Current shipped release: **v0.6.2** (latest tag on `main`)
 
 Status:
+
 - v0.5.0 — cleanup release (split, pydantic, retention, indexes): DONE
-- v0.5.x — view controls + grouping helper consolidation: folded into v0.6.0
-- v0.6.0 — sunset + capture + interpreter: IN PROGRESS (on dev)
+- v0.6.0 — sunset + capture + interpreter: DONE
+- v0.6.1 — UI overhaul part 1 (tiled redesign, drawer, shared CSS/JS): DONE
+- v0.6.2 — hotfix: restore `toggleRestoreSource`, upload filename feedback: DONE
+- v0.6.3 — UI overhaul part 2 foundations (orphan sweep, inline-style cleanup, what's new popup): IN PROGRESS (on dev)
+- v0.6.4 / v0.6.5 — UI overhaul part 2 (scoped separately, fresh sessions): TBD
 - v0.7.0+ — TBD (no scoped features at present)
 
 ## Git Workflow
