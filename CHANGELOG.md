@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-05-17
+
+UI overhaul, part 2 (release 2 of 3): mobile usability and tile restructure.
+The filter bar now collapses cleanly on phones, tile status icons split into two
+rows so container names stop truncating, and the drawer scrolls its tile into
+view when you tap to expand it.
+
+### Added
+
+- **Mobile filter bar.** Below 640 px the filter bar collapses to just the
+  free-text filter plus a "View options" toggle button. Tapping the toggle
+  reveals group-by, sort, Show URL-less, auto-refresh, and total count in a
+  vertical panel. Tapping outside or pressing Esc collapses it again. Above
+  640 px the filter bar is unchanged.
+- **Drawer scrolls into view on mobile.** When you tap the chevron on a Tiled
+  tile near the bottom of the viewport, the page smoothly scrolls the tile to
+  the top so the drawer has room to expand below it. Only triggers below 768 px
+  wide — desktop drawers are unaffected.
+- **Stack row in the tile drawer.** When a service has a stack name, the Tiled
+  drawer now shows it immediately after Host. Saves a trip to the edit page
+  when grouped by host.
+
+### Changed
+
+- **Tile status icons now render in two rows.** The single-row icon layout was
+  truncating container names aggressively when all affordances were present.
+  Status icons (internal URL, external URL, Docker, widget) now occupy the top
+  row; action icons (Dozzle, edit pencil, expand chevron) occupy the bottom
+  row. Container names get back the horizontal space they need. Tiles are
+  roughly 20 % taller as a result.
+- **Larger touch targets on mobile.** Tile status icons and drawer action
+  buttons have bigger hit boxes below 640 px — same visual size, more
+  forgiving for fingers. Desktop appearance unchanged.
+- **`icon-sep` separator removed.** The two-row icon layout replaces it
+  semantically.
+
 ## [0.6.3] — 2026-05-17
 
 Foundations for "UI overhaul, part 2": orphan handler sweep,

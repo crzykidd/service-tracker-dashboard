@@ -180,6 +180,10 @@
         this.setAttribute('aria-expanded', 'true');
         currentOpenDrawer = drawer;
         currentOpenTile   = tile;
+
+        if (window.innerWidth < 768) {
+          wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       });
     });
 
@@ -274,6 +278,37 @@
     });
   };
 
+  /* ── Filter bar mobile collapse ─────────────────────── */
+  function initFilterBarMobile() {
+    const toggle = document.getElementById('filterBarToggle');
+    const panel  = document.getElementById('filterBarPanel');
+    if (!toggle || !panel) return;
+
+    function setOpen(open) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.classList.toggle('is-open', open);
+      panel.classList.toggle('fb-panel-open', open);
+    }
+
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      setOpen(!panel.classList.contains('fb-panel-open'));
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!panel.classList.contains('fb-panel-open')) return;
+      if (!e.target.closest('#filterBarToggle') && !e.target.closest('#filterBarPanel')) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && panel.classList.contains('fb-panel-open')) {
+        setOpen(false);
+      }
+    });
+  }
+
   /* ── Changelog "What's new" modal ───────────────────── */
   function initChangelogModal() {
     const modal   = document.getElementById('changelog-modal');
@@ -341,6 +376,7 @@
     initRefresh();
     initViewControls();
     initFilter();
+    initFilterBarMobile();
     initChangelogModal();
 
     const view = document.body.dataset.view;

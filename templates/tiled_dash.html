@@ -131,84 +131,87 @@
                                 {% endwith %}
                             </div>
 
-                            {# Status icon row #}
+                            {# Status icon block: two rows (status top, actions bottom) #}
                             <div class="tile-status-row">
 
-                                {# Internal URL icon #}
-                                {% if _int_href %}
-                                    <a href="{{ _int_href }}" target="_blank"
-                                       class="status-icon {{ _int_class }}"
-                                       title="{{ _int_tooltip }}"
-                                       onclick="event.stopPropagation()">
-                                        <i class="ti ti-home" aria-hidden="true"></i>
-                                    </a>
-                                {% else %}
-                                    <span class="status-icon {{ _int_class }}" title="{{ _int_tooltip }}">
-                                        <i class="ti ti-home" aria-hidden="true"></i>
-                                    </span>
-                                {% endif %}
+                                <div class="tile-icon-row tile-icon-row-status">
+                                    {# Internal URL icon #}
+                                    {% if _int_href %}
+                                        <a href="{{ _int_href }}" target="_blank"
+                                           class="status-icon {{ _int_class }}"
+                                           title="{{ _int_tooltip }}"
+                                           onclick="event.stopPropagation()">
+                                            <i class="ti ti-home" aria-hidden="true"></i>
+                                        </a>
+                                    {% else %}
+                                        <span class="status-icon {{ _int_class }}" title="{{ _int_tooltip }}">
+                                            <i class="ti ti-home" aria-hidden="true"></i>
+                                        </span>
+                                    {% endif %}
 
-                                {# External URL icon #}
-                                {% if _ext_href %}
-                                    <a href="{{ _ext_href }}" target="_blank"
-                                       class="status-icon {{ _ext_class }}"
-                                       title="{{ _ext_tooltip }}"
-                                       onclick="event.stopPropagation()">
-                                        <i class="ti ti-world" aria-hidden="true"></i>
-                                    </a>
-                                {% else %}
-                                    <span class="status-icon {{ _ext_class }}" title="{{ _ext_tooltip }}">
-                                        <i class="ti ti-world" aria-hidden="true"></i>
-                                    </span>
-                                {% endif %}
+                                    {# External URL icon #}
+                                    {% if _ext_href %}
+                                        <a href="{{ _ext_href }}" target="_blank"
+                                           class="status-icon {{ _ext_class }}"
+                                           title="{{ _ext_tooltip }}"
+                                           onclick="event.stopPropagation()">
+                                            <i class="ti ti-world" aria-hidden="true"></i>
+                                        </a>
+                                    {% else %}
+                                        <span class="status-icon {{ _ext_class }}" title="{{ _ext_tooltip }}">
+                                            <i class="ti ti-world" aria-hidden="true"></i>
+                                        </span>
+                                    {% endif %}
 
-                                {# Docker status icon (dynamic entries only) #}
-                                {% if not entry.is_static %}
-                                    <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
-                                        <i class="ti ti-brand-docker" aria-hidden="true"></i>
-                                    </span>
-                                {% else %}
-                                    <span class="status-icon status-icon-muted" title="Static entry">
-                                        <i class="ti ti-brand-docker" aria-hidden="true"></i>
-                                    </span>
-                                {% endif %}
+                                    {# Docker status icon (dynamic entries only) #}
+                                    {% if not entry.is_static %}
+                                        <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
+                                            <i class="ti ti-brand-docker" aria-hidden="true"></i>
+                                        </span>
+                                    {% else %}
+                                        <span class="status-icon status-icon-muted" title="Static entry">
+                                            <i class="ti ti-brand-docker" aria-hidden="true"></i>
+                                        </span>
+                                    {% endif %}
 
-                                <span class="icon-sep" aria-hidden="true"></span>
+                                    {# Widget indicator #}
+                                    {% if entry.widget_id %}
+                                        <span class="status-icon status-icon-blue" title="Widget data — click chevron to expand">
+                                            <i class="ti ti-chart-line" aria-hidden="true"></i>
+                                        </span>
+                                    {% endif %}
+                                </div>{# /tile-icon-row-status #}
 
-                                {# Widget indicator #}
-                                {% if entry.widget_id %}
-                                    <span class="status-icon status-icon-blue" title="Widget data — click chevron to expand">
-                                        <i class="ti ti-chart-line" aria-hidden="true"></i>
-                                    </span>
-                                {% endif %}
+                                <div class="tile-icon-row tile-icon-row-actions">
+                                    {# Dozzle icon #}
+                                    {% if _has_dozzle %}
+                                        <a href="{{ _dozzle_base }}/container/{{ _dozzle_id[:12] }}"
+                                           target="_blank"
+                                           class="status-icon status-icon-muted"
+                                           title="Open logs in Dozzle ({{ _dozzle_id[:12] }})"
+                                           onclick="event.stopPropagation()">
+                                            <i class="ti ti-terminal-2" aria-hidden="true"></i>
+                                        </a>
+                                    {% endif %}
 
-                                {# Dozzle icon #}
-                                {% if _has_dozzle %}
-                                    <a href="{{ _dozzle_base }}/container/{{ _dozzle_id[:12] }}"
-                                       target="_blank"
+                                    {# Edit icon #}
+                                    <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
                                        class="status-icon status-icon-muted"
-                                       title="Open logs in Dozzle ({{ _dozzle_id[:12] }})"
+                                       title="Edit"
                                        onclick="event.stopPropagation()">
-                                        <i class="ti ti-terminal-2" aria-hidden="true"></i>
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
                                     </a>
-                                {% endif %}
 
-                                {# Edit icon #}
-                                <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
-                                   class="status-icon status-icon-muted"
-                                   title="Edit"
-                                   onclick="event.stopPropagation()">
-                                    <i class="ti ti-edit" aria-hidden="true"></i>
-                                </a>
+                                    {# Expand chevron #}
+                                    <button class="tile-chevron"
+                                            data-drawer="drawer-{{ entry.id }}"
+                                            aria-expanded="false"
+                                            aria-label="Expand details for {{ entry.container_name }}"
+                                            title="Expand details">
+                                        <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                                    </button>
+                                </div>{# /tile-icon-row-actions #}
 
-                                {# Expand chevron #}
-                                <button class="tile-chevron"
-                                        data-drawer="drawer-{{ entry.id }}"
-                                        aria-expanded="false"
-                                        aria-label="Expand details for {{ entry.container_name }}"
-                                        title="Expand details">
-                                    <i class="ti ti-chevron-down" aria-hidden="true"></i>
-                                </button>
                             </div>{# /tile-status-row #}
 
                         </div>{# /tile #}
@@ -223,6 +226,14 @@
                                 <span class="drawer-label">Host</span>
                                 <span class="drawer-value">{{ entry.host }}</span>
                             </div>
+
+                            {# Stack #}
+                            {% if entry.stack_name %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Stack</span>
+                                <span class="drawer-value">{{ entry.stack_name }}</span>
+                            </div>
+                            {% endif %}
 
                             {# Internal URL #}
                             {% if entry.internalurl %}
