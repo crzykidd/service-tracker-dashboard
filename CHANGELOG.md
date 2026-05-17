@@ -345,7 +345,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.1
 [0.6.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.0
 [0.5.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.5.0
 [0.4.14]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.14

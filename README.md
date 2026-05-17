@@ -41,7 +41,7 @@ through the web UI or directly via API.
 
 ## What It Does
 
-- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail.
+- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN).
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so
@@ -68,6 +68,8 @@ through the web UI or directly via API.
 ---
 
 ## Screenshots
+
+<!-- TODO(v0.6.1): Screenshots below predate the v0.6.1 tile redesign (host line removed from tile face, icon-row status strip, expand drawer replacing inline widget data, Tabler icons replacing emoji badges). Refresh before next public announcement. -->
 
 | Main Dashboard | Tiled View | Compact View |
 |---|---|---|
@@ -323,9 +325,10 @@ indicating the current source.
 #### Badges and headless rendering
 
 Each tile (tiled view) and row (table view) renders up to three
-exposure badges showing the layer name, a 🔒 if TLS-terminated, and
-a 🔑 if auth is required. A `+N` overflow badge appears when a
-service is observed by more than three interpreters.
+exposure badges showing the layer name, a lock icon (`ti-lock`) if
+TLS-terminated, and a key icon (`ti-key`) if auth is required. A `+N`
+overflow badge appears when a service is observed by more than three
+interpreters.
 
 Services with no exposure observations **and** no URLs (manual,
 explicit, or synthesized) are considered "headless." Their tiles

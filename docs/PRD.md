@@ -13,6 +13,7 @@
 | 0.3     | 2026-05-13 | v0.6.0 delivered. Removed /api/register compat shim. Added §5.3 (v0.6.0 schema additions: networks, exposed_ports, published_ports). §9 rewritten from "planned" to "delivered." Added §10 (v0.7.0 — interpreter / exposure synthesis, planned). |
 | 0.4     | 2026-05-13 | Exposure interpreter mechanism folded into v0.6.0 rather than shipping as a separate v0.7.0 release. §9 expanded with §§9.4–9.8 (wire contract, synthesizer, URL provenance, per-interpreter settings, badges + headless rendering). New §5.4 documents the v0.6.0 schema additions for the interpreter (`service_exposure`, two URL source columns on `service_entry`, `setting` table). §10 retired (no scoped features for the next release). |
 | 0.5     | 2026-05-14 | v0.6.0 released. The originally-planned v0.5.x (view controls + helper consolidation), v0.6.0 (compat shim removal + capture columns), and v0.7.0 (exposure interpreter) work shipped together as a single v0.6.0 release. Former §8 (v0.5.x planning) folded into the new §8 (Delivered in v0.6.0). §6.2 D2 marked Resolved in v0.6.0. Cross-repo coordination (now §10.2) collapsed the v0.3.2 / v0.4.0 notifier split into a single notifier v0.4.0 pairing. Later sections renumbered: §10/§11/§12 → §9/§10/§11. |
+| 0.6     | 2026-05-16 | v0.6.1 delivered. UI overhaul part 1: tiled drawer, Tabler Icons v3.34.0 icon vocabulary, per-template inline CSS/JS extracted to shared static files. §9 added. |
 
 ---
 
