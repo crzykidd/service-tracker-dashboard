@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-05-17
+
+UI overhaul, part 2 (release 3 of 3): edit page polish, a universal delete
+pattern, click-to-view widget data, and an auto-refresh that knows not to wipe
+out your work while you're looking at it.
+
+### Added
+
+- **Trash icon on Tiled tiles and Dashboard rows.** One click deletes a dynamic
+  entry, with a small inline confirm popover anchored to the icon. Static
+  (Locked) entries show a lock icon in the same slot instead — they can only be
+  deleted from the edit page, which is the deliberate path for protected entries.
+- **Widget data modal.** Clicking the chart icon on a tile now opens a modal
+  showing just that service's widget data. Faster than expanding the full drawer,
+  especially on mobile. The chevron drawer still works as before.
+- **Auto-refresh pauses while you're interacting.** Open a drawer, the widget
+  modal, or the changelog popup, and the page won't refresh out from under you.
+  The refresh timer shows "Refresh paused" while interaction is active and
+  resumes (counter reset to 0) when you close everything.
+
+### Changed
+
+- **Edit page visual polish.** Tighter input padding and border-radius, section
+  headings (Identity / URLs & Health / Grouping & Display / Widget), tighter
+  spacing within sections and looser between, muted helper text. URL fields now
+  group their health-check checkbox inline below the input instead of floating
+  it to the side. The "Select Existing / Add New" group selector is now a
+  tab-style toggle instead of bullet radios.
+- **Universal delete UI.** All delete affordances — drawer Delete button, edit
+  page Delete button, and the new trash icons — use the same small inline
+  popover with a Confirm button. The typed-name confirmation form is gone;
+  static entries are protected by being deletable only from the edit page.
+- **Lock icon replaces 🔒 emoji on Dashboard rows.** Consistent visual language
+  with the new Tiled lock indicator. Same meaning: "this entry is locked from
+  notifier updates; delete from the edit page."
+- **Drawer Delete button hidden for static entries.** The tile-level lock icon
+  signals the constraint; the drawer no longer duplicates it.
+
+### Removed
+
+- **Danger Zone section on the edit page.** Replaced by a single Delete button
+  at the bottom of the form, using the new popover.
+
 ## [0.6.4] — 2026-05-17
 
 UI overhaul, part 2 (release 2 of 3): mobile usability and tile restructure.

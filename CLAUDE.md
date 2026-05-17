@@ -47,7 +47,7 @@
 
 ## Build Status
 
-Current shipped release: **v0.6.3** (latest tag on `main`)
+Current shipped release: **v0.6.4** (latest tag on `main`)
 
 Status:
 
@@ -56,8 +56,8 @@ Status:
 - v0.6.1 — UI overhaul part 1 (tiled redesign, drawer, shared CSS/JS): DONE
 - v0.6.2 — hotfix: restore `toggleRestoreSource`, upload filename feedback: DONE
 - v0.6.3 — UI overhaul part 2 foundations (orphan sweep, inline-style cleanup, what's new popup): DONE
-- v0.6.4 — UI overhaul part 2: mobile usability + tile icon restructure: IN PROGRESS (on dev)
-- v0.6.5 — UI overhaul part 2 (edit page polish + universal delete popover): TBD
+- v0.6.4 — UI overhaul part 2: mobile usability + tile icon restructure: DONE
+- v0.6.5 — UI overhaul part 2 (edit page polish, universal delete, widget modal, refresh pause): IN PROGRESS (on dev)
 - v0.7.0+ — TBD (no scoped features at present)
 
 ## Git Workflow

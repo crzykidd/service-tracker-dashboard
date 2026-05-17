@@ -228,16 +228,30 @@
               </td>
             {% endif %}
 
-            {# Actions column — pencil icon edit + static lock indicator #}
+            {# Actions column — pencil icon edit + trash/lock #}
             <td class="px-3 py-2">
-              <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
-                 class="inline-flex items-center justify-center border border-yellow-400 text-yellow-300 rounded p-1 hover:bg-yellow-400 hover:text-black transition"
-                 title="Edit">
-                <i class="ti ti-edit" aria-hidden="true" style="font-size:14px;"></i>
-              </a>
-              {% if entry.is_static %}
-                <span title="Static entry — API updates blocked" class="ml-2">🔒</span>
-              {% endif %}
+              <div class="inline-flex items-center gap-1">
+                <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
+                   class="inline-flex items-center justify-center border border-yellow-400 text-yellow-300 rounded p-1 hover:bg-yellow-400 hover:text-black transition"
+                   title="Edit">
+                  <i class="ti ti-edit" aria-hidden="true" style="font-size:14px;"></i>
+                </a>
+                {% if entry.is_static %}
+                  <span class="inline-flex items-center justify-center text-gray-500 p-1"
+                        title="Locked — delete from edit page"
+                        style="cursor: default; font-size: 16px;">
+                    <i class="ti ti-lock" aria-hidden="true"></i>
+                  </span>
+                {% else %}
+                  <button class="row-trash-btn inline-flex items-center justify-center text-gray-500 hover:text-red-500 p-1 transition"
+                          data-entry-id="{{ entry.id }}"
+                          data-container-name="{{ entry.container_name }}"
+                          title="Delete {{ entry.container_name }}"
+                          style="background: none; border: none; cursor: pointer; font-size: 16px;">
+                    <i class="ti ti-trash" aria-hidden="true"></i>
+                  </button>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% endfor %}
