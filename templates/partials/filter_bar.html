@@ -1,43 +1,62 @@
-<div class="flex flex-col sm:flex-row sm:justify-between gap-4 mb-4 items-start sm:items-center">
-  <div class="flex gap-4 items-center flex-wrap">
-    <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack" class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-grow sm:flex-none" />
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-4 gap-2 mb-4">
 
-    <label for="groupBySelect" class="text-sm text-gray-300">Group by:</label>
-    <select id="groupBySelect" data-param="group_by" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-      <option value="group" {% if group_by == 'group' %}selected{% endif %}>Group</option>
-      <option value="stack" {% if group_by == 'stack' %}selected{% endif %}>Stack</option>
-      <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
-    </select>
+  {# Always-visible row: filter input + mobile toggle #}
+  <div class="flex items-center gap-2">
+    <input id="filterInput" type="text" placeholder="Filter by Group, Container, or Stack"
+           class="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 sm:flex-none" />
 
-    <label for="sortInGroupSelect" class="text-sm text-gray-300">Sort:</label>
-    <select id="sortInGroupSelect" data-param="sort_in_group" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
-      <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
-      <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
-    </select>
-
-    <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
-      <input type="checkbox" id="showUrllessToggle" data-param="show_urlless"
-             class="view-control h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
-             {% if show_urlless %}checked{% endif %}>
-      Show URL-less
-    </label>
-
-    <span class="text-sm text-gray-400 ml-2">
-      Total Services:
-      {{ total_entries if total_entries is defined else 'N/A' }}
-    </span>
+    <button id="filterBarToggle"
+            class="fb-toggle sm:hidden"
+            aria-expanded="false"
+            aria-label="View options">
+      <i class="ti ti-adjustments" aria-hidden="true"></i>
+      <span>View options</span>
+    </button>
   </div>
 
-  <div class="flex gap-2 items-center mt-2 sm:mt-0">
-    <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
-    <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
-      <option value="30">30s</option>
-      <option value="60">1m</option>
-      <option value="300">5m</option>
-      <option value="600">10m</option>
-      <option value="0">Never</option>
-    </select>
+  {# Collapsible controls panel: hidden on mobile until toggled, always shown on sm+ #}
+  <div id="filterBarPanel" class="fb-panel sm:flex sm:items-center sm:gap-4 sm:flex-wrap sm:justify-between">
 
-    <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
+    <div class="flex gap-4 items-center flex-wrap">
+      <label for="groupBySelect" class="text-sm text-gray-300">Group by:</label>
+      <select id="groupBySelect" data-param="group_by" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+        <option value="group" {% if group_by == 'group' %}selected{% endif %}>Group</option>
+        <option value="stack" {% if group_by == 'stack' %}selected{% endif %}>Stack</option>
+        <option value="host" {% if group_by == 'host' %}selected{% endif %}>Host</option>
+      </select>
+
+      <label for="sortInGroupSelect" class="text-sm text-gray-300">Sort:</label>
+      <select id="sortInGroupSelect" data-param="sort_in_group" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+        <option value="alphabetical" {% if sort_in_group == 'alphabetical' %}selected{% endif %}>Alphabetical</option>
+        <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
+      </select>
+
+      <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
+        <input type="checkbox" id="showUrllessToggle" data-param="show_urlless"
+               class="view-control h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+               {% if show_urlless %}checked{% endif %}>
+        Show URL-less
+      </label>
+
+      <span class="text-sm text-gray-400">
+        Total Services:
+        {{ total_entries if total_entries is defined else 'N/A' }}
+      </span>
+    </div>
+
+    <div class="flex gap-2 items-center">
+      <label for="refreshInterval" class="text-sm text-gray-400">Auto Refresh:</label>
+      <select id="refreshInterval" class="bg-gray-800 border border-gray-600 px-2 py-1 rounded text-sm text-white">
+        <option value="30">30s</option>
+        <option value="60">1m</option>
+        <option value="300">5m</option>
+        <option value="600">10m</option>
+        <option value="0">Never</option>
+      </select>
+
+      <div id="refreshTimer" class="text-sm text-gray-400 cursor-pointer" onclick="window.location.reload()">Refreshed just now</div>
+    </div>
+
   </div>
+
 </div>

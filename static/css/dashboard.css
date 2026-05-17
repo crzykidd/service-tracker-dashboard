@@ -221,12 +221,19 @@
   font-size: 0.95em;
 }
 
-/* ── Status icon row (new tiled design) ───────────────────── */
+/* ── Status icon block (two rows: status top, actions bottom) ─ */
 .tile-status-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+.tile-icon-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  justify-content: flex-end;
 }
 .tile-status-row .status-icon {
   font-size: 16px;
@@ -255,16 +262,6 @@
 .status-icon-bad  { color: var(--color-status-bad); }
 .status-icon-muted{ color: var(--color-status-muted); }
 .status-icon-blue { color: var(--color-status-blue); }
-
-/* 1px vertical separator between status and action icons */
-.icon-sep {
-  display: inline-block;
-  width: 1px;
-  height: 14px;
-  background-color: var(--color-border-input);
-  margin: 0 2px;
-  flex-shrink: 0;
-}
 
 /* Chevron button */
 .tile-chevron {
@@ -518,6 +515,44 @@
   text-overflow: ellipsis;
 }
 
+/* ── Filter bar mobile collapse ──────────────────────────── */
+.fb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  background: none;
+  border: 1px solid var(--color-border-input);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.fb-toggle:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-muted);
+}
+.fb-toggle.is-open {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+@media (max-width: 639px) {
+  .fb-panel {
+    display: none;
+  }
+  .fb-panel.fb-panel-open {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border);
+  }
+}
+
 /* ── Changelog "What's new" modal ────────────────────────── */
 .changelog-modal {
   position: fixed;
@@ -661,4 +696,14 @@
   .changelog-modal-body { padding: 12px 14px; }
   .changelog-modal-header,
   .changelog-modal-footer { padding: 10px 14px; }
+}
+
+/* ── Mobile touch targets (< 640px) ──────────────────────── */
+@media (max-width: 639px) {
+  .tile-status-row .status-icon {
+    padding: 8px;
+  }
+  .drawer-btn {
+    padding: 8px 14px;
+  }
 }
