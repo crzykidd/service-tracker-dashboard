@@ -41,7 +41,7 @@ through the web UI or directly via API.
 
 ## What It Does
 
-- Three dashboard views (table, tiled, compact). Tiled view is mobile-friendly.
+- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so
@@ -422,6 +422,7 @@ cached in the `widget_value` table. Retention: rolling 30 days
 - Nightly backups run shortly after midnight; old backups are pruned
   per `backup_days_to_keep`.
 - Version metadata is shown in `/settings`.
+- Tile drawers on the Tiled view are transient view state and not bookmarkable; full edit remains at `/edit/<id>` and is bookmarkable.
 
 ---
 
