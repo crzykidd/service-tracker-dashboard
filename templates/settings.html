@@ -507,6 +507,28 @@
 
 {% block extra_scripts %}
 <script>
+  function toggleRestoreSource(value) {
+    const serverSection = document.getElementById('server-file-selector-section');
+    const uploadSection = document.getElementById('file-upload-section');
+    if (value === 'upload') {
+      serverSection.classList.add('hidden');
+      uploadSection.classList.remove('hidden');
+    } else {
+      uploadSection.classList.add('hidden');
+      serverSection.classList.remove('hidden');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const fileInput = document.getElementById('restore_file_input');
+    const fileDisplay = document.getElementById('file-name-display');
+    if (fileInput && fileDisplay) {
+      fileInput.addEventListener('change', function () {
+        fileDisplay.textContent = this.files.length > 0 ? this.files[0].name : 'YAML up to 10MB';
+      });
+    }
+  });
+
   function showSection(id) {
     document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
     document.getElementById(`section-${id}`).classList.remove('hidden');
