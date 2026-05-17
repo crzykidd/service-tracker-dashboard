@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-16
+
+UI overhaul, part 1: Tiled dashboard redesign, per-tile expand drawer,
+icon vocabulary shared across Tiled and Dashboard, inline CSS/JS
+extracted to shared static files, Compact tab-highlight fix.
+
+### Added
+
+- **Per-tile expand drawer on Tiled.** Clicking the chevron on any tile
+  drops a panel anchored to the tile (overlay, not inline reflow). Drawer
+  shows host, internal/external URLs with health status, Docker status and
+  image tag, networks, ports, exposure observations, and widget data.
+  Action row at the bottom has Edit, Delete, and (when Dozzle is
+  configured) a Tools popover with a Dozzle link.
+- **Pencil-icon edit affordance** on Tiled tiles (status icon row) and
+  Dashboard table Actions column. Both navigate to `/edit/<id>?ref=<path>`.
+- **Tabler Icons** (v3.34.0) loaded via cdnjs CDN. Outline set only.
+  Used for all new icons in this release.
+- **Tools popover in the Tiled drawer.** Seeded with the Dozzle link.
+  Renders only when at least one tool is available.
+
+### Changed
+
+- **Tiled dashboard tile redesign.** Host line removed from the tile
+  face (now in the drawer). Status area replaced with icon row:
+  `ti-home` (internal URL), `ti-world` (external URL),
+  `ti-brand-docker` (Docker), plus widget indicator, Dozzle, edit
+  pencil, and expand chevron. Colors: green 2xx, amber SSL/stale, red
+  non-2xx or bad, gray not-configured.
+- **Exposure badges** (Tiled, Dashboard, edit page) now use Tabler
+  icons `ti-lock` / `ti-key` instead of 🔒 / 🔑 emoji.
+- **Dashboard table status column** now uses icon-and-label pills
+  sharing the Tiled icon vocabulary (`ti-home`, `ti-world`,
+  `ti-brand-docker`).
+- **Dashboard Tools column** uses `ti-terminal-2` instead of the
+  Dozzle SVG image.
+- **Per-template inline CSS and JS extracted** to
+  `static/css/dashboard.css` and `static/js/dashboard.js`. All three
+  dashboard views now share these files. Hybrid Tailwind-utilities-
+  plus-custom-CSS approach formalized; no frontend build step.
+
+### Removed
+
+- **"Show Widgets" filter-bar toggle on Tiled.** Widget data is now
+  accessible via the per-tile expand drawer.
+
+### Fixed
+
+- **Compact tab failed to highlight** in the nav. The missing
+  `{% set active_tab = 'compact' %}` declaration has been added.
+
 ## [0.6.0] — 2026-05-14
 
 ### Added
@@ -294,7 +345,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.1
 [0.6.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.0
 [0.5.0]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.5.0
 [0.4.14]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.4.14

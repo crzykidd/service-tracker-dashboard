@@ -20,10 +20,25 @@
       "Bash(curl -s http://localhost:8815/api/*)",
       "Bash(git config *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "mcp__vexp__run_pipeline"
     ],
     "additionalDirectories": [
       "C:\\projects\\service-tracker-dashboard\\alembic\\versions"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob|Regex",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/vexp-guard.sh",
+            "timeout": 3000
+          }
+        ]
+      }
     ]
   }
 }

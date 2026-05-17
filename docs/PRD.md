@@ -13,6 +13,7 @@
 | 0.3     | 2026-05-13 | v0.6.0 delivered. Removed /api/register compat shim. Added §5.3 (v0.6.0 schema additions: networks, exposed_ports, published_ports). §9 rewritten from "planned" to "delivered." Added §10 (v0.7.0 — interpreter / exposure synthesis, planned). |
 | 0.4     | 2026-05-13 | Exposure interpreter mechanism folded into v0.6.0 rather than shipping as a separate v0.7.0 release. §9 expanded with §§9.4–9.8 (wire contract, synthesizer, URL provenance, per-interpreter settings, badges + headless rendering). New §5.4 documents the v0.6.0 schema additions for the interpreter (`service_exposure`, two URL source columns on `service_entry`, `setting` table). §10 retired (no scoped features for the next release). |
 | 0.5     | 2026-05-14 | v0.6.0 released. The originally-planned v0.5.x (view controls + helper consolidation), v0.6.0 (compat shim removal + capture columns), and v0.7.0 (exposure interpreter) work shipped together as a single v0.6.0 release. Former §8 (v0.5.x planning) folded into the new §8 (Delivered in v0.6.0). §6.2 D2 marked Resolved in v0.6.0. Cross-repo coordination (now §10.2) collapsed the v0.3.2 / v0.4.0 notifier split into a single notifier v0.4.0 pairing. Later sections renumbered: §10/§11/§12 → §9/§10/§11. |
+| 0.6     | 2026-05-16 | v0.6.1 delivered. UI overhaul part 1: tiled drawer, Tabler Icons v3.34.0 icon vocabulary, per-template inline CSS/JS extracted to shared static files. §9 added. |
 
 ---
 
@@ -26,9 +27,10 @@
 6. [Current State (v0.4.14)](#6-current-state-v0414)
 7. [v0.5.0 — Cleanup Release](#7-v050--cleanup-release)
 8. [v0.6.0 — Delivered](#8-v060--delivered)
-9. [Versioning, Branches, and Releases](#9-versioning-branches-and-releases)
-10. [Cross-Repo Coordination](#10-cross-repo-coordination)
-11. [Open Questions](#11-open-questions)
+9. [v0.6.1 — UI Rework Part 1 (Delivered)](#9-v061--ui-rework-part-1-delivered)
+10. [Versioning, Branches, and Releases](#10-versioning-branches-and-releases)
+11. [Cross-Repo Coordination](#11-cross-repo-coordination)
+12. [Open Questions](#12-open-questions)
 
 ---
 
@@ -671,7 +673,98 @@ no `internalurl` / `externalurl`:
 
 ---
 
-## 9. Versioning, Branches, and Releases
+## 9. v0.6.1 — UI Rework Part 1 (Delivered)
+
+Patch release shipped 2026-05-16. No schema, API, config, or backend
+changes. Templates and static files only.
+
+### 9.1 Goals
+
+Formalize the visual language across all three dashboard views, extract
+per-template CSS/JS into shared static files, and deliver the core Tiled
+redesign that replaces text pills with an icon vocabulary and adds an
+expand drawer for per-service detail.
+
+### 9.2 Extraction
+
+Per-template inline `<style>` and `<script>` blocks consolidated into:
+
+- `static/css/dashboard.css` — design tokens (CSS custom properties),
+  shared component classes: `.tile`, `.tile-drawer`, `.status-icon`,
+  `.status-pill`, `.exposure-badge`, `.drawer-*`, etc.
+- `static/js/dashboard.js` — shared behaviors: auto-refresh, group
+  collapse, view-control submit-on-change, filter-input (view-detected
+  via `data-view` on `<body>`), tile-click, drawer open/close, tools
+  popover, delete confirmation, `toggleGroup`, `copyToClipboard`.
+
+Tailwind CDN stays for layout utilities; custom CSS handles components.
+No frontend build step introduced.
+
+### 9.3 Icon vocabulary
+
+Tabler Icons (v3.34.0) loaded via cdnjs CDN. Outline set only.
+
+| Purpose | Icon |
+| ------- | ---- |
+| Internal URL health | `ti-home` |
+| External URL health | `ti-world` |
+| Docker status | `ti-brand-docker` |
+| Widget indicator | `ti-chart-line` |
+| Dozzle logs | `ti-terminal-2` |
+| Edit | `ti-edit` |
+| Delete | `ti-trash` |
+| Tools popover | `ti-tools` |
+| Expand/collapse | `ti-chevron-down` / `ti-chevron-up` |
+| TLS badge | `ti-lock` |
+| Auth badge | `ti-key` |
+
+Status colors: green `#22c55e` (ok), amber `#f59e0b` (warn/stale),
+red `#ef4444` (bad), gray `#6b7280` (not configured / static).
+
+### 9.4 Tiled redesign
+
+- Tile face: icon + container name + exposure badges + status icon row.
+  Host line removed from tile face; moved to drawer.
+- Status icon row (right-aligned): internal URL, external URL, Docker,
+  separator, widget indicator (if present), Dozzle (if configured),
+  edit pencil, expand chevron.
+- Tile-headless treatment unchanged: no click affordance or hover border
+  on tiles with no URL, no exposures, and no widget. Chevron still shown.
+- Expand drawer: absolutely-positioned overlay beneath the tile. Closes
+  on outside click or second chevron press. Only one drawer open at a
+  time. Contains: host, URLs with health status, Docker with image tag,
+  networks, ports, exposure observations, widget data grid. Action row:
+  Edit button, Delete button (JS `confirm()` / `prompt()` for static
+  entries), Tools popover (Dozzle link when available).
+
+### 9.5 Other view changes
+
+- **Dashboard table:** status pills updated to icon-and-label pairs
+  sharing the Tiled vocabulary. Edit column uses pencil icon.
+  Dozzle Tools column uses `ti-terminal-2`.
+- **Compact tab:** missing `active_tab = 'compact'` variable added;
+  tab now correctly highlights in the nav.
+- **Exposure badges** (all views): 🔒 / 🔑 emoji replaced with
+  `ti-lock` / `ti-key` Tabler icons.
+- **Widget toggle removed** from Tiled filter bar; widget data now
+  lives in the per-tile drawer.
+
+### 9.6 UI rework arc
+
+v0.6.1 is the first of a sequence leading to v0.7.0:
+
+- **v0.6.2 (next)** — Edit drawer, replacing the full-page edit
+  navigation. The drawer carries URL state (bookmarkable).
+- **v0.6.x as needed** — Settings page polish, mobile breakpoint
+  tuning, followups from v0.6.1 review.
+- **v0.7.0** — Cuts when the UI theme feels complete, not on a fixed
+  schedule.
+
+No backend, schema, or API changes are planned for this arc.
+
+---
+
+## 10. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -685,7 +778,7 @@ no `internalurl` / `externalurl`:
 
 ---
 
-## 10. Cross-Repo Coordination
+## 11. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
@@ -718,7 +811,7 @@ here; the notifier follows.
 
 ---
 
-## 11. Open Questions
+## 12. Open Questions
 
 - **Widget retention granularity.** A flat 30-day window may be too
   much for some widgets and not enough for others. Per-widget

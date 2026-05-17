@@ -1,30 +1,7 @@
 {% extends "base.html" %}
 {% set active_tab = 'dashboard' %}
 
-{% block head %}
-<style>
-  .logo-icon {
-    height: 40px;
-    max-width: 40px;
-    filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
-    transition: transform 0.2s ease-in-out;
-  }
-  .logo-icon:hover {
-    transform: scale(1.1);
-  }
-  .icon-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: #3d3d3d;
-    border-radius: 4px;
-    font-size: 20px;
-    color: #9e9e9e;
-  }
-</style>
-{% endblock %}
+{% block body_data_view %}dashboard{% endblock %}
 
 {% block filter_bar %}
   {% include "partials/filter_bar.html" %}
@@ -64,7 +41,6 @@
                 <span id="toggle-icon-{{ group_index }}">▼</span>
                   {{ group }}
                   <span class="text-sm text-gray-400 ml-2">({{ group_entries|length }})</span>
-
               </td>
             </tr>
           </tbody>
@@ -76,9 +52,8 @@
                 data-container="{{ entry.container_name }}"
                 data-stack="{{ entry.stack_name }}">
 
-
             <td class="px-3 py-2">
-              <div class="logo-icon">
+              <div style="height:40px;max-width:40px;">
                 {% if entry.image_icon %}
                   {% set target_url = entry.internalurl or entry.externalurl %}
                   {% if target_url %}
@@ -86,22 +61,22 @@
                       <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
                           class="logo-icon"
                           alt="Logo"
-                          onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
+                          onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder-lg\'>🚫</span>';">
                     </a>
                   {% else %}
                     <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}"
                         class="logo-icon"
                         alt="Logo"
-                        onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder\'>🚫</span>';">
+                        onerror="this.style.display='none'; this.parentElement.innerHTML = '<span class=\'icon-placeholder-lg\'>🚫</span>';">
                   {% endif %}
                 {% else %}
-                  <span class="icon-placeholder">📦</span>
+                  <span class="icon-placeholder-lg">📦</span>
                 {% endif %}
               </div>
             </td>
 
             <td class="px-3 py-2">{{ entry.group.group_name if entry.group else 'Ungrouped' }}</td>
-            
+
             <td class="px-3 py-2">
               {% set target_url = entry.internalurl or entry.externalurl %}
               {% if target_url %}
@@ -130,7 +105,6 @@
                   <div class="flex flex-wrap gap-1">
                     {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
                     {% for field, value in widget_data.items() if field in allowed_fields %}
-
                       <div class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-center min-w-[72px]">
                         <div class="text-[0.6rem] text-gray-400 uppercase tracking-wide leading-tight whitespace-nowrap">
                           {{ field.replace('_', ' ') | title }}
@@ -153,83 +127,85 @@
               {% endif %}
             </td>
 
+            {# URLs column — INT/EXT status pills with icon + label #}
             <td class="px-3 py-2 space-y-0.5">
               {% if entry.internalurl %}
-                {% set status_class = 'bg-gray-600' %}
-                {% set tooltip = entry.internalurl ~ ' — Not Monitored' %}
-                {% set display = 'NA' %}
-                {% if entry.internal_health_check_enabled %}
-                  {% if entry.internal_health_check_status == 'Error: SSLError' %}
-                    {% set status_class = 'bg-yellow-300 text-black' %}
-                    {% set tooltip = entry.internalurl ~ ' — SSL Error — updated ' ~ (entry.internal_health_check_update|time_since) %}
-                    {% set display = 'SSL' %}
-                  {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
-                    {% set status_class = 'bg-green-600' %}
-                    {% set tooltip = entry.internalurl ~ ' — ' ~ entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
-                    {% set display = entry.internal_health_check_status %}
-                  {% else %}
-                    {% set status_class = 'bg-red-600' %}
-                    {% set tooltip = entry.internalurl ~ ' — ' ~ (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update|time_since) %}
-                    {% set display = entry.internal_health_check_status or '?' %}
-                  {% endif %}
+                {% if not entry.internal_health_check_enabled %}
+                  {% set _i_pill  = 'status-pill-gray' %}
+                  {% set _i_label = 'NA' %}
+                  {% set _i_tip   = entry.internalurl ~ ' — Not Monitored' %}
+                {% elif entry.internal_health_check_status == 'Error: SSLError' %}
+                  {% set _i_pill  = 'status-pill-yellow' %}
+                  {% set _i_label = 'SSL' %}
+                  {% set _i_tip   = entry.internalurl ~ ' — SSL Error — updated ' ~ (entry.internal_health_check_update | time_since) %}
+                {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
+                  {% set _i_pill  = 'status-pill-green' %}
+                  {% set _i_label = entry.internal_health_check_status %}
+                  {% set _i_tip   = entry.internalurl ~ ' — ' ~ entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update | time_since) %}
+                {% else %}
+                  {% set _i_pill  = 'status-pill-red' %}
+                  {% set _i_label = entry.internal_health_check_status or '?' %}
+                  {% set _i_tip   = entry.internalurl ~ ' — ' ~ (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update | time_since) %}
                 {% endif %}
                 <div>
                   <span class="text-xs text-gray-400">INT:</span>
-                  <a href="{{ entry.internalurl }}" target="_blank" title="{{ tooltip }}">
-                    <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}">{{ display }}</span>
+                  <a href="{{ entry.internalurl }}" target="_blank" title="{{ _i_tip }}">
+                    <span class="status-pill {{ _i_pill }}">
+                      <i class="ti ti-home" aria-hidden="true"></i>{{ _i_label }}
+                    </span>
                   </a>
                 </div>
               {% endif %}
 
               {% if entry.externalurl %}
-                {% set status_class = 'bg-gray-600' %}
-                {% set tooltip = entry.externalurl ~ ' — Not Monitored' %}
-                {% set display = 'NA' %}
-                {% if entry.external_health_check_enabled %}
-                  {% if entry.external_health_check_status == 'Error: SSLError' %}
-                    {% set status_class = 'bg-yellow-300 text-black' %}
-                    {% set tooltip = entry.externalurl ~ ' — SSL Error — updated ' ~ (entry.external_health_check_update|time_since) %}
-                    {% set display = 'SSL' %}
-                  {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
-                    {% set status_class = 'bg-green-600' %}
-                    {% set tooltip = entry.externalurl ~ ' — ' ~ entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
-                    {% set display = entry.external_health_check_status %}
-                  {% else %}
-                    {% set status_class = 'bg-red-600' %}
-                    {% set tooltip = entry.externalurl ~ ' — ' ~ (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update|time_since) %}
-                    {% set display = entry.external_health_check_status or '?' %}
-                  {% endif %}
+                {% if not entry.external_health_check_enabled %}
+                  {% set _e_pill  = 'status-pill-gray' %}
+                  {% set _e_label = 'NA' %}
+                  {% set _e_tip   = entry.externalurl ~ ' — Not Monitored' %}
+                {% elif entry.external_health_check_status == 'Error: SSLError' %}
+                  {% set _e_pill  = 'status-pill-yellow' %}
+                  {% set _e_label = 'SSL' %}
+                  {% set _e_tip   = entry.externalurl ~ ' — SSL Error — updated ' ~ (entry.external_health_check_update | time_since) %}
+                {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
+                  {% set _e_pill  = 'status-pill-green' %}
+                  {% set _e_label = entry.external_health_check_status %}
+                  {% set _e_tip   = entry.externalurl ~ ' — ' ~ entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update | time_since) %}
+                {% else %}
+                  {% set _e_pill  = 'status-pill-red' %}
+                  {% set _e_label = entry.external_health_check_status or '?' %}
+                  {% set _e_tip   = entry.externalurl ~ ' — ' ~ (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update | time_since) %}
                 {% endif %}
                 <div>
                   <span class="text-xs text-gray-400">EXT:</span>
-                  <a href="{{ entry.externalurl }}" target="_blank" title="{{ tooltip }}">
-                    <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}">{{ display }}</span>
+                  <a href="{{ entry.externalurl }}" target="_blank" title="{{ _e_tip }}">
+                    <span class="status-pill {{ _e_pill }}">
+                      <i class="ti ti-world" aria-hidden="true"></i>{{ _e_label }}
+                    </span>
                   </a>
                 </div>
               {% endif %}
             </td>
 
-            
-
+            {# Status column — Docker pill with icon + label #}
             <td class="px-3 py-2">
               {% if not entry.is_static %}
-                {% set tooltip = entry.last_api_update | time_since if entry.last_api_update else 'No update timestamp' %}
-                {% set timestamp = entry.last_api_update if entry.last_api_update else '' %}
-                
+                {% set _d_tooltip = (entry.last_api_update | time_since) if entry.last_api_update else 'No update timestamp' %}
+
                 {% if not entry.last_api_update %}
-                  {% set status_class = 'bg-red-600' %}
+                  {% set _d_pill = 'status-pill-red' %}
                 {% elif entry.docker_status in ['start', 'running'] %}
-                  {% set status_class = 'bg-green-600' %}
+                  {% set _d_pill = 'status-pill-green' %}
                 {% elif entry.docker_status in ['die', 'exited'] %}
-                  {% set status_class = 'bg-red-600' %}
+                  {% set _d_pill = 'status-pill-red' %}
                 {% elif entry.docker_status %}
-                  {% set status_class = 'bg-yellow-400 text-black' %}
+                  {% set _d_pill = 'status-pill-yellow' %}
                 {% else %}
-                  {% set status_class = 'bg-gray-600' %}
+                  {% set _d_pill = 'status-pill-gray' %}
                 {% endif %}
 
-                <span class="px-2 py-0.5 rounded text-xs font-medium {{ status_class }}" title="Updated {{ tooltip }} — {{ timestamp }}">
-                  {{ entry.docker_status or 'Unknown' }}
+                <span class="status-pill {{ _d_pill }}"
+                      title="Updated {{ _d_tooltip }}{% if entry.last_api_update %} — {{ entry.last_api_update }}{% endif %}">
+                  <i class="ti ti-brand-docker" aria-hidden="true"></i>{{ entry.docker_status or 'Unknown' }}
                 </span>
 
                 {% if entry.image_tag %}
@@ -240,20 +216,25 @@
               {% endif %}
             </td>
 
+            {# Tools column — Dozzle link via Tabler icon #}
             {% if display_tools %}
               <td class="px-3 py-2">
                 {% if STD_DOZZLE_URL and entry.container_id %}
-                  <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank">
-                    <img src="{{ url_for('static', filename='dozzle.svg') }}" alt="Dozzle" class="h-5" />
+                  <a href="{{ STD_DOZZLE_URL }}/container/{{ entry.container_id[:12] }}" target="_blank"
+                     title="Open logs in Dozzle">
+                    <i class="ti ti-terminal-2 text-gray-400 hover:text-gray-200" style="font-size:20px;"></i>
                   </a>
                 {% endif %}
               </td>
             {% endif %}
 
-
-
+            {# Actions column — pencil icon edit + static lock indicator #}
             <td class="px-3 py-2">
-              <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}" class="border border-yellow-400 text-yellow-300 text-xs px-2 py-0.5 rounded hover:bg-yellow-400 hover:text-black transition">Edit</a>
+              <a href="{{ url_for('dashboard.edit_entry', id=entry.id, ref=request.full_path) }}"
+                 class="inline-flex items-center justify-center border border-yellow-400 text-yellow-300 rounded p-1 hover:bg-yellow-400 hover:text-black transition"
+                 title="Edit">
+                <i class="ti ti-edit" aria-hidden="true" style="font-size:14px;"></i>
+              </a>
               {% if entry.is_static %}
                 <span title="Static entry — API updates blocked" class="ml-2">🔒</span>
               {% endif %}
@@ -263,86 +244,6 @@
         </tbody>
         {% endfor %}
       </table>
-      
+
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  let secondsSinceRefresh = 0;
-  let refreshInterval = 60;
-
-  document.addEventListener('DOMContentLoaded', function () {
-    const filterInput = document.getElementById('filterInput');
-    const refreshLabel = document.getElementById('refreshTimer');
-    const refreshDropdown = document.getElementById('refreshInterval');
-
-    const rows = document.querySelectorAll('table tbody tr[data-entry]');
-    if (filterInput) {
-      filterInput.addEventListener('input', function () {
-        const filter = this.value.toLowerCase();
-        rows.forEach(row => {
-          const group = row.dataset.group.toLowerCase();
-          const name = row.dataset.container.toLowerCase();
-          const stack = row.dataset.stack.toLowerCase();
-          row.style.display = (group.includes(filter) || name.includes(filter) || stack.includes(filter)) ? '' : 'none';
-        });
-      });
-    }
-
-    const savedInterval = localStorage.getItem('refreshInterval');
-    if (savedInterval !== null) {
-      refreshInterval = parseInt(savedInterval);
-      if (refreshDropdown) refreshDropdown.value = savedInterval;
-    }
-
-    if (refreshDropdown) {
-      refreshDropdown.addEventListener('change', function () {
-        refreshInterval = parseInt(this.value);
-        localStorage.setItem('refreshInterval', this.value);
-      });
-    }
-
-    setInterval(() => {
-      secondsSinceRefresh++;
-      if (refreshLabel) {
-        const m = Math.floor(secondsSinceRefresh / 60);
-        const s = secondsSinceRefresh % 60;
-        refreshLabel.textContent = `Refreshed ${m > 0 ? m + 'm ' : ''}${s}s ago`;
-      }
-      if (refreshInterval > 0 && secondsSinceRefresh >= refreshInterval) {
-        window.location.reload();
-      }
-    }, 1000);
-
-    // Restore group collapse
-    const allGroups = document.querySelectorAll('[id^="toggle-icon-"]');
-    allGroups.forEach(iconEl => {
-      const groupId = iconEl.id.replace('toggle-icon-', '');
-      const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
-      const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
-      entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
-      iconEl.textContent = isCollapsed ? '▶' : '▼';
-    });
-
-  });
-
-  function toggleGroup(groupId) {
-    const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
-    const icon = document.getElementById(`toggle-icon-${groupId}`);
-    let isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
-    const newState = !isCollapsed;
-    entries.forEach(row => row.style.display = newState ? 'none' : '');
-    if (icon) icon.textContent = newState ? '▶' : '▼';
-    localStorage.setItem(`group-collapsed-${groupId}`, newState);
-  }
-
-  function copyToClipboard(text, el) {
-    navigator.clipboard.writeText(text).then(() => {
-      const original = el.innerHTML;
-      el.innerHTML = "<em>Copied!</em>";
-      setTimeout(() => el.innerHTML = original, 1000);
-    });
-  }
-</script>
 {% endblock %}

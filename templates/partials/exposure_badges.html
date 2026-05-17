@@ -6,8 +6,8 @@
 
    Visual conventions:
    - badge text: the layer name (truncated to 8 chars).
-   - TLS-terminated: 🔒 prefix.
-   - auth required (auth not in {null, "none", ""}): 🔑 suffix.
+   - TLS-terminated: ti-lock icon prefix.
+   - auth required (auth not in {null, "none", ""}): ti-key suffix.
 #}
 {% if exposures %}
   {% set _shown = exposures[:3] %}
@@ -18,9 +18,9 @@
       {% set _auth_required = ex.auth and ex.auth not in ['none', ''] %}
       <span class="exposure-badge"
             title="{{ ex.layer }}{% if ex.hostname %} — {{ ex.hostname }}{% endif %}{% if ex.tls %} (TLS){% endif %}{% if _auth_required %} (auth: {{ ex.auth }}){% endif %}">
-        {% if ex.tls %}<span class="exposure-badge-icon">🔒</span>{% endif %}
+        {% if ex.tls %}<i class="ti ti-lock exposure-badge-icon" aria-hidden="true"></i>{% endif %}
         <span class="exposure-badge-label">{{ _label }}</span>
-        {% if _auth_required %}<span class="exposure-badge-icon">🔑</span>{% endif %}
+        {% if _auth_required %}<i class="ti ti-key exposure-badge-icon" aria-hidden="true"></i>{% endif %}
       </span>
     {% endfor %}
     {% if _overflow > 0 %}
