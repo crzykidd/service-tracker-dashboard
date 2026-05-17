@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-05-17
+
+Two changes to the Tiled tile face: the v0.6.5 widget modal is
+replaced by a mode of the existing drawer, and exposure layer text pills
+are replaced with recognizable brand logos.
+
+### Added
+
+- **Brand logo exposure icons.** The text-pill badges that showed a
+  truncated layer name are replaced with 18 px brand SVG logos. Each
+  icon carries a padlock overlay when TLS is active and a pencil overlay
+  when an explicit hostname was configured. Logos for Traefik, Cloudflare,
+  DockFlare, nginx, and Caddy are sourced from official brand channels and
+  committed to `static/icons/exposure/`; unknown layers fall back to a
+  `ti-route` icon.
+
+### Changed
+
+- **Widget drawer replaces widget modal.** The chart icon on a tile now
+  opens the tile's existing drawer in widget-only mode — showing just the
+  metric cards — rather than a separate centered overlay. Clicking the
+  icon again closes the drawer; clicking the chevron while in widget mode
+  expands to the full drawer in-place (and vice versa). Esc and
+  click-outside still dismiss. The "Refresh paused" detection requires no
+  change: the widget view is just an open drawer.
+
+### Removed
+
+- **Widget data modal** (centered overlay with backdrop, introduced in
+  v0.6.5). Superseded by widget drawer mode.
+- **Old exposure text-pill CSS** (`.exposure-badge` classes). Replaced by
+  `.exposure-icons` / `.exposure-icon-*` classes.
+
 ## [0.6.5] — 2026-05-17
 
 UI overhaul, part 2 (release 3 of 3): edit page polish, a universal delete

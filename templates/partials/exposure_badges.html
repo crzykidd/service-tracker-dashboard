@@ -1,31 +1,43 @@
-{# Render up to three exposure badges for a ServiceEntry, plus a
-   "+N" overflow indicator. Caller passes `exposures` (list of
-   ServiceExposure rows). Designed to be lean — the tile's visual
-   budget is tight; a service with five interpreters shouldn't
-   crowd out the container name.
-
-   Visual conventions:
-   - badge text: the layer name (truncated to 8 chars).
-   - TLS-terminated: ti-lock icon prefix.
-   - auth required (auth not in {null, "none", ""}): ti-key suffix.
+{# Renders brand logo icons for each exposure layer (up to 3 shown).
+   Caller passes `exposures` (list of ServiceExposure rows).
+   Icons: brand logo 18×18, ti-lock if TLS, ti-pencil if explicit hostname.
 #}
 {% if exposures %}
   {% set _shown = exposures[:3] %}
   {% set _overflow = exposures|length - _shown|length %}
-  <div class="exposure-badges" title="Exposure layers: {{ exposures|map(attribute='layer')|join(', ') }}">
+  <div class="exposure-icons"
+       title="Exposure: {{ exposures|map(attribute='layer')|join(', ') }}">
     {% for ex in _shown %}
-      {% set _label = (ex.layer or '')[:8] %}
       {% set _auth_required = ex.auth and ex.auth not in ['none', ''] %}
-      <span class="exposure-badge"
-            title="{{ ex.layer }}{% if ex.hostname %} — {{ ex.hostname }}{% endif %}{% if ex.tls %} (TLS){% endif %}{% if _auth_required %} (auth: {{ ex.auth }}){% endif %}">
-        {% if ex.tls %}<i class="ti ti-lock exposure-badge-icon" aria-hidden="true"></i>{% endif %}
-        <span class="exposure-badge-label">{{ _label }}</span>
-        {% if _auth_required %}<i class="ti ti-key exposure-badge-icon" aria-hidden="true"></i>{% endif %}
+      <span class="exposure-icon-layer"
+            title="{{ ex.layer }}{% if ex.hostname %} — {{ ex.hostname }}{% endif %}{% if ex.path_prefix %}{{ ex.path_prefix }}{% endif %}{% if ex.tls %} (TLS){% endif %}{% if _auth_required %} (auth: {{ ex.auth }}){% endif %}">
+        {# Brand logo #}
+        {% if ex.layer == 'traefik' %}
+          <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/traefik.svg') }}" alt="Traefik">
+        {% elif ex.layer == 'cloudflare' %}
+          <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/cloudflare.svg') }}" alt="Cloudflare">
+        {% elif ex.layer == 'dockflare' %}
+          <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/dockflare.svg') }}" alt="DockFlare">
+        {% elif ex.layer == 'nginx' %}
+          <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/nginx.svg') }}" alt="nginx">
+        {% elif ex.layer == 'caddy' %}
+          <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/caddy.svg') }}" alt="Caddy">
+        {% else %}
+          <i class="ti ti-route exposure-icon-fallback" aria-hidden="true"></i>
+        {% endif %}
+        {# TLS indicator #}
+        {% if ex.tls %}
+          <i class="ti ti-lock exposure-icon-tls" aria-hidden="true"></i>
+        {% endif %}
+        {# Explicit hostname indicator #}
+        {% if ex.hostname %}
+          <i class="ti ti-pencil exposure-icon-label" aria-hidden="true"></i>
+        {% endif %}
       </span>
     {% endfor %}
     {% if _overflow > 0 %}
-      <span class="exposure-badge exposure-badge-overflow"
-            title="{{ _overflow }} more layer(s): {{ exposures[3:]|map(attribute='layer')|join(', ') }}">+{{ _overflow }}</span>
+      <span class="exposure-icon-overflow"
+            title="{{ _overflow }} more: {{ exposures[3:]|map(attribute='layer')|join(', ') }}">+{{ _overflow }}</span>
     {% endif %}
   </div>
 {% endif %}

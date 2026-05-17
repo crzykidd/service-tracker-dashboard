@@ -3,7 +3,7 @@
    Covers: auto-refresh, group-collapse, view-controls,
    filter-input, tiled tile-click, tile drawers, tools popover,
    dashboard group-toggle, clipboard copy, delete popover,
-   widget modal, refresh-pause while interacting.
+   widget drawer, refresh-pause while interacting.
    ============================================================ */
 
 (function () {
@@ -15,10 +15,8 @@
 
   function isInteracting() {
     if (currentOpenDrawer) return true;
-    const widgetModal    = document.getElementById('widget-modal');
     const changelogModal = document.getElementById('changelog-modal');
     const deletePopover  = document.getElementById('delete-popover');
-    if (widgetModal    && !widgetModal.classList.contains('hidden'))    return true;
     if (changelogModal && !changelogModal.classList.contains('hidden')) return true;
     if (deletePopover  && !deletePopover.classList.contains('hidden'))  return true;
     return false;
@@ -159,10 +157,11 @@
   /* ── Tiled: expand drawer ────────────────────────────── */
   let currentOpenDrawer = null;
   let currentOpenTile   = null;
+  let currentDrawerMode = null; // 'full' | 'widget'
 
   function closeCurrentDrawer() {
     if (currentOpenDrawer) {
-      currentOpenDrawer.classList.remove('drawer-open');
+      currentOpenDrawer.classList.remove('drawer-open', 'drawer-mode-full', 'drawer-mode-widget');
       currentOpenTile.classList.remove('tile-open');
       const chevron = currentOpenTile.querySelector('.tile-chevron');
       if (chevron) {
@@ -171,33 +170,48 @@
       }
       currentOpenDrawer = null;
       currentOpenTile   = null;
-      // Reset refresh timer so next cycle starts fresh
+      currentDrawerMode = null;
       secondsSinceRefresh = 0;
     }
+  }
+
+  function openDrawer(drawer, tile, mode) {
+    drawer.classList.add('drawer-open', 'drawer-mode-' + mode);
+    tile.classList.add('tile-open');
+    const chevron = tile.querySelector('.tile-chevron');
+    if (chevron) {
+      chevron.querySelector('i').className = 'ti ti-chevron-up';
+      chevron.setAttribute('aria-expanded', 'true');
+    }
+    currentOpenDrawer = drawer;
+    currentOpenTile   = tile;
+    currentDrawerMode = mode;
   }
 
   function initDrawers() {
     document.querySelectorAll('.tile-chevron').forEach(btn => {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        const wrapper = this.closest('.tile-wrapper');
-        const tile    = wrapper.querySelector('.tile');
+        const wrapper  = this.closest('.tile-wrapper');
+        const tile     = wrapper.querySelector('.tile');
         const drawerId = this.dataset.drawer;
-        const drawer  = document.getElementById(drawerId);
+        const drawer   = document.getElementById(drawerId);
         if (!drawer) return;
 
         if (currentOpenDrawer === drawer) {
-          closeCurrentDrawer();
+          if (currentDrawerMode === 'widget') {
+            // Widget mode → expand to full in-place
+            drawer.classList.remove('drawer-mode-widget');
+            drawer.classList.add('drawer-mode-full');
+            currentDrawerMode = 'full';
+          } else {
+            // Full mode → close
+            closeCurrentDrawer();
+          }
           return;
         }
         closeCurrentDrawer();
-
-        drawer.classList.add('drawer-open');
-        tile.classList.add('tile-open');
-        this.querySelector('i').className = 'ti ti-chevron-up';
-        this.setAttribute('aria-expanded', 'true');
-        currentOpenDrawer = drawer;
-        currentOpenTile   = tile;
+        openDrawer(drawer, tile, 'full');
 
         if (window.innerWidth < 768) {
           wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -205,10 +219,13 @@
       });
     });
 
-    // Close on outside click
+    // Close on outside click or Esc
     document.addEventListener('click', function (e) {
       if (!currentOpenDrawer) return;
       if (!e.target.closest('.tile-wrapper')) closeCurrentDrawer();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && currentOpenDrawer) closeCurrentDrawer();
     });
   }
 
@@ -416,49 +433,36 @@
     });
   }
 
-  /* ── Widget modal ────────────────────────────────────── */
-  function initWidgetModal() {
-    const modal    = document.getElementById('widget-modal');
-    const content  = document.getElementById('widget-modal-content');
-    const titleEl  = modal ? modal.querySelector('.widget-modal-title') : null;
-    const closeBtn = modal ? modal.querySelector('.widget-modal-close') : null;
-    const backdrop = modal ? modal.querySelector('.widget-modal-backdrop') : null;
-    if (!modal) return;
-
-    function showWidgetModal(containerName, widgetGrid) {
-      titleEl.textContent = containerName;
-      content.innerHTML = '';
-      if (widgetGrid && widgetGrid.children.length > 0) {
-        content.appendChild(widgetGrid.cloneNode(true));
-      } else {
-        const msg = document.createElement('p');
-        msg.className = 'widget-modal-no-data';
-        msg.textContent = 'No widget data available yet.';
-        content.appendChild(msg);
-      }
-      modal.classList.remove('hidden');
-      document.addEventListener('keydown', onModalEsc);
-    }
-
-    function hideWidgetModal() {
-      modal.classList.add('hidden');
-      secondsSinceRefresh = 0;
-      document.removeEventListener('keydown', onModalEsc);
-    }
-
-    function onModalEsc(e) { if (e.key === 'Escape') hideWidgetModal(); }
-
-    if (closeBtn) closeBtn.addEventListener('click', hideWidgetModal);
-    if (backdrop) backdrop.addEventListener('click', hideWidgetModal);
-
+  /* ── Widget drawer button ────────────────────────────────── */
+  function initWidgetButtons() {
     document.querySelectorAll('.tile-widget-btn').forEach(btn => {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        const wrapper = this.closest('.tile-wrapper');
+        const wrapper  = this.closest('.tile-wrapper');
         if (!wrapper) return;
-        const containerName = (wrapper.querySelector('.container-name')?.textContent || '').trim();
-        const widgetGrid = wrapper.querySelector('.drawer-widget-grid');
-        showWidgetModal(containerName, widgetGrid);
+        const tile     = wrapper.querySelector('.tile');
+        const drawerId = this.dataset.drawer;
+        const drawer   = document.getElementById(drawerId);
+        if (!drawer) return;
+
+        if (currentOpenDrawer === drawer) {
+          if (currentDrawerMode === 'widget') {
+            // Widget mode → close
+            closeCurrentDrawer();
+          } else {
+            // Full mode → switch to widget mode in-place
+            drawer.classList.remove('drawer-mode-full');
+            drawer.classList.add('drawer-mode-widget');
+            currentDrawerMode = 'widget';
+          }
+          return;
+        }
+        closeCurrentDrawer();
+        openDrawer(drawer, tile, 'widget');
+
+        if (window.innerWidth < 768) {
+          wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       });
     });
   }
@@ -544,7 +548,7 @@
       initToolsPopovers();
       initDrawerDelete();
       initTileTrash();
-      initWidgetModal();
+      initWidgetButtons();
     } else if (view === 'dashboard') {
       initDashboardGroupCollapse();
       initDashboardTrash();

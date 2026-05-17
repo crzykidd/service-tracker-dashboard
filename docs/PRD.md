@@ -15,6 +15,7 @@
 | 0.5     | 2026-05-14 | v0.6.0 released. The originally-planned v0.5.x (view controls + helper consolidation), v0.6.0 (compat shim removal + capture columns), and v0.7.0 (exposure interpreter) work shipped together as a single v0.6.0 release. Former §8 (v0.5.x planning) folded into the new §8 (Delivered in v0.6.0). §6.2 D2 marked Resolved in v0.6.0. Cross-repo coordination (now §10.2) collapsed the v0.3.2 / v0.4.0 notifier split into a single notifier v0.4.0 pairing. Later sections renumbered: §10/§11/§12 → §9/§10/§11. |
 | 0.6     | 2026-05-16 | v0.6.1 delivered. UI overhaul part 1: tiled drawer, Tabler Icons v3.34.0 icon vocabulary, per-template inline CSS/JS extracted to shared static files. §9 added. |
 | 0.7     | 2026-05-16 | v0.6.2 hotfix. Restored `toggleRestoreSource` dropped during v0.6.1 JS extraction; wired file-input change event for filename feedback on /settings restore. |
+| 0.8     | 2026-05-17 | v0.6.3–v0.6.6 UI Overhaul Part 2 arc delivered. Added §13 documenting v0.6.3 foundations, v0.6.4 mobile/tile restructure, v0.6.5 edit polish/delete UX/widget modal, and v0.6.6 widget drawer mode + brand exposure icons. Updated §9.6 arc forecast. |
 
 ---
 
@@ -29,9 +30,10 @@
 7. [v0.5.0 — Cleanup Release](#7-v050--cleanup-release)
 8. [v0.6.0 — Delivered](#8-v060--delivered)
 9. [v0.6.1 — UI Rework Part 1 (Delivered)](#9-v061--ui-rework-part-1-delivered)
-10. [Versioning, Branches, and Releases](#10-versioning-branches-and-releases)
-11. [Cross-Repo Coordination](#11-cross-repo-coordination)
-12. [Open Questions](#12-open-questions)
+10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
+11. [Versioning, Branches, and Releases](#11-versioning-branches-and-releases)
+12. [Cross-Repo Coordination](#12-cross-repo-coordination)
+13. [Open Questions](#13-open-questions)
 
 ---
 
@@ -765,7 +767,82 @@ No backend, schema, or API changes are planned for this arc.
 
 ---
 
-## 10. Versioning, Branches, and Releases
+## 10. v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)
+
+No schema, API, config, or backend changes in this arc except the
+addition of `static/icons/exposure/` brand SVG assets in v0.6.6.
+
+### 10.1 v0.6.3 — Foundations
+
+- Orphan sweep: removed remaining per-template inline CSS/JS not cleaned
+  up in v0.6.1.
+- "What's New" popup: `changelog_modal.html` partial fetches
+  `/api/v1/changelog`, compares a `localStorage`-stored last-seen version,
+  and surfaces only the new sections. Dismissible, Esc-friendly.
+
+### 10.2 v0.6.4 — Mobile Usability + Tile Icon Restructure
+
+- Filter bar collapses below 640 px behind a toggle button; dismisses on
+  click-outside and Esc.
+- Status icons split into two rows: status (home, world, docker, widget)
+  and actions (Dozzle, edit, trash/lock, chevron). Prevents name
+  truncation at mobile font sizes.
+- Drawer auto-scrolls the tile into view on mobile on chevron click.
+
+### 10.3 v0.6.5 — Edit Polish, Universal Delete, Widget Modal
+
+- Edit page: tighter inputs, section headings, inline health-check
+  checkboxes, tab-style group selector.
+- Universal delete popover: all delete affordances share a single
+  position-fixed confirm popover. `prompt()`-based confirmation removed.
+- Widget data modal: clicking the chart icon opened a centered modal
+  overlay showing just that service's widget cards.
+- Auto-refresh pause while a drawer, the widget modal, or the changelog
+  popup is open.
+- One-click trash icons on Tiled tiles and Dashboard rows; static entries
+  show a lock icon instead.
+
+### 10.4 v0.6.6 — Widget Drawer + Brand Exposure Icons
+
+**Widget drawer mode.** The v0.6.5 widget modal replaced by a mode of
+the existing tile drawer. The `tile-drawer` element gains a two-class
+system (`drawer-mode-full` / `drawer-mode-widget`):
+
+- Full mode (`drawer-mode-full`): all drawer sections visible, same as
+  the prior chevron behavior.
+- Widget mode (`drawer-mode-widget`): CSS hides every `drawer-row`
+  except `.drawer-row-widget`, hides the divider and action row.
+
+Clicking the chart icon: opens widget mode if closed; closes if already
+widget mode; switches from full to widget mode in-place. Clicking the
+chevron: opens full mode if closed; promotes widget mode to full in-place;
+closes if already full. Esc and click-outside always close. The
+`isInteracting()` refresh-pause check requires no changes — the widget
+view is an open drawer (`currentOpenDrawer !== null`). The widget modal
+partial, its `base.html` include, `initWidgetModal()`, and the
+`.widget-modal` CSS block are removed.
+
+**Brand exposure icons.** Text-pill `.exposure-badge` badges replaced
+with 18 × 18 px brand SVG logos. Per layer: brand logo + `ti-lock`
+overlay (TLS) + `ti-pencil` overlay (explicit hostname configured).
+Unknown layers fall back to `ti-route`. SVGs committed to
+`static/icons/exposure/` with a `README.md` documenting sources.
+
+| Layer | File | Source |
+| ----- | ---- | ------ |
+| traefik | `traefik.svg` | `traefik/traefik` GitHub — vertical logo, teal symbol crop |
+| cloudflare | `cloudflare.svg` | cloudflare.com — `logo-cloudflare-dark.svg`, cloud crop |
+| dockflare | `dockflare.svg` | Same as cloudflare.svg (DockFlare = Cloudflare Tunnel wrapper) |
+| nginx | `nginx.svg` | nginx.org — `nginx_logo.svg`, green N crop |
+| caddy | `caddy.svg` | `caddyserver/website` GitHub — `caddy-circle-lock.svg`, 1:1 icon |
+
+Old `.exposure-badge` CSS replaced with `.exposure-icons` /
+`.exposure-icon-layer` / `.exposure-icon-img` / `.exposure-icon-tls` /
+`.exposure-icon-label` / `.exposure-icon-fallback` classes.
+
+---
+
+## 11. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -779,7 +856,7 @@ No backend, schema, or API changes are planned for this arc.
 
 ---
 
-## 11. Cross-Repo Coordination
+## 12. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
@@ -812,7 +889,7 @@ here; the notifier follows.
 
 ---
 
-## 12. Open Questions
+## 13. Open Questions
 
 - **Widget retention granularity.** A flat 30-day window may be too
   much for some widgets and not enough for others. Per-widget
