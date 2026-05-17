@@ -65,6 +65,23 @@
   outline: none;
   box-shadow: 0 0 0 2px var(--color-accent-dim);
 }
+.form-checkbox {
+  color: var(--color-accent);
+  background-color: var(--color-bg-surface);
+  border-color: #4a5568;
+}
+
+/* ── Page-level action buttons ────────────────────────────── */
+.btn-primary {
+  background-color: var(--color-accent);
+  color: white;
+}
+.btn-primary:hover { background-color: #3182ce; }
+.btn-secondary {
+  background-color: #4a5568;
+  color: white;
+}
+.btn-secondary:hover { background-color: #2d3748; }
 
 /* ── Exposure badges ──────────────────────────────────────── */
 .exposure-badges {
@@ -499,4 +516,149 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Changelog "What's new" modal ────────────────────────── */
+.changelog-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.changelog-modal.hidden { display: none; }
+
+.changelog-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.changelog-modal-panel {
+  position: relative;
+  z-index: 501;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-tile);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.changelog-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.changelog-modal-header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.changelog-modal-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color 0.15s ease;
+}
+.changelog-modal-close:hover { color: var(--color-text-secondary); }
+
+.changelog-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.changelog-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.changelog-modal-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  padding: 4px 14px;
+  border-radius: 4px;
+  border: 1px solid #facc15;
+  background: none;
+  color: #facc15;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.changelog-modal-dismiss:hover {
+  background-color: #facc15;
+  color: #000;
+}
+
+/* Version section headers inside the modal body */
+.changelog-version-block { margin-bottom: 20px; }
+.changelog-version-block:last-child { margin-bottom: 0; }
+.changelog-version-header {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Rendered markdown inside modal body */
+.changelog-modal-body h3 {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 12px 0 4px;
+}
+.changelog-modal-body h4 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin: 8px 0 4px;
+}
+.changelog-modal-body ul {
+  margin: 4px 0 8px 16px;
+  list-style: disc;
+}
+.changelog-modal-body li {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 2px;
+}
+.changelog-modal-body li strong {
+  color: var(--color-text-primary);
+}
+.changelog-modal-body p {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 4px 0 8px;
+}
+.changelog-modal-body code {
+  font-size: 0.75rem;
+  background-color: var(--color-bg-raised);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: #93c5fd;
+}
+
+@media (max-width: 480px) {
+  .changelog-modal-body { padding: 12px 14px; }
+  .changelog-modal-header,
+  .changelog-modal-footer { padding: 10px 14px; }
 }

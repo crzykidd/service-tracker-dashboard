@@ -122,8 +122,11 @@ def create_app():
     os.makedirs(IMAGE_DIR, exist_ok=True)
 
     @app.context_processor
-    def inject_now():
-        return {'now': datetime.now}
+    def inject_globals():
+        return {
+            'now': datetime.now,
+            'version_info': app.config['VERSION_INFO'],
+        }
 
     @app.template_filter('time_since')
     def time_since(dt):

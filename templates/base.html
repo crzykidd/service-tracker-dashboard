@@ -13,7 +13,8 @@
 </head>
 
 <body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans"
-      data-view="{% block body_data_view %}{% endblock %}">
+      data-view="{% block body_data_view %}{% endblock %}"
+      data-std-version="{{ version_info.version | default('unknown') }}">
   <div class="max-w-screen-2xl mx-auto">
   <!-- Header -->
     <div class="text-xl font-semibold text-white mb-4">Service Tracker Dashboard</div>
@@ -48,6 +49,7 @@
     </main>
   </div>
 
+  {% include 'partials/changelog_modal.html' %}
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>
