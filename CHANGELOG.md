@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-05-16
+
+### Fixed
+
+- **Restore-from-upload broken on /settings.** The `toggleRestoreSource`
+  function was dropped during the v0.6.1 inline-JS extraction, leaving
+  `#file-upload-section` permanently hidden with no way to select a local
+  YAML backup file. The function has been restored to the settings template.
+- **No filename feedback after selecting an upload file.** The
+  `#restore_file_input` change event now updates `#file-name-display` with
+  the selected filename so operators can confirm their file choice before
+  submitting.
+
 ## [0.6.1] — 2026-05-16
 
 UI overhaul, part 1: Tiled dashboard redesign, per-tile expand drawer,
