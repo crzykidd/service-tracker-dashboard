@@ -41,7 +41,7 @@ through the web UI or directly via API.
 
 ## What It Does
 
-- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens a widget-data modal without expanding the full drawer.
+- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens the drawer in widget-only mode (showing just the metric cards); the chevron opens the full drawer. The two modes switch in-place without closing and reopening.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so

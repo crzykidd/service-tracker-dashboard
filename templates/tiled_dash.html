@@ -177,6 +177,7 @@
                                     {# Widget indicator #}
                                     {% if entry.widget_id %}
                                         <button class="status-icon status-icon-blue tile-widget-btn"
+                                                data-drawer="drawer-{{ entry.id }}"
                                                 title="View widget data">
                                             <i class="ti ti-chart-line" aria-hidden="true"></i>
                                         </button>
@@ -375,29 +376,31 @@
 
                             {# Widget data #}
                             {% if entry.widget_id %}
-                              {% set widget_data = widget_values.get(entry.widget_id) %}
-                              {% if widget_data %}
-                              <div class="drawer-row">
-                                  <span class="drawer-label">Widget</span>
-                                  <span class="drawer-value">
-                                      {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
-                                      <div class="drawer-widget-grid">
-                                          {% for field, value in widget_data.items() if field in allowed_fields %}
-                                              <div class="drawer-widget-card">
-                                                  <div class="drawer-widget-label">{{ field.replace('_', ' ') | title }}</div>
-                                                  <div class="drawer-widget-value">
-                                                      {% if value.lower().startswith('error:') %}
-                                                          <span class="text-red-500">Error</span>
-                                                      {% else %}
-                                                          {{ value }}
-                                                      {% endif %}
-                                                  </div>
-                                              </div>
-                                          {% endfor %}
-                                      </div>
-                                  </span>
-                              </div>
-                              {% endif %}
+                            <div class="drawer-row drawer-row-widget">
+                                <span class="drawer-label">Widget</span>
+                                <span class="drawer-value">
+                                    {% set widget_data = widget_values.get(entry.widget_id) %}
+                                    {% if widget_data %}
+                                        {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
+                                        <div class="drawer-widget-grid">
+                                            {% for field, value in widget_data.items() if field in allowed_fields %}
+                                                <div class="drawer-widget-card">
+                                                    <div class="drawer-widget-label">{{ field.replace('_', ' ') | title }}</div>
+                                                    <div class="drawer-widget-value">
+                                                        {% if value.lower().startswith('error:') %}
+                                                            <span class="text-red-500">Error</span>
+                                                        {% else %}
+                                                            {{ value }}
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <em class="text-gray-500">No widget data available yet.</em>
+                                    {% endif %}
+                                </span>
+                            </div>
                             {% endif %}
 
                             <hr class="drawer-divider">
