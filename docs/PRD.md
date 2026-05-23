@@ -17,6 +17,7 @@
 | 0.7     | 2026-05-16 | v0.6.2 hotfix. Restored `toggleRestoreSource` dropped during v0.6.1 JS extraction; wired file-input change event for filename feedback on /settings restore. |
 | 0.8     | 2026-05-17 | v0.6.3–v0.6.6 UI Overhaul Part 2 arc delivered. Added §10 documenting v0.6.3 foundations, v0.6.4 mobile/tile restructure, v0.6.5 edit polish/delete UX/widget modal, and v0.6.6 widget drawer mode + brand exposure icons (modal removed). |
 | 0.9     | 2026-05-23 | Documentation reconciliation audit. §9.6 forecast rewritten — the predicted v0.6.2 edit drawer / v0.6.3 staleness work did not ship; the actual v0.6.2–v0.6.6 arc is described in §10. §12 subsection numbering corrected (was using §10.x). §12.2 release history split notifier v0.3.2 (capture fields) from v0.4.0 (interpreters). FUTURE.md fictional release sequence references stripped. No code or schema changes. |
+| 0.10    | 2026-05-23 | §12.2 correction. The v0.3.2 / v0.4.0 split introduced in 0.9 was wrong — notifier tags confirm no v0.3.2 release was ever cut; the capture fields and the interpreter mechanism both shipped in v0.4.0. Collapsed back to a single v0.4.0 pairing, with a parenthetical noting v0.3.2 as a developed-but-unreleased label so a future reader doesn't re-split from the stale `models.py` / `schemas.py` comments. |
 
 ---
 
@@ -893,16 +894,20 @@ not lead.
    `/api/v1/register`.
 3. STD v0.6.0 removed `/api/register` and all legacy-key handling.
    Operators on notifier v0.3.0+ are unaffected.
-4. Notifier v0.3.2 began populating the
-   `networks` / `exposed_ports` / `published_ports` capture fields
-   (added to STD's schema in v0.6.0). Pure observation, no ownership
-   semantics — rows from older notifiers leave the columns NULL.
-5. Notifier v0.4.0 introduced the YAML interpreter mechanism and the
-   `exposure_observations` field (also added to STD's schema in
-   v0.6.0). STD's synthesizer reads those observations and writes
-   synthesized URLs into `internalurl` / `externalurl`. Pre-v0.4.0
-   notifiers don't send the field, and STD treats its absence as
-   "no update" — existing exposure rows are preserved.
+4. Notifier v0.4.0 is the paired release for everything new in STD
+   v0.6.0: it populates the `networks` / `exposed_ports` /
+   `published_ports` capture fields **and** introduces the YAML
+   interpreter mechanism that emits `exposure_observations`. STD's
+   synthesizer reads those observations and writes synthesized URLs
+   into `internalurl` / `externalurl`. Pre-v0.4.0 notifiers continue
+   to register successfully — they just don't send the new fields,
+   so the capture columns stay NULL and STD treats the missing
+   `exposure_observations` as "no update" (existing exposure rows
+   are preserved). (A v0.3.2 was developed for the capture fields
+   but was never cut as a release tag — it shipped inside v0.4.0
+   alongside the interpreter mechanism. Do not present v0.3.2 as a
+   shipped boundary; the only notifier release boundaries that
+   exist on this axis are v0.3.0 and v0.4.0.)
 
 ---
 
