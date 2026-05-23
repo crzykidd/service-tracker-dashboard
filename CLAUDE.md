@@ -1,12 +1,33 @@
 # Service Tracker Dashboard (STD) — Claude Code Instructions
 
-## Always
+## Always — Definition of Done
 
-- After any change that affects architecture, the register contract,
-  schema, jobs, or supported dashboard views, update `docs/PRD.md` and
-  `README.md` accordingly.
-- After completing a phase, update `README.md` with what has been built.
-- Never leave PRD or README out of sync with the codebase.
+No change is complete until its documentation is updated **in the same
+commit as the code**. This is not optional and not deferrable:
+
+1. **CHANGELOG.md — every change, no exceptions.** Add an entry under
+   `[Unreleased]` describing what changed for the operator. A code
+   change with no CHANGELOG entry is an incomplete change.
+2. **PRD (`docs/PRD.md`) — confirm on every change.** Before
+   finishing, explicitly check whether the change touches anything the
+   PRD documents (architecture, the register contract, schema, jobs,
+   supported dashboard views). If yes, update the PRD and bump its
+   revision-history table. If no, confirm that in your summary ("PRD
+   reviewed, no change needed") rather than silently skipping it.
+3. **README.md — when operator-facing behavior changes.** Keep it
+   current with what has been built.
+4. **FUTURE.md — when parking an idea** rather than building it. Park
+   in `docs/FUTURE.md`, not the PRD. When a parked item ships, remove
+   it from FUTURE.md and document it in the PRD.
+5. Never leave CHANGELOG, PRD, or README out of sync with the code.
+
+> **Known debt:** the PRDs and CLAUDE.md files in both this repo and
+> the notifier have drifted from shipped reality before (this repo's
+> own build-status and the notifier's were both stale). A full audit
+> of both repos' `docs/` against actual shipped state is a pending
+> task. Until that audit happens, trust the code and CHANGELOG over
+> the PRD where they disagree, and flag any contradiction you notice
+> rather than propagating it.
 
 ## Commit style
 
@@ -47,19 +68,15 @@
 
 ## Build Status
 
-Current shipped release: **v0.6.4** (latest tag on `main`)
+Current shipped release: **v0.6.6** (latest tag on `main`; v0.6.5 was
+also released but its tag is the typo'd bare `0.6.5` — see the audit
+finding in this commit's history).
+In flight: nothing — `[Unreleased]` in CHANGELOG is empty.
 
-Status:
-
-- v0.5.0 — cleanup release (split, pydantic, retention, indexes): DONE
-- v0.6.0 — sunset + capture + interpreter: DONE
-- v0.6.1 — UI overhaul part 1 (tiled redesign, drawer, shared CSS/JS): DONE
-- v0.6.2 — hotfix: restore `toggleRestoreSource`, upload filename feedback: DONE
-- v0.6.3 — UI overhaul part 2 foundations (orphan sweep, inline-style cleanup, what's new popup): DONE
-- v0.6.4 — UI overhaul part 2: mobile usability + tile icon restructure: DONE
-- v0.6.5 — UI overhaul part 2 (edit page polish, universal delete, widget modal, refresh pause): DONE
-- v0.6.6 — widget drawer (replaces modal) + brand exposure icons: IN PROGRESS (on dev)
-- v0.7.0+ — TBD (no scoped features at present)
+> Keep this to the two lines above — "latest tag" and "in flight."
+> Do not maintain a long per-version history here; the CHANGELOG and
+> git tags are the record of what shipped. Update these two lines on
+> each release / when work starts on `dev`.
 
 ## Git Workflow
 
@@ -101,24 +118,60 @@ Status:
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
-The contract is:
+They are **two independent apps** — separate version lines, separate
+Docker images, separate release cadences. The notifier is not an STD
+component: it also drives Technitium DNS and runs fine with DNS only,
+STD only, or both.
 
-- **STD** owns the wire contract for the register endpoint.
-- **Notifier** is a producer — it sends what STD documents.
-- Wire-format changes start here. The notifier follows.
-- v0.5.0 introduced `/api/v1/register`; notifier v0.3.0 switched to
-  canonical keys against it.
-- v0.6.0 removed `/api/register` and the legacy-key compat shim.
-  Operators must be on notifier v0.3.0+.
-- Notifier v0.3.2 (ships after STD v0.6.0) populates the new
-  `networks` / `exposed_ports` / `published_ports` capture fields.
-  Older notifiers continue to work; those columns stay NULL.
-- Notifier v0.4.0 (ships after STD v0.6.0) introduces YAML
-  interpreters that populate the `exposure_observations` field on
-  `/api/v1/register`. STD's synthesizer reads those observations
-  and writes synthesized URLs into `internalurl` / `externalurl`.
-  Pre-v0.4.0 notifiers don't send the field — STD treats absence as
-  "no update" and leaves any existing exposure rows alone.
+The two are coupled at exactly one seam: this app's `/api/v1/register`
+wire contract.
+
+- **STD owns the contract.** `schemas.py` defines a valid payload and
+  uses `extra="forbid"` — unknown keys are rejected with HTTP 422, not
+  ignored. (See Register Contract Rules below.)
+- **The notifier is the producer.** It sends what this app documents.
+
+### The ordering rule
+
+Because STD's validator rejects unknown keys, **the schema-accepting
+side (STD) must ship before the schema-sending side (the notifier).**
+
+- A new field the notifier will send → STD must accept it first. Land
+  the schema change in `schemas.py` and ship STD, *then* the notifier
+  ships the emitter. If the notifier leads, STD 422s every payload
+  from upgraded hosts.
+- A new field STD wants to consume → STD can add the column/UI now, but
+  it stays empty until a notifier version populates it. The feature
+  isn't live until both ship, notifier last.
+
+**Consumer leads, producer follows. STD may lead arbitrarily far
+ahead; the notifier may lag; the notifier must not lead the schema.**
+
+### Safe-degradation guarantee (don't break it)
+
+A newer STD with an older notifier must keep working:
+
+- Capture columns (`networks` / `exposed_ports` / `published_ports`)
+  stay NULL when an older notifier doesn't send them — never make them
+  required.
+- `exposure_observations` absent from a payload means "no update —
+  preserve existing exposure rows." `[]` means "clear all rows for
+  this service." Never collapse absent and empty into the same
+  behavior; the register handler in `routes_api.py` depends on the
+  distinction.
+
+### Version pairing history (informational, not the rule)
+
+- STD v0.5.0 introduced `/api/v1/register`; notifier v0.3.0 switched
+  to canonical keys against it.
+- STD v0.6.0 removed the legacy `/api/register` shim; requires
+  notifier v0.3.0+.
+- Notifier v0.4.0 added both the capture fields and the
+  `exposure_observations` interpreter mechanism; both require STD
+  v0.6.0+. STD's synthesizer reads those observations and writes
+  synthesized URLs into `internalurl` / `externalurl`. (A v0.3.2 was
+  developed for the capture fields but never cut as a tag — it shipped
+  inside v0.4.0. Do not reference v0.3.2 as a release boundary.)
 
 ## Database Rules
 
