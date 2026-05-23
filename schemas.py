@@ -100,7 +100,7 @@ class RegisterPayload(BaseModel):
     sort_priority: Optional[int] = None
 
     # Optional — observed container facts (v0.6.0+). Pure observation,
-    # overwritten on every register. Notifier v0.3.2+ populates these.
+    # overwritten on every register. Notifier v0.4.0+ populates these.
     networks: Optional[List[NetworkMembership]] = None
     exposed_ports: Optional[List[str]] = None
     published_ports: Optional[List[PublishedPort]] = None

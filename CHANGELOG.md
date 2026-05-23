@@ -239,7 +239,7 @@ extracted to shared static files, Compact tab-highlight fix.
   so dashboards stay bookmarkable and shareable. No per-user
   preference persistence in this release.
 - **Network & ports capture (v0.6.0).** Three new optional fields on
-  `/api/v1/register`, populated by notifier v0.3.2+:
+  `/api/v1/register`, populated by notifier v0.4.0+:
   - `networks` — list of `{"name", "aliases"}` objects, one per
     Docker network the container is attached to. Names only; IPs
     intentionally not captured.
@@ -250,7 +250,7 @@ extracted to shared static files, Compact tab-highlight fix.
     port mappings from compose `ports:`.
 - Three new nullable JSON columns on `service_entry`
   (`networks`, `exposed_ports`, `published_ports`) storing the above.
-  Rows that haven't received a v0.3.2+ register stay NULL — that's
+  Rows that haven't received a v0.4.0+ register stay NULL — that's
   the expected state, not a bug.
 - New "Reported by notifier" section at the bottom of `/edit/<id>`,
   read-only, showing networks, exposed ports, and published ports

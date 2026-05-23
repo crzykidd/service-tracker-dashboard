@@ -62,7 +62,7 @@ class ServiceEntry(db.Model):
     notifier_reported_sort_priority = db.Column(db.Integer, nullable=True, default=None)
     # Observed container facts, captured from the notifier (v0.6.0+).
     # Pure observation — overwritten on every register call. Notifier
-    # v0.3.2+ populates these; rows from older notifiers remain NULL.
+    # v0.4.0+ populates these; rows from older notifiers remain NULL.
     # networks: [{"name": "...", "aliases": ["..."]}]
     # exposed_ports: ["5173/tcp", "9000/tcp"]
     # published_ports: [{"container_port": 5173, "protocol": "tcp",

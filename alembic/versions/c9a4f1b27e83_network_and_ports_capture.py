@@ -30,8 +30,8 @@ def upgrade() -> None:
 
     All three are pure observation — overwritten on every register
     call by the notifier. Existing rows have NULL until the next
-    register from a v0.3.2+ notifier; that's the expected state, not
-    a bug. Notifier v0.3.2 ships AFTER STD v0.6.0 deploys.
+    register from a v0.4.0+ notifier; that's the expected state, not
+    a bug. Notifier v0.4.0 ships AFTER STD v0.6.0 deploys.
 
     Idempotent: skips columns that already exist so a partial run
     can be re-applied. Same defensive pattern the session_token drop
