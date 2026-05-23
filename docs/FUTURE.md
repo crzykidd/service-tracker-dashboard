@@ -92,12 +92,16 @@ UI:
 
 ### Why parked
 
-v0.6.1 just shipped. v0.6.2 (edit drawer) and v0.6.3 (staleness +
-widget detach-on-delete) are committed. Designing a full Tools
-abstraction now would either delay those releases or compete with
-them for design attention. The current single-tool implementation
-is genuinely fine for one tool; it becomes a problem when the
-second tool (Dockhand) is added.
+The current single-tool implementation is genuinely fine for one
+tool; it becomes a problem when the second tool (Dockhand) is added.
+Designing a full Tools abstraction before there is a concrete second
+tool would be designing into a vacuum.
+
+State of the world as of v0.6.6: Dozzle is still the only tool. The
+Tiled drawer's Tools popover and the Dashboard table's Tools column
+still build URLs from the single global `STD_DOZZLE_URL` config plus
+`entry.container_id`. No `tool_definition` table, no per-entry
+overrides.
 
 Reconsider when: a second tool is concrete enough to need a URL
 pattern, OR the operator finds themselves wanting per-host Dozzle
@@ -135,11 +139,14 @@ Operator-curated state (group, sort_priority, widget config, manual
 URL overrides) lives on the stale row and has to be manually
 migrated or re-entered.
 
-The v0.6.3 widget detach-on-delete feature (planned) reduces the
-*cost* of mishandled moves by preserving widget config when the
-stale row is deleted. It does not reduce the *frequency* of
-mishandled moves — the operator still needs to notice the duplicate
-exists.
+Widget detach-on-delete (proposed at the time of parking as a v0.6.3
+feature) would have reduced the *cost* of mishandled moves by
+preserving widget config when the stale row is deleted. It did not
+ship — v0.6.5 introduced a universal delete popover but the delete
+itself is still a hard delete that drops the widget row along with
+everything else. Either way, detach would only reduce the *cost* of a
+mishandled move, not the *frequency* — the operator still needs to
+notice the duplicate exists.
 
 ### Sketched shape
 
@@ -199,21 +206,19 @@ proves annoying.
 
 ### Why parked
 
-Slot: v0.7.0. The path to it is:
+Not yet scheduled. The original parking notes sketched a four-step
+sequence (v0.6.1 extraction → v0.6.2 edit drawer → v0.6.3 staleness-
+plus-widget-detach → v0.7.0 duplicate detection) that did not pan
+out — v0.6.2 became a hotfix, v0.6.3 shipped the changelog-popup
+foundations instead, and v0.6.4–v0.6.6 were the mobile / edit-polish
+/ widget-drawer arc (see PRD §10). Staleness visualization and
+widget detach-on-delete remain unshipped prerequisites if this
+feature is picked up — neither is currently slotted to a release.
 
-- v0.6.1 — extraction + Tiled redesign (delivered)
-- v0.6.2 — edit drawer
-- v0.6.3 — staleness visualization + widget detach-on-delete
-- v0.7.0 — duplicate detection + resolution
-
-Each release in this sequence makes the next one easier or less
-necessary. Staleness teaches the operator which rows are problems;
-detach prevents data loss when they delete; duplicate detection
-finds related pairs proactively. The more ambitious service
-identity concept (computed column on every row, `group_by` axis
-treatment, move-aware API) is intentionally NOT in v0.7.0 — gated
-on whether manual duplicate resolution proves insufficient after
-living with it.
+The more ambitious service identity concept (computed column on
+every row, `group_by` axis treatment, move-aware API) remains
+explicitly out of scope until manual duplicate resolution exists
+and proves insufficient.
 
 ### Open questions for when picked up
 
@@ -237,10 +242,13 @@ soft-delete remains worth considering.
 
 ### Context
 
-Deleting a `ServiceEntry` today is permanent. The v0.6.3 plan adds
-widget detach-on-delete, which preserves the most operationally
-expensive piece of state (widget config) but loses the rest
-(group, sort_priority, manual icon, edited URLs).
+Deleting a `ServiceEntry` today is permanent. v0.6.5 added a
+universal inline confirm popover (drawer, edit page, and the new
+trash icons all share it), which reduces accidental deletion, but
+the delete itself is still a hard DELETE — widget config, group,
+sort_priority, manual icon, edited URLs all go with the row. The
+widget-detach-on-delete idea that was sketched at parking time has
+not shipped.
 
 ### Sketched shape
 
@@ -255,15 +263,15 @@ expires. Dashboards filter `deleted_at IS NULL` in their queries.
 
 ### Why parked
 
-Solves a problem (data loss on accidental deletion) that the widget
-detach-on-delete feature mostly addresses for the painful case
-(widget config). The remaining loss (group, sort_priority, icon
-override, URL edits) is cheap to recreate.
+Originally parked because widget detach-on-delete (also future, see
+the duplicate-detection entry) was expected to ship first and absorb
+the painful case (widget config loss). It hasn't. Today the v0.6.5
+inline confirm popover reduces *accidental* deletes but doesn't
+recover anything — so the problem this entry sketches is still live.
 
-Reconsider if operator finds themselves wanting recovery of full
-service-entry state, not just widget config. May also be worth it
-purely as a "I deleted the wrong row" safety net, independent of
-the data-loss-on-move concern.
+Reconsider if the operator finds themselves wanting recovery of
+full service-entry state, or as a standalone "I deleted the wrong
+row" safety net independent of the data-loss-on-move concern.
 
 ---
 
