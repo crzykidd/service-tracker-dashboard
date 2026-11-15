@@ -4,7 +4,7 @@ argument-hint: <version>   (e.g. 0.3.6 — must match what /release-prep prepare
 ---
 
 <!--
-Template from standards/release-prep-and-cut @ v1.0.0
+Template from standards/release-prep-and-cut @ v1.1.0
 (crzynet/homelab-configs/standards/release-prep-and-cut/README.md).
 
 Replace every <PLACEHOLDER> below with your project's value:

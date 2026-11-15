@@ -5,6 +5,17 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — release-prep-and-cut label corrected upstream, then re-synced
+
+The `@ v1.0.0` labels flagged in the two entries below were fixed at the
+source (`homelab-configs/standards/release-prep-and-cut`: snippet, both
+command templates, README adoption step and example prompt now say
+`v1.1.0`). STD's verbatim copies (CLAUDE.md snippet source line,
+`.claude/commands/release-prep.md` and `release-cut.md` headers) were then
+re-synced to match. Label only; the command content was already 1.1.0.
+
+---
+
 ## 2026-11-15 — CodeQL path and redirect fixes (v069-11)
 
 - **Invalid icon on Add/Edit flashes, but those templates don't render

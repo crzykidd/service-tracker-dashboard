@@ -121,7 +121,7 @@ If you're unsure whether an action would violate one of the above, stop and ask 
 acting.
 
 <!--
-Source: standards/release-prep-and-cut @ v1.0.0 (crzynet/homelab-configs).
+Source: standards/release-prep-and-cut @ v1.1.0 (crzynet/homelab-configs).
 Paste the section below verbatim into the adopting project's CLAUDE.md.
 The full standard (two-phase prep/cut workflow, archive trigger, validation
 steps, adoption checklist) lives at:
