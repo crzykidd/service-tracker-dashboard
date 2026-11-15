@@ -25,11 +25,11 @@ from routes_api import api_bp
 from routes_auth import auth_bp
 from routes_dashboard import dashboard_bp
 from routes_widgets import widgets_bp
-from settings_loader import load_settings
+from settings_loader import CONFIG_DIR, load_settings
 
-DATABASE_PATH = '/config/services.db'
-LOGFILE = '/config/std.log'
-IMAGE_DIR = '/config/images'
+DATABASE_PATH = os.path.join(CONFIG_DIR, 'services.db')
+LOGFILE = os.path.join(CONFIG_DIR, 'std.log')
+IMAGE_DIR = os.path.join(CONFIG_DIR, 'images')
 IS_DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
 
 logger = logging.getLogger(__name__)

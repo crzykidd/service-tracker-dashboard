@@ -45,6 +45,7 @@ from extensions import db
 from image_utils import fetch_icon_if_missing
 from models import Group, ServiceEntry, User, Widget, WidgetValue
 from routes_auth import is_admin_required
+from settings_loader import CONFIG_DIR
 from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
@@ -260,7 +261,7 @@ def db_dump():
 @login_required
 @is_admin_required
 def settings():
-    BACKUP_DIR = current_app.config.get("backup_path", "/config/backups")
+    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
     image_dir = current_app.config['IMAGE_DIR']
     os.makedirs(BACKUP_DIR, exist_ok=True)

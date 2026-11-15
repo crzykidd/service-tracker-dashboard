@@ -25,6 +25,7 @@
 | 0.15    | 2026-11-15 | v0.6.8 released. First release under the adopted standards (code-checkin-and-pr 1.2.0, handoff-prompt-workflow 2.0.0, release-prep-and-cut 1.1.0); GHCR-only publishing; `VERSION` file drives the in-app version; Add Entry non-numeric sort-priority 500 fixed. No schema or contract changes. |
 | 0.16    | 2026-11-15 | Docs refresh after the standards adoption. Added §11 (v0.6.7–v0.6.8 registry move and engineering standards); later sections renumbered (§11→§12, §12→§13, §13→§14). §3.1 module layout updated to the current tree. §6 retitled as a historical baseline. No code, schema, or contract changes. |
 | 0.17    | 2026-11-15 | Added §12 (v0.6.9 — Hardening and Safety Net, planned): test suite, wider lint, settings/API-token fixes, CSRF, soft-delete, widget detach, unified staleness, per-service health-check options, gunicorn + pinned deps, docs loose ends. Later sections renumbered (§12→§13, §13→§14, §14→§15). §15 Open Questions refreshed. No code changes yet. |
+| 0.18    | 2026-11-15 | §12.1 delivered (unreleased): pytest suite, `STD_CONFIG_DIR` testability seam, CI `Test` job; §13 required-checks text updated. No schema, contract, or job changes. |
 
 ---
 
@@ -170,6 +171,8 @@ static/             ← static assets (css/, js/, icons/)
 widgets/            ← per-widget plugin dirs
 alembic/            ← migrations (alembic.ini at root)
 scripts/            ← manual helper scripts (test_widget.py; not a test suite)
+tests/              ← pytest suite (v0.6.9)
+requirements-dev.txt ← pytest + runtime deps; CI/dev only
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E9 + F only)
 Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
@@ -933,7 +936,7 @@ version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
 
-### 12.1 Test suite and CI `Test` check [`v069-01-test-suite`] — Planned
+### 12.1 Test suite and CI `Test` check [`v069-01-test-suite`] — Delivered (unreleased)
 
 - `pytest` suite under `tests/`, dev dependencies in
   `requirements-dev.txt` (not shipped in the image).
@@ -953,6 +956,12 @@ soft-deleted rows, which is server-side only.
   removed. Adding `Test` as a **required** check in GitHub branch
   protection is a manual operator step (the prompt does not touch
   GitHub settings).
+- **As built:** `STD_CONFIG_DIR` (read in `settings_loader.CONFIG_DIR`) also
+  drives the `backup_path` default and the `/config/backups` fallbacks in
+  `jobs.py` / `routes_dashboard.py`. `tests/conftest.py` sets the env and
+  creates a temp config dir at import time, before `app` is imported (so
+  `app.py` is unchanged structurally). Icon downloads are stubbed in tests.
+  Two `xfail(strict=True)` tests pin the §12.3 bugs.
 
 ### 12.2 Wider lint [`v069-02-widen-lint`] — Planned
 
@@ -1110,10 +1119,11 @@ Resolves the Open Question on health-check timeouts (§15).
   force-push, block deletion. Required checks: `build` (image build,
   `publish.yml`), CodeQL, and the `CI` workflow jobs `Lint` (ruff,
   `ruff.toml`), `Config validation` (YAML/JSON parse), `Migration check`
-  (`alembic upgrade head` on an empty DB, exactly one head), and
-  `Compose validation` (`docker compose config --quiet`). `CI` triggers
-  on push to `dev`/`main` only. No test suite exists yet, so the
-  standard's test check is exempt.
+  (`alembic upgrade head` on an empty DB, exactly one head),
+  `Compose validation` (`docker compose config --quiet`), and `Test`
+  (pytest, `tests/`; added in v0.6.9 — pending operator action to mark it
+  required in branch protection). `CI` triggers on push to `dev`/`main`
+  only.
 - Registry retention: `.github/workflows/retention.yml` prunes GHCR
   versions weekly and after each publish — keeps the 30 most recent
   `sha-*` and 15 most recent semver versions, never deletes `latest`,

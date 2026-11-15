@@ -217,6 +217,20 @@ None. Developer tooling only — no change to the app or images.
 
 ---
 
+## Test suite added (v0.6.9 cycle)
+
+STD had no automated tests, so the `Test` check from `code-checkin-and-pr`
+was exempt. A pytest suite now lives in `tests/` (register auth, the
+`extra="forbid"` contract, `exposure_observations` absent vs `[]`, URL
+provenance, `register_field_ownership`, settings precedence), with a `Test`
+job in `ci.yml`. To make the app testable, the hardcoded `/config/...` paths
+now derive from a `STD_CONFIG_DIR` env var (default `/config`, behavior
+unchanged when unset); it is documented only under README Development, not as
+an operator setting. The operator must add `Test` as a required check in
+branch protection (manual).
+
+---
+
 ## Engineering standards adoption (v0.6.8)
 
 ### Why

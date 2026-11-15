@@ -527,9 +527,20 @@ The publish workflow refuses a release whose tag does not match `VERSION`.
 
 Work happens on the `dev` branch and reaches `main` through a pull request.
 A PR merges only when the required checks are green: `build` (image build),
-CodeQL, and the CI jobs `Lint`, `Config validation`, `Migration check`, and
-`Compose validation`. Lint (`ruff.toml`) is deliberately narrow: syntax errors
-and pyflakes only. There is no automated test suite yet.
+CodeQL, and the CI jobs `Lint`, `Test`, `Config validation`, `Migration check`,
+and `Compose validation`. Lint (`ruff.toml`) is deliberately narrow: syntax errors
+and pyflakes only.
+
+Run the test suite locally (Python 3.11):
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+The tests run against a temporary config directory. `STD_CONFIG_DIR` (default
+`/config`) is a dev/test knob that relocates the settings file, database, logs,
+images, and backups; leave it unset in production.
 
 Releases go through `/release-prep` and `/release-cut` (see
 [Versioning & Releases](#versioning--releases)). Contributor and agent

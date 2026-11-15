@@ -5,6 +5,19 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Test seam: `STD_CONFIG_DIR`, env set in conftest
+
+`app.py` builds the app at import and reads `/config` paths there, so
+`STD_CONFIG_DIR` (default `/config`) is resolved once in
+`settings_loader.CONFIG_DIR` and everything derives from it. `tests/conftest.py`
+sets the env and a temp dir at import time, before `app` is imported, instead of
+restructuring the factory. Kept as a dev/test knob (README Development only, no
+CHANGELOG entry). Tests stub `routes_api.resolve_image_metadata` to avoid icon
+downloads, and the loader tests monkeypatch `CONFIG_PATH`. `alembic.ini` and the
+`Migration check` job still use `/config` and are untouched.
+
+---
+
 ## 2026-11-15 — v0.6.9 scope: one large patch, and its design calls
 
 Review of v0.6.8 found two bugs, a security pass, a missing test suite,

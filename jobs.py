@@ -33,6 +33,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from extensions import db
 from image_utils import fetch_icon_if_missing
 from models import ServiceEntry, Widget, WidgetValue
+from settings_loader import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ def health_check_loop(app):
 
 def run_scheduled_backup(app):
     with app.app_context():
-        backup_dir = app.config.get("backup_path", "/config/backups")
+        backup_dir = app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
         days_to_keep = int(app.config.get("backup_days_to_keep", 7))
 
         os.makedirs(backup_dir, exist_ok=True)

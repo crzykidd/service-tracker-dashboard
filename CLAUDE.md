@@ -219,10 +219,10 @@ Branching, PR flow, and the release rules are in the snippets above; the
 project-specific facts are:
 
 - **Required checks on `main`:** `build` (image build, `publish.yml`),
-  `Lint`, `Config validation`, `Migration check`, `Compose validation`,
-  and CodeQL. `CI` (`.github/workflows/ci.yml`) runs on push to
-  `dev`/`main` only. The `Test` check is exempt until a test suite exists
-  (see `standards.md`).
+  `Lint`, `Test`, `Config validation`, `Migration check`,
+  `Compose validation`, and CodeQL. `CI` (`.github/workflows/ci.yml`) runs
+  on push to `dev`/`main` only. The `Test` job runs the pytest suite in
+  `tests/` (`pip install -r requirements-dev.txt && pytest -q`).
 - **GHCR is the only registry** (`ghcr.io/crzykidd/service-tracker-dashboard`,
   via `.github/workflows/publish.yml`). Docker Hub is frozen at v0.6.7.
   Push to `dev` builds `:dev` and `:sha-<short>`; push to `main` builds
@@ -371,6 +371,8 @@ static/             ← static assets (css/, js/, icons/)
 widgets/            ← per-widget plugin dirs
 alembic/            ← migrations (alembic.ini at root)
 scripts/            ← manual helper scripts (test_widget.py; not a test suite)
+tests/              ← pytest suite (conftest.py sets STD_CONFIG_DIR before importing app)
+requirements-dev.txt ← pytest + runtime deps; CI/dev only, not in the image
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E9 + F only)
 Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt

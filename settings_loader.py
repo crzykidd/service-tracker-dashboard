@@ -3,9 +3,13 @@ import shutil
 import yaml
 import logging
 
-CONFIG_PATH = "/config/settings.yml"
+# Directory holding settings.yml, the DB, logs, images and backups. Defaults to
+# /config (the container mount). STD_CONFIG_DIR is a dev/test knob so the test
+# suite can run against a temp dir; production leaves it unset.
+CONFIG_DIR = os.environ.get("STD_CONFIG_DIR", "/config")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "settings.yml")
 DEFAULT_TEMPLATE = "settings.example.yml"
-EXAMPLE_DEST = "/config/settings.example.yml"
+EXAMPLE_DEST = os.path.join(CONFIG_DIR, "settings.example.yml")
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ VALID_KEYS = {
     "user_session_length": int
 }
 DEFAULT_VALUES = {
-    "backup_path": "/config/backups",
+    "backup_path": os.path.join(CONFIG_DIR, "backups"),
     "backup_days_to_keep": 7,
     "url_healthcheck_interval": 300,
     "widget_background_reload": 900,
