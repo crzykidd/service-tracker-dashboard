@@ -29,6 +29,13 @@ commit as the code**. This is not optional and not deferrable:
 > the PRD where they disagree, and flag any contradiction you notice
 > rather than propagating it.
 
+## Standards
+
+This project adopts crzynet engineering standards from `homelab-configs`.
+**Read [`standards.md`](standards.md) at session start** whenever the work
+could touch anything a standard governs (branching, commits, CI, releases,
+handoff prompts). It lists each adopted standard with its pinned version.
+
 ## Commit style
 
 - `feat:` new feature

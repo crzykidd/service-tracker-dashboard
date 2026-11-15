@@ -21,31 +21,7 @@
       "Bash(git config *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "mcp__vexp__run_pipeline",
-      "Bash(git ls-remote *)",
-      "Bash(findstr v0.6)",
-      "mcp__vexp__get_skeleton",
-      "Bash(ls D:/projects/docker-api-notifier 2>&1 | head -20)",
-      "Read(//d/projects/docker-api-notifier/**)",
-      "Bash(findstr 0.6.5)"
-    ],
-    "additionalDirectories": [
-      "C:\\projects\\service-tracker-dashboard\\alembic\\versions",
-      "D:\\projects\\docker-api-notifier"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Grep|Glob|Regex",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/vexp-guard.sh",
-            "timeout": 3000
-          }
-        ]
-      }
+      "Bash(git ls-remote *)"
     ]
   }
 }
