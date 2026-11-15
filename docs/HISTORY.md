@@ -154,3 +154,29 @@ have multiplied the divergence the redesign was trying to eliminate.
 None on the wire side. Visual output changed substantially (this is
 the Tiled redesign release); operators see new tile layout and icon
 vocabulary on first reload.
+
+---
+
+## Registry move: Docker Hub → GHCR (v0.6.7)
+
+### Why
+
+Docker Hub registry retention (pruning old `:sha-*` and semver tags)
+needs a Docker Hub token with delete rights and a custom cleanup job;
+GHCR retention runs on the built-in `GITHUB_TOKEN`, and every other
+crzynet project already publishes to GHCR.
+
+### What changed
+
+- `.github/workflows/dockerhub.yml` renamed to `publish.yml`; it pushes
+  to `ghcr.io/crzykidd/service-tracker-dashboard`.
+- v0.6.7 is a transition release published to **both** registries. The
+  Docker Hub image is built with `REGISTRY_NOTICE=dockerhub`, which
+  renders an in-app banner pointing operators at the README's "Moving
+  from Docker Hub" section. The GHCR build has no banner.
+
+### Impact on existing installs
+
+Docker Hub users keep working but are frozen at v0.6.7 (with the
+banner) until they switch the image line to GHCR. No data, config, or
+volume changes are involved. GHCR has no images older than v0.6.7.

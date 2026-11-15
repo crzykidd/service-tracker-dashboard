@@ -1,0 +1,111 @@
+name: Build and Push Docker Image
+
+# Trigger matrix:
+#   push → dev           builds :dev and :sha-<short> (work-in-progress)
+#   push → main          builds :latest and :sha-<short> (CI-verified pre-release)
+#   pull_request → main  build only — no push (gates branch protection)
+#   release published    builds :latest, :<semver>, :<major> (production-ready)
+#
+# Registries (v0.6.7 transition):
+#   ghcr.io/crzykidd/service-tracker-dashboard — primary registry going forward.
+#   docker.io/crzykidd/service-tracker-dashboard — deprecated. Built with
+#     REGISTRY_NOTICE=dockerhub so the app shows a "moved to GHCR" banner.
+#     Docker Hub publishing is removed after v0.6.7; Docker Hub users stay on
+#     the banner build until they switch.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Job name `build` is a required status check in the main ruleset — don't rename.
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute tags (GHCR)
+        id: meta_ghcr
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/crzykidd/service-tracker-dashboard
+          flavor: latest=false
+          tags: |
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref_name == 'dev' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_name == 'main' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
+            type=ref,event=pr
+
+      - name: Compute tags (Docker Hub)
+        id: meta_dockerhub
+        uses: docker/metadata-action@v5
+        with:
+          images: crzykidd/service-tracker-dashboard
+          flavor: latest=false
+          tags: |
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref_name == 'dev' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_name == 'main' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
+            type=ref,event=pr
+
+
+      - name: Build and push (GHCR)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_ghcr.outputs.tags }}
+          labels: ${{ steps.meta_ghcr.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ steps.meta_ghcr.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+
+      - name: Build and push (Docker Hub, deprecated — shows move banner)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta_dockerhub.outputs.tags }}
+          labels: ${{ steps.meta_dockerhub.outputs.labels }}
+          cache-from: type=gha
+          build-args: |
+            APP_VERSION=${{ steps.meta_dockerhub.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            REGISTRY_NOTICE=dockerhub

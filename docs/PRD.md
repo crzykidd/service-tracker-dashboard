@@ -17,6 +17,7 @@
 | 0.7     | 2026-05-16 | v0.6.2 hotfix. Restored `toggleRestoreSource` dropped during v0.6.1 JS extraction; wired file-input change event for filename feedback on /settings restore. |
 | 0.8     | 2026-05-17 | v0.6.3–v0.6.6 UI Overhaul Part 2 arc delivered. Added §10 documenting v0.6.3 foundations, v0.6.4 mobile/tile restructure, v0.6.5 edit polish/delete UX/widget modal, and v0.6.6 widget drawer mode + brand exposure icons (modal removed). |
 | 0.9     | 2026-05-23 | Documentation reconciliation audit. §9.6 forecast rewritten — the predicted v0.6.2 edit drawer / v0.6.3 staleness work did not ship; the actual v0.6.2–v0.6.6 arc is described in §10. §12 subsection numbering corrected (was using §10.x). §12.2 release history split notifier v0.3.2 (capture fields) from v0.4.0 (interpreters). FUTURE.md fictional release sequence references stripped. No code or schema changes. |
+| 0.11    | 2026-11-15 | v0.6.7 — registry move. §11 documents GHCR as the primary image registry and the final dual-publish to Docker Hub with the `REGISTRY_NOTICE` build arg driving the in-app deprecation banner. Workflow renamed `dockerhub.yml` → `publish.yml`. No schema, contract, or job changes. |
 | 0.10    | 2026-05-23 | §12.2 correction. The v0.3.2 / v0.4.0 split introduced in 0.9 was wrong — notifier tags confirm no v0.3.2 release was ever cut; the capture fields and the interpreter mechanism both shipped in v0.4.0. Collapsed back to a single v0.4.0 pairing, with a parenthetical noting v0.3.2 as a developed-but-unreleased label so a future reader doesn't re-split from the stale `models.py` / `schemas.py` comments. |
 
 ---
@@ -860,7 +861,15 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
 - Branch protection: require PR + green build check, block force-push,
   block deletion.
-- Image tags follow `.github/workflows/dockerhub.yml`:
+- Images are published by `.github/workflows/publish.yml` to
+  `ghcr.io/crzykidd/service-tracker-dashboard` (primary). Through
+  v0.6.7 the same workflow also publishes the deprecated Docker Hub
+  image `crzykidd/service-tracker-dashboard`, built with
+  `REGISTRY_NOTICE=dockerhub` so the app renders a "moved to GHCR"
+  banner (`base.html`) and a Settings → Service Info note. The build
+  arg lands in `/app/version.txt` as `registry_notice=` and is exposed
+  via `version_info`. Docker Hub publishing is removed after v0.6.7.
+- Image tags (identical on both registries):
   - push to `dev` → `:dev`, `:sha-<short>`
   - push to `main` → `:latest`, `:sha-<short>`
   - GitHub Release published → `:latest`, `:<semver>`, `:<major>`

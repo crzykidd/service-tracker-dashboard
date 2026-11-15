@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-11-15
+
+STD is moving from Docker Hub to GitHub Container Registry (GHCR). If you
+pull `crzykidd/service-tracker-dashboard` from Docker Hub, change your
+image to `ghcr.io/crzykidd/service-tracker-dashboard` — this is the last
+release published to Docker Hub.
+
+### Added
+
+- **Images on GitHub Container Registry.** STD is now published to
+  `ghcr.io/crzykidd/service-tracker-dashboard` with the same tags as
+  before (`:latest`, `:dev`, `:<version>`, `:<major>`). Switching is a
+  one-line image change in your compose file; your config, database,
+  and settings carry over unchanged. See "Moving from Docker Hub" in
+  the README.
+- **"Moved to GHCR" banner in the Docker Hub image.** Installs running
+  the Docker Hub image show a banner at the top of every page (and a
+  note on Settings → Service Info) with a link to the update
+  instructions. Dismissing it hides it until the next browser session.
+  The GHCR image does not show the banner.
+
+### Deprecated
+
+- **Docker Hub images.** This is the final release published to Docker
+  Hub. Future releases are published to GHCR only; Docker Hub `:latest`
+  will stay on this version.
+
 ## [0.6.6] — 2026-05-17
 
 Two changes to the Tiled tile face: the v0.6.5 widget modal is
@@ -508,7 +535,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.6
 [0.6.5]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/0.6.5
 [0.6.4]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.4

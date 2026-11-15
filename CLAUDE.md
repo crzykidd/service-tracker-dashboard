@@ -71,7 +71,8 @@ commit as the code**. This is not optional and not deferrable:
 Current shipped release: **v0.6.6** (latest tag on `main`; v0.6.5 was
 also released but its tag is the typo'd bare `0.6.5` — see the audit
 finding in this commit's history).
-In flight: nothing — `[Unreleased]` in CHANGELOG is empty.
+In flight: v0.6.7 — Docker Hub → GHCR move (dual-publish + Docker Hub
+banner). Last release published to Docker Hub.
 
 > Keep this to the two lines above — "latest tag" and "in flight."
 > Do not maintain a long per-version history here; the CHANGELOG and
@@ -93,16 +94,20 @@ In flight: nothing — `[Unreleased]` in CHANGELOG is empty.
 
 ## Release Process
 
+- Images publish to GHCR (`ghcr.io/crzykidd/service-tracker-dashboard`)
+  via `.github/workflows/publish.yml`. Through v0.6.7 the workflow also
+  pushes a Docker Hub image built with `REGISTRY_NOTICE=dockerhub` (shows
+  the "moved to GHCR" banner). After v0.6.7, remove the Docker Hub steps,
+  the build arg, the banner code, and the `DOCKERHUB_*` secrets.
 - Push to `dev` — GitHub Actions builds and pushes `:dev` and
-  `:sha-<short>` images to Docker Hub.
+  `:sha-<short>` images.
 - Push to `main` (via PR from `dev`) — GitHub Actions builds and pushes
   `:latest` and `:sha-<short>` images.
 - When the build is stable and ready to ship:
   1. GitHub → Releases → Draft new release.
   2. Create a new tag in `vX.Y.Z` format.
   3. Publish the release.
-  4. GitHub Actions builds and pushes `:latest`, `:X.Y.Z`, and `:X` to
-     Docker Hub.
+  4. GitHub Actions builds and pushes `:latest`, `:X.Y.Z`, and `:X`.
 
 ## Changelog Process
 
