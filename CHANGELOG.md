@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **CSRF protection on every UI POST.** All forms (login, logout, settings,
+  groups, users, add/edit, backup/restore) and the in-page delete requests now
+  carry a CSRF token. A stale or tokenless form submit shows "Your session
+  expired or the form was stale; please retry." and returns you to the page;
+  a tokenless JSON request gets `400 {"error": "CSRF token missing or
+  invalid"}`. `/api/v1/register` is unaffected (bearer-token API). Tokens last
+  as long as the session. Requires `Flask-WTF` (installed with the image).
 - API token comparison is now constant-time.
 - The API token is masked (`***`) in startup and debug logs.
 - STD now warns (log and a dismissible notice on Settings) when

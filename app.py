@@ -15,9 +15,10 @@ from logging.handlers import RotatingFileHandler
 
 import humanize
 from dateutil import parser
-from flask import Flask, render_template
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask_wtf.csrf import CSRFError
 
-from extensions import db, login_manager
+from extensions import csrf, db, login_manager
 from health import health_bp
 from jobs import start_background_workers, verify_and_fetch_missing_icons
 from models import User
@@ -85,6 +86,10 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=int(settings.get("user_session_length", 120)))
 
+    # Tokens live as long as the session so a dashboard left open for hours
+    # doesn't 400 on the next delete.
+    app.config['WTF_CSRF_TIME_LIMIT'] = None
+    csrf.init_app(app)
     login_manager.init_app(app)
     db.init_app(app)
 
@@ -158,6 +163,19 @@ def create_app():
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=now.tzinfo)
         return humanize.naturaltime(now - dt)
+
+    @app.errorhandler(CSRFError)
+    def csrf_error(error):
+        wants_json = (
+            request.is_json
+            or request.path.startswith("/api/")
+            or request.headers.get("X-CSRFToken") is not None
+            or "application/json" in request.headers.get("Accept", "")
+        )
+        if wants_json:
+            return jsonify({"error": "CSRF token missing or invalid"}), 400
+        flash("Your session expired or the form was stale; please retry.", "danger")
+        return redirect(request.referrer or url_for("dashboard.dashboard"))
 
     @app.errorhandler(403)
     def forbidden_error(error):

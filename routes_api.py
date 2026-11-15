@@ -29,7 +29,7 @@ from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
 import synthesizer
-from extensions import db
+from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
 from models import Group, ServiceEntry
 from schemas import RegisterPayload
@@ -309,6 +309,7 @@ def upsert_service(canonical, app):
 
 
 @api_bp.route('/api/v1/register', methods=['POST'])
+@csrf.exempt
 def api_v1_register():
     """Canonical register endpoint (v0.5.0+).
 

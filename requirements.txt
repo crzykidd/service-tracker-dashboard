@@ -10,3 +10,4 @@ apscheduler
 alembic
 pydantic>=2,<3
 markdown
+Flask-WTF

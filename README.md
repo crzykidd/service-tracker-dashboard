@@ -488,6 +488,9 @@ cached in the `widget_value` table. Retention: rolling 30 days
 - Nightly backups run shortly after midnight; old backups are pruned
   per `backup_days_to_keep`.
 - Version metadata is shown in `/settings`.
+- All UI forms and in-page delete requests are CSRF-protected. If a form
+  was left open past a session expiry, submitting it shows a "please retry"
+  message instead of acting. `/api/v1/register` (bearer token) is exempt.
 - Tile drawers on the Tiled view are transient view state and not bookmarkable; full edit remains at `/edit/<id>` and is bookmarkable.
 
 ---

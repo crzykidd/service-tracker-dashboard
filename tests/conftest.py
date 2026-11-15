@@ -42,6 +42,8 @@ def app():
     from app import app as flask_app
 
     flask_app.config["TESTING"] = True
+    # CSRF is off for the general suite; tests/test_csrf.py turns it on.
+    flask_app.config["WTF_CSRF_ENABLED"] = False
     with flask_app.app_context():
         from extensions import db
 

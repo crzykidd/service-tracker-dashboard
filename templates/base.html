@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>Service Tracker Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.34.0/tabler-icons.min.css">
@@ -32,6 +33,7 @@
 
         {% if current_user.is_authenticated %}
         <form method="POST" action="{{ url_for('auth.logout') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="ml-4 bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1 rounded">
             Logout
           </button>

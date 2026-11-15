@@ -5,6 +5,17 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — CSRF: JSON detection and general-suite opt-out
+
+The `CSRFError` handler answers JSON (400) when `request.is_json`, the path
+is under `/api/`, an `X-CSRFToken` header is present, or `Accept` asks for
+JSON; otherwise flash + redirect to the referrer (dashboard fallback). The
+header check covers `stdPost` fetches that carry no body/Accept (the delete
+calls). Tests set `WTF_CSRF_ENABLED=False` on the shared app in `conftest.py`;
+`tests/test_csrf.py` flips it on per test via a fixture.
+
+---
+
 ## 2026-11-15 — Default-credential check cached, dismissal is per-session
 
 The `changeme123` check hashes a password, so it runs once at startup (and

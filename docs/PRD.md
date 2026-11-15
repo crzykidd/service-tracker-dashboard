@@ -28,6 +28,7 @@
 | 0.18    | 2026-11-15 | §12.1 delivered (unreleased): pytest suite, `STD_CONFIG_DIR` testability seam, CI `Test` job; §13 required-checks text updated. No schema, contract, or job changes. |
 | 0.19    | 2026-11-15 | §12.2 delivered (unreleased): `ruff.toml` widened to `E, W, F, I, B` (E501 ignored); §3.1 lint note updated. No schema, contract, or job changes. |
 | 0.20    | 2026-11-15 | §12.3 delivered (unreleased): `widget_value_retention_days` / `register_field_ownership` now load; unset `api_token` returns 503 on register; constant-time token compare; token masked in logs; default-credential warnings. No schema or wire-contract changes. |
+| 0.21    | 2026-11-15 | §12.4 delivered (unreleased): Flask-WTF `CSRFProtect` on all UI POSTs and fetch calls; `/api/v1/register` exempt; `CSRFError` handler (flash+redirect or JSON 400). No schema or wire-contract changes. |
 
 ---
 
@@ -1011,7 +1012,7 @@ soft-deleted rows, which is server-side only.
   browser session (`sessionStorage`). The two §12.1 `xfail` tests are now
   passing tests.
 
-### 12.4 CSRF protection [`v069-04-csrf`] — Planned
+### 12.4 CSRF protection [`v069-04-csrf`] — Delivered (unreleased)
 
 - `Flask-WTF` `CSRFProtect` on the app. Every HTML form posts
   `csrf_token()`; `base.html` carries a `<meta name="csrf-token">` and
@@ -1021,6 +1022,12 @@ soft-deleted rows, which is server-side only.
   a dashboard left open for hours doesn't 400 on the next delete.
 - CSRF failure: HTML forms flash an error and redirect back; JSON
   endpoints return `400 {"error": "CSRF token missing or invalid"}`.
+- As built: `csrf = CSRFProtect()` in `extensions.py`, initialized in
+  `create_app()`; a `CSRFError` handler in `app.py` treats a request as
+  JSON when `request.is_json`, the path starts with `/api/`, an
+  `X-CSRFToken` header is present, or `Accept` includes `application/json`.
+  JS POSTs go through the shared `window.stdPost(url, options)` helper in
+  `static/js/dashboard.js`. Tests enable CSRF only in `tests/test_csrf.py`.
 
 ### 12.5 Soft-delete for service entries [`v069-05-soft-delete`] — Planned
 
