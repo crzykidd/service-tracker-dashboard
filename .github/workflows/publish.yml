@@ -34,6 +34,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify release tag matches VERSION
+        if: github.event_name == 'release'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$file" ]; then
+            echo "ERROR: release tag '${GITHUB_REF_NAME}' does not match VERSION '${file}'"
+            exit 1
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -93,7 +103,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            APP_VERSION=${{ steps.meta_ghcr.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
 
       - name: Build and push (Docker Hub, deprecated — shows move banner)
@@ -106,6 +115,5 @@ jobs:
           labels: ${{ steps.meta_dockerhub.outputs.labels }}
           cache-from: type=gha
           build-args: |
-            APP_VERSION=${{ steps.meta_dockerhub.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
             REGISTRY_NOTICE=dockerhub

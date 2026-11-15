@@ -117,6 +117,45 @@ honor by default:
 If you're unsure whether an action would violate one of the above, stop and ask before
 acting.
 
+<!--
+Source: standards/release-prep-and-cut @ v1.0.0 (crzynet/homelab-configs).
+Paste the section below verbatim into the adopting project's CLAUDE.md.
+The full standard (two-phase prep/cut workflow, archive trigger, validation
+steps, adoption checklist) lives at:
+https://gitea.crzynet.com/crzynet/homelab-configs/src/branch/main/standards/release-prep-and-cut/README.md
+-->
+
+## Release process (operational rules)
+
+This project adopts the `release-prep-and-cut` standard. The full why-and-how
+lives at the source above; the rules below are the per-session do/don'ts a
+coding agent must honor by default:
+
+- **The version is stored BARE in the source-of-truth file** — no `v` prefix
+  anywhere in code. The `v` prefix is added in exactly one place: the git tag
+  and matching GitHub release name. Don't add it to README badges, CHANGELOG
+  headers, in-code image tags, or anywhere else.
+- **`CHANGELOG.md` is the single source of truth for release notes.** The PR
+  description (set by `/release-prep`) and the GitHub release body (set by
+  `/release-cut`) reuse the **same section verbatim**. Never author release
+  notes twice.
+- **One commit per release prep.** Version bump + changelog roll + every doc
+  sync ship in a single `chore(release): prepare v<version>` commit. No
+  `Co-authored-by:` trailers.
+- **Never re-tag.** If `v<version>` already exists as a local tag, a remote
+  tag, or a GitHub release, STOP. Never delete-and-recreate; never `--force`.
+  Pick the next version instead.
+- **`/release-cut` only after the PR has merged and CI is green.** The
+  publish-to-`main` workflow must have already pushed `:latest` images to the
+  registry before `/release-cut` runs. If you cannot confirm both — STOP and
+  tell the user to wait.
+- **The release tag is the only thing the cut command writes to `main`.** Both
+  the prep commit and any follow-up docs commit land on `dev` and reach `main`
+  only via PR. Never push directly to `main` as part of a release.
+
+If you're unsure whether an action would violate one of the above, stop and
+ask before acting.
+
 ## Commit style
 
 - `feat:` new feature
@@ -162,11 +201,11 @@ acting.
 
 ## Build Status
 
-Current shipped release: **v0.6.6** (latest tag on `main`; v0.6.5 was
+Current shipped release: **v0.6.7** (latest tag on `main`; v0.6.5 was
 also released but its tag is the typo'd bare `0.6.5` — see the audit
 finding in this commit's history).
-In flight: v0.6.7 — Docker Hub → GHCR move (dual-publish + Docker Hub
-banner). Last release published to Docker Hub.
+In flight: cleanup release on `dev` — vexp removal, standards adoption,
+Docker Hub removal (`[Unreleased]` has entries).
 
 > Keep this to the two lines above — "latest tag" and "in flight."
 > Do not maintain a long per-version history here; the CHANGELOG and
@@ -180,7 +219,7 @@ banner). Last release published to Docker Hub.
 - When ready to release:
   - Create PR `dev` → `main` on GitHub.
   - Merge after CI passes.
-  - Tag release from `main` via the GitHub Releases UI.
+  - Cut the release with `/release-cut <version>` (see Release Process).
 - Branch protection on `main` requires a PR plus green required checks
   (`build`, `Lint`, `Config validation`, `Migration check`,
   `Compose validation`, CodeQL), and blocks force-push and deletion.
@@ -198,11 +237,13 @@ banner). Last release published to Docker Hub.
   `:sha-<short>` images.
 - Push to `main` (via PR from `dev`) — GitHub Actions builds and pushes
   `:latest` and `:sha-<short>` images.
-- When the build is stable and ready to ship:
-  1. GitHub → Releases → Draft new release.
-  2. Create a new tag in `vX.Y.Z` format.
-  3. Publish the release.
-  4. GitHub Actions builds and pushes `:latest`, `:X.Y.Z`, and `:X`.
+- The version lives in the bare-semver `VERSION` file at the repo root; the
+  Dockerfile writes `/app/version.txt` from it, so every image reports it.
+- To ship: `/release-prep <version>` on `dev` (bumps `VERSION`, rolls
+  CHANGELOG, syncs docs, opens the PR) → human merges the PR and waits for
+  CI and the `:latest` build → `/release-cut <version>` (tags `v<version>`,
+  publishes the release; GitHub Actions then builds `:latest`, `:X.Y.Z`,
+  and `:X`). `publish.yml` fails a release whose tag != `VERSION`.
 
 ## Changelog Process
 
@@ -211,7 +252,8 @@ banner). Last release published to Docker Hub.
 - Add entries to `[Unreleased]` section as features are built.
 - User-facing language only — describe what changed for the operator.
 - Categories: Added, Changed, Fixed, Security, Deprecated, Removed.
-- On release: move `[Unreleased]` to a new version section dated today.
+- On release: `/release-prep` moves `[Unreleased]` to a new version section
+  dated today (`## [X.Y.Z] — YYYY-MM-DD`, em dash; the What's New popup parses it).
 - GitHub release body = that version's CHANGELOG section.
 
 ## Cross-Repo Coordination

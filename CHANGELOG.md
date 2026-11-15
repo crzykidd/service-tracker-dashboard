@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`:dev` and `:latest` images now report the real version.** Settings →
+  Service Info previously showed `dev` or `latest` for these images; it now
+  shows the actual version number, and the What's New popup works on them.
+
 ### Fixed
 
 - **Add Entry no longer errors on a non-numeric sort priority.** Entering

@@ -58,8 +58,15 @@ def read_version_info():
             return dict(line.strip().split("=", 1) for line in f)
     except Exception as e:
         logger.warning(f"⚠️ Could not read version info: {e}")
+        # Local run (no image build): fall back to the repo's VERSION file.
+        version = "unknown"
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as vf:
+                version = vf.read().strip() or "unknown"
+        except OSError:
+            pass
         return {
-            "version": "unknown",
+            "version": version,
             "commit": "unknown",
             "build_time": "unknown"
         }

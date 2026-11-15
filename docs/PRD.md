@@ -20,6 +20,7 @@
 | 0.10    | 2026-05-23 | §12.2 correction. The v0.3.2 / v0.4.0 split introduced in 0.9 was wrong — notifier tags confirm no v0.3.2 release was ever cut; the capture fields and the interpreter mechanism both shipped in v0.4.0. Collapsed back to a single v0.4.0 pairing, with a parenthetical noting v0.3.2 as a developed-but-unreleased label so a future reader doesn't re-split from the stale `models.py` / `schemas.py` comments. |
 | 0.11    | 2026-11-15 | v0.6.7 — registry move. §11 documents GHCR as the primary image registry and the final dual-publish to Docker Hub with the `REGISTRY_NOTICE` build arg driving the in-app deprecation banner. Workflow renamed `dockerhub.yml` → `publish.yml`. No schema, contract, or job changes. |
 | 0.12    | 2026-11-15 | §11 documents the `CI` required checks and GHCR registry retention (adoption of `code-checkin-and-pr` v1.2.0). No schema, contract, or job changes. |
+| 0.13    | 2026-11-15 | §11: versioning now uses a bare-semver `VERSION` file (Dockerfile writes `/app/version.txt` from it; `APP_VERSION` build arg removed) and releases are cut with `/release-prep` + `/release-cut` (adoption of `release-prep-and-cut` v1.1.0). No schema, contract, or job changes. |
 
 ---
 
@@ -885,7 +886,16 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
   - push to `dev` → `:dev`, `:sha-<short>`
   - push to `main` → `:latest`, `:sha-<short>`
   - GitHub Release published → `:latest`, `:<semver>`, `:<major>`
-- Tags are cut from the GitHub Releases UI against `main`.
+- The version is the single bare-semver line in the repo-root `VERSION`
+  file. The Dockerfile copies it and writes `version=` into
+  `/app/version.txt` (there is no `APP_VERSION` build arg), so `:dev`,
+  `:latest`, and release images all report the real version. `app.py`
+  falls back to `VERSION` for local runs without an image.
+- Releases are cut with `/release-prep <version>` (on `dev`: bump
+  `VERSION`, roll CHANGELOG, sync README/PRD/CLAUDE.md, open the PR) then,
+  after merge and green `main` CI, `/release-cut <version>` (tag
+  `v<version>` on `main` and publish the GitHub Release). `publish.yml`
+  fails a `release` build whose tag (minus `v`) differs from `VERSION`.
 
 ---
 

@@ -5,6 +5,35 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Adopting release-prep-and-cut: VERSION file, no APP_VERSION, tag guard
+
+- **`VERSION` is the single source of the in-app version.** The Dockerfile
+  derives `version=` in `/app/version.txt` from the copied `VERSION` file
+  (`tr -d '[:space:]'`). Previously `APP_VERSION` came from the
+  metadata-action output, which is `dev`/`latest`/`pr-N` off release events,
+  so `:dev`/`:latest` reported a non-semver and the What's New popup
+  (keys on the version) misbehaved.
+- **`APP_VERSION` build arg removed outright, not kept as an override.** An
+  override would let a build disagree with `VERSION`, recreating the drift
+  this fixes; nothing needs it (local builds also read `VERSION`).
+- **`publish.yml` guard:** on `release` events a step before the builds fails
+  if the tag minus leading `v` != `VERSION` — cheap protection against
+  tagging the wrong commit. Only the version build-args and this step were
+  touched; Docker Hub steps and `REGISTRY_NOTICE` left for the other prompt.
+- **`app.py` fallback** (no `/app/version.txt`, e.g. `python app.py`) reads
+  `VERSION` beside `app.py`, else `"unknown"`.
+- **`<LOCAL_CHECKS>` reuse `ci.yml`.** Config validation extracts and runs
+  the `config-validate` step's script from `ci.yml` via PyYAML, so the file
+  lists can't drift. Lint is `uvx ruff@0.15.17 check .`. Migration check uses
+  a temp copy of `alembic.ini` (URL and `%(here)s` script_location rewritten)
+  and `uv run --python 3.11 --with-requirements requirements.txt alembic` (no global alembic on the dev box), never a real `/config` (contrast with CI, which
+  creates a runner-local `/config`).
+- **Tooling stays out of CHANGELOG** (per the vexp entry); only the
+  operator-visible "images report the real version" effect was logged.
+- The bare `0.6.5` tag remains an un-fixable historical deviation.
+
+---
+
 ## 2026-11-15 — Adopting code-checkin-and-pr: migration-check DB, retention scope, F821
 
 - **Migration check uses a runner-local `/config`** (`sudo mkdir -p /config &&
