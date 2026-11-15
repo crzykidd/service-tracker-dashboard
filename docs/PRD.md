@@ -21,6 +21,7 @@
 | 0.11    | 2026-11-15 | v0.6.7 — registry move. §11 documents GHCR as the primary image registry and the final dual-publish to Docker Hub with the `REGISTRY_NOTICE` build arg driving the in-app deprecation banner. Workflow renamed `dockerhub.yml` → `publish.yml`. No schema, contract, or job changes. |
 | 0.12    | 2026-11-15 | §11 documents the `CI` required checks and GHCR registry retention (adoption of `code-checkin-and-pr` v1.2.0). No schema, contract, or job changes. |
 | 0.13    | 2026-11-15 | §11: versioning now uses a bare-semver `VERSION` file (Dockerfile writes `/app/version.txt` from it; `APP_VERSION` build arg removed) and releases are cut with `/release-prep` + `/release-cut` (adoption of `release-prep-and-cut` v1.1.0). No schema, contract, or job changes. |
+| 0.14    | 2026-11-15 | §11: Docker Hub publishing removed; GHCR is the only registry (Docker Hub frozen at v0.6.7). The `REGISTRY_NOTICE` build arg, `registry_notice=` line in `/app/version.txt`, and in-app "moved to GHCR" banner were removed. No schema, contract, or job changes. |
 
 ---
 
@@ -875,14 +876,10 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
   `dev`, major tags, or untagged versions. Docker Hub has no retention
   (frozen at v0.6.7).
 - Images are published by `.github/workflows/publish.yml` to
-  `ghcr.io/crzykidd/service-tracker-dashboard` (primary). Through
-  v0.6.7 the same workflow also publishes the deprecated Docker Hub
-  image `crzykidd/service-tracker-dashboard`, built with
-  `REGISTRY_NOTICE=dockerhub` so the app renders a "moved to GHCR"
-  banner (`base.html`) and a Settings → Service Info note. The build
-  arg lands in `/app/version.txt` as `registry_notice=` and is exposed
-  via `version_info`. Docker Hub publishing is removed after v0.6.7.
-- Image tags (identical on both registries):
+  `ghcr.io/crzykidd/service-tracker-dashboard`, the only registry.
+  Docker Hub (`crzykidd/service-tracker-dashboard`) is frozen at v0.6.7
+  and no longer published; there is no in-app registry banner.
+- Image tags:
   - push to `dev` → `:dev`, `:sha-<short>`
   - push to `main` → `:latest`, `:sha-<short>`
   - GitHub Release published → `:latest`, `:<semver>`, `:<major>`

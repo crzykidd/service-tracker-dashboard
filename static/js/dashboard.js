@@ -529,24 +529,6 @@
     }
   }
 
-  /* ── Docker Hub deprecation banner ──────────────────── */
-  /* Rendered only in the Docker Hub image build. Dismissal lasts for the
-     browser session, then the banner returns — Docker Hub users are
-     frozen on this release until they switch registries. */
-  function initRegistryNotice() {
-    const notice = document.getElementById('registry-notice');
-    if (!notice) return;
-    const KEY = 'std:registryNoticeDismissed';
-    try {
-      if (sessionStorage.getItem(KEY) === '1') notice.hidden = true;
-    } catch (e) { /* storage unavailable — keep banner visible */ }
-    const btn = notice.querySelector('.registry-notice-dismiss');
-    if (btn) btn.addEventListener('click', function () {
-      notice.hidden = true;
-      try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
-    });
-  }
-
   /* Expose popover API for pages with inline script (e.g. edit_entry.html) */
   window.showDeletePopover = showDeletePopover;
 
@@ -557,7 +539,6 @@
     initFilter();
     initFilterBarMobile();
     initChangelogModal();
-    initRegistryNotice();
 
     const view = document.body.dataset.view;
     if (view === 'tiled') {

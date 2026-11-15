@@ -229,10 +229,8 @@ Docker Hub removal (`[Unreleased]` has entries).
 ## Release Process
 
 - Images publish to GHCR (`ghcr.io/crzykidd/service-tracker-dashboard`)
-  via `.github/workflows/publish.yml`. Through v0.6.7 the workflow also
-  pushes a Docker Hub image built with `REGISTRY_NOTICE=dockerhub` (shows
-  the "moved to GHCR" banner). After v0.6.7, remove the Docker Hub steps,
-  the build arg, the banner code, and the `DOCKERHUB_*` secrets.
+  via `.github/workflows/publish.yml`. GHCR is the only registry; Docker
+  Hub publishing stopped at v0.6.7.
 - Push to `dev` — GitHub Actions builds and pushes `:dev` and
   `:sha-<short>` images.
 - Push to `main` (via PR from `dev`) — GitHub Actions builds and pushes

@@ -163,11 +163,10 @@ services:
 
 ### Moving from Docker Hub
 
-STD images are now published to **GitHub Container Registry (GHCR)**.
-**v0.6.7 is the last release published to Docker Hub** — Docker Hub
-images (`crzykidd/service-tracker-dashboard`) will not receive further
-updates, and the v0.6.7 Docker Hub image shows a banner in the app
-reminding you to switch.
+STD images are published to **GitHub Container Registry (GHCR)** only.
+Docker Hub images (`crzykidd/service-tracker-dashboard`) are no longer
+published; **v0.6.7 was the last one** and it will not receive further
+updates.
 
 To move, change one line in your compose file:
 
@@ -481,8 +480,8 @@ cached in the `widget_value` table. Retention: rolling 30 days
 ## Versioning & Releases
 
 Images are published to `ghcr.io/crzykidd/service-tracker-dashboard`.
-Docker Hub (`crzykidd/service-tracker-dashboard`) is deprecated and
-receives its last release at v0.6.7 — see
+Docker Hub (`crzykidd/service-tracker-dashboard`) is no longer published;
+v0.6.7 was its last release — see
 [Moving from Docker Hub](#moving-from-docker-hub).
 
 - `:latest` follows `main` — CI-verified pre-release.

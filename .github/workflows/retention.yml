@@ -1,7 +1,7 @@
 name: Registry retention
 
-# GHCR only. Docker Hub is frozen at v0.6.7 and being removed; it gets no
-# retention job.
+# GHCR only. Docker Hub publishing stopped at v0.6.7 (no further images), so
+# it gets no retention job.
 on:
   workflow_run:
     workflows: ["Build and Push Docker Image"]

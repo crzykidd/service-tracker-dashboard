@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Docker Hub images are no longer published.** Anyone still pulling
+  `crzykidd/service-tracker-dashboard` from Docker Hub stays on v0.6.7 and
+  should switch to `ghcr.io/crzykidd/service-tracker-dashboard` — see
+  [Moving from Docker Hub](README.md#moving-from-docker-hub). The "moved to
+  GHCR" banner (which only appeared in the v0.6.7 Docker Hub image) is
+  removed from the app.
+
 ### Changed
 
 - **`:dev` and `:latest` images now report the real version.** Settings →
