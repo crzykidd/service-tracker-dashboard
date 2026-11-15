@@ -7,12 +7,15 @@ themselves with `db.metadata` before autogenerate runs.
 
 from datetime import datetime, timedelta
 
+from flask import current_app, has_app_context
 from flask_login import UserMixin
 from sqlalchemy import func, select
 from sqlalchemy.orm import column_property
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
+
+DEFAULT_STALE_AFTER_MINUTES = 5
 
 
 class ServiceEntry(db.Model):
@@ -146,14 +149,28 @@ class ServiceEntry(db.Model):
 
     @property
     def is_docker_status_stale(self):
-        if self.is_static:  # Static entries might not receive frequent API updates
+        """True when the notifier hasn't reported in within `stale_after_minutes`.
+
+        Static entries are never stale. A dynamic entry with no
+        `last_api_update` (never registered) counts as stale; the Tiled view
+        shows that case separately as "no update received".
+        """
+        if self.is_static:
             return False
         if self.last_api_update:
-            # Consider stale if last_api_update is older than 5 minutes
-            return (datetime.now() - self.last_api_update) > timedelta(minutes=5)
-        # If no API update has ever been recorded, and it's not static, consider it stale or unknown.
-        # For a newly added dynamic entry, this would be True until the first API update.
+            return (datetime.now() - self.last_api_update) > timedelta(minutes=_stale_after_minutes())
         return True
+
+
+def _stale_after_minutes():
+    """Configured staleness threshold; default 5 when unset/invalid or outside an app context."""
+    if not has_app_context():
+        return DEFAULT_STALE_AFTER_MINUTES
+    try:
+        value = int(current_app.config.get("stale_after_minutes", DEFAULT_STALE_AFTER_MINUTES))
+    except (TypeError, ValueError):
+        return DEFAULT_STALE_AFTER_MINUTES
+    return value if value >= 0 else DEFAULT_STALE_AFTER_MINUTES
 
 
 class Widget(db.Model):

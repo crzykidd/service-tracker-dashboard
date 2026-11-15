@@ -31,6 +31,7 @@
 | 0.21    | 2026-11-15 | §12.4 delivered (unreleased): Flask-WTF `CSRFProtect` on all UI POSTs and fetch calls; `/api/v1/register` exempt; `CSRFError` handler (flash+redirect or JSON 400). No schema or wire-contract changes. |
 | 0.22    | 2026-11-15 | §12.5 delivered (unreleased): soft-delete (`service_entry.deleted_at`, §5.5), Settings → Deleted tab, `deleted_retention_days` and the 00:25 purge job, resurrect-on-register, `deleted_at` in YAML backups. Wire contract unchanged. |
 | 0.23    | 2026-11-15 | §12.6 delivered (unreleased): hard delete keeps the widget and its values as a detached widget; Settings → Deleted lists detached widgets with Attach/Delete; refresh job skips detached widgets. No schema or wire-contract changes. |
+| 0.24    | 2026-11-15 | §12.7 delivered (unreleased): `stale_after_minutes` setting (default 5) drives `is_docker_status_stale`; Tiled 120-minute clause removed; stale icon added to Dashboard and Compact. No schema or wire-contract changes. |
 
 ---
 
@@ -1105,7 +1106,7 @@ entries (this also stops refreshing pre-existing unreferenced widget rows).
 The edit page was left unchanged (it edits a widget in place; choosing "none"
 still deletes it deliberately).
 
-### 12.7 Unified staleness indicator [`v069-07-staleness`] — Planned
+### 12.7 Unified staleness indicator [`v069-07-staleness`] — Delivered (unreleased)
 
 - Today staleness is shown only on the Tiled view, and the logic is
   split: the model property uses 5 minutes and the template adds a
@@ -1119,6 +1120,13 @@ still deletes it deliberately).
   never stale. This is the staleness-visualization prerequisite named
   in FUTURE.md's duplicate-detection entry; the same threshold will be
   reused there.
+- **As built:** Dashboard shows a `ti-clock-exclamation` warn icon beside
+  the Docker pill; Compact shows the same icon right-aligned in the tile
+  (the Tiled icon turns amber as before). Both appear only for dynamic
+  entries that have a `last_api_update` and are stale; a never-updated
+  dynamic entry still counts as stale in the model but Tiled keeps its
+  separate red "no update received" state, and Dashboard keeps its red
+  pill. Outside an app context the threshold falls back to 5.
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Planned
 

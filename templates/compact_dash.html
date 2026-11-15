@@ -34,6 +34,11 @@
           <div class="host-name" title="{{ item.entry.host }}">{{ item.entry.host }}</div>
           {% endif %}
         </div>
+        {% if item.entry.last_api_update and item.entry.is_docker_status_stale %}
+          <span class="status-icon status-icon-warn compact-stale" title="Stale — updated {{ item.entry.last_api_update | time_since }}">
+            <i class="ti ti-clock-exclamation" aria-hidden="true"></i>
+          </span>
+        {% endif %}
       </div>
     {% endif %}
   {% endfor %}

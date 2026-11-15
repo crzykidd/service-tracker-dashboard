@@ -207,6 +207,11 @@
                       title="Updated {{ _d_tooltip }}{% if entry.last_api_update %} — {{ entry.last_api_update }}{% endif %}">
                   <i class="ti ti-brand-docker" aria-hidden="true"></i>{{ entry.docker_status or 'Unknown' }}
                 </span>
+                {% if entry.last_api_update and entry.is_docker_status_stale %}
+                  <span class="status-icon status-icon-warn" title="Stale — updated {{ entry.last_api_update | time_since }}">
+                    <i class="ti ti-clock-exclamation" aria-hidden="true"></i>
+                  </span>
+                {% endif %}
 
                 {% if entry.image_tag %}
                   <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>

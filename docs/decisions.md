@@ -5,6 +5,16 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Staleness indicator (v069-07)
+
+- **Never-updated dynamic entries:** model still returns stale (unchanged);
+  the new Dashboard/Compact icon is shown only when `last_api_update` is set,
+  because Tiled already renders that case as a distinct red "no update
+  received" and Dashboard as a red pill. Avoids double-flagging.
+- **Threshold read** via `has_app_context()`/`current_app.config`, default 5
+  on missing, invalid, or negative values.
+- **Tooltip wording** unified as "stale — updated <time_since>".
+
 ## 2026-11-15 — Widget detach and refresh filter (v069-06)
 
 - **Refresh filter:** `Widget.services.any(deleted_at IS NULL)`, i.e. only

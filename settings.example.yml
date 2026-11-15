@@ -49,3 +49,8 @@ register_field_ownership: user_wins
 # how long to default the user session, default is 120 minutes
 # can be set as USER_SESSION_LENGTH in ENV
 user_session_length: 120
+
+# Minutes without a notifier update before a dynamic service is flagged
+# stale (warning icon on the Dashboard, Tiled, and Compact views). Static
+# entries are never stale. The notifier re-scans every 60 s by default.
+stale_after_minutes: 5

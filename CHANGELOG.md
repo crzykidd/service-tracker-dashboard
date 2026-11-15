@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Stale indicator on every view.** A service whose last notifier update is
+  older than the threshold now shows an amber warning icon (tooltip "Stale —
+  updated <time>") on the Dashboard table and Compact view as well as Tiled.
+- **`stale_after_minutes` setting** (default `5`) sets that threshold.
+  Static entries are never stale.
+
 - **Settings → Deleted tab.** Deleted services now land here instead of
   vanishing. Each row shows the name, host, when it was deleted, and the days
   left before it is purged, with **Restore** and **Delete permanently**
@@ -19,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One staleness rule.** The Tiled view no longer has a separate 2-hour
+  clause; the single `stale_after_minutes` threshold decides. The Tiled
+  tooltip now reads "stale — updated <time>".
 - **Widget settings survive permanent deletion and can be re-attached.**
   Permanently deleting a service (or the nightly purge) now keeps its widget and
   stored values as a detached widget instead of erasing them. Settings →
