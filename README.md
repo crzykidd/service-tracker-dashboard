@@ -27,6 +27,7 @@ through the web UI or directly via API.
 2. [Screenshots](#screenshots)
 3. [Configuration](#configuration)
 4. [Docker Compose Setup](#docker-compose-setup)
+   - [Moving from Docker Hub](#moving-from-docker-hub)
 5. [Database Migrations](#database-migrations)
 6. [API: Registering Services](#api-registering-services)
 7. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
@@ -126,7 +127,7 @@ user_session_length: 120
 ```yaml
 services:
   service-tracker-dashboard:
-    image: crzykidd/service-tracker-dashboard:latest
+    image: ghcr.io/crzykidd/service-tracker-dashboard:latest
     container_name: service-tracker-dashboard
     ports:
       - 8815:8815
@@ -139,6 +140,34 @@ services:
       - ./config:/config
     restart: unless-stopped
 ```
+
+### Moving from Docker Hub
+
+STD images are now published to **GitHub Container Registry (GHCR)**.
+**v0.6.7 is the last release published to Docker Hub** — Docker Hub
+images (`crzykidd/service-tracker-dashboard`) will not receive further
+updates, and the v0.6.7 Docker Hub image shows a banner in the app
+reminding you to switch.
+
+To move, change one line in your compose file:
+
+```diff
+-    image: crzykidd/service-tracker-dashboard:latest
++    image: ghcr.io/crzykidd/service-tracker-dashboard:latest
+```
+
+Then pull and recreate:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Nothing else changes: the tags are the same (`:latest`, `:dev`,
+`:<version>`, `:<major>`), and your `/config` volume, database, and
+settings carry over as-is. If you pin a version, use the same tag on
+GHCR (e.g. `ghcr.io/crzykidd/service-tracker-dashboard:0.6.7`).
+GHCR images start at v0.6.7; older versions stay on Docker Hub only.
 
 ---
 
@@ -430,6 +459,11 @@ cached in the `widget_value` table. Retention: rolling 30 days
 ---
 
 ## Versioning & Releases
+
+Images are published to `ghcr.io/crzykidd/service-tracker-dashboard`.
+Docker Hub (`crzykidd/service-tracker-dashboard`) is deprecated and
+receives its last release at v0.6.7 — see
+[Moving from Docker Hub](#moving-from-docker-hub).
 
 - `:latest` follows `main` — CI-verified pre-release.
 - `:dev` follows `dev` — work in progress.

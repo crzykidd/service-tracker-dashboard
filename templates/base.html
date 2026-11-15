@@ -19,6 +19,21 @@
   <!-- Header -->
     <div class="text-xl font-semibold text-white mb-4">Service Tracker Dashboard</div>
 
+    {% if version_info.registry_notice == 'dockerhub' %}
+    <!-- Docker Hub deprecation banner (only in the Docker Hub image build) -->
+    <div id="registry-notice" class="registry-notice" role="alert">
+      <i class="ti ti-alert-triangle registry-notice-icon" aria-hidden="true"></i>
+      <div class="registry-notice-text">
+        <strong>STD has moved from Docker Hub to GitHub Container Registry.</strong>
+        This Docker Hub image will not receive further updates. Change your image to
+        <code>ghcr.io/crzykidd/service-tracker-dashboard</code> to keep getting releases.
+        <a href="https://github.com/crzykidd/service-tracker-dashboard#moving-from-docker-hub"
+           target="_blank" rel="noopener">How to update &rarr;</a>
+      </div>
+      <button type="button" class="registry-notice-dismiss" aria-label="Hide until next browser session">&times;</button>
+    </div>
+    {% endif %}
+
     <!-- Tabs -->
     <div class="border-b border-gray-700 mb-4">
       <div class="flex justify-between items-center">

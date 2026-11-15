@@ -112,3 +112,71 @@ None. The split is internal; no routes, schemas, or behavior change
 as a result of the refactor itself. (The other v0.5.0 changes — the
 canonical contract, retention, indexes — are listed separately in
 the changelog and PRD.)
+
+---
+
+## Frontend asset consolidation (v0.6.1, completed in v0.6.3)
+
+Through v0.5.0 every dashboard template carried its own inline
+`<style>` and `<script>` blocks. There was no shared CSS, and the
+three dashboard views (`/`, `/tiled_dash`, `/compact_dash`)
+re-defined overlapping component styling and behavior independently.
+
+### Why
+
+The Tiled redesign in v0.6.1 introduced a shared icon vocabulary and
+component classes (`.tile`, `.tile-drawer`, `.status-icon`,
+`.status-pill`, etc.) that all three dashboards needed to render
+consistently. Keeping the new components inline per-template would
+have multiplied the divergence the redesign was trying to eliminate.
+
+### What changed
+
+- `static/css/dashboard.css` introduced as the single stylesheet for
+  the dashboard surface. Design tokens (CSS custom properties) and
+  shared component classes live here.
+- `static/js/dashboard.js` introduced as the single behavior file.
+  Auto-refresh, drawer open/close, view-control submit-on-change,
+  tile click, filter input, group collapse, tools popover, delete
+  confirmation, clipboard helpers.
+- View detection via `<body data-view="...">` so the shared JS can
+  branch per-view without duplicating handlers.
+- Tabler Icons v3.34.0 loaded via cdnjs CDN. Tailwind CDN retained
+  for layout utilities. No frontend build step introduced.
+- Two inline-style blocks survived v0.6.1 (in `edit_entry.html` and
+  `settings.html`) and were removed in v0.6.3 along with a stray
+  `toggleGroupMode` scoping bug. v0.6.5 universal delete and v0.6.6
+  brand exposure icons / drawer modes layer on top of this same CSS
+  / JS pair.
+
+### Impact on existing installs
+
+None on the wire side. Visual output changed substantially (this is
+the Tiled redesign release); operators see new tile layout and icon
+vocabulary on first reload.
+
+---
+
+## Registry move: Docker Hub → GHCR (v0.6.7)
+
+### Why
+
+Docker Hub registry retention (pruning old `:sha-*` and semver tags)
+needs a Docker Hub token with delete rights and a custom cleanup job;
+GHCR retention runs on the built-in `GITHUB_TOKEN`, and every other
+crzynet project already publishes to GHCR.
+
+### What changed
+
+- `.github/workflows/dockerhub.yml` renamed to `publish.yml`; it pushes
+  to `ghcr.io/crzykidd/service-tracker-dashboard`.
+- v0.6.7 is a transition release published to **both** registries. The
+  Docker Hub image is built with `REGISTRY_NOTICE=dockerhub`, which
+  renders an in-app banner pointing operators at the README's "Moving
+  from Docker Hub" section. The GHCR build has no banner.
+
+### Impact on existing installs
+
+Docker Hub users keep working but are frozen at v0.6.7 (with the
+banner) until they switch the image line to GHCR. No data, config, or
+volume changes are involved. GHCR has no images older than v0.6.7.

@@ -15,7 +15,10 @@
 | 0.5     | 2026-05-14 | v0.6.0 released. The originally-planned v0.5.x (view controls + helper consolidation), v0.6.0 (compat shim removal + capture columns), and v0.7.0 (exposure interpreter) work shipped together as a single v0.6.0 release. Former §8 (v0.5.x planning) folded into the new §8 (Delivered in v0.6.0). §6.2 D2 marked Resolved in v0.6.0. Cross-repo coordination (now §10.2) collapsed the v0.3.2 / v0.4.0 notifier split into a single notifier v0.4.0 pairing. Later sections renumbered: §10/§11/§12 → §9/§10/§11. |
 | 0.6     | 2026-05-16 | v0.6.1 delivered. UI overhaul part 1: tiled drawer, Tabler Icons v3.34.0 icon vocabulary, per-template inline CSS/JS extracted to shared static files. §9 added. |
 | 0.7     | 2026-05-16 | v0.6.2 hotfix. Restored `toggleRestoreSource` dropped during v0.6.1 JS extraction; wired file-input change event for filename feedback on /settings restore. |
-| 0.8     | 2026-05-17 | v0.6.3–v0.6.6 UI Overhaul Part 2 arc delivered. Added §13 documenting v0.6.3 foundations, v0.6.4 mobile/tile restructure, v0.6.5 edit polish/delete UX/widget modal, and v0.6.6 widget drawer mode + brand exposure icons. Updated §9.6 arc forecast. |
+| 0.8     | 2026-05-17 | v0.6.3–v0.6.6 UI Overhaul Part 2 arc delivered. Added §10 documenting v0.6.3 foundations, v0.6.4 mobile/tile restructure, v0.6.5 edit polish/delete UX/widget modal, and v0.6.6 widget drawer mode + brand exposure icons (modal removed). |
+| 0.9     | 2026-05-23 | Documentation reconciliation audit. §9.6 forecast rewritten — the predicted v0.6.2 edit drawer / v0.6.3 staleness work did not ship; the actual v0.6.2–v0.6.6 arc is described in §10. §12 subsection numbering corrected (was using §10.x). §12.2 release history split notifier v0.3.2 (capture fields) from v0.4.0 (interpreters). FUTURE.md fictional release sequence references stripped. No code or schema changes. |
+| 0.11    | 2026-11-15 | v0.6.7 — registry move. §11 documents GHCR as the primary image registry and the final dual-publish to Docker Hub with the `REGISTRY_NOTICE` build arg driving the in-app deprecation banner. Workflow renamed `dockerhub.yml` → `publish.yml`. No schema, contract, or job changes. |
+| 0.10    | 2026-05-23 | §12.2 correction. The v0.3.2 / v0.4.0 split introduced in 0.9 was wrong — notifier tags confirm no v0.3.2 release was ever cut; the capture fields and the interpreter mechanism both shipped in v0.4.0. Collapsed back to a single v0.4.0 pairing, with a parenthetical noting v0.3.2 as a developed-but-unreleased label so a future reader doesn't re-split from the stale `models.py` / `schemas.py` comments. |
 
 ---
 
@@ -754,16 +757,26 @@ red `#ef4444` (bad), gray `#6b7280` (not configured / static).
 
 ### 9.6 UI rework arc
 
-v0.6.1 is the first of a sequence leading to v0.7.0:
+v0.6.1 is the first of a multi-release UI overhaul. The actual
+sequence that shipped on top of v0.6.1 is documented in §10:
 
-- **v0.6.2 (next)** — Edit drawer, replacing the full-page edit
-  navigation. The drawer carries URL state (bookmarkable).
-- **v0.6.x as needed** — Settings page polish, mobile breakpoint
-  tuning, followups from v0.6.1 review.
-- **v0.7.0** — Cuts when the UI theme feels complete, not on a fixed
-  schedule.
+- **v0.6.2** — Hotfix: restored `toggleRestoreSource` dropped during
+  the v0.6.1 JS extraction; wired the filename-display feedback on
+  /settings restore. (The originally-forecast "edit drawer" did not
+  ship and is no longer planned — the edit page got in-place polish
+  in v0.6.5 instead.)
+- **v0.6.3** — Orphan inline-CSS/JS sweep completing the v0.6.1
+  extraction; "what's new" popup; `version_info` context processor.
+- **v0.6.4** — Mobile filter bar, two-row tile icon layout, drawer
+  scroll-into-view on mobile.
+- **v0.6.5** — Edit-page polish, universal delete popover, widget
+  modal, auto-refresh pause on interaction.
+- **v0.6.6** — Widget drawer mode (replaces the v0.6.5 modal), brand
+  exposure icons (replace text-pill exposure badges).
 
-No backend, schema, or API changes are planned for this arc.
+No backend, schema, or API changes shipped in this arc except the
+v0.6.6 brand SVG assets under `static/icons/exposure/`. v0.7.0 will
+cut when there is a non-UI scoped change to deliver; no fixed date.
 
 ---
 
@@ -848,7 +861,15 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
 - Branch protection: require PR + green build check, block force-push,
   block deletion.
-- Image tags follow `.github/workflows/dockerhub.yml`:
+- Images are published by `.github/workflows/publish.yml` to
+  `ghcr.io/crzykidd/service-tracker-dashboard` (primary). Through
+  v0.6.7 the same workflow also publishes the deprecated Docker Hub
+  image `crzykidd/service-tracker-dashboard`, built with
+  `REGISTRY_NOTICE=dockerhub` so the app renders a "moved to GHCR"
+  banner (`base.html`) and a Settings → Service Info note. The build
+  arg lands in `/app/version.txt` as `registry_notice=` and is exposed
+  via `version_info`. Docker Hub publishing is removed after v0.6.7.
+- Image tags (identical on both registries):
   - push to `dev` → `:dev`, `:sha-<short>`
   - push to `main` → `:latest`, `:sha-<short>`
   - GitHub Release published → `:latest`, `:<semver>`, `:<major>`
@@ -861,13 +882,20 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 10.1 Contract ownership
+### 12.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
 here; the notifier follows.
 
-### 10.2 Release history
+Because STD's `RegisterPayload` uses `extra="forbid"`, unknown keys
+are rejected with HTTP 400 (not silently ignored). The
+consumer-leads-producer-follows ordering rule is therefore strict:
+any new field the notifier intends to send must be added to STD's
+schema and shipped first. The notifier may lag arbitrarily; it must
+not lead.
+
+### 12.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -875,17 +903,20 @@ here; the notifier follows.
    `/api/v1/register`.
 3. STD v0.6.0 removed `/api/register` and all legacy-key handling.
    Operators on notifier v0.3.0+ are unaffected.
-4. Notifier v0.4.0 (ships after STD v0.6.0) is the paired release
-   for everything new in STD v0.6.0: it populates the
-   `networks` / `exposed_ports` / `published_ports` capture fields
-   and introduces the YAML interpreter mechanism that emits
-   `exposure_observations`. STD's synthesizer reads those
-   observations and writes synthesized URLs into `internalurl` /
-   `externalurl`. Pre-v0.4.0 notifiers continue to register
-   successfully — they just don't send the new fields, so the
-   capture columns stay NULL and STD treats the missing
+4. Notifier v0.4.0 is the paired release for everything new in STD
+   v0.6.0: it populates the `networks` / `exposed_ports` /
+   `published_ports` capture fields **and** introduces the YAML
+   interpreter mechanism that emits `exposure_observations`. STD's
+   synthesizer reads those observations and writes synthesized URLs
+   into `internalurl` / `externalurl`. Pre-v0.4.0 notifiers continue
+   to register successfully — they just don't send the new fields,
+   so the capture columns stay NULL and STD treats the missing
    `exposure_observations` as "no update" (existing exposure rows
-   are preserved).
+   are preserved). (A v0.3.2 was developed for the capture fields
+   but was never cut as a release tag — it shipped inside v0.4.0
+   alongside the interpreter mechanism. Do not present v0.3.2 as a
+   shipped boundary; the only notifier release boundaries that
+   exist on this axis are v0.3.0 and v0.4.0.)
 
 ---
 
