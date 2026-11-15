@@ -46,6 +46,3 @@ htmlcov/
 
 # YAML backups if generated
 /config/backups/
-
-# vexp
-.vexp/

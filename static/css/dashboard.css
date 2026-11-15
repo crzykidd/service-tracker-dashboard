@@ -865,38 +865,3 @@
   border-color: var(--color-status-bad);
   color: var(--color-status-bad);
 }
-
-/* ── Docker Hub deprecation banner (v0.6.7) ───────────────── */
-.registry-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding: 10px 14px;
-  border: 1px solid #b45309;
-  border-radius: 6px;
-  background-color: rgba(180, 83, 9, 0.15);
-  color: #fde68a;
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-.registry-notice[hidden] { display: none; }
-.registry-notice-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
-.registry-notice-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.registry-notice-text code {
-  padding: 0 4px;
-  border-radius: 3px;
-  background-color: rgba(0, 0, 0, 0.3);
-  font-size: 0.85em;
-}
-.registry-notice-text a { color: #fff; text-decoration: underline; white-space: nowrap; }
-.registry-notice-dismiss {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: #fde68a;
-  font-size: 1.3rem;
-  line-height: 1;
-  cursor: pointer;
-}
-.registry-notice-dismiss:hover { color: #fff; }

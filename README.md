@@ -1,5 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
+![Version](https://img.shields.io/badge/version-0.6.8-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -23,20 +24,53 @@ through the web UI or directly via API.
 
 ## Table of Contents
 
-1. [What It Does](#what-it-does)
-2. [Screenshots](#screenshots)
-3. [Configuration](#configuration)
-4. [Docker Compose Setup](#docker-compose-setup)
+1. [What's New](#whats-new)
+2. [What It Does](#what-it-does)
+3. [Screenshots](#screenshots)
+4. [Configuration](#configuration)
+5. [Docker Compose Setup](#docker-compose-setup)
    - [Moving from Docker Hub](#moving-from-docker-hub)
-5. [Database Migrations](#database-migrations)
-6. [API: Registering Services](#api-registering-services)
-7. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
-8. [Files and Paths](#files-and-paths)
-9. [Health Checks](#health-checks)
-10. [Routes](#routes)
-11. [Widgets](#widgets)
-12. [Behavior Notes](#behavior-notes)
-13. [Versioning & Releases](#versioning--releases)
+6. [Database Migrations](#database-migrations)
+7. [API: Registering Services](#api-registering-services)
+8. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
+9. [Files and Paths](#files-and-paths)
+10. [Health Checks](#health-checks)
+11. [Routes](#routes)
+12. [Widgets](#widgets)
+13. [Behavior Notes](#behavior-notes)
+14. [Versioning & Releases](#versioning--releases)
+
+---
+
+## What's New
+
+### v0.6.8 (2026-11-15)
+
+GHCR is now the only registry -- Docker Hub images are no longer published.
+If you still pull `crzykidd/service-tracker-dashboard` from Docker Hub you
+are frozen on v0.6.7; switch to `ghcr.io/crzykidd/service-tracker-dashboard`
+(see [Moving from Docker Hub](#moving-from-docker-hub)).
+
+- `:dev` and `:latest` images now show the real version number in
+  Settings -> Service Info, and the What's New popup works on them.
+- Fixed: the Add page no longer returns a server error when Sort Priority
+  isn't a number, and the group dropdown stays populated when the form
+  re-displays after a validation error.
+- The "moved to GHCR" banner from the v0.6.7 Docker Hub image is removed.
+
+### v0.6.7 (2026-11-15)
+
+STD now publishes to GitHub Container Registry (GHCR). If you pull
+`crzykidd/service-tracker-dashboard` from Docker Hub, change your image to
+`ghcr.io/crzykidd/service-tracker-dashboard` -- this is the last release
+published to Docker Hub. Switching is a one-line image change in your
+compose file; your config, database, and settings carry over unchanged. See
+[Moving from Docker Hub](#moving-from-docker-hub).
+
+- Same tags as before on GHCR: `:latest`, `:dev`, `:<version>`, `:<major>`.
+- Installs still running the Docker Hub image show a "moved to GHCR" banner
+  on every page (dismissible per browser session) and a note on Settings
+  -> Service Info. The GHCR image does not show it.
 
 ---
 
@@ -143,11 +177,10 @@ services:
 
 ### Moving from Docker Hub
 
-STD images are now published to **GitHub Container Registry (GHCR)**.
-**v0.6.7 is the last release published to Docker Hub** — Docker Hub
-images (`crzykidd/service-tracker-dashboard`) will not receive further
-updates, and the v0.6.7 Docker Hub image shows a banner in the app
-reminding you to switch.
+STD images are published to **GitHub Container Registry (GHCR)** only.
+Docker Hub images (`crzykidd/service-tracker-dashboard`) are no longer
+published; **v0.6.7 was the last one** and it will not receive further
+updates.
 
 To move, change one line in your compose file:
 
@@ -461,19 +494,31 @@ cached in the `widget_value` table. Retention: rolling 30 days
 ## Versioning & Releases
 
 Images are published to `ghcr.io/crzykidd/service-tracker-dashboard`.
-Docker Hub (`crzykidd/service-tracker-dashboard`) is deprecated and
-receives its last release at v0.6.7 — see
+Docker Hub (`crzykidd/service-tracker-dashboard`) is no longer published;
+v0.6.7 was its last release — see
 [Moving from Docker Hub](#moving-from-docker-hub).
 
 - `:latest` follows `main` — CI-verified pre-release.
 - `:dev` follows `dev` — work in progress.
 - `:sha-<short>` published for every push.
 - Semver-tagged images (`:0.6.0`, `:0`) published from GitHub Releases.
+- The version number lives in the `VERSION` file at the repo root. The
+  Docker build writes it into the image, so `:dev` and `:latest` images
+  report the real version in Settings -> Service Info.
 
-Branch protection: PRs into `main` must pass the build check; force-push
-and branch deletion are blocked. Work happens on `dev`, opens a PR to
-`main`, and merges only when CI is green. Release tags are cut from the
-GitHub Releases UI on `main`.
+Branch protection: PRs into `main` must pass the image build check, CodeQL,
+and the CI checks (Lint, Config validation, Migration check, Compose
+validation); force-push and branch deletion are blocked. Old GHCR image
+versions are pruned automatically (30 most recent `sha-*`, 15 most recent
+semver; `latest`, `dev`, and major tags are kept). Work happens on `dev`
+and opens a PR to `main`, which merges only when CI is green.
+
+Releases are cut with two slash commands (`.claude/commands/`):
+`/release-prep <version>` on `dev` bumps `VERSION`, rolls the CHANGELOG,
+syncs the README and docs, and opens the `dev` -> `main` PR; after the PR
+is merged and `main` CI is green, `/release-cut <version>` tags `v<version>`
+and publishes the GitHub Release (whose notes are the CHANGELOG section).
+The publish workflow refuses a release whose tag does not match `VERSION`.
 
 ---
 

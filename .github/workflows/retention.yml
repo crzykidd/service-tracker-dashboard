@@ -1,0 +1,62 @@
+name: Registry retention
+
+# GHCR only. Docker Hub publishing stopped at v0.6.7 (no further images), so
+# it gets no retention job.
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types: [completed]
+  schedule:
+    - cron: '0 3 * * 0'  # Sunday 03:00 UTC
+
+permissions:
+  packages: write
+
+# NOTE: GITHUB_TOKEN can delete package versions only if this repository has
+# Admin access to the package (Package settings → Manage Actions access).
+
+# Untagged versions are deliberately NEVER deleted: multi-arch/provenance
+# builds store per-platform and attestation manifests as untagged versions
+# that tagged index manifests still reference.
+
+jobs:
+  prune:
+    name: Prune old image versions
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'schedule' ||
+      github.event.workflow_run.conclusion == 'success'
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Prune old sha-tagged versions (keep 30 most recent)
+        run: |
+          mapfile -t IDS < <(
+            gh api --paginate "/user/packages/container/service-tracker-dashboard/versions" \
+              --jq '.[] | select(
+                (.metadata.container.tags | any(startswith("sha-"))) and
+                (.metadata.container.tags | any(. == "latest" or . == "dev" or test("^[0-9]+$")) | not)
+              ) | "\(.created_at) \(.id)"' \
+              | sort -r | tail -n +31 | awk '{print $2}'
+          )
+          printf 'Found %d sha versions to prune\n' "${#IDS[@]}"
+          for id in "${IDS[@]}"; do
+            echo "Deleting version $id"
+            gh api --method DELETE "/user/packages/container/service-tracker-dashboard/versions/$id"
+          done
+
+      - name: Prune old semver versions (keep 15 most recent)
+        run: |
+          mapfile -t IDS < <(
+            gh api --paginate "/user/packages/container/service-tracker-dashboard/versions" \
+              --jq '.[] | select(
+                (.metadata.container.tags | any(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) and
+                (.metadata.container.tags | any(. == "latest" or . == "dev" or test("^[0-9]+$")) | not)
+              ) | "\(.created_at) \(.id)"' \
+              | sort -r | tail -n +16 | awk '{print $2}'
+          )
+          printf 'Found %d semver versions to prune\n' "${#IDS[@]}"
+          for id in "${IDS[@]}"; do
+            echo "Deleting version $id"
+            gh api --method DELETE "/user/packages/container/service-tracker-dashboard/versions/$id"
+          done

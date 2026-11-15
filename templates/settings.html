@@ -42,11 +42,6 @@
           <li><strong>Version:</strong> {{ version_info.version | default('unknown') }}</li>
           <li><strong>Commit:</strong> {{ version_info.commit | default('unknown') }}</li>
           <li><strong>Build Time:</strong> {{ version_info.build_time | default('unknown') }}</li>
-          {% if version_info.registry_notice == 'dockerhub' %}
-          <li><strong>Image source:</strong> Docker Hub (deprecated — no further updates).
-            Switch to <code>ghcr.io/crzykidd/service-tracker-dashboard</code>.
-            <a class="underline" href="https://github.com/crzykidd/service-tracker-dashboard#moving-from-docker-hub" target="_blank" rel="noopener">How to update</a></li>
-          {% endif %}
         </ul>
       </div>
       <h3 class="text-lg font-semibold text-white mt-6 mb-2">Current Configuration</h3>

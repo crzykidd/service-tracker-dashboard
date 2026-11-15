@@ -17,8 +17,12 @@
 | 0.7     | 2026-05-16 | v0.6.2 hotfix. Restored `toggleRestoreSource` dropped during v0.6.1 JS extraction; wired file-input change event for filename feedback on /settings restore. |
 | 0.8     | 2026-05-17 | v0.6.3–v0.6.6 UI Overhaul Part 2 arc delivered. Added §10 documenting v0.6.3 foundations, v0.6.4 mobile/tile restructure, v0.6.5 edit polish/delete UX/widget modal, and v0.6.6 widget drawer mode + brand exposure icons (modal removed). |
 | 0.9     | 2026-05-23 | Documentation reconciliation audit. §9.6 forecast rewritten — the predicted v0.6.2 edit drawer / v0.6.3 staleness work did not ship; the actual v0.6.2–v0.6.6 arc is described in §10. §12 subsection numbering corrected (was using §10.x). §12.2 release history split notifier v0.3.2 (capture fields) from v0.4.0 (interpreters). FUTURE.md fictional release sequence references stripped. No code or schema changes. |
-| 0.11    | 2026-11-15 | v0.6.7 — registry move. §11 documents GHCR as the primary image registry and the final dual-publish to Docker Hub with the `REGISTRY_NOTICE` build arg driving the in-app deprecation banner. Workflow renamed `dockerhub.yml` → `publish.yml`. No schema, contract, or job changes. |
 | 0.10    | 2026-05-23 | §12.2 correction. The v0.3.2 / v0.4.0 split introduced in 0.9 was wrong — notifier tags confirm no v0.3.2 release was ever cut; the capture fields and the interpreter mechanism both shipped in v0.4.0. Collapsed back to a single v0.4.0 pairing, with a parenthetical noting v0.3.2 as a developed-but-unreleased label so a future reader doesn't re-split from the stale `models.py` / `schemas.py` comments. |
+| 0.11    | 2026-11-15 | v0.6.7 — registry move. §11 documents GHCR as the primary image registry and the final dual-publish to Docker Hub with the `REGISTRY_NOTICE` build arg driving the in-app deprecation banner. Workflow renamed `dockerhub.yml` → `publish.yml`. No schema, contract, or job changes. |
+| 0.12    | 2026-11-15 | §11 documents the `CI` required checks and GHCR registry retention (adoption of `code-checkin-and-pr` v1.2.0). No schema, contract, or job changes. |
+| 0.13    | 2026-11-15 | §11: versioning now uses a bare-semver `VERSION` file (Dockerfile writes `/app/version.txt` from it; `APP_VERSION` build arg removed) and releases are cut with `/release-prep` + `/release-cut` (adoption of `release-prep-and-cut` v1.1.0). No schema, contract, or job changes. |
+| 0.14    | 2026-11-15 | §11: Docker Hub publishing removed; GHCR is the only registry (Docker Hub frozen at v0.6.7). The `REGISTRY_NOTICE` build arg, `registry_notice=` line in `/app/version.txt`, and in-app "moved to GHCR" banner were removed. No schema, contract, or job changes. |
+| 0.15    | 2026-11-15 | v0.6.8 released. First release under the adopted standards (code-checkin-and-pr 1.2.0, handoff-prompt-workflow 2.0.0, release-prep-and-cut 1.1.0); GHCR-only publishing; `VERSION` file drives the in-app version; Add Entry non-numeric sort-priority 500 fixed. No schema or contract changes. |
 
 ---
 
@@ -859,21 +863,37 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
-- Branch protection: require PR + green build check, block force-push,
-  block deletion.
+- Branch protection: require PR + green required checks, block
+  force-push, block deletion. Required checks: `build` (image build,
+  `publish.yml`), CodeQL, and the `CI` workflow jobs `Lint` (ruff,
+  `ruff.toml`), `Config validation` (YAML/JSON parse), `Migration check`
+  (`alembic upgrade head` on an empty DB, exactly one head), and
+  `Compose validation` (`docker compose config --quiet`). `CI` triggers
+  on push to `dev`/`main` only. No test suite exists yet, so the
+  standard's test check is exempt.
+- Registry retention: `.github/workflows/retention.yml` prunes GHCR
+  versions weekly and after each publish — keeps the 30 most recent
+  `sha-*` and 15 most recent semver versions, never deletes `latest`,
+  `dev`, major tags, or untagged versions. Docker Hub has no retention
+  (frozen at v0.6.7).
 - Images are published by `.github/workflows/publish.yml` to
-  `ghcr.io/crzykidd/service-tracker-dashboard` (primary). Through
-  v0.6.7 the same workflow also publishes the deprecated Docker Hub
-  image `crzykidd/service-tracker-dashboard`, built with
-  `REGISTRY_NOTICE=dockerhub` so the app renders a "moved to GHCR"
-  banner (`base.html`) and a Settings → Service Info note. The build
-  arg lands in `/app/version.txt` as `registry_notice=` and is exposed
-  via `version_info`. Docker Hub publishing is removed after v0.6.7.
-- Image tags (identical on both registries):
+  `ghcr.io/crzykidd/service-tracker-dashboard`, the only registry.
+  Docker Hub (`crzykidd/service-tracker-dashboard`) is frozen at v0.6.7
+  and no longer published; there is no in-app registry banner.
+- Image tags:
   - push to `dev` → `:dev`, `:sha-<short>`
   - push to `main` → `:latest`, `:sha-<short>`
   - GitHub Release published → `:latest`, `:<semver>`, `:<major>`
-- Tags are cut from the GitHub Releases UI against `main`.
+- The version is the single bare-semver line in the repo-root `VERSION`
+  file. The Dockerfile copies it and writes `version=` into
+  `/app/version.txt` (there is no `APP_VERSION` build arg), so `:dev`,
+  `:latest`, and release images all report the real version. `app.py`
+  falls back to `VERSION` for local runs without an image.
+- Releases are cut with `/release-prep <version>` (on `dev`: bump
+  `VERSION`, roll CHANGELOG, sync README/PRD/CLAUDE.md, open the PR) then,
+  after merge and green `main` CI, `/release-cut <version>` (tag
+  `v<version>` on `main` and publish the GitHub Release). `publish.yml`
+  fails a `release` build whose tag (minus `v`) differs from `VERSION`.
 
 ---
 

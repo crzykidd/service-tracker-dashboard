@@ -180,3 +180,37 @@ crzynet project already publishes to GHCR.
 Docker Hub users keep working but are frozen at v0.6.7 (with the
 banner) until they switch the image line to GHCR. No data, config, or
 volume changes are involved. GHCR has no images older than v0.6.7.
+
+### Follow-up
+
+Docker Hub publishing and the banner were removed in the release after
+v0.6.7: the Docker Hub steps and `REGISTRY_NOTICE` build arg left
+`publish.yml` and the Dockerfile, and the banner code left the templates,
+JS, and CSS. The README's "Moving from Docker Hub" section stays, since
+the frozen v0.6.7 Docker Hub image links to it.
+
+---
+
+## vexp removal (post-v0.6.7)
+
+### Why
+
+The repo had been wired for the vexp context engine (an MCP graph-RAG
+search tool): a `PreToolUse` hook that blocked Claude Code's Grep/Glob
+tools while the vexp daemon ran, plus vexp-generated agent instructions
+telling agents not to search the codebase directly. vexp was retired
+homelab-wide (the `vexp-context-engine` standard is sunset at v3.0.0)
+because its provisioning and per-session overhead outweighed its benefit.
+
+### What changed
+
+- Removed `.claude/hooks/vexp-guard.sh`, the hook entry and
+  `mcp__vexp__*` permissions in `.claude/settings.json`, the
+  vexp-generated `.claude/CLAUDE.md` and `.github/copilot-instructions.md`,
+  and the `.vexp/` line in `.gitignore`.
+- Added `standards.md` at the repo root recording the de-adoption, and a
+  pointer to it from `CLAUDE.md`.
+
+### Impact on existing installs
+
+None. Developer tooling only — no change to the app or images.
