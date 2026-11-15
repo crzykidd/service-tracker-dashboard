@@ -39,6 +39,7 @@ through the web UI or directly via API.
 12. [Widgets](#widgets)
 13. [Behavior Notes](#behavior-notes)
 14. [Versioning & Releases](#versioning--releases)
+15. [Development](#development)
 
 ---
 
@@ -498,7 +499,7 @@ Docker Hub (`crzykidd/service-tracker-dashboard`) is no longer published;
 v0.6.7 was its last release — see
 [Moving from Docker Hub](#moving-from-docker-hub).
 
-- `:latest` follows `main` — CI-verified pre-release.
+- `:latest` follows `main` and is re-tagged on every GitHub Release.
 - `:dev` follows `dev` — work in progress.
 - `:sha-<short>` published for every push.
 - Semver-tagged images (`:0.6.0`, `:0`) published from GitHub Releases.
@@ -519,6 +520,23 @@ syncs the README and docs, and opens the `dev` -> `main` PR; after the PR
 is merged and `main` CI is green, `/release-cut <version>` tags `v<version>`
 and publishes the GitHub Release (whose notes are the CHANGELOG section).
 The publish workflow refuses a release whose tag does not match `VERSION`.
+
+---
+
+## Development
+
+Work happens on the `dev` branch and reaches `main` through a pull request.
+A PR merges only when the required checks are green: `build` (image build),
+CodeQL, and the CI jobs `Lint`, `Config validation`, `Migration check`, and
+`Compose validation`. Lint (`ruff.toml`) is deliberately narrow: syntax errors
+and pyflakes only. There is no automated test suite yet.
+
+Releases go through `/release-prep` and `/release-cut` (see
+[Versioning & Releases](#versioning--releases)). Contributor and agent
+guidance lives in [`CLAUDE.md`](CLAUDE.md); adopted engineering standards in
+[`standards.md`](standards.md); handoff prompts in [`prompts/`](prompts/); and
+non-obvious design decisions in [`docs/decisions.md`](docs/decisions.md).
+The design record is [`docs/PRD.md`](docs/PRD.md).
 
 ---
 

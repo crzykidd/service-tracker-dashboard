@@ -214,3 +214,33 @@ because its provisioning and per-session overhead outweighed its benefit.
 ### Impact on existing installs
 
 None. Developer tooling only — no change to the app or images.
+
+---
+
+## Engineering standards adoption (v0.6.8)
+
+### Why
+
+Project process had grown informally (hand-written workflow notes in
+`CLAUDE.md`, a Docker Hub-era release flow, and a vexp setup that was never
+recorded as an adoption). The crzynet `homelab-configs` repo defines shared
+standards; aligning with them makes check-in, release, and agent-handoff
+behavior consistent across projects.
+
+### What changed
+
+- vexp de-adopted (see "vexp removal" above).
+- Three standards adopted, each with a verbatim snippet in `CLAUDE.md`:
+  `handoff-prompt-workflow` 2.0.0, `code-checkin-and-pr` 1.2.0, and
+  `release-prep-and-cut` 1.1.0. Pins live in [`standards.md`](../standards.md).
+- `VERSION` file added as the single source of the in-app version, with a
+  tag==`VERSION` guard in `publish.yml`.
+- v0.6.8 was the first release cut through `/release-prep` and
+  `/release-cut`; it also removed Docker Hub publishing.
+- Judgment calls are logged in [`decisions.md`](./decisions.md).
+
+### Impact on existing installs
+
+Operators see only that `:dev` / `:latest` images now report the real version
+and that Docker Hub is no longer published. Everything else is developer
+process.

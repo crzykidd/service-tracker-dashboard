@@ -5,9 +5,12 @@
 No change is complete until its documentation is updated **in the same
 commit as the code**. This is not optional and not deferrable:
 
-1. **CHANGELOG.md — every change, no exceptions.** Add an entry under
+1. **CHANGELOG.md — every operator-visible change.** Add an entry under
    `[Unreleased]` describing what changed for the operator. A code
-   change with no CHANGELOG entry is an incomplete change.
+   change with no CHANGELOG entry is an incomplete change. Tooling-only
+   and docs-only changes (agent guidance, `.claude/` config, CI, doc
+   refreshes) have no operator effect: record them in `docs/HISTORY.md`
+   or `docs/decisions.md` instead (see `docs/decisions.md`).
 2. **PRD (`docs/PRD.md`) — confirm on every change.** Before
    finishing, explicitly check whether the change touches anything the
    PRD documents (architecture, the register contract, schema, jobs,
@@ -21,13 +24,13 @@ commit as the code**. This is not optional and not deferrable:
    it from FUTURE.md and document it in the PRD.
 5. Never leave CHANGELOG, PRD, or README out of sync with the code.
 
-> **Known debt:** the PRDs and CLAUDE.md files in both this repo and
-> the notifier have drifted from shipped reality before (this repo's
-> own build-status and the notifier's were both stale). A full audit
-> of both repos' `docs/` against actual shipped state is a pending
-> task. Until that audit happens, trust the code and CHANGELOG over
-> the PRD where they disagree, and flag any contradiction you notice
-> rather than propagating it.
+> **Known debt:** this repo's docs drifted from shipped reality before.
+> The 2026-05-23 reconciliation audited `docs/` against shipped state
+> (PRD revisions 0.9 and 0.10), and the 2026-11-15 refresh brought
+> CLAUDE.md, the PRD, and the README current through v0.6.8. The
+> notifier repo's docs audit is not recorded here and may still be
+> pending. Where docs and code disagree, trust the code and CHANGELOG
+> over the PRD, and flag the contradiction rather than propagating it.
 
 ## Standards
 
@@ -158,12 +161,10 @@ ask before acting.
 
 ## Commit style
 
-- `feat:` new feature
-- `chore:` config, tooling, maintenance
-- `fix:` bug fix
-- `docs:` documentation only changes
-- `refactor:` non-behavior-changing internal cleanup (project extension to
-  the `code-checkin-and-pr` standard's prefix set)
+The prefixes (`feat:`, `fix:`, `chore:`, `docs:`) and the no-`Co-authored-by`
+rule come from the `code-checkin-and-pr` snippet above. Project extension:
+`refactor:` for non-behavior-changing internal cleanup. A release prep uses
+`chore(release): prepare v<version>`.
 
 ## Stack
 
@@ -176,7 +177,8 @@ ask before acting.
 - Jinja templates
 - Container: single-image Docker
   - `Dockerfile` — production image
-  - `docker-compose.yml` — example deployment
+  - `docker-compose.yml` — local dev compose (builds from source, mounts
+    the repo); the deployment example is in `README.md` → Docker Compose Setup
 
 ## Configuration
 
@@ -191,63 +193,55 @@ ask before acting.
 
 - Full PRD is at `docs/PRD.md` — read this before starting any phase.
 - Project history (structural events, milestones) at `docs/HISTORY.md`.
+- Parked ideas (not built, not in the PRD) at `docs/FUTURE.md`.
 - Decision log (non-obvious calls, rejected alternatives) at
   `docs/decisions.md`, newest at top.
+- Adopted engineering standards and their pinned versions at `standards.md`.
 - Handoff prompts (live queue) in `prompts/`; finished ones in
   `prompts/done/` / `prompts/failed/`. New prompts start from
   `prompts/TEMPLATE.md`.
+- `CHANGELOG.md` at the root — operator-facing release notes (see
+  Changelog Process).
 - `README.md` at the root — keep it current with what has been built.
 - Commit doc updates in the same commit as the code changes they describe.
 
 ## Build Status
 
-Current shipped release: **v0.6.8** (latest tag on `main`, once cut; v0.6.5 was
-also released but its tag is the typo'd bare `0.6.5` — see the audit
-finding in this commit's history).
-In flight: nothing scoped — `[Unreleased]` in CHANGELOG is empty.
+Current shipped release: **v0.6.8** (latest tag on `main`).
+In flight: `dev` holds the release-prep migration-check fix (`2df45f1`) and the docs refresh; nothing else is scoped.
 
-> Keep this to the two lines above — "latest tag" and "in flight."
-> Do not maintain a long per-version history here; the CHANGELOG and
-> git tags are the record of what shipped. Update these two lines on
-> each release / when work starts on `dev`.
+> Keep this to the two lines above; CHANGELOG and git tags are the record
+> of what shipped. Update them on each release / when work starts on `dev`.
 
-## Git Workflow
+## CI, Registry, and Releases
 
-- Work on `dev` branch for all changes.
-- Push to `dev` freely — builds `:dev` images.
-- When ready to release:
-  - Create PR `dev` → `main` on GitHub.
-  - Merge after CI passes.
-  - Cut the release with `/release-cut <version>` (see Release Process).
-- Branch protection on `main` requires a PR plus green required checks
-  (`build`, `Lint`, `Config validation`, `Migration check`,
-  `Compose validation`, CodeQL), and blocks force-push and deletion.
-  `CI` (`.github/workflows/ci.yml`) runs on push to `dev`/`main` only.
-  The `Test` check is exempt until a test suite exists (see `standards.md`).
+Branching, PR flow, and the release rules are in the snippets above; the
+project-specific facts are:
 
-## Release Process
-
-- Images publish to GHCR (`ghcr.io/crzykidd/service-tracker-dashboard`)
-  via `.github/workflows/publish.yml`. GHCR is the only registry; Docker
-  Hub publishing stopped at v0.6.7.
-- Push to `dev` — GitHub Actions builds and pushes `:dev` and
-  `:sha-<short>` images.
-- Push to `main` (via PR from `dev`) — GitHub Actions builds and pushes
-  `:latest` and `:sha-<short>` images.
-- The version lives in the bare-semver `VERSION` file at the repo root; the
-  Dockerfile writes `/app/version.txt` from it, so every image reports it.
-- To ship: `/release-prep <version>` on `dev` (bumps `VERSION`, rolls
+- **Required checks on `main`:** `build` (image build, `publish.yml`),
+  `Lint`, `Config validation`, `Migration check`, `Compose validation`,
+  and CodeQL. `CI` (`.github/workflows/ci.yml`) runs on push to
+  `dev`/`main` only. The `Test` check is exempt until a test suite exists
+  (see `standards.md`).
+- **GHCR is the only registry** (`ghcr.io/crzykidd/service-tracker-dashboard`,
+  via `.github/workflows/publish.yml`). Docker Hub is frozen at v0.6.7.
+  Push to `dev` builds `:dev` and `:sha-<short>`; push to `main` builds
+  `:latest` and `:sha-<short>`; a published release builds `:latest`,
+  `:X.Y.Z`, and `:X`. `retention.yml` prunes old GHCR versions.
+- **The version lives in the bare-semver `VERSION` file** at the repo root;
+  the Dockerfile writes `/app/version.txt` from it. `publish.yml` fails a
+  release whose tag (minus `v`) != `VERSION`.
+- **To ship:** `/release-prep <version>` on `dev` (bumps `VERSION`, rolls
   CHANGELOG, syncs docs, opens the PR) → human merges the PR and waits for
   CI and the `:latest` build → `/release-cut <version>` (tags `v<version>`,
-  publishes the release; GitHub Actions then builds `:latest`, `:X.Y.Z`,
-  and `:X`). `publish.yml` fails a release whose tag != `VERSION`.
+  publishes the release). Commands live in `.claude/commands/`.
 
 ## Changelog Process
 
-- `CHANGELOG.md` lives at repo root.
-- Follow Keep a Changelog format (keepachangelog.com).
-- Add entries to `[Unreleased]` section as features are built.
+- `CHANGELOG.md` lives at repo root; Keep a Changelog format.
+- Add entries to `[Unreleased]` as features are built.
 - User-facing language only — describe what changed for the operator.
+  Tooling-only changes stay out (see Always, item 1).
 - Categories: Added, Changed, Fixed, Security, Deprecated, Removed.
 - On release: `/release-prep` moves `[Unreleased]` to a new version section
   dated today (`## [X.Y.Z] — YYYY-MM-DD`, em dash; the What's New popup parses it).
@@ -266,7 +260,7 @@ The two are coupled at exactly one seam: this app's `/api/v1/register`
 wire contract.
 
 - **STD owns the contract.** `schemas.py` defines a valid payload and
-  uses `extra="forbid"` — unknown keys are rejected with HTTP 422, not
+  uses `extra="forbid"` — unknown keys are rejected with HTTP 400, not
   ignored. (See Register Contract Rules below.)
 - **The notifier is the producer.** It sends what this app documents.
 
@@ -353,7 +347,7 @@ A newer STD with an older notifier must keep working:
   invert this ordering; it's the contract operators rely on to
   protect their UI edits from being clobbered.
 
-## Module Layout (current, v0.6.0)
+## Module Layout
 
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints, jobs
@@ -366,18 +360,24 @@ routes_api.py       ← /api/v1/register
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
 jobs.py             ← health check loop, widget refresh, backup, retention
-health.py           ← /healthz, /readyz
+health.py           ← /healthz (liveness; /readyz not implemented)
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates
-static/             ← static assets
+static/             ← static assets (css/, js/, icons/)
 widgets/            ← per-widget plugin dirs
-alembic/            ← migrations
+alembic/            ← migrations (alembic.ini at root)
+scripts/            ← manual helper scripts (test_widget.py; not a test suite)
+VERSION             ← bare-semver version source of truth
+ruff.toml           ← lint config for CI (E9 + F only)
+Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+settings.example.yml, .env.example
+standards.md        ← adopted standards + pinned versions
+.github/workflows/  ← ci.yml, publish.yml, retention.yml
+.claude/commands/   ← release-prep.md, release-cut.md
+prompts/            ← handoff prompts (TEMPLATE.md, done/, failed/)
+docs/               ← PRD.md, HISTORY.md, FUTURE.md, decisions.md, screenshots/
 ```
-
-## Git Rules
-
-- Do NOT add `Co-authored-by` lines to commit messages.

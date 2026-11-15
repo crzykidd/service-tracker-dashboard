@@ -5,6 +5,25 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — CLAUDE.md consolidation after the standards adoption
+
+- **Removed** "Git Workflow" and "Git Rules" (fully covered by the
+  `code-checkin-and-pr` snippet) and the four standard prefixes in "Commit
+  style" (kept only the `refactor:` extension and the release-prep message).
+  **Merged** "Git Workflow" (required checks, CI trigger, `Test` exemption) and
+  "Release Process" (GHCR, tags, `VERSION`, `/release-prep` -> `/release-cut`)
+  into one "CI, Registry, and Releases" section: project-specific facts only,
+  one place per fact.
+- **Always item 1 narrowed** from "every change" to "every operator-visible
+  change", matching the existing rule that tooling-only changes go in
+  HISTORY/decisions, not CHANGELOG.
+- **Snippets left untouched**, including the stale `release-prep-and-cut @ v1.0.0`
+  source comment (pin in `standards.md` is 1.1.0); snippets are read-only.
+- CLAUDE.md said unknown register keys return HTTP 422; the code and PRD say
+  400. Corrected to 400.
+
+---
+
 ## 2026-11-15 — Adopting release-prep-and-cut: VERSION file, no APP_VERSION, tag guard
 
 - **`VERSION` is the single source of the in-app version.** The Dockerfile

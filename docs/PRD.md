@@ -23,6 +23,7 @@
 | 0.13    | 2026-11-15 | §11: versioning now uses a bare-semver `VERSION` file (Dockerfile writes `/app/version.txt` from it; `APP_VERSION` build arg removed) and releases are cut with `/release-prep` + `/release-cut` (adoption of `release-prep-and-cut` v1.1.0). No schema, contract, or job changes. |
 | 0.14    | 2026-11-15 | §11: Docker Hub publishing removed; GHCR is the only registry (Docker Hub frozen at v0.6.7). The `REGISTRY_NOTICE` build arg, `registry_notice=` line in `/app/version.txt`, and in-app "moved to GHCR" banner were removed. No schema, contract, or job changes. |
 | 0.15    | 2026-11-15 | v0.6.8 released. First release under the adopted standards (code-checkin-and-pr 1.2.0, handoff-prompt-workflow 2.0.0, release-prep-and-cut 1.1.0); GHCR-only publishing; `VERSION` file drives the in-app version; Add Entry non-numeric sort-priority 500 fixed. No schema or contract changes. |
+| 0.16    | 2026-11-15 | Docs refresh after the standards adoption. Added §11 (v0.6.7–v0.6.8 registry move and engineering standards); later sections renumbered (§11→§12, §12→§13, §13→§14). §3.1 module layout updated to the current tree. §6 retitled as a historical baseline. No code, schema, or contract changes. |
 
 ---
 
@@ -33,14 +34,15 @@
 3. [Architecture](#3-architecture)
 4. [Configuration Model](#4-configuration-model)
 5. [Data Model](#5-data-model)
-6. [Current State (v0.4.14)](#6-current-state-v0414)
+6. [Historical Baseline: State at v0.4.14](#6-historical-baseline-state-at-v0414)
 7. [v0.5.0 — Cleanup Release](#7-v050--cleanup-release)
 8. [v0.6.0 — Delivered](#8-v060--delivered)
 9. [v0.6.1 — UI Rework Part 1 (Delivered)](#9-v061--ui-rework-part-1-delivered)
 10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
-11. [Versioning, Branches, and Releases](#11-versioning-branches-and-releases)
-12. [Cross-Repo Coordination](#12-cross-repo-coordination)
-13. [Open Questions](#13-open-questions)
+11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
+12. [Versioning, Branches, and Releases](#12-versioning-branches-and-releases)
+13. [Cross-Repo Coordination](#13-cross-repo-coordination)
+14. [Open Questions](#14-open-questions)
 
 ---
 
@@ -136,7 +138,7 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               └─────────────────────────────────────────┘
 ```
 
-### 3.1 Module layout (v0.6.0)
+### 3.1 Module layout
 
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints
@@ -154,8 +156,7 @@ routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
 jobs.py             ← URL health-check loop, widget refresh loop,
                       daily backup, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
-health.py           ← /healthz (liveness). /readyz deferred to a later
-                      release.
+health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
@@ -163,9 +164,19 @@ synthesizer.py      ← exposure → internalurl/externalurl translation +
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates
-static/             ← static assets
+static/             ← static assets (css/, js/, icons/)
 widgets/            ← per-widget plugin dirs
-alembic/            ← migrations
+alembic/            ← migrations (alembic.ini at root)
+scripts/            ← manual helper scripts (test_widget.py; not a test suite)
+VERSION             ← bare-semver version source of truth
+ruff.toml           ← lint config for CI (E9 + F only)
+Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+settings.example.yml, .env.example
+standards.md        ← adopted standards + pinned versions
+.github/workflows/  ← ci.yml, publish.yml, retention.yml
+.claude/commands/   ← release-prep.md, release-cut.md
+prompts/            ← handoff prompts (TEMPLATE.md, done/, failed/)
+docs/               ← PRD.md, HISTORY.md, FUTURE.md, decisions.md, screenshots/
 ```
 
 ### 3.2 Module responsibilities
@@ -291,7 +302,10 @@ exposure data arrives.
 
 ---
 
-## 6. Current State (v0.4.14)
+## 6. Historical Baseline: State at v0.4.14
+
+> Historical snapshot of the pre-v0.5.0 codebase, kept for context. It does
+> not describe the current state; see §§7–11 for what shipped since.
 
 Tags shipped on `main`: v0.1.0 → v0.4.14. (One stray tag `v.0.4.6` with
 an extra dot will be deleted as part of v0.5.0 housekeeping.)
@@ -859,7 +873,43 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 
 ---
 
-## 11. Versioning, Branches, and Releases
+## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
+
+No schema, register-contract, or job changes. Reference for the resulting
+release mechanics is §12 (Versioning, Branches, and Releases); this section
+records what was delivered and why.
+
+### 11.1 v0.6.7 — Registry move
+
+- Images moved to GHCR (`ghcr.io/crzykidd/service-tracker-dashboard`);
+  `dockerhub.yml` was renamed `publish.yml`.
+- v0.6.7 was published to both registries. The Docker Hub build set
+  `REGISTRY_NOTICE=dockerhub`, which rendered an in-app "moved to GHCR"
+  banner; the GHCR build did not. This was the banner-only final Docker Hub
+  release. Rationale: [`decisions.md`](./decisions.md).
+
+### 11.2 v0.6.8 — Standards adoption and Docker Hub removal
+
+- Docker Hub publishing, the `REGISTRY_NOTICE` build arg, and the banner were
+  removed. Docker Hub tags stay frozen at v0.6.7.
+- `VERSION` (bare semver) is the single source of the in-app version; the
+  Dockerfile writes `/app/version.txt` from it and the `APP_VERSION` build arg
+  is gone. `publish.yml` fails a release whose tag (minus `v`) != `VERSION`.
+- CI checks (`Lint`, `Config validation`, `Migration check`,
+  `Compose validation`) added in `ci.yml`; GHCR retention added in
+  `retention.yml`; CodeQL and the image `build` job are the other required
+  checks (§12).
+- Release commands `/release-prep` and `/release-cut` added in
+  `.claude/commands/`.
+- Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
+  (`NameError`); the group dropdown is now also populated on every
+  validation re-render.
+- Developer tooling: vexp removed; `standards.md`, `prompts/`, and
+  `docs/decisions.md` added. See [`HISTORY.md`](./HISTORY.md).
+
+---
+
+## 12. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -897,12 +947,12 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 
 ---
 
-## 12. Cross-Repo Coordination
+## 13. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 12.1 Contract ownership
+### 13.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -915,7 +965,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 12.2 Release history
+### 13.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -940,7 +990,7 @@ not lead.
 
 ---
 
-## 13. Open Questions
+## 14. Open Questions
 
 - **Widget retention granularity.** A flat 30-day window may be too
   much for some widgets and not enough for others. Per-widget
