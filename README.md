@@ -14,11 +14,9 @@ kept current by a sidecar process — typically
 posting to STD's register endpoint, but you can also add entries by hand
 through the web UI or directly via API.
 
-> **v0.6.0 removes the legacy `/api/register` endpoint.** All registers
-> must use `/api/v1/register` with canonical key names. If you're
-> running `docker-api-notifier`, v0.3.0 or later is required for basic
-> registration; v0.4.0 is the paired release that populates the new
-> network / port / exposure-observation fields.
+> **Compatibility:** STD v0.6.0+ requires `docker-api-notifier` v0.3.0+
+> (`/api/v1/register` only). Network, port, and exposure data needs
+> notifier v0.4.0+.
 
 ---
 
@@ -106,7 +104,7 @@ compose file; your config, database, and settings carry over unchanged. See
 
 ## Screenshots
 
-<!-- TODO(v0.6.1): Screenshots below predate the v0.6.1 tile redesign (host line removed from tile face, icon-row status strip, expand drawer replacing inline widget data, Tabler icons replacing emoji badges). Refresh before next public announcement. -->
+<!-- TODO(v0.6.1): Still outstanding as of v0.6.9. Screenshots below predate the v0.6.1 tile redesign (host line removed from tile face, icon-row status strip, expand drawer replacing inline widget data, Tabler icons replacing emoji badges). Refresh before next public announcement. -->
 
 | Main Dashboard | Tiled View | Compact View |
 |---|---|---|
@@ -207,7 +205,7 @@ Nothing else changes: the tags are the same (`:latest`, `:dev`,
 `:<version>`, `:<major>`), and your `/config` volume, database, and
 settings carry over as-is. If you pin a version, use the same tag on
 GHCR (e.g. `ghcr.io/crzykidd/service-tracker-dashboard:0.6.7`).
-GHCR images start at v0.6.7; older versions stay on Docker Hub only.
+Docker Hub images stop at v0.6.7; GHCR is the only registry from v0.6.8 on.
 
 ---
 

@@ -34,6 +34,7 @@
 | 0.24    | 2026-11-15 | §12.7 delivered (unreleased): `stale_after_minutes` setting (default 5) drives `is_docker_status_stale`; Tiled 120-minute clause removed; stale icon added to Dashboard and Compact. No schema or wire-contract changes. |
 | 0.25    | 2026-11-15 | §12.8 delivered (unreleased): `health_check_timeout` setting; per-service `health_check_timeout` / `health_check_verify_tls` columns (§5.5) editable on Edit and Add; backups round-trip both. Wire contract unchanged. |
 | 0.26    | 2026-11-15 | §12.9 delivered (unreleased): production runs gunicorn (one worker, four threads) via `gunicorn.conf.py`; startup work consolidated in `app.run_startup_tasks()`; `requirements.txt` fully pinned from `requirements.in`. §3 architecture and module layout updated. Wire contract unchanged. |
+| 0.27    | 2026-11-15 | §12.10 delivered (unreleased): CHANGELOG historical dates corrected from tags; MIT `LICENSE` added; README compatibility note and registry wording refreshed. No code, schema, or wire-contract changes. |
 
 ---
 
@@ -1188,7 +1189,7 @@ Resolves the Open Question on health-check timeouts (§15).
   `requirements.in` via `uv pip compile --python-version 3.11`; the image
   is built for linux/amd64 only (publish.yml sets no platforms).
 
-### 12.10 Docs loose ends [`v069-10-docs-loose-ends`] — Planned
+### 12.10 Docs loose ends [`v069-10-docs-loose-ends`] — Delivered (unreleased)
 
 - CHANGELOG: replace the `2026-XX-XX` placeholder dates on 0.1.x–0.4.x
   with the real git-tag dates (all **2025**; e.g. v0.4.0 2025-06-05,
@@ -1202,6 +1203,9 @@ Resolves the Open Question on health-check timeouts (§15).
   stale in `homelab-configs` itself; fix it there, then re-sync.
 - README screenshots remain stale (needs a live instance; not
   agent-doable).
+- As built: dates taken from tags (0.3.x/0.2.x/0.1.x series use v0.3.0
+  2025-05-31, v0.2.0 2025-05-27, v0.1.0 2025-05-26). The What's New
+  parser skips `[0.x.x] series` headers (no match), so they are inert.
 
 ---
 

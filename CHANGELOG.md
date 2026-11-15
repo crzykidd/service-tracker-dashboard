@@ -585,62 +585,62 @@ extracted to shared static files, Compact tab-highlight fix.
 
 ---
 
-## [0.4.14] — 2026-XX-XX
+## [0.4.14] — 2025-07-12
 
 Released. Detailed notes not retained.
 
-## [0.4.13] — 2026-XX-XX
+## [0.4.13] — 2025-06-23
 Released.
 
-## [0.4.12] — 2026-XX-XX
+## [0.4.12] — 2025-06-22
 Released.
 
-## [0.4.11] — 2026-XX-XX
+## [0.4.11] — 2025-06-22
 Released.
 
-## [0.4.10] — 2026-XX-XX
+## [0.4.10] — 2025-06-21
 Released.
 
-## [0.4.9] — 2026-XX-XX
+## [0.4.9] — 2025-06-21
 
 Breaking change: required a database backup + delete + restore on upgrade.
 
-## [0.4.8] — 2026-XX-XX
+## [0.4.8] — 2025-06-21
 Released.
 
-## [0.4.7] — 2026-XX-XX
+## [0.4.7] — 2025-06-21
 Released.
 
-## [0.4.6] — 2026-XX-XX
+## [0.4.6] — 2025-06-07
 Released.
 
-## [0.4.5] — 2026-XX-XX
+## [0.4.5] — 2025-06-07
 Released.
 
-## [0.4.4] — 2026-XX-XX
+## [0.4.4] — 2025-06-06
 Released.
 
-## [0.4.3] — 2026-XX-XX
+## [0.4.3] — 2025-06-06
 Released.
 
-## [0.4.2] — 2026-XX-XX
+## [0.4.2] — 2025-06-05
 Released.
 
-## [0.4.1] — 2026-XX-XX
+## [0.4.1] — 2025-06-05
 Released.
 
-## [0.4.0] — 2026-XX-XX
+## [0.4.0] — 2025-06-05
 Released.
 
-## [0.3.x] series — 2026-XX-XX
+## [0.3.x] series — 2025-05-31
 
 v0.3.0 through v0.3.9 released. Detailed notes not retained.
 
-## [0.2.x] series — 2026-XX-XX
+## [0.2.x] series — 2025-05-27
 
 v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
-## [0.1.x] series — 2026-XX-XX
+## [0.1.x] series — 2025-05-26
 
 Initial development releases v0.1.0 through v0.1.4.
 

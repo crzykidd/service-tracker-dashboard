@@ -258,3 +258,12 @@ behavior consistent across projects.
 Operators see only that `:dev` / `:latest` images now report the real version
 and that Docker Hub is no longer published. Everything else is developer
 process.
+
+---
+
+## Docs loose ends (v0.6.9 cycle)
+
+CHANGELOG historical dates corrected from git tags (the 0.1.x-0.4.x
+`2026-XX-XX` placeholders were 2025 dates); MIT `LICENSE` added (the README
+badge and link already pointed at one); README compatibility banner and
+registry wording refreshed.

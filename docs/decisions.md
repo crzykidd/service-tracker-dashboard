@@ -5,6 +5,16 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Docs loose ends (v069-10)
+
+- **Series headers keep the `[0.x.x] series` form**: the What's New regex needs
+  `\d+.\d+.\d+`, so they never match. Side effect: the `[0.4.0]` section body
+  runs to EOF and swallows the 0.3.x/0.2.x/0.1.x series text in the popup.
+  Left as is (cosmetic, only seen when upgrading from <0.4.0); not worth a
+  parser change.
+
+---
+
 ## 2026-11-15 — gunicorn and pins (v069-09)
 
 - **Startup via `post_worker_init`, not `preload_app`**: threads started in
