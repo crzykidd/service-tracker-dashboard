@@ -5,6 +5,21 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — gunicorn and pins (v069-09)
+
+- **Startup via `post_worker_init`, not `preload_app`**: threads started in
+  the master don't survive the fork. `run_startup_tasks()` is guarded by a
+  module flag so it is a no-op if called twice in one process.
+- **`gunicorn.conf.py` timeout = 60 s** (default 30) so slow register/icon
+  fetches aren't killed; a worker kill would restart the scheduler.
+- **Pins resolved for Python 3.11 only**, no platform markers: publish.yml
+  builds linux/amd64 only. CI `Test`/`Migration check` install the pinned set
+  unchanged; `requirements-dev.txt` stays `-r requirements.txt` + pytest.
+- **Docker verification note**: this host's default log driver is `loki`,
+  which swallows `docker logs`; verify with `--log-driver json-file`.
+
+---
+
 ## 2026-11-15 — Health-check options (v069-08)
 
 - **Invalid timeout on edit keeps the stored value** (flash warning, rest of the

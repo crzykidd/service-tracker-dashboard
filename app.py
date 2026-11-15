@@ -3,7 +3,8 @@
 `create_app()` builds and returns the Flask app: loads settings,
 binds extensions, registers blueprints, error handlers, context
 processors, and template filters. It does NOT start background
-workers — the __main__ entry point below is responsible for that,
+workers — run_startup_tasks() (called from __main__ or the gunicorn
+post_worker_init hook) is responsible for that,
 so importing this module is side-effect-light enough to allow
 alembic and ad-hoc scripts to grab `app` without spawning threads.
 """
@@ -212,14 +213,27 @@ def create_default_admin(app):
 app = create_app()
 
 
-if __name__ == '__main__':
+_startup_done = False
+
+
+def run_startup_tasks(app):
+    """Default admin, icon sweep, and background workers (scheduler + health
+    thread). Idempotent within a process: a second call is a no-op, so the
+    scheduler and health thread can never be started twice."""
+    global _startup_done
+    if _startup_done:
+        return
+    _startup_done = True
     create_default_admin(app)
     verify_and_fetch_missing_icons(app)
+    start_background_workers(app)
 
+
+if __name__ == '__main__':
     # In Werkzeug's debug reloader the script runs twice (supervisor + child).
     # Only the child (WERKZEUG_RUN_MAIN=true) should own the workers.
     if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        start_background_workers(app)
+        run_startup_tasks(app)
 
     logger.info(f"🚀 Starting app (debug={app.debug}) on port 8815")
     app.run(host='0.0.0.0', port=8815, debug=app.debug)

@@ -172,6 +172,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 - Flask, Flask-SQLAlchemy, Flask-Login
 - SQLAlchemy + Alembic (migrations)
 - APScheduler (background jobs)
+- gunicorn (production server; exactly ONE worker, see `gunicorn.conf.py`)
 - pydantic v2 (request validation; introduced in v0.5.0)
 - SQLite (WAL mode)
 - Jinja templates
@@ -375,7 +376,12 @@ tests/              ← pytest suite (conftest.py sets STD_CONFIG_DIR before imp
 requirements-dev.txt ← pytest + runtime deps; CI/dev only, not in the image
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
-Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+Dockerfile, entrypoint.sh, docker-compose.yml
+gunicorn.conf.py    ← gunicorn config; workers MUST stay 1; post_worker_init runs startup
+requirements.in     ← direct deps; edit this, then `uv pip compile` (see README)
+requirements.txt    ← fully pinned, generated from requirements.in
+requirements-dev.txt ← pinned pytest + -r requirements.txt; CI/dev only
+tests/              ← pytest suite
 settings.example.yml, .env.example
 standards.md        ← adopted standards + pinned versions
 .github/workflows/  ← ci.yml, publish.yml, retention.yml

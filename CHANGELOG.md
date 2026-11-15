@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Production server is now gunicorn** (one worker, four threads) instead of
+  the Flask development server. Port 8815 and all configuration are unchanged,
+  so no action is needed. Startup log lines now come from gunicorn alongside the
+  app's own, and each request is access-logged to the container output. The
+  single worker is deliberate: the scheduler, health-check thread and register
+  lock are in-process. Setting `FLASK_DEBUG=1` still runs the development
+  server with auto-reload.
+- **Dependencies are pinned.** Image builds install an exact, resolved set of
+  versions, so a rebuild no longer picks up whatever is newest upstream.
+
 - **One staleness rule.** The Tiled view no longer has a separate 2-hour
   clause; the single `stale_after_minutes` threshold decides. The Tiled
   tooltip now reads "stale — updated <time>".

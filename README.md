@@ -570,6 +570,20 @@ The tests run against a temporary config directory. `STD_CONFIG_DIR` (default
 `/config`) is a dev/test knob that relocates the settings file, database, logs,
 images, and backups; leave it unset in production.
 
+Production runs under gunicorn with **exactly one worker** (see
+`gunicorn.conf.py`; the scheduler, health-check thread and register lock are
+in-process, so do not raise `workers`). `FLASK_DEBUG=1` runs `python app.py`
+(Werkzeug with auto-reload) instead; the default does not.
+
+Dependencies are pinned. Edit `requirements.in` (the direct dependencies), then
+regenerate the pinned `requirements.txt`:
+
+```bash
+uv pip compile --python-version 3.11 requirements.in -o requirements.txt
+```
+
+`requirements-dev.txt` adds pytest on top of the pinned set.
+
 Releases go through `/release-prep` and `/release-cut` (see
 [Versioning & Releases](#versioning--releases)). Contributor and agent
 guidance lives in [`CLAUDE.md`](CLAUDE.md); adopted engineering standards in

@@ -10,8 +10,8 @@ Public entry points:
 - `start_background_workers(app)` — registers the APScheduler jobs
   (widget refresh, daily backup, widget_value retention prune, soft-delete
   purge) and
-  starts the URL health-check thread. Called once from the __main__
-  block after migrations.
+  starts the URL health-check thread. Called once, via app.run_startup_tasks(),
+  after migrations.
 - `verify_and_fetch_missing_icons(app)` — one-shot icon sweep run
   at startup.
 """

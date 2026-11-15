@@ -33,6 +33,7 @@
 | 0.23    | 2026-11-15 | §12.6 delivered (unreleased): hard delete keeps the widget and its values as a detached widget; Settings → Deleted lists detached widgets with Attach/Delete; refresh job skips detached widgets. No schema or wire-contract changes. |
 | 0.24    | 2026-11-15 | §12.7 delivered (unreleased): `stale_after_minutes` setting (default 5) drives `is_docker_status_stale`; Tiled 120-minute clause removed; stale icon added to Dashboard and Compact. No schema or wire-contract changes. |
 | 0.25    | 2026-11-15 | §12.8 delivered (unreleased): `health_check_timeout` setting; per-service `health_check_timeout` / `health_check_verify_tls` columns (§5.5) editable on Edit and Add; backups round-trip both. Wire contract unchanged. |
+| 0.26    | 2026-11-15 | §12.9 delivered (unreleased): production runs gunicorn (one worker, four threads) via `gunicorn.conf.py`; startup work consolidated in `app.run_startup_tasks()`; `requirements.txt` fully pinned from `requirements.in`. §3 architecture and module layout updated. Wire contract unchanged. |
 
 ---
 
@@ -126,7 +127,7 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               ┌─────────────────────────────────────────┐
               │ STD                                     │
               │  ┌───────────────────────────────────┐  │
-              │  │  Flask app                        │  │
+              │  │  Flask app (gunicorn, 1 worker)   │  │
               │  │  ├─ register routes (api)         │  │
               │  │  ├─ dashboard routes (html)       │  │
               │  │  ├─ widget routes                 │  │
@@ -183,6 +184,8 @@ requirements-dev.txt ← pytest + runtime deps; CI/dev only
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
 Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+gunicorn.conf.py    ← production server config (workers must stay 1)
+requirements.in     ← direct deps; requirements.txt is compiled from it
 settings.example.yml, .env.example
 standards.md        ← adopted standards + pinned versions
 .github/workflows/  ← ci.yml, publish.yml, retention.yml
@@ -196,8 +199,10 @@ docs/               ← PRD.md, HISTORY.md, FUTURE.md, decisions.md, screenshots
 - **`app.py`** — `create_app()` factory: load settings once, init
   extensions, register blueprints, register error handlers, register
   template filters. Does not start background work on import —
-  `start_background_workers(app)` is invoked from the `__main__`
-  block once migrations have completed.
+  `run_startup_tasks(app)` (admin, icon sweep, `start_background_workers`)
+  is invoked once per process: from the `__main__` block under
+  `python app.py` (dev), or from the gunicorn `post_worker_init` hook in
+  production, after migrations have completed.
 - **`extensions.py`** — extension singletons (`db`, `login_manager`).
   No app context here; the factory binds them.
 - **`models.py`** — SQLAlchemy models. Single source of truth for the
@@ -1161,7 +1166,7 @@ Resolves the Open Question on health-check timeouts (§15).
 - Out of scope: concurrent health checks. Sequential checks with longer
   per-service timeouts lengthen a pass; acceptable at homelab scale.
 
-### 12.9 Production WSGI server and pinned dependencies [`v069-09-gunicorn-and-pins`] — Planned
+### 12.9 Production WSGI server and pinned dependencies [`v069-09-gunicorn-and-pins`] — Delivered (unreleased)
 
 - The image runs **gunicorn** instead of the Werkzeug dev server
   (`python app.py`). **Exactly one worker** (`--workers 1`, several
@@ -1175,6 +1180,13 @@ Resolves the Open Question on health-check timeouts (§15).
   pinned set.
 - Operator-visible: log format at startup changes (gunicorn lines); no
   config change required. Port stays 8815.
+- **As built:** `app.run_startup_tasks(app)` (idempotent per process) does the
+  default admin, icon sweep and `start_background_workers`; `__main__` and
+  `gunicorn.conf.py`'s `post_worker_init` both call it. `workers = 1`,
+  `threads = 4`, no `preload_app`. `entrypoint.sh` runs gunicorn unless
+  `FLASK_DEBUG=1`, which keeps `python app.py`. Pins come from
+  `requirements.in` via `uv pip compile --python-version 3.11`; the image
+  is built for linux/amd64 only (publish.yml sets no platforms).
 
 ### 12.10 Docs loose ends [`v069-10-docs-loose-ends`] — Planned
 
