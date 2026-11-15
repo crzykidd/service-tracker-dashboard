@@ -63,8 +63,9 @@ open across the upgrade need a reload before their next form submit or delete.
   silently ignored and now work; an unset `API_TOKEN` no longer accepts a bogus
   header.
 - **Security:** CSRF protection on every form and in-page request, a
-  constant-time token check, the token masked in logs, and warnings when the
-  default secret key or admin password is still in use.
+  constant-time token check, the token masked in logs, warnings when the
+  default secret key or admin password is still in use, and icon, backup and
+  widget paths and post-save redirects confined to STD.
 - **Runtime:** the image now runs gunicorn (one worker) with pinned
   dependencies. No configuration change is needed.
 

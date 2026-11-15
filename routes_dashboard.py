@@ -19,7 +19,6 @@ import math
 import os
 import re
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
 import markdown as _md
 import requests
@@ -44,7 +43,7 @@ from sqlalchemy.orm import joinedload, selectinload
 import settings_store
 import synthesizer
 from extensions import db
-from image_utils import fetch_icon_if_missing
+from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import Group, ServiceEntry, User, Widget, WidgetValue, hard_delete_entry
 from routes_auth import is_admin_required
 from settings_loader import CONFIG_DIR
@@ -53,6 +52,7 @@ from view_helpers import (
     group_and_sort_services,
     normalize_axis,
     normalize_show_urlless,
+    safe_redirect_target,
 )
 
 logger = logging.getLogger(__name__)
@@ -393,12 +393,19 @@ def settings():
                 elif restore_source == 'server':
                     selected_filename = request.form.get('server_backup_filename')
                     if selected_filename:
-                        # Basic security check: ensure filename doesn't try to escape BACKUP_DIR
-                        if ".." in selected_filename or selected_filename.startswith("/"):
+                        # Confine to BACKUP_DIR: a bare filename with a backup
+                        # extension whose resolved path stays inside the folder.
+                        safe_name = os.path.basename(selected_filename)
+                        backup_root = os.path.realpath(BACKUP_DIR)
+                        file_path = os.path.realpath(os.path.join(backup_root, safe_name))
+                        if (
+                            safe_name != selected_filename
+                            or not safe_name.endswith(('.yaml', '.yml'))
+                            or not file_path.startswith(backup_root + os.sep)
+                        ):
                             flash("Invalid server filename selected.", "danger")
                             return redirect(url_for('dashboard.settings'))
 
-                        file_path = os.path.join(BACKUP_DIR, selected_filename)
                         if os.path.exists(file_path) and os.path.isfile(file_path):
                             with open(file_path, 'r') as f:
                                 records = yaml.safe_load(f)
@@ -735,13 +742,6 @@ def serve_image(filename):
 @is_admin_required
 def add_entry():
     image_dir = current_app.config['IMAGE_DIR']
-    raw_referrer = request.args.get('ref', '/')
-    parsed = urlparse(raw_referrer)
-    referrer = parsed.path
-    if parsed.query:
-        referrer += '?' + parsed.query
-    if not referrer.startswith('/'):
-        referrer = '/tiled_dash'
 
     if request.method == 'POST':
         # Needed by every error re-render of the add form below.
@@ -762,11 +762,11 @@ def add_entry():
             group_name = "None"
 
 
-        image_icon_raw = request.form.get('icon_image', '').strip().lower()
-        if image_icon_raw and not image_icon_raw.endswith('.svg'):
-            image_icon = f"{image_icon_raw}.svg"
-        else:
-            image_icon = image_icon_raw
+        image_icon_raw = request.form.get('icon_image', '').strip()
+        image_icon = safe_icon_filename(image_icon_raw) if image_icon_raw else ''
+        if image_icon_raw and not image_icon:
+            flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
+            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
@@ -792,8 +792,8 @@ def add_entry():
 
         # === ICON RESOLUTION LOGIC ===
         if image_icon:
-            icon_path = os.path.join(image_dir, image_icon)
-            if not os.path.exists(icon_path):
+            icon_path = icon_path_in_dir(image_dir, image_icon)
+            if icon_path and not os.path.exists(icon_path):
                 try:
                     icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
                     response = requests.get(icon_url, timeout=5)
@@ -897,13 +897,7 @@ def edit_entry(id):
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
     # Track the referrer for redirecting after save
-    raw_referrer = request.args.get('ref', '/')
-    parsed = urlparse(raw_referrer)
-    referrer = parsed.path
-    if parsed.query:
-        referrer += '?' + parsed.query
-    if not referrer.startswith('/'):
-        referrer = '/'
+    referrer = safe_redirect_target(request.args.get('ref'), url_for('dashboard.dashboard'))
 
     # Discover available widgets
     widgets_dir = '/app/widgets'
@@ -942,7 +936,7 @@ def edit_entry(id):
                     f"{_restore_hint()}",
                     'success',
                 )
-                return redirect(referrer)
+                return redirect(safe_redirect_target(referrer))
             else:
                 flash("Confirmation name does not match. Entry not deleted.", "warning")
                 return redirect(url_for('dashboard.edit_entry', id=id, ref=referrer))
@@ -1014,10 +1008,21 @@ def edit_entry(id):
         entry.group_name = group.group_name
 
         # === ICON ===
-        raw_icon = request.form.get('image_icon', '').strip().lower()
-        entry.image_icon = f"{raw_icon}.svg" if raw_icon and not raw_icon.endswith('.svg') else raw_icon
-        icon_path = os.path.join(image_dir, entry.image_icon) if entry.image_icon else ''
-        if entry.image_icon and not os.path.exists(icon_path):
+        raw_icon = request.form.get('image_icon', '').strip()
+        icon_ok = True
+        if raw_icon:
+            safe_icon = safe_icon_filename(raw_icon)
+            if safe_icon:
+                entry.image_icon = safe_icon
+            else:
+                icon_ok = False
+                flash('Invalid icon name: icon not changed. Use letters, numbers, dots, dashes and underscores only.', 'warning')
+        else:
+            entry.image_icon = ''
+        icon_path = icon_path_in_dir(image_dir, entry.image_icon) if (icon_ok and entry.image_icon) else None
+        if not icon_ok:
+            pass
+        elif icon_path and not os.path.exists(icon_path):
             try:
                 icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{entry.image_icon}"
                 response = requests.get(icon_url, timeout=5)
@@ -1084,7 +1089,7 @@ def edit_entry(id):
             logger.error(f"Update error: {e}")
             flash("Error saving changes", "danger")
 
-        return redirect(referrer)
+        return redirect(safe_redirect_target(referrer))
 
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
     return render_template("edit_entry.html",

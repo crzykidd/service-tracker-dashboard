@@ -5,6 +5,24 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — CodeQL path and redirect fixes (v069-11)
+
+- **Invalid icon on Add/Edit flashes, but those templates don't render
+  flashes** (only `settings.html` does). The message is queued and shows on
+  the next Settings view; nothing is written either way. Adding flash display
+  to the Add/Edit pages was out of scope.
+- **Edit with a bad icon keeps the stored icon** and still saves the other
+  fields, mirroring the invalid-timeout handling.
+- **Add page's `ref` handling removed**: it was computed and never used.
+- **`fetch_icon_if_missing` also validates** (it is the path used for
+  derived names from container/image names), so a container name that does
+  not fit the icon charset simply gets no auto-fetched icon.
+- **Widget list is `widgets/` under the app root**, not `/app/widgets`; same
+  directory in the container (`WORKDIR /app`). The edit page still lists
+  `/app/widgets` (not part of the alerts); left alone.
+
+---
+
 ## 2026-11-15 — Docs loose ends (v069-10)
 
 - **Series headers keep the `[0.x.x] series` form**: the What's New regex needs

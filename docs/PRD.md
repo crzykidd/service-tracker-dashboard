@@ -36,6 +36,7 @@
 | 0.26    | 2026-11-15 | §12.9 delivered (unreleased): production runs gunicorn (one worker, four threads) via `gunicorn.conf.py`; startup work consolidated in `app.run_startup_tasks()`; `requirements.txt` fully pinned from `requirements.in`. §3 architecture and module layout updated. Wire contract unchanged. |
 | 0.27    | 2026-11-15 | §12.10 delivered (unreleased): CHANGELOG historical dates corrected from tags; MIT `LICENSE` added; README compatibility note and registry wording refreshed. No code, schema, or wire-contract changes. |
 | 0.28    | 2026-11-15 | v0.6.9 released. §12 retitled Delivered: pytest suite + required `Test` check, wider lint, settings and API-token fixes, CSRF protection, soft-delete with widget detach, unified staleness indicator, per-service health-check options, gunicorn + pinned dependencies. Schema: `deleted_at`, `health_check_timeout`, `health_check_verify_tls` (§5.5). No register-contract change. |
+| 0.29    | 2026-11-15 | §12.11 added (delivered in v0.6.9, folded into the prepared release): icon names, server-side restore filenames and `/widget_config` widget names confined to their folders; edit/CSRF redirects limited to same-site paths (`image_utils.safe_icon_filename`, `view_helpers.safe_redirect_target`). Closes 13 CodeQL alerts. No schema, contract, or job changes. |
 
 ---
 
@@ -1204,6 +1205,32 @@ Resolves the Open Question on health-check timeouts (§15).
 - As built: dates taken from tags (0.3.x/0.2.x/0.1.x series use v0.3.0
   2025-05-31, v0.2.0 2025-05-27, v0.1.0 2025-05-26). The What's New
   parser skips `[0.x.x] series` headers (no match), so they are inert.
+
+### 12.11 CodeQL path and redirect fixes [`v069-11-codeql-path-and-redirect`] — Delivered in v0.6.9
+
+Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
+`py/url-redirection`.
+
+- **Icon names** (register `image_icon` and derived names, `/add`, `/edit`)
+  go through `image_utils.safe_icon_filename` (lowercase, optional `.svg`
+  stripped, `^[a-z0-9][a-z0-9._-]*$`, no `..`, at most 100 chars including
+  `.svg`). The path is then checked with `icon_path_in_dir` (`realpath`
+  containment in `IMAGE_DIR`) before any write. Register skips an unsafe icon
+  with a WARNING and still succeeds; Add/Edit flash a message and download
+  nothing (Edit leaves the stored icon unchanged and saves the other fields).
+- **Backup restore from a server file** accepts only a bare filename ending
+  `.yaml`/`.yml` whose resolved path stays inside the backup folder.
+- **`/widget_config/<widget_name>`** accepts only directory names present
+  under `widgets/`, resolved from the app root rather than `/app/widgets`.
+- **Redirects:** `view_helpers.safe_redirect_target` allows only same-site
+  relative paths (single leading `/`, no scheme/netloc, no `//` or `/\`).
+  Used for the edit page's `ref` (save, delete, and the wrong-confirmation
+  bounce) and the CSRF error handler's referrer fallback.
+- As built: the Add page's `ref` was parsed but never used, so that dead code
+  was removed rather than hardened. The Add and Edit templates do not render
+  flashed messages (only Settings does), so the invalid-icon message is
+  queued for the next Settings view rather than shown inline; see
+  `docs/decisions.md`.
 
 ---
 

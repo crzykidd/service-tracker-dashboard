@@ -1,8 +1,40 @@
 import inspect
 import os
+import re
 from datetime import datetime
 
 import requests
+
+_ICON_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+MAX_ICON_NAME_LENGTH = 100
+
+
+def safe_icon_filename(name):
+    """Return a safe '<name>.svg' icon filename, or None if `name` is unsafe.
+
+    Lowercases, strips one trailing '.svg', and accepts only
+    [a-z0-9][a-z0-9._-]* (no slashes, no '..'). The result is at most
+    MAX_ICON_NAME_LENGTH characters including '.svg' (the DB column limit).
+    """
+    if not isinstance(name, str):
+        return None
+    name = name.strip().lower()
+    if name.endswith(".svg"):
+        name = name[:-4]
+    if not name or len(name) + 4 > MAX_ICON_NAME_LENGTH:
+        return None
+    if ".." in name or not _ICON_NAME_RE.match(name):
+        return None
+    return f"{name}.svg"
+
+
+def icon_path_in_dir(image_dir, filename):
+    """Join `filename` onto `image_dir`; return the path only if it stays inside it."""
+    base = os.path.realpath(image_dir)
+    path = os.path.realpath(os.path.join(base, filename))
+    if not path.startswith(base + os.sep):
+        return None
+    return path
 
 
 def fetch_icon_if_missing(name, image_dir, logger, debug=False, source_hint=None):
@@ -13,11 +45,12 @@ def fetch_icon_if_missing(name, image_dir, logger, debug=False, source_hint=None
     stack = inspect.stack()
     caller_function = stack[1].function if len(stack) > 1 else "unknown"
 
-    if name.lower().endswith(".svg"):
-        name = name[:-4]  # remove exactly 4 characters: ".svg"
-    name = name.lower()
-    filename = f"{name}.svg"
-    local_path = os.path.join(image_dir, filename)
+    filename = safe_icon_filename(name)
+    local_path = icon_path_in_dir(image_dir, filename) if filename else None
+    if not local_path:
+        if logger:
+            logger.warning(f"Skipping icon with unsafe name: {name!r}")
+        return None
 
     if os.path.exists(local_path):
         return filename
@@ -102,7 +135,18 @@ def resolve_image_metadata(
             source_hint=fallback_name
         )
     elif image_icon:
-        icon_path = os.path.join(image_dir, image_icon)
+        safe_name = safe_icon_filename(image_icon)
+        icon_path = icon_path_in_dir(image_dir, safe_name) if safe_name else None
+        if not icon_path:
+            logger.warning(f"Ignoring image_icon with unsafe name: {image_icon!r}")
+            return {
+                "registry": registry,
+                "owner": owner,
+                "image_name": img_name,
+                "image_tag": tag,
+                "image_icon": None,
+            }
+        image_icon = safe_name
         now = datetime.now()
         last_fail = failed_icon_cache.get(image_icon)
 

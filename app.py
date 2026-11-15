@@ -13,10 +13,11 @@ import logging
 import os
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
+from urllib.parse import urlparse
 
 import humanize
 from dateutil import parser
-from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request
 from flask_wtf.csrf import CSRFError
 
 from extensions import csrf, db, login_manager
@@ -28,6 +29,7 @@ from routes_auth import auth_bp, refresh_default_password_flag
 from routes_dashboard import dashboard_bp
 from routes_widgets import widgets_bp
 from settings_loader import CONFIG_DIR, load_settings, mask_value
+from view_helpers import safe_redirect_target
 
 DATABASE_PATH = os.path.join(CONFIG_DIR, 'services.db')
 LOGFILE = os.path.join(CONFIG_DIR, 'std.log')
@@ -176,7 +178,10 @@ def create_app():
         if wants_json:
             return jsonify({"error": "CSRF token missing or invalid"}), 400
         flash("Your session expired or the form was stale; please retry.", "danger")
-        return redirect(request.referrer or url_for("dashboard.dashboard"))
+        # request.referrer is an absolute URL; keep only its same-site path.
+        ref = urlparse(request.referrer or "")
+        target = ref.path + (f"?{ref.query}" if ref.query else "")
+        return redirect(safe_redirect_target(target))
 
     @app.errorhandler(403)
     def forbidden_error(error):

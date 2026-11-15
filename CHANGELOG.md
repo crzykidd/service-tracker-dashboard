@@ -90,6 +90,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - STD now warns (log and a dismissible notice on Settings) when
   `FLASK_SECRET_KEY` is unset or the `admin` user still has the default
   `changeme123` password. Nothing is forced; change them when you can.
+- **Paths and redirects are confined.** Icon files built from an icon name
+  (register, Add, Edit), server-side backup restore filenames and widget names
+  can no longer reach outside their own folders; an unsafe icon name is skipped
+  (a register still succeeds) or flagged on Add/Edit. After you save or delete
+  an entry, STD only redirects to pages within STD, never to another site.
+  This closes 13 CodeQL alerts (`py/path-injection`, `py/url-redirection`).
 
 ## [0.6.8] — 2026-11-15
 

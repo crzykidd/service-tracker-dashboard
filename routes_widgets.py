@@ -20,7 +20,16 @@ widgets_bp = Blueprint("widgets", __name__)
 @login_required
 @is_admin_required
 def widget_config(widget_name):
-    path = os.path.join('/app/widgets', widget_name, 'settings.json')
+    # Only names of directories actually present under the widgets dir are
+    # accepted; anything else (traversal included) gets the empty list.
+    widgets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'widgets')
+    try:
+        known = {d for d in os.listdir(widgets_dir) if d != '__pycache__' and os.path.isdir(os.path.join(widgets_dir, d))}
+    except OSError:
+        known = set()
+    if widget_name not in known:
+        return jsonify([])
+    path = os.path.join(widgets_dir, widget_name, 'settings.json')
     if not os.path.exists(path):
         return jsonify([])  # Or 404 if you prefer
 

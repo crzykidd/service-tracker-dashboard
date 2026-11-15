@@ -12,6 +12,9 @@ off.
 """
 
 from collections import defaultdict
+from urllib.parse import urlparse
+
+from flask import url_for
 
 from models import Group
 
@@ -125,3 +128,24 @@ def _order_string_buckets(buckets, null_label):
     if None in buckets:
         result.append((null_label, buckets[None]))
     return result
+
+
+def safe_redirect_target(target, fallback=None):
+    """Return `target` only if it is a same-site relative path, else `fallback`.
+
+    Allowed: no scheme, no netloc, starts with a single '/', and not '//' or
+    '/\\' (browsers treat both as protocol-relative). `fallback` defaults to
+    the dashboard.
+    """
+    if fallback is None:
+        fallback = url_for("dashboard.dashboard")
+    if not isinstance(target, str) or not target:
+        return fallback
+    if "\\" in target or any(ord(c) < 32 for c in target):
+        return fallback
+    if not target.startswith("/") or target.startswith("//"):
+        return fallback
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    return target
