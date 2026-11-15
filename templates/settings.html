@@ -15,6 +15,7 @@
     <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">Groups</button>
     <button onclick="showSection('users')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-users">Users</button>
     <button onclick="showSection('exposure')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-exposure">Exposure</button>
+    <button onclick="showSection('deleted')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-deleted">Deleted{% if deleted_rows %} ({{ deleted_rows|length }}){% endif %}</button>
 
   </aside>
 
@@ -36,6 +37,38 @@
     <!-- === Info Section === -->
     <section id="section-info" class="section">
       <h2 class="text-2xl font-semibold mb-4">Service Info</h2>
+      {% if api_token_missing %}
+      <div class="mb-4 p-4 bg-red-900 text-red-100 rounded shadow">
+        <strong>API token not set.</strong> Notifier registers (<code>/api/v1/register</code>)
+        are disabled and return 503 until <code>API_TOKEN</code> (or <code>api_token</code> in
+        <code>settings.yml</code>) is set.
+      </div>
+      {% endif %}
+      {% if default_secret_key or default_admin_password %}
+      <div id="credential-warning" class="mb-4 p-4 bg-yellow-900 text-yellow-100 rounded shadow flex justify-between items-start" style="display:none">
+        <div>
+          <strong>Default credentials in use.</strong>
+          <ul class="list-disc list-inside">
+            {% if default_secret_key %}<li><code>FLASK_SECRET_KEY</code> is not set, so sessions are signed with a public default. Set <code>FLASK_SECRET_KEY</code> to a long random value and restart.</li>{% endif %}
+            {% if default_admin_password %}<li>The <code>admin</code> user still has the default password. Change it under Users.</li>{% endif %}
+          </ul>
+        </div>
+        <button type="button" id="credential-warning-dismiss" class="ml-4 underline">Dismiss</button>
+      </div>
+      <script>
+        (function () {
+          var box = document.getElementById('credential-warning');
+          var key = 'std-credential-warning-dismissed';
+          var dismissed = false;
+          try { dismissed = sessionStorage.getItem(key) === '1'; } catch (e) {}
+          if (!dismissed) { box.style.display = 'flex'; }
+          document.getElementById('credential-warning-dismiss').addEventListener('click', function () {
+            box.style.display = 'none';
+            try { sessionStorage.setItem(key, '1'); } catch (e) {}
+          });
+        })();
+      </script>
+      {% endif %}
       <div class="mb-4 p-4 bg-gray-700 rounded shadow">
         <h3 class="text-lg font-semibold text-white mb-2">Version Info</h3>
         <ul class="list-disc list-inside text-gray-300 space-y-1">
@@ -93,6 +126,7 @@
           <h3 class="text-lg font-semibold text-white mb-2 border-b border-gray-600 pb-1">Backup Service Data</h3>
           <p class="text-sm text-gray-400 mb-4">Manage YAML backups of all your service entries.</p>
           <form action="{{ url_for('dashboard.settings') }}" method="POST" class="space-y-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="backup">
             <button type="submit" name="backup_operation" value="download_all"
                     class="w-64 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 px-4 rounded-md shadow">
@@ -110,6 +144,7 @@
           <h3 class="text-lg font-semibold text-white mb-2 border-b border-gray-600 pb-1">Restore Service Data</h3>
           <p class="text-sm text-gray-400 mb-4">Restore service entries from a YAML backup file.</p>
           <form action="{{ url_for('dashboard.settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="restore">
 
             <!-- Restore Source Choice -->
@@ -237,6 +272,110 @@
 
     </section>
 
+    <!-- === Deleted Section === -->
+    <section id="section-deleted" class="section hidden">
+      <h2 class="text-2xl font-semibold mb-2">Deleted</h2>
+      <p class="text-gray-400 text-sm mb-4">
+        Deleted services are kept for
+        {% if deleted_retention_days == 0 %}
+          no time (<code>deleted_retention_days</code> is 0): they are removed at the next nightly purge (00:25).
+        {% else %}
+          {{ deleted_retention_days }} day{{ '' if deleted_retention_days == 1 else 's' }} (<code>deleted_retention_days</code>), then removed permanently by a nightly job (00:25).
+        {% endif %}
+        Restoring brings back the entry with its group, priority, and widget intact.
+      </p>
+      {% if deleted_rows %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="px-4 py-2">Name</th>
+                <th class="px-4 py-2">Host</th>
+                <th class="px-4 py-2">Deleted at</th>
+                <th class="px-4 py-2">Days until purge</th>
+                <th class="px-4 py-2 text-center">Controls</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700 bg-gray-900">
+              {% for row in deleted_rows %}
+              <tr class="hover:bg-gray-800">
+                <td class="px-4 py-2">{{ row.entry.container_name }}</td>
+                <td class="px-4 py-2">{{ row.entry.host }}</td>
+                <td class="px-4 py-2">{{ row.entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="px-4 py-2">{{ row.days_left }}</td>
+                <td class="px-4 py-2 text-right">
+                  <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                    <form method="POST" action="{{ url_for('dashboard.restore_deleted_entry', id=row.entry.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Restore</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('dashboard.purge_deleted_entry', id=row.entry.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" onclick="return confirm('Permanently delete this entry? This cannot be undone.')"
+                              class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete permanently</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-gray-400">No deleted entries.</p>
+      {% endif %}
+
+      <h3 class="text-xl font-semibold mt-8 mb-2">Detached widgets</h3>
+      <p class="text-gray-400 text-sm mb-4">
+        When a service is permanently deleted its widget settings and history are kept here.
+        Detached widgets are not refreshed. Attach one to a service that has no widget, or delete it.
+      </p>
+      {% if detached_widgets %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="px-4 py-2">Widget</th>
+                <th class="px-4 py-2">URL</th>
+                <th class="px-4 py-2">Last value</th>
+                <th class="px-4 py-2 text-center">Controls</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700 bg-gray-900">
+              {% for row in detached_widgets %}
+              <tr class="hover:bg-gray-800">
+                <td class="px-4 py-2">{{ row.widget.widget_name }}</td>
+                <td class="px-4 py-2">{{ row.widget.widget_url or '' }}</td>
+                <td class="px-4 py-2">{{ row.last_value.strftime('%Y-%m-%d %H:%M') if row.last_value else 'never' }}</td>
+                <td class="px-4 py-2 text-right">
+                  <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                    <form method="POST" action="{{ url_for('dashboard.attach_detached_widget', id=row.widget.id) }}" class="flex gap-2 items-center">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <select name="entry_id" required class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs">
+                        <option value="">Attach to service...</option>
+                        {% for e in attachable_entries %}
+                        <option value="{{ e.id }}">{{ e.container_name }} ({{ e.host }})</option>
+                        {% endfor %}
+                      </select>
+                      <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Attach</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('dashboard.delete_detached_widget', id=row.widget.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" onclick="return confirm('Delete this widget and its stored values? This cannot be undone.')"
+                              class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-gray-400">No detached widgets.</p>
+      {% endif %}
+    </section>
+
     <!-- === Groups Section === -->
     <section id="section-groups" class="section hidden">
       <h2 class="text-2xl font-semibold mb-4">Groups</h2>
@@ -259,6 +398,7 @@
                   <td class="px-4 py-2">{{ group.id }}</td>
                   <td class="px-4 py-2">
                     <form method="POST" action="{{ url_for('dashboard.update_group') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="group_id" value="{{ group.id }}">
                       <input type="text" name="group_name" value="{{ group.group_name }}" class="form-input">
                   </td>
@@ -275,12 +415,14 @@
                   <td class="px-4 py-2 text-right">
                     <div class="flex gap-2 items-center justify-end whitespace-nowrap">
                       <form method="POST" action="{{ url_for('dashboard.update_group') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="group_id" value="{{ group.id }}">
                         <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs">Save</button>
                       </form>
 
                       {% if group.services_count == 0 %}
                       <form method="POST" action="{{ url_for('dashboard.delete_group') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="group_id" value="{{ group.id }}">
                         <button type="submit" onclick="return confirm('Are you sure you want to delete this group?')"
                                 class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete</button>
@@ -292,6 +434,7 @@
                 {% endfor %}
                 <tr class="bg-gray-900 border-t border-gray-700">
                 <form method="POST" action="{{ url_for('dashboard.add_group') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <td class="px-4 py-2 text-gray-500 italic">new</td>
                   <td class="px-4 py-2">
                     <input type="text" name="group_name" placeholder="New group name" class="form-input" required>
@@ -343,11 +486,13 @@
             <td class="px-4 py-2">{{ user.last_login_at.strftime('%Y-%m-%d %H:%M:%S') if user.last_login_at else 'Never' }}</td>
             <td class="px-4 py-2 text-right">
               <form method="POST" action="{{ url_for('auth.set_user_password', user_id=user.id) }}" class="inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="password" name="new_password" placeholder="New Password" class="form-input text-sm w-40" required />
                 <button type="submit" class="bg-indigo-600 text-white px-2 py-1 rounded text-sm hover:bg-indigo-700">Set Password</button>
               </form>
               {% if not user.is_admin %}
               <form method="POST" action="{{ url_for('auth.delete_user') }}" class="inline" onsubmit="return confirm('Are you sure you want to delete this user?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="user_id" value="{{ user.id }}">
                 <button type="submit" class="bg-red-600 hover:bg-red-500 text-white text-xs px-3 py-1 rounded">Delete</button>
               </form>
@@ -363,6 +508,7 @@
 
       <h3 class="text-lg font-semibold text-white mt-8 mb-2">Add New User</h3>
       <form method="POST" action="{{ url_for('auth.add_user') }}" class="space-y-4 max-w-lg">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add_user">
         <div>
           <label class="block text-sm text-gray-300">Username</label>
@@ -396,6 +542,7 @@
       </p>
 
       <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}" class="space-y-8">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="bg-gray-800 rounded shadow p-6">
           <h3 class="text-lg font-semibold text-white mb-4 border-b border-gray-600 pb-1">
             Layer directions (global)

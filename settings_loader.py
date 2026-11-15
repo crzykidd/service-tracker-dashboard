@@ -1,11 +1,16 @@
+import logging
 import os
 import shutil
-import yaml
-import logging
 
-CONFIG_PATH = "/config/settings.yml"
+import yaml
+
+# Directory holding settings.yml, the DB, logs, images and backups. Defaults to
+# /config (the container mount). STD_CONFIG_DIR is a dev/test knob so the test
+# suite can run against a temp dir; production leaves it unset.
+CONFIG_DIR = os.environ.get("STD_CONFIG_DIR", "/config")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "settings.yml")
 DEFAULT_TEMPLATE = "settings.example.yml"
-EXAMPLE_DEST = "/config/settings.example.yml"
+EXAMPLE_DEST = os.path.join(CONFIG_DIR, "settings.example.yml")
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -18,14 +23,35 @@ VALID_KEYS = {
     "std_dozzle_url": str,
     "url_healthcheck_interval": int,
     "widget_background_reload": int,
-    "user_session_length": int
+    "user_session_length": int,
+    "widget_value_retention_days": int,
+    "register_field_ownership": str,
+    "deleted_retention_days": int,
+    "stale_after_minutes": int,
+    "health_check_timeout": int,
 }
+
+# Keys whose values must never be written to logs in clear text.
+SECRET_KEYS = {"api_token"}
+
+
+def mask_value(key, value):
+    """Return a log-safe rendering of a setting value (secrets become ***)."""
+    if key in SECRET_KEYS and value:
+        return "***"
+    return value
+
 DEFAULT_VALUES = {
-    "backup_path": "/config/backups",
+    "backup_path": os.path.join(CONFIG_DIR, "backups"),
     "backup_days_to_keep": 7,
     "url_healthcheck_interval": 300,
     "widget_background_reload": 900,
-    "user_session_length": 120
+    "user_session_length": 120,
+    "widget_value_retention_days": 30,
+    "register_field_ownership": "user_wins",
+    "deleted_retention_days": 30,
+    "stale_after_minutes": 5,
+    "health_check_timeout": 5,
 }
 def load_settings():
     file_config = {}
@@ -55,7 +81,7 @@ def load_settings():
             try:
                 final_config[key] = expected_type(env_val)
                 config_from_env[key] = final_config[key]
-                logger.debug(f"  {key} = {final_config[key]} (from ENV)")
+                logger.debug(f"  {key} = {mask_value(key, final_config[key])} (from ENV)")
             except ValueError:
                 logger.warning(f"Invalid type for {key} from ENV. Expected {expected_type.__name__}")
         elif key in file_config:
@@ -63,15 +89,15 @@ def load_settings():
             config_from_file[key] = final_config[key]
         else:
             final_config[key] = DEFAULT_VALUES.get(key, None)
-            logger.debug(f"  {key} = {final_config[key]} (default fallback)")
+            logger.debug(f"  {key} = {mask_value(key, final_config[key])} (default fallback)")
 
     logger.debug("YAML settings:")
     for key, val in config_from_file.items():
-        logger.debug(f"  {key} = {val} (from YAML)")
+        logger.debug(f"  {key} = {mask_value(key, val)} (from YAML)")
 
     logger.debug("Final settings set are:")
     for key, val in final_config.items():
-        logger.debug(f"  {key} = {val}")
+        logger.debug(f"  {key} = {mask_value(key, val)}")
 
     # --- Derived settings ---
     final_config["display_tools"] = bool(final_config.get("std_dozzle_url"))

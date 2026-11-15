@@ -211,9 +211,17 @@ sequence (v0.6.1 extraction → v0.6.2 edit drawer → v0.6.3 staleness-
 plus-widget-detach → v0.7.0 duplicate detection) that did not pan
 out — v0.6.2 became a hotfix, v0.6.3 shipped the changelog-popup
 foundations instead, and v0.6.4–v0.6.6 were the mobile / edit-polish
-/ widget-drawer arc (see PRD §10). Staleness visualization and
-widget detach-on-delete remain unshipped prerequisites if this
-feature is picked up — neither is currently slotted to a release.
+/ widget-drawer arc (see PRD §10).
+
+**Update 2026-11-15:** both prerequisites are now planned for v0.6.9 —
+unified staleness with a single `stale_after_minutes` threshold (PRD
+§12.7) and widget detach on hard delete (PRD §12.6), alongside
+soft-delete (PRD §12.5, formerly parked here). Once those ship, this
+entry is unblocked. Note two interactions for whoever picks it up:
+soft-deleted rows must be excluded from both sides of a candidate
+pair, and the single threshold here should be the §12.7 setting
+(default 5 min — far tighter than the 2h sketched above; decide then
+whether duplicates need their own, looser threshold).
 
 The more ambitious service identity concept (computed column on
 every row, `group_by` axis treatment, move-aware API) remains
@@ -231,47 +239,6 @@ and proves insufficient.
   moves (Ansible, Dockhand) to pre-declare an intended migration.
   Deferred even past v0.7.0; gated on the move workflow actually
   existing.
-
----
-
-## Soft-delete for service entries
-
-**Parked:** 2026-05-16. Considered as an alternative to the
-widget-detach feature; the simpler detach feature was preferred but
-soft-delete remains worth considering.
-
-### Context
-
-Deleting a `ServiceEntry` today is permanent. v0.6.5 added a
-universal inline confirm popover (drawer, edit page, and the new
-trash icons all share it), which reduces accidental deletion, but
-the delete itself is still a hard DELETE — widget config, group,
-sort_priority, manual icon, edited URLs all go with the row. The
-widget-detach-on-delete idea that was sketched at parking time has
-not shipped.
-
-### Sketched shape
-
-A deleted entry enters a soft-delete state for some window (30
-days?) before hard-deletion. Recoverable via a Settings UI in the
-meantime. Doesn't appear on dashboards, doesn't get health-checked,
-doesn't count toward duplicate-detection.
-
-Adds a `deleted_at` nullable column to `service_entry` and a
-background job (or eager check) to hard-delete after the window
-expires. Dashboards filter `deleted_at IS NULL` in their queries.
-
-### Why parked
-
-Originally parked because widget detach-on-delete (also future, see
-the duplicate-detection entry) was expected to ship first and absorb
-the painful case (widget config loss). It hasn't. Today the v0.6.5
-inline confirm popover reduces *accidental* deletes but doesn't
-recover anything — so the problem this entry sketches is still live.
-
-Reconsider if the operator finds themselves wanting recovery of
-full service-entry state, or as a standalone "I deleted the wrong
-row" safety net independent of the data-loss-on-move concern.
 
 ---
 

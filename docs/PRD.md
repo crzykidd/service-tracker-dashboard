@@ -23,6 +23,20 @@
 | 0.13    | 2026-11-15 | §11: versioning now uses a bare-semver `VERSION` file (Dockerfile writes `/app/version.txt` from it; `APP_VERSION` build arg removed) and releases are cut with `/release-prep` + `/release-cut` (adoption of `release-prep-and-cut` v1.1.0). No schema, contract, or job changes. |
 | 0.14    | 2026-11-15 | §11: Docker Hub publishing removed; GHCR is the only registry (Docker Hub frozen at v0.6.7). The `REGISTRY_NOTICE` build arg, `registry_notice=` line in `/app/version.txt`, and in-app "moved to GHCR" banner were removed. No schema, contract, or job changes. |
 | 0.15    | 2026-11-15 | v0.6.8 released. First release under the adopted standards (code-checkin-and-pr 1.2.0, handoff-prompt-workflow 2.0.0, release-prep-and-cut 1.1.0); GHCR-only publishing; `VERSION` file drives the in-app version; Add Entry non-numeric sort-priority 500 fixed. No schema or contract changes. |
+| 0.16    | 2026-11-15 | Docs refresh after the standards adoption. Added §11 (v0.6.7–v0.6.8 registry move and engineering standards); later sections renumbered (§11→§12, §12→§13, §13→§14). §3.1 module layout updated to the current tree. §6 retitled as a historical baseline. No code, schema, or contract changes. |
+| 0.17    | 2026-11-15 | Added §12 (v0.6.9 — Hardening and Safety Net, planned): test suite, wider lint, settings/API-token fixes, CSRF, soft-delete, widget detach, unified staleness, per-service health-check options, gunicorn + pinned deps, docs loose ends. Later sections renumbered (§12→§13, §13→§14, §14→§15). §15 Open Questions refreshed. No code changes yet. |
+| 0.18    | 2026-11-15 | §12.1 delivered (unreleased): pytest suite, `STD_CONFIG_DIR` testability seam, CI `Test` job; §13 required-checks text updated. No schema, contract, or job changes. |
+| 0.19    | 2026-11-15 | §12.2 delivered (unreleased): `ruff.toml` widened to `E, W, F, I, B` (E501 ignored); §3.1 lint note updated. No schema, contract, or job changes. |
+| 0.20    | 2026-11-15 | §12.3 delivered (unreleased): `widget_value_retention_days` / `register_field_ownership` now load; unset `api_token` returns 503 on register; constant-time token compare; token masked in logs; default-credential warnings. No schema or wire-contract changes. |
+| 0.21    | 2026-11-15 | §12.4 delivered (unreleased): Flask-WTF `CSRFProtect` on all UI POSTs and fetch calls; `/api/v1/register` exempt; `CSRFError` handler (flash+redirect or JSON 400). No schema or wire-contract changes. |
+| 0.22    | 2026-11-15 | §12.5 delivered (unreleased): soft-delete (`service_entry.deleted_at`, §5.5), Settings → Deleted tab, `deleted_retention_days` and the 00:25 purge job, resurrect-on-register, `deleted_at` in YAML backups. Wire contract unchanged. |
+| 0.23    | 2026-11-15 | §12.6 delivered (unreleased): hard delete keeps the widget and its values as a detached widget; Settings → Deleted lists detached widgets with Attach/Delete; refresh job skips detached widgets. No schema or wire-contract changes. |
+| 0.24    | 2026-11-15 | §12.7 delivered (unreleased): `stale_after_minutes` setting (default 5) drives `is_docker_status_stale`; Tiled 120-minute clause removed; stale icon added to Dashboard and Compact. No schema or wire-contract changes. |
+| 0.25    | 2026-11-15 | §12.8 delivered (unreleased): `health_check_timeout` setting; per-service `health_check_timeout` / `health_check_verify_tls` columns (§5.5) editable on Edit and Add; backups round-trip both. Wire contract unchanged. |
+| 0.26    | 2026-11-15 | §12.9 delivered (unreleased): production runs gunicorn (one worker, four threads) via `gunicorn.conf.py`; startup work consolidated in `app.run_startup_tasks()`; `requirements.txt` fully pinned from `requirements.in`. §3 architecture and module layout updated. Wire contract unchanged. |
+| 0.27    | 2026-11-15 | §12.10 delivered (unreleased): CHANGELOG historical dates corrected from tags; MIT `LICENSE` added; README compatibility note and registry wording refreshed. No code, schema, or wire-contract changes. |
+| 0.28    | 2026-11-15 | v0.6.9 released. §12 retitled Delivered: pytest suite + required `Test` check, wider lint, settings and API-token fixes, CSRF protection, soft-delete with widget detach, unified staleness indicator, per-service health-check options, gunicorn + pinned dependencies. Schema: `deleted_at`, `health_check_timeout`, `health_check_verify_tls` (§5.5). No register-contract change. |
+| 0.29    | 2026-11-15 | §12.11 added (delivered in v0.6.9, folded into the prepared release): icon names, server-side restore filenames and `/widget_config` widget names confined to their folders; edit/CSRF redirects limited to same-site paths (`image_utils.safe_icon_filename`, `view_helpers.safe_redirect_target`). Closes 13 CodeQL alerts. No schema, contract, or job changes. |
 
 ---
 
@@ -33,14 +47,16 @@
 3. [Architecture](#3-architecture)
 4. [Configuration Model](#4-configuration-model)
 5. [Data Model](#5-data-model)
-6. [Current State (v0.4.14)](#6-current-state-v0414)
+6. [Historical Baseline: State at v0.4.14](#6-historical-baseline-state-at-v0414)
 7. [v0.5.0 — Cleanup Release](#7-v050--cleanup-release)
 8. [v0.6.0 — Delivered](#8-v060--delivered)
 9. [v0.6.1 — UI Rework Part 1 (Delivered)](#9-v061--ui-rework-part-1-delivered)
 10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
-11. [Versioning, Branches, and Releases](#11-versioning-branches-and-releases)
-12. [Cross-Repo Coordination](#12-cross-repo-coordination)
-13. [Open Questions](#13-open-questions)
+11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
+12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
+13. [Versioning, Branches, and Releases](#13-versioning-branches-and-releases)
+14. [Cross-Repo Coordination](#14-cross-repo-coordination)
+15. [Open Questions](#15-open-questions)
 
 ---
 
@@ -114,7 +130,7 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               ┌─────────────────────────────────────────┐
               │ STD                                     │
               │  ┌───────────────────────────────────┐  │
-              │  │  Flask app                        │  │
+              │  │  Flask app (gunicorn, 1 worker)   │  │
               │  │  ├─ register routes (api)         │  │
               │  │  ├─ dashboard routes (html)       │  │
               │  │  ├─ widget routes                 │  │
@@ -136,7 +152,7 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               └─────────────────────────────────────────┘
 ```
 
-### 3.1 Module layout (v0.6.0)
+### 3.1 Module layout
 
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints
@@ -154,8 +170,7 @@ routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
 jobs.py             ← URL health-check loop, widget refresh loop,
                       daily backup, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
-health.py           ← /healthz (liveness). /readyz deferred to a later
-                      release.
+health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
@@ -163,9 +178,23 @@ synthesizer.py      ← exposure → internalurl/externalurl translation +
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates
-static/             ← static assets
+static/             ← static assets (css/, js/, icons/)
 widgets/            ← per-widget plugin dirs
-alembic/            ← migrations
+alembic/            ← migrations (alembic.ini at root)
+scripts/            ← manual helper scripts (test_widget.py; not a test suite)
+tests/              ← pytest suite (v0.6.9)
+requirements-dev.txt ← pytest + runtime deps; CI/dev only
+VERSION             ← bare-semver version source of truth
+ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
+Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+gunicorn.conf.py    ← production server config (workers must stay 1)
+requirements.in     ← direct deps; requirements.txt is compiled from it
+settings.example.yml, .env.example
+standards.md        ← adopted standards + pinned versions
+.github/workflows/  ← ci.yml, publish.yml, retention.yml
+.claude/commands/   ← release-prep.md, release-cut.md
+prompts/            ← handoff prompts (TEMPLATE.md, done/, failed/)
+docs/               ← PRD.md, HISTORY.md, FUTURE.md, decisions.md, screenshots/
 ```
 
 ### 3.2 Module responsibilities
@@ -173,8 +202,10 @@ alembic/            ← migrations
 - **`app.py`** — `create_app()` factory: load settings once, init
   extensions, register blueprints, register error handlers, register
   template filters. Does not start background work on import —
-  `start_background_workers(app)` is invoked from the `__main__`
-  block once migrations have completed.
+  `run_startup_tasks(app)` (admin, icon sweep, `start_background_workers`)
+  is invoked once per process: from the `__main__` block under
+  `python app.py` (dev), or from the gunicorn `post_worker_init` hook in
+  production, after migrations have completed.
 - **`extensions.py`** — extension singletons (`db`, `login_manager`).
   No app context here; the factory binds them.
 - **`models.py`** — SQLAlchemy models. Single source of truth for the
@@ -289,9 +320,24 @@ imported from backup without exposure observations get NULL source
 columns, meaning the synthesizer is free to fill them in once
 exposure data arrives.
 
+### 5.5 v0.6.9 schema changes
+
+| Change | Detail |
+|--------|--------|
+| Column | `service_entry.deleted_at` (`DateTime`, nullable, indexed as `ix_service_entry_deleted_at`). NULL = active; a timestamp = soft-deleted at that time (naive server-local). Rows past `deleted_retention_days` are hard-deleted by the 00:25 purge job (§12.5). |
+
+| Column | `service_entry.health_check_timeout` (`Integer` seconds, nullable; NULL = use the global `health_check_timeout` setting). Not indexed (not a lookup column). |
+| Column | `service_entry.health_check_verify_tls` (`Boolean`, NOT NULL, server default true). Existing rows keep verifying TLS. |
+
+Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
+options at their defaults.
+
 ---
 
-## 6. Current State (v0.4.14)
+## 6. Historical Baseline: State at v0.4.14
+
+> Historical snapshot of the pre-v0.5.0 codebase, kept for context. It does
+> not describe the current state; see §§7–11 for what shipped since.
 
 Tags shipped on `main`: v0.1.0 → v0.4.14. (One stray tag `v.0.4.6` with
 an extra dot will be deleted as part of v0.5.0 housekeeping.)
@@ -859,7 +905,336 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 
 ---
 
-## 11. Versioning, Branches, and Releases
+## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
+
+No schema, register-contract, or job changes. Reference for the resulting
+release mechanics is §13 (Versioning, Branches, and Releases); this section
+records what was delivered and why.
+
+### 11.1 v0.6.7 — Registry move
+
+- Images moved to GHCR (`ghcr.io/crzykidd/service-tracker-dashboard`);
+  `dockerhub.yml` was renamed `publish.yml`.
+- v0.6.7 was published to both registries. The Docker Hub build set
+  `REGISTRY_NOTICE=dockerhub`, which rendered an in-app "moved to GHCR"
+  banner; the GHCR build did not. This was the banner-only final Docker Hub
+  release. Rationale: [`decisions.md`](./decisions.md).
+
+### 11.2 v0.6.8 — Standards adoption and Docker Hub removal
+
+- Docker Hub publishing, the `REGISTRY_NOTICE` build arg, and the banner were
+  removed. Docker Hub tags stay frozen at v0.6.7.
+- `VERSION` (bare semver) is the single source of the in-app version; the
+  Dockerfile writes `/app/version.txt` from it and the `APP_VERSION` build arg
+  is gone. `publish.yml` fails a release whose tag (minus `v`) != `VERSION`.
+- CI checks (`Lint`, `Config validation`, `Migration check`,
+  `Compose validation`) added in `ci.yml`; GHCR retention added in
+  `retention.yml`; CodeQL and the image `build` job are the other required
+  checks (§13).
+- Release commands `/release-prep` and `/release-cut` added in
+  `.claude/commands/`.
+- Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
+  (`NameError`); the group dropdown is now also populated on every
+  validation re-render.
+- Developer tooling: vexp removed; `standards.md`, `prompts/`, and
+  `docs/decisions.md` added. See [`HISTORY.md`](./HISTORY.md).
+
+---
+
+## 12. v0.6.9 — Hardening and Safety Net (Delivered)
+
+> **Status:** shipped in v0.6.9 (2026-11-15). Scoped 2026-11-15; each
+> subsection was one handoff prompt (named in brackets, now in
+> `prompts/done/`), run in the order listed.
+
+A deliberately large **patch** release that bundles the post-v0.6.8
+review findings: two real bugs, a security pass, a test suite, a
+delete safety net, and runtime/operational upgrades. It is a patch,
+not 0.7.0, so `/release-prep` does not run the minor-release CHANGELOG
+archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
+
+**Cross-repo:** no register-contract change. Nothing in this release
+adds, removes, or re-types a `RegisterPayload` field, so the
+consumer-leads ordering rule (§14) is not engaged and every notifier
+version that works with v0.6.8 works with v0.6.9. The only
+register-path behavior change is §12.5's resurrect-on-register for
+soft-deleted rows, which is server-side only.
+
+### 12.1 Test suite and CI `Test` check [`v069-01-test-suite`] — Delivered in v0.6.9
+
+- `pytest` suite under `tests/`, dev dependencies in
+  `requirements-dev.txt` (not shipped in the image).
+- **Testability seam:** `app.py` and `settings_loader.py` hardcode
+  `/config/...` paths and `app.py` builds the app at import. Introduce a
+  `STD_CONFIG_DIR` environment variable (default `/config`) that every
+  `/config` path derives from, so tests run against a temp dir. Tests
+  build the schema with `db.create_all()`; Alembic correctness stays
+  with the `Migration check` job.
+- Initial coverage, written against the *current* behavior (pins what
+  v0.6.8 does, including the bugs §12.3 fixes — those tests are
+  `xfail` until §12.3 flips them): register auth, `extra="forbid"` → 400,
+  `exposure_observations` absent vs `[]`, URL provenance ordering,
+  `register_field_ownership` modes, settings loader precedence
+  (ENV > file > default).
+- New `Test` job in `ci.yml`. The `Test` exemption in `standards.md` is
+  removed. Adding `Test` as a **required** check in GitHub branch
+  protection is a manual operator step (the prompt does not touch
+  GitHub settings).
+- **As built:** `STD_CONFIG_DIR` (read in `settings_loader.CONFIG_DIR`) also
+  drives the `backup_path` default and the `/config/backups` fallbacks in
+  `jobs.py` / `routes_dashboard.py`. `tests/conftest.py` sets the env and
+  creates a temp config dir at import time, before `app` is imported (so
+  `app.py` is unchanged structurally). Icon downloads are stubbed in tests.
+  Two `xfail(strict=True)` tests pin the §12.3 bugs.
+
+### 12.2 Wider lint [`v069-02-widen-lint`] — Delivered in v0.6.9
+
+- `ruff.toml` widens from `E9, F` to `E, W, F, I, B` (E501 ignored —
+  line length is not worth the churn). One mechanical cleanup pass;
+  no behavior changes. Any `B` finding that is a real bug is fixed and
+  gets a CHANGELOG `Fixed` entry; anything ambiguous is
+  `# noqa`-annotated with a reason rather than "fixed" blind.
+- **As built:** the cleanup found 30 findings (20 `I001`, 4 `E402`,
+  2 `B009`, 2 `B010`, 2 `W291`); none was a real bug (the `B009`/`B010`
+  were constant-name `getattr`/`setattr`, rewritten as plain attribute
+  access). `alembic/versions/*` is exempt from `I001`/`W291` and
+  `alembic/env.py` from `E402` (intentional `sys.path` setup) via
+  `per-file-ignores`.
+
+### 12.3 Settings and API-token hardening [`v069-03-settings-and-token-hardening`] — Delivered in v0.6.9
+
+- **Fix:** `settings_loader.VALID_KEYS` omits
+  `widget_value_retention_days` and `register_field_ownership`, so both
+  documented settings are silently dropped and their defaults always
+  apply. Add them (and every other key `settings.example.yml`
+  documents). A test asserts every key in `settings.example.yml` is in
+  `VALID_KEYS`, so new settings can't regress this.
+- **Fix:** with `API_TOKEN` unset, `_check_bearer_auth` compares against
+  the string `"Bearer None"` and accepts it. New behavior: no token
+  configured → `/api/v1/register` returns **503**
+  `{"error": "API token not configured"}`; a WARNING at startup; a
+  notice on Settings → Service Info. The UI keeps working (rejected:
+  failing startup — it breaks UI-only installs).
+- Token comparison uses `hmac.compare_digest`.
+- Startup settings logging masks `api_token` (and any future secret
+  keys) instead of printing them.
+- **Default-credential warnings:** if `FLASK_SECRET_KEY` is unset (the
+  `"changeme-in-prod"` fallback is in use) or the `admin` user still
+  has the `changeme123` password, log a WARNING at startup and show a
+  dismissible notice on Settings for admins. No forced change.
+- **As built:** `widget_value_retention_days` (int, 30) and
+  `register_field_ownership` (str, `user_wins`) added to `VALID_KEYS`; a test
+  parses `settings.example.yml` (including `#key:` lines) against
+  `VALID_KEYS`. `settings_loader.SECRET_KEYS` / `mask_value()` mask secrets
+  in all startup/debug settings logs. `routes_auth.refresh_default_password_flag()`
+  computes the `changeme123` check once at startup and after password
+  set/reset, caching it in `app.config["DEFAULT_ADMIN_PASSWORD_IN_USE"]`
+  (`DEFAULT_SECRET_KEY_IN_USE` likewise). The Settings dismissal is per
+  browser session (`sessionStorage`). The two §12.1 `xfail` tests are now
+  passing tests.
+
+### 12.4 CSRF protection [`v069-04-csrf`] — Delivered in v0.6.9
+
+- `Flask-WTF` `CSRFProtect` on the app. Every HTML form posts
+  `csrf_token()`; `base.html` carries a `<meta name="csrf-token">` and
+  every JS `fetch` POST sends it as `X-CSRFToken`.
+- `/api/v1/register` is exempt (bearer-token API, no cookies).
+- `WTF_CSRF_TIME_LIMIT = None` — tokens live as long as the session, so
+  a dashboard left open for hours doesn't 400 on the next delete.
+- CSRF failure: HTML forms flash an error and redirect back; JSON
+  endpoints return `400 {"error": "CSRF token missing or invalid"}`.
+- As built: `csrf = CSRFProtect()` in `extensions.py`, initialized in
+  `create_app()`; a `CSRFError` handler in `app.py` treats a request as
+  JSON when `request.is_json`, the path starts with `/api/`, an
+  `X-CSRFToken` header is present, or `Accept` includes `application/json`.
+  JS POSTs go through the shared `window.stdPost(url, options)` helper in
+  `static/js/dashboard.js`. Tests enable CSRF only in `tests/test_csrf.py`.
+
+### 12.5 Soft-delete for service entries [`v069-05-soft-delete`] — Delivered in v0.6.9
+
+Picks up the FUTURE.md "Soft-delete for service entries" entry.
+
+- **Schema:** `service_entry.deleted_at` (`DateTime`, nullable,
+  indexed) via Alembic.
+- **Delete** (edit page, `/api/v1/entries/<id>/delete`, tile/row trash
+  icons) sets `deleted_at` instead of deleting. Widget rows are left
+  attached.
+- **Filtering:** soft-deleted rows are excluded from all three
+  dashboards, the health-check loop, widget refresh, badges, and the
+  `/dbdump` default view. Implement as one model-level helper
+  (e.g. `ServiceEntry.active()`), and audit every `ServiceEntry.query`
+  call site — there are ~18.
+- **Settings → Deleted** tab lists soft-deleted entries with
+  **Restore** and **Delete permanently** (the latter goes through
+  §12.6's hard-delete path).
+- **Purge job:** daily at 00:25 hard-deletes rows whose `deleted_at` is
+  older than `deleted_retention_days` (new setting, default `30`,
+  `0` = purge on the next run).
+- **Resurrect on register:** a register for a `(host, container_name)`
+  that matches a soft-deleted row **clears `deleted_at`** and updates
+  that row, keeping all curated state. Rationale: today a hard-deleted
+  running container reappears empty on its next register; resurrecting
+  the curated row is strictly better, and keeping a live container
+  invisible would be worse. Logged at INFO.
+- **Backup/restore:** YAML backups include `deleted_at`; restore
+  round-trips it. Backups from v0.6.8 restore with `deleted_at` NULL.
+
+As built: migration `e5a1c7d93b02`; `ServiceEntry.active()` /
+`.deleted()` helpers and a single `hard_delete_entry(entry)` in
+`models.py` (the pre-existing widget-if-unused delete moved there
+unchanged; §12.6 changes only that function). Deviations from the plan
+above: `/dbdump` shows deleted rows **marked** (struck through, Deleted
+At column) rather than hiding them; the register lookup prefers an
+active row over a deleted one; a static-locked deleted entry is not
+resurrected by register (static skip wins); the Group `services_count`
+badge counts active entries only and deleting a group detaches its
+soft-deleted entries (`group_id` → NULL); the widget refresh skips
+widgets whose services are all soft-deleted; `recompute_all` and the
+scheduled/manual backups deliberately include deleted rows. New routes:
+`POST /settings/deleted/<id>/restore` and `/delete` (admin, CSRF).
+
+### 12.6 Widget detach on hard delete [`v069-06-widget-detach`] — Delivered in v0.6.9
+
+- When a service entry is hard-deleted (purge job or Delete
+  permanently), its widget is **detached**, not deleted: the `Widget`
+  row and its `widget_value` history are kept (retention still prunes
+  values normally).
+- A widget is **detached** when no service entry (active or
+  soft-deleted) references it. Detached widgets are skipped by the
+  widget refresh job.
+- **Settings → Deleted** gains a "Detached widgets" list: **Attach to
+  service** (picker of entries with no widget) or **Delete** (removes
+  the widget and its values).
+
+As built: `Widget.detached()` (no `ServiceEntry` references it);
+`hard_delete_entry` now only deletes the entry. Routes (admin, CSRF):
+`POST /settings/widgets/<id>/attach` (form field `entry_id`, active entries
+with `widget_id IS NULL` only) and `POST /settings/widgets/<id>/delete`. The
+refresh job now refreshes only widgets with at least one **active** service,
+so it skips both detached widgets and widgets referenced only by soft-deleted
+entries (this also stops refreshing pre-existing unreferenced widget rows).
+The edit page was left unchanged (it edits a widget in place; choosing "none"
+still deletes it deliberately).
+
+### 12.7 Unified staleness indicator [`v069-07-staleness`] — Delivered in v0.6.9
+
+- Today staleness is shown only on the Tiled view, and the logic is
+  split: the model property uses 5 minutes and the template adds a
+  redundant 120-minute clause.
+- One threshold, new setting `stale_after_minutes` (default `5`, which
+  keeps current Tiled behavior; the notifier re-scans every 60 s by
+  default). `ServiceEntry.is_docker_status_stale` reads it; the
+  template clause is removed.
+- The stale indicator (same icon/tooltip vocabulary as Tiled) appears
+  on the Dashboard table and Compact views too. Static entries are
+  never stale. This is the staleness-visualization prerequisite named
+  in FUTURE.md's duplicate-detection entry; the same threshold will be
+  reused there.
+- **As built:** Dashboard shows a `ti-clock-exclamation` warn icon beside
+  the Docker pill; Compact shows the same icon right-aligned in the tile
+  (the Tiled icon turns amber as before). Both appear only for dynamic
+  entries that have a `last_api_update` and are stale; a never-updated
+  dynamic entry still counts as stale in the model but Tiled keeps its
+  separate red "no update received" state, and Dashboard keeps its red
+  pill. Outside an app context the threshold falls back to 5.
+
+### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
+
+Resolves the Open Question on health-check timeouts (§15).
+
+- **Schema:** `service_entry.health_check_timeout` (Integer seconds,
+  nullable → use the global default) and
+  `service_entry.health_check_verify_tls` (Boolean, NOT NULL, server
+  default true).
+- New global setting `health_check_timeout` (default `5`, today's
+  hardcoded value).
+- Edit page gains both fields in an advanced section. Both are
+  operator-curated, not register fields — the notifier never sends them
+  (no contract change).
+- `verify_tls = false` passes `verify=False` to `requests` and
+  suppresses the urllib3 InsecureRequestWarning for that call only.
+- **As built:** the per-URL check is `jobs.check_url(url, entry,
+  default_timeout)`; timeout is `entry.health_check_timeout` or the
+  global setting. The edit page has an "Advanced health check" section;
+  the Add page carries the same two fields (verify defaults on).
+  Timeout is validated as a whole number 1-60 (blank = default); an
+  invalid edit-page value is rejected with a warning and the stored
+  value kept. Both fields round-trip through YAML backup/restore
+  (absent in older backups = global timeout, verify on). No register
+  contract change: `schemas.py` untouched and `upsert_service` never
+  writes either column.
+- Out of scope: concurrent health checks. Sequential checks with longer
+  per-service timeouts lengthen a pass; acceptable at homelab scale.
+
+### 12.9 Production WSGI server and pinned dependencies [`v069-09-gunicorn-and-pins`] — Delivered in v0.6.9
+
+- The image runs **gunicorn** instead of the Werkzeug dev server
+  (`python app.py`). **Exactly one worker** (`--workers 1`, several
+  threads): the register mutex, APScheduler, and the health-check
+  thread are all in-process and must not be duplicated. Startup work
+  now in `__main__` (default admin, icon verify, background workers)
+  moves to a function invoked once from a `gunicorn.conf.py` hook.
+- `python app.py` keeps working for local development.
+- `requirements.txt` becomes fully pinned (generated from a
+  `requirements.in` with `uv pip compile`); the Dockerfile installs the
+  pinned set.
+- Operator-visible: log format at startup changes (gunicorn lines); no
+  config change required. Port stays 8815.
+- **As built:** `app.run_startup_tasks(app)` (idempotent per process) does the
+  default admin, icon sweep and `start_background_workers`; `__main__` and
+  `gunicorn.conf.py`'s `post_worker_init` both call it. `workers = 1`,
+  `threads = 4`, no `preload_app`. `entrypoint.sh` runs gunicorn unless
+  `FLASK_DEBUG=1`, which keeps `python app.py`. Pins come from
+  `requirements.in` via `uv pip compile --python-version 3.11`; the image
+  is built for linux/amd64 only (publish.yml sets no platforms).
+
+### 12.10 Docs loose ends [`v069-10-docs-loose-ends`] — Delivered in v0.6.9
+
+- CHANGELOG: replace the `2026-XX-XX` placeholder dates on 0.1.x–0.4.x
+  with the real git-tag dates (all **2025**; e.g. v0.4.0 2025-06-05,
+  v0.4.14 2025-07-12; series headers use the first tag's date).
+- Add an MIT `LICENSE` file (the README already links one).
+- README: replace the v0.6.0 `/api/register` top banner with a short
+  current-compatibility note; reword "GHCR images start at v0.6.7" so it
+  doesn't age.
+- Out of scope (upstream): the stale `release-prep-and-cut @ v1.0.0`
+  text in the CLAUDE.md snippet and `.claude/commands/` headers is
+  stale in `homelab-configs` itself; fix it there, then re-sync.
+- README screenshots remain stale (needs a live instance; not
+  agent-doable).
+- As built: dates taken from tags (0.3.x/0.2.x/0.1.x series use v0.3.0
+  2025-05-31, v0.2.0 2025-05-27, v0.1.0 2025-05-26). The What's New
+  parser skips `[0.x.x] series` headers (no match), so they are inert.
+
+### 12.11 CodeQL path and redirect fixes [`v069-11-codeql-path-and-redirect`] — Delivered in v0.6.9
+
+Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
+`py/url-redirection`.
+
+- **Icon names** (register `image_icon` and derived names, `/add`, `/edit`)
+  go through `image_utils.safe_icon_filename` (lowercase, optional `.svg`
+  stripped, `^[a-z0-9][a-z0-9._-]*$`, no `..`, at most 100 chars including
+  `.svg`). The path is then checked with `icon_path_in_dir` (`realpath`
+  containment in `IMAGE_DIR`) before any write. Register skips an unsafe icon
+  with a WARNING and still succeeds; Add/Edit flash a message and download
+  nothing (Edit leaves the stored icon unchanged and saves the other fields).
+- **Backup restore from a server file** accepts only a bare filename ending
+  `.yaml`/`.yml` whose resolved path stays inside the backup folder.
+- **`/widget_config/<widget_name>`** accepts only directory names present
+  under `widgets/`, resolved from the app root rather than `/app/widgets`.
+- **Redirects:** `view_helpers.safe_redirect_target` allows only same-site
+  relative paths (single leading `/`, no scheme/netloc, no `//` or `/\`).
+  Used for the edit page's `ref` (save, delete, and the wrong-confirmation
+  bounce) and the CSRF error handler's referrer fallback.
+- As built: the Add page's `ref` was parsed but never used, so that dead code
+  was removed rather than hardened. The Add and Edit templates do not render
+  flashed messages (only Settings does), so the invalid-icon message is
+  queued for the next Settings view rather than shown inline; see
+  `docs/decisions.md`.
+
+---
+
+## 13. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -867,10 +1242,11 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
   force-push, block deletion. Required checks: `build` (image build,
   `publish.yml`), CodeQL, and the `CI` workflow jobs `Lint` (ruff,
   `ruff.toml`), `Config validation` (YAML/JSON parse), `Migration check`
-  (`alembic upgrade head` on an empty DB, exactly one head), and
-  `Compose validation` (`docker compose config --quiet`). `CI` triggers
-  on push to `dev`/`main` only. No test suite exists yet, so the
-  standard's test check is exempt.
+  (`alembic upgrade head` on an empty DB, exactly one head),
+  `Compose validation` (`docker compose config --quiet`), and `Test`
+  (pytest, `tests/`; added in v0.6.9 — pending operator action to mark it
+  required in branch protection). `CI` triggers on push to `dev`/`main`
+  only.
 - Registry retention: `.github/workflows/retention.yml` prunes GHCR
   versions weekly and after each publish — keeps the 30 most recent
   `sha-*` and 15 most recent semver versions, never deletes `latest`,
@@ -897,12 +1273,12 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 
 ---
 
-## 12. Cross-Repo Coordination
+## 14. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 12.1 Contract ownership
+### 14.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -915,7 +1291,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 12.2 Release history
+### 14.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -940,17 +1316,19 @@ not lead.
 
 ---
 
-## 13. Open Questions
+## 15. Open Questions
 
-- **Widget retention granularity.** A flat 30-day window may be too
-  much for some widgets and not enough for others. Per-widget
-  retention policy via `settings.json` worth considering for v0.6.x.
+- **Widget retention granularity.** A flat retention window
+  (`widget_value_retention_days`, made actually configurable in §12.3)
+  may be too much for some widgets and not enough for others. A
+  per-widget policy via the widget's `settings.json` is unscheduled;
+  revisit once §12.3 ships and the global knob works.
 - **API tokens per-source.** A single shared token works for a homelab
   but doesn't let you revoke a single notifier host. Per-host tokens +
-  last-seen tracking?
-- **Health check timeouts.** Currently a fixed timeout per check. A
-  per-service timeout override may be useful for slow-to-respond
-  services.
+  last-seen tracking? Unscheduled; §12.3 only closes the
+  unset-token hole.
+- ~~**Health check timeouts.**~~ Resolved in §12.8 (per-service timeout
+  and TLS-verify override).
 - **Read-replica for dashboard reads.** WAL handles concurrent reads
   fine at this scale, but if widget growth pushes DB size up, worth
-  measuring.
+  measuring. No evidence it's needed.

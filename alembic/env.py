@@ -1,5 +1,7 @@
 from logging.config import fileConfig
+
 from sqlalchemy import engine_from_config, pool
+
 from alembic import context
 
 # this is the Alembic Config object, which provides
@@ -8,14 +10,14 @@ config = context.config
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from extensions import db
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Import the models module so SQLAlchemy model classes register
 # themselves with db.metadata. Without this, db.metadata is empty and
 # `alembic revision --autogenerate` silently produces no-op migrations,
 # causing schema drift between the codebase and the database.
 import models  # noqa: F401
+from extensions import db
 
 target_metadata = db.metadata
 

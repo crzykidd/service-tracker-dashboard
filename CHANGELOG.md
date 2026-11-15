@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-11-15
+
+### Added
+
+- **Per-service health-check options.** The edit and add pages have a new
+  "Advanced health check" section: a timeout (1-60 s, blank = default) and a
+  "Verify TLS certificate" checkbox. Untick it for self-signed internal URLs
+  that used to report `Error: SSLError`. Both are included in backups and
+  restores.
+- **`health_check_timeout` setting** (default `5`) sets the global health-check
+  timeout, previously hard-coded.
+- **Stale indicator on every view.** A service whose last notifier update is
+  older than the threshold now shows an amber warning icon (tooltip "Stale —
+  updated <time>") on the Dashboard table and Compact view as well as Tiled.
+- **`stale_after_minutes` setting** (default `5`) sets that threshold.
+  Static entries are never stale.
+- **Settings → Deleted tab.** Deleted services now land here instead of
+  vanishing. Each row shows the name, host, when it was deleted, and the days
+  left before it is purged, with **Restore** and **Delete permanently**
+  buttons.
+- **`deleted_retention_days` setting** (default `30`; `0` removes deleted
+  entries at the next nightly run). A daily 00:25 job permanently removes
+  entries deleted longer ago than this.
+
+### Changed
+
+- **Production server is now gunicorn** (one worker, four threads) instead of
+  the Flask development server. Port 8815 and all configuration are unchanged,
+  so no action is needed. Startup log lines now come from gunicorn alongside the
+  app's own, and each request is access-logged to the container output. The
+  single worker is deliberate: the scheduler, health-check thread and register
+  lock are in-process. Setting `FLASK_DEBUG=1` still runs the development
+  server with auto-reload.
+- **Dependencies are pinned.** Image builds install an exact, resolved set of
+  versions, so a rebuild no longer picks up whatever is newest upstream.
+- **One staleness rule.** The Tiled view no longer has a separate 2-hour
+  clause; the single `stale_after_minutes` threshold decides. The Tiled
+  tooltip now reads "stale — updated <time>".
+- **Widget settings survive permanent deletion and can be re-attached.**
+  Permanently deleting a service (or the nightly purge) now keeps its widget and
+  stored values as a detached widget instead of erasing them. Settings →
+  Deleted has a new "Detached widgets" list with **Attach** (to an active
+  service with no widget) and **Delete**. Detached widgets, and widgets whose
+  services are all deleted, are no longer refreshed.
+- **Deleting a service is now recoverable.** The trash icon, the tile drawer,
+  and the edit page's Delete button hide the entry (and stop its health checks
+  and widget refresh) instead of erasing it; the confirm popover and flash
+  message say it can be restored from Settings → Deleted for N days. Its
+  widget stays attached.
+- **A register for a deleted service restores it.** If a container that was
+  deleted here registers again before it is purged, STD brings back the same
+  entry (group, sort priority, and edits intact) rather than creating a blank
+  one.
+- YAML backups now include each entry's deletion time, and restore brings it
+  back; backups from earlier versions restore as before. `/dbdump` lists
+  deleted entries too, struck through with a Deleted At column.
+
+### Fixed
+
+- **`widget_value_retention_days` and `register_field_ownership` now work.**
+  Both were documented but silently ignored (from `settings.yml` and from the
+  environment); the defaults always applied. They are now read from either.
+- **An unset `API_TOKEN` no longer accepts a bogus header.** Previously
+  `Authorization: Bearer None` was accepted when no token was configured.
+  Now `/api/v1/register` returns `503 {"error": "API token not configured"}`
+  until a token is set, and Settings → Service Info shows a notice.
+  **Installs that never set `API_TOKEN` will now get 503 on register;** set
+  `API_TOKEN` (or `api_token` in `settings.yml`) to restore it.
+
+### Security
+
+- **CSRF protection on every UI POST.** All forms (login, logout, settings,
+  groups, users, add/edit, backup/restore) and the in-page delete requests now
+  carry a CSRF token. A stale or tokenless form submit shows "Your session
+  expired or the form was stale; please retry." and returns you to the page;
+  a tokenless JSON request gets `400 {"error": "CSRF token missing or
+  invalid"}`. `/api/v1/register` is unaffected (bearer-token API). Tokens last
+  as long as the session. Requires `Flask-WTF` (installed with the image).
+- API token comparison is now constant-time.
+- The API token is masked (`***`) in startup and debug logs.
+- STD now warns (log and a dismissible notice on Settings) when
+  `FLASK_SECRET_KEY` is unset or the `admin` user still has the default
+  `changeme123` password. Nothing is forced; change them when you can.
+- **Paths and redirects are confined.** Icon files built from an icon name
+  (register, Add, Edit), server-side backup restore filenames and widget names
+  can no longer reach outside their own folders; an unsafe icon name is skipped
+  (a register still succeeds) or flagged on Add/Edit. After you save or delete
+  an entry, STD only redirects to pages within STD, never to another site.
+  This closes 13 CodeQL alerts (`py/path-injection`, `py/url-redirection`).
+
 ## [0.6.8] — 2026-11-15
 
 ### Removed
@@ -501,66 +591,67 @@ extracted to shared static files, Compact tab-highlight fix.
 
 ---
 
-## [0.4.14] — 2026-XX-XX
+## [0.4.14] — 2025-07-12
 
 Released. Detailed notes not retained.
 
-## [0.4.13] — 2026-XX-XX
+## [0.4.13] — 2025-06-23
 Released.
 
-## [0.4.12] — 2026-XX-XX
+## [0.4.12] — 2025-06-22
 Released.
 
-## [0.4.11] — 2026-XX-XX
+## [0.4.11] — 2025-06-22
 Released.
 
-## [0.4.10] — 2026-XX-XX
+## [0.4.10] — 2025-06-21
 Released.
 
-## [0.4.9] — 2026-XX-XX
+## [0.4.9] — 2025-06-21
 
 Breaking change: required a database backup + delete + restore on upgrade.
 
-## [0.4.8] — 2026-XX-XX
+## [0.4.8] — 2025-06-21
 Released.
 
-## [0.4.7] — 2026-XX-XX
+## [0.4.7] — 2025-06-21
 Released.
 
-## [0.4.6] — 2026-XX-XX
+## [0.4.6] — 2025-06-07
 Released.
 
-## [0.4.5] — 2026-XX-XX
+## [0.4.5] — 2025-06-07
 Released.
 
-## [0.4.4] — 2026-XX-XX
+## [0.4.4] — 2025-06-06
 Released.
 
-## [0.4.3] — 2026-XX-XX
+## [0.4.3] — 2025-06-06
 Released.
 
-## [0.4.2] — 2026-XX-XX
+## [0.4.2] — 2025-06-05
 Released.
 
-## [0.4.1] — 2026-XX-XX
+## [0.4.1] — 2025-06-05
 Released.
 
-## [0.4.0] — 2026-XX-XX
+## [0.4.0] — 2025-06-05
 Released.
 
-## [0.3.x] series — 2026-XX-XX
+## [0.3.x] series — 2025-05-31
 
 v0.3.0 through v0.3.9 released. Detailed notes not retained.
 
-## [0.2.x] series — 2026-XX-XX
+## [0.2.x] series — 2025-05-27
 
 v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
-## [0.1.x] series — 2026-XX-XX
+## [0.1.x] series — 2025-05-26
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...HEAD
+[0.6.9]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.6

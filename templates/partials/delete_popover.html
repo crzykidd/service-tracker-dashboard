@@ -1,6 +1,8 @@
 <div id="delete-popover" class="delete-popover hidden" role="dialog" aria-modal="false">
   <div class="delete-popover-message">
     Delete <strong class="delete-popover-target"></strong>?
+    {% set _days = config.get('deleted_retention_days', 30) %}
+    <div class="delete-popover-hint">{% if _days == 0 %}It will be removed permanently at the next nightly purge.{% else %}You can restore it from Settings → Deleted for {{ _days }} day{{ '' if _days == 1 else 's' }}.{% endif %}</div>
   </div>
   <div class="delete-popover-actions">
     <button class="delete-popover-cancel">Cancel</button>

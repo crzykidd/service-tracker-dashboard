@@ -8,9 +8,10 @@ reference here.
 
 Public entry points:
 - `start_background_workers(app)` — registers the APScheduler jobs
-  (widget refresh, daily backup, widget_value retention prune) and
-  starts the URL health-check thread. Called once from the __main__
-  block after migrations.
+  (widget refresh, daily backup, widget_value retention prune, soft-delete
+  purge) and
+  starts the URL health-check thread. Called once, via app.run_startup_tasks(),
+  after migrations.
 - `verify_and_fetch_missing_icons(app)` — one-shot icon sweep run
   at startup.
 """
@@ -21,6 +22,7 @@ import logging
 import os
 import threading
 import time
+import warnings
 from datetime import datetime, timedelta
 from functools import partial
 
@@ -29,17 +31,24 @@ import yaml
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from urllib3.exceptions import InsecureRequestWarning
 
 from extensions import db
 from image_utils import fetch_icon_if_missing
-from models import ServiceEntry, Widget, WidgetValue
+from models import ServiceEntry, Widget, WidgetValue, hard_delete_entry
+from settings_loader import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
 
 def update_widget_data_periodically(app):
     with app.app_context():
-        widgets = Widget.query.all()
+        # Refresh only widgets with at least one active service. Skipped:
+        # widgets whose services are all soft-deleted (Restore brings them
+        # back intact) and detached widgets (no service references them).
+        widgets = Widget.query.filter(
+            Widget.services.any(ServiceEntry.deleted_at.is_(None))
+        ).all()
 
         for widget in widgets:  # ✅ Now inside context
             print(f"🔄 Running widget fetch for: {widget.widget_name} ({widget.id})")
@@ -62,7 +71,7 @@ def update_widget_data_periodically(app):
 
                 try:
                     module = importlib.import_module(f"widgets.{widget_key}.fetch_data")
-                    fetch_func = getattr(module, "fetch_widget_data")
+                    fetch_func = module.fetch_widget_data
                     data = fetch_func(api_url, api_key, requested_fields, available_fields)
                 except Exception as e:
                     print(f"❌ Failed to load widget fetcher for '{widget_key}': {e}")
@@ -94,6 +103,37 @@ def update_widget_data_periodically(app):
                 print(f"🔥 Exception while processing widget {widget.id}: {str(e)}")
 
 
+DEFAULT_HEALTH_CHECK_TIMEOUT = 5
+
+
+def _global_health_timeout(app):
+    try:
+        value = int(app.config.get("health_check_timeout", DEFAULT_HEALTH_CHECK_TIMEOUT))
+    except (TypeError, ValueError):
+        return DEFAULT_HEALTH_CHECK_TIMEOUT
+    return value if value > 0 else DEFAULT_HEALTH_CHECK_TIMEOUT
+
+
+def check_url(url, entry, default_timeout=DEFAULT_HEALTH_CHECK_TIMEOUT):
+    """Run one health check and return the status string.
+
+    Timeout is the entry's own `health_check_timeout` when set, else
+    `default_timeout` (the global setting). `verify` follows the entry's
+    `health_check_verify_tls`; when it is off, urllib3's
+    InsecureRequestWarning is silenced for this call only.
+    """
+    timeout = entry.health_check_timeout or default_timeout
+    verify = entry.health_check_verify_tls is not False
+    try:
+        with warnings.catch_warnings():
+            if not verify:
+                warnings.simplefilter("ignore", InsecureRequestWarning)
+            response = requests.get(url, timeout=timeout, verify=verify)
+        return str(response.status_code)
+    except Exception as e:
+        return f"Error: {type(e).__name__}"
+
+
 # Background health check loop
 def health_check_loop(app):
     URL_HEALTHCHECK_INTERVAL = app.config.get("url_healthcheck_interval", 60)
@@ -105,7 +145,8 @@ def health_check_loop(app):
             iteration += 1
             try:
                 log_output = ["\U0001f504 Running internal health checks..."]
-                entries = ServiceEntry.query.all()
+                entries = ServiceEntry.active().all()
+                default_timeout = _global_health_timeout(app)
 
                 for entry in entries:
                     show_log = False
@@ -114,24 +155,14 @@ def health_check_loop(app):
 
                     if entry.internal_health_check_enabled and entry.internalurl:
                         show_log = True
-                        try:
-                            response = requests.get(entry.internalurl, timeout=5)
-                            internal_status = str(response.status_code)
-                            entry.internal_health_check_status = internal_status
-                        except Exception as e:
-                            internal_status = f"Error: {type(e).__name__}"
-                            entry.internal_health_check_status = internal_status
+                        internal_status = check_url(entry.internalurl, entry, default_timeout)
+                        entry.internal_health_check_status = internal_status
                         entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                     if entry.external_health_check_enabled and entry.externalurl:
                         show_log = True
-                        try:
-                            response = requests.get(entry.externalurl, timeout=5)
-                            external_status = str(response.status_code)
-                            entry.external_health_check_status = external_status
-                        except Exception as e:
-                            external_status = f"Error: {type(e).__name__}"
-                            entry.external_health_check_status = external_status
+                        external_status = check_url(entry.externalurl, entry, default_timeout)
+                        entry.external_health_check_status = external_status
                         entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                     if show_log:
@@ -157,7 +188,7 @@ def health_check_loop(app):
 
 def run_scheduled_backup(app):
     with app.app_context():
-        backup_dir = app.config.get("backup_path", "/config/backups")
+        backup_dir = app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
         days_to_keep = int(app.config.get("backup_days_to_keep", 7))
 
         os.makedirs(backup_dir, exist_ok=True)
@@ -166,6 +197,7 @@ def run_scheduled_backup(app):
         full_path = os.path.join(backup_dir, filename)
 
         try:
+            # All rows, soft-deleted included: the backup carries deleted_at.
             entries = ServiceEntry.query.all()
             data = [e.to_dict() for e in entries]
             with open(full_path, 'w') as f:
@@ -227,12 +259,44 @@ def prune_widget_values(app):
                 logger.exception("Failed to roll back session after prune error")
 
 
+def purge_deleted_entries(app):
+    """Hard-delete soft-deleted entries older than deleted_retention_days.
+
+    0 purges every soft-deleted entry at the next run. Each purge goes
+    through `hard_delete_entry`. Wrapped in try/except so a transient DB
+    error never kills the scheduler.
+    """
+    with app.app_context():
+        try:
+            retention_days = int(app.config.get("deleted_retention_days", 30))
+            cutoff = datetime.now() - timedelta(days=retention_days)
+            expired = (
+                ServiceEntry.query
+                .filter(ServiceEntry.deleted_at.isnot(None))
+                .filter(ServiceEntry.deleted_at <= cutoff)
+                .all()
+            )
+            for entry in expired:
+                hard_delete_entry(entry)
+            db.session.commit()
+            logger.info(
+                f"🧹 Purged {len(expired)} soft-deleted service(s) older than "
+                f"{retention_days} days (cutoff: {cutoff.isoformat()})."
+            )
+        except Exception:
+            logger.exception("Soft-delete purge failed; rolling back.")
+            try:
+                db.session.rollback()
+            except Exception:
+                logger.exception("Failed to roll back session after purge error")
+
+
 # Check images at startup
 def verify_and_fetch_missing_icons(app):
     image_dir = app.config['IMAGE_DIR']
     logger.info("🔍 Verifying icon files for all ServiceEntry records...")
     with app.app_context():
-        entries = ServiceEntry.query.all()
+        entries = ServiceEntry.active().all()
         missing_count = 0
         for entry in entries:
             icon = entry.image_icon
@@ -273,6 +337,13 @@ def start_background_workers(app):
         CronTrigger(hour=0, minute=15),
         id='widget_value_prune_job',
         name='Prune widget_value rows past retention window',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        partial(purge_deleted_entries, app),
+        CronTrigger(hour=0, minute=25),
+        id='deleted_entry_purge_job',
+        name='Purge soft-deleted entries past retention window',
         replace_existing=True
     )
     scheduler.start()

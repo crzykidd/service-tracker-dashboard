@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.6.8-blue)
+![Version](https://img.shields.io/badge/version-0.6.9-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -14,11 +14,9 @@ kept current by a sidecar process — typically
 posting to STD's register endpoint, but you can also add entries by hand
 through the web UI or directly via API.
 
-> **v0.6.0 removes the legacy `/api/register` endpoint.** All registers
-> must use `/api/v1/register` with canonical key names. If you're
-> running `docker-api-notifier`, v0.3.0 or later is required for basic
-> registration; v0.4.0 is the paired release that populates the new
-> network / port / exposure-observation fields.
+> **Compatibility:** STD v0.6.0+ requires `docker-api-notifier` v0.3.0+
+> (`/api/v1/register` only). Network, port, and exposure data needs
+> notifier v0.4.0+.
 
 ---
 
@@ -39,10 +37,37 @@ through the web UI or directly via API.
 12. [Widgets](#widgets)
 13. [Behavior Notes](#behavior-notes)
 14. [Versioning & Releases](#versioning--releases)
+15. [Development](#development)
 
 ---
 
 ## What's New
+
+### v0.6.9 (2026-11-15)
+
+A hardening and safety-net release. **Read before upgrading:** if you never
+set `API_TOKEN`, registers now return 503 until you do, and browser tabs left
+open across the upgrade need a reload before their next form submit or delete.
+
+- **Deletes are recoverable.** Deleted services go to the new Settings ->
+  Deleted tab for `deleted_retention_days` (default 30) before they are purged.
+  A container that registers again before then comes back with its group,
+  sort priority, and edits intact. Permanently deleting a service keeps its
+  widget as a detached widget you can re-attach.
+- **Stale indicator on every view**, driven by one `stale_after_minutes`
+  setting (default 5).
+- **Per-service health-check options:** a timeout and a "Verify TLS
+  certificate" switch for self-signed internal URLs, plus a global
+  `health_check_timeout` setting.
+- **Fixed:** `widget_value_retention_days` and `register_field_ownership` were
+  silently ignored and now work; an unset `API_TOKEN` no longer accepts a bogus
+  header.
+- **Security:** CSRF protection on every form and in-page request, a
+  constant-time token check, the token masked in logs, warnings when the
+  default secret key or admin password is still in use, and icon, backup and
+  widget paths and post-save redirects confined to STD.
+- **Runtime:** the image now runs gunicorn (one worker) with pinned
+  dependencies. No configuration change is needed.
 
 ### v0.6.8 (2026-11-15)
 
@@ -77,6 +102,7 @@ compose file; your config, database, and settings carry over unchanged. See
 ## What It Does
 
 - Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens the drawer in widget-only mode (showing just the metric cards); the chevron opens the full drawer. The two modes switch in-place without closing and reopening.
+- **Stale indicator.** A dynamic service whose last notifier update is older than `stale_after_minutes` (default 5) shows an amber warning icon with a "Stale — updated <time>" tooltip on all three views. Static entries are never flagged.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so
@@ -87,7 +113,7 @@ compose file; your config, database, and settings carry over unchanged. See
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
 - Daily YAML backups with retention.
-- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page.
+- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
 - Per-entry sort priority within groups; grouping and group sort.
@@ -104,7 +130,7 @@ compose file; your config, database, and settings carry over unchanged. See
 
 ## Screenshots
 
-<!-- TODO(v0.6.1): Screenshots below predate the v0.6.1 tile redesign (host line removed from tile face, icon-row status strip, expand drawer replacing inline widget data, Tabler icons replacing emoji badges). Refresh before next public announcement. -->
+<!-- TODO(v0.6.1): Still outstanding as of v0.6.9. Screenshots below predate the v0.6.1 tile redesign (host line removed from tile face, icon-row status strip, expand drawer replacing inline widget data, Tabler icons replacing emoji badges). Refresh before next public announcement. -->
 
 | Main Dashboard | Tiled View | Compact View |
 |---|---|---|
@@ -129,16 +155,19 @@ Default login: `admin` / `changeme123`. Change it on first run.
 
 | Setting                    | Type   | ENV                          | Default            | What it does |
 |----------------------------|--------|------------------------------|--------------------|--------------|
-| `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. |
+| `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. If unset, register returns 503 until it is set. The token is masked in logs. |
 | `std_dozzle_url`           | string | `STD_DOZZLE_URL`             | —                  | Optional link to a Dozzle instance; enables a Tools section in the UI. |
 | `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where YAML backups are written. |
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
+| `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
+| `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
+| `stale_after_minutes`      | int    | `STALE_AFTER_MINUTES`        | `5`                | Minutes without a notifier update before a dynamic service is flagged stale (warning icon on the Dashboard, Tiled, and Compact views). Static entries are never stale; the notifier re-scans every 60 s by default. |
 | `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
-| `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. |
+| `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. If unset, a built-in default is used and Settings shows a warning (as it does while `admin` still has the default password). |
 
 ### Example `settings.yml`
 
@@ -148,9 +177,11 @@ std_dozzle_url: http://dozzle.local
 backup_path: /config/backups
 backup_days_to_keep: 7
 url_healthcheck_interval: 300
+health_check_timeout: 5
 widget_background_reload: 900
 widget_value_retention_days: 30
 register_field_ownership: user_wins
+stale_after_minutes: 5
 user_session_length: 120
 ```
 
@@ -200,7 +231,7 @@ Nothing else changes: the tags are the same (`:latest`, `:dev`,
 `:<version>`, `:<major>`), and your `/config` volume, database, and
 settings carry over as-is. If you pin a version, use the same tag on
 GHCR (e.g. `ghcr.io/crzykidd/service-tracker-dashboard:0.6.7`).
-GHCR images start at v0.6.7; older versions stay on Docker Hub only.
+Docker Hub images stop at v0.6.7; GHCR is the only registry from v0.6.8 on.
 
 ---
 
@@ -438,6 +469,10 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
 - Status code, response time, and timestamp are recorded per check.
+- Each check waits up to `health_check_timeout` seconds (default 5). A
+  service can override this, and turn off TLS certificate verification
+  (for self-signed internal URLs that otherwise show `Error: SSLError`),
+  under **Advanced health check** on its edit page (also on the Add page).
 - A failed check logs and moves on; it does not crash the loop.
 - UI shows color-coded status (green / yellow / red) with last-checked time.
 
@@ -451,8 +486,10 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/tiled_dash`        | Grid-style dashboard.                    |
 | `/compact_dash`      | High-density compact view.               |
 | `/add`               | Manually add a new entry.                |
-| `/edit/<id>`         | Edit or delete an existing entry.        |
+| `/edit/<id>`         | Edit or delete (soft-delete) an existing entry. |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
+| `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
+| `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
@@ -477,16 +514,31 @@ Widget data is sampled on the `widget_background_reload` interval and
 cached in the `widget_value` table. Retention: rolling 30 days
 (introduced in v0.5.0).
 
+When a service is permanently deleted (Delete permanently, or the nightly
+purge) its widget is kept as a **detached widget** rather than erased: the
+settings and stored values remain, but it is no longer refreshed. Settings →
+Deleted lists detached widgets and lets you **Attach** one to an active service
+that has no widget, or **Delete** it (with its values). Widgets that belong
+only to soft-deleted services are also not refreshed until the service is
+restored.
+
 ---
 
 ## Behavior Notes
 
+- Deleting a service is a soft delete: it disappears from the dashboards and
+  stops being health-checked, and can be restored from Settings → Deleted
+  until `deleted_retention_days` passes. If its container registers again
+  first, the entry is restored automatically with its edits intact.
 - Entries marked `static` are not overwritten by API register calls.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.
 - Nightly backups run shortly after midnight; old backups are pruned
   per `backup_days_to_keep`.
 - Version metadata is shown in `/settings`.
+- All UI forms and in-page delete requests are CSRF-protected. If a form
+  was left open past a session expiry, submitting it shows a "please retry"
+  message instead of acting. `/api/v1/register` (bearer token) is exempt.
 - Tile drawers on the Tiled view are transient view state and not bookmarkable; full edit remains at `/edit/<id>` and is bookmarkable.
 
 ---
@@ -498,7 +550,7 @@ Docker Hub (`crzykidd/service-tracker-dashboard`) is no longer published;
 v0.6.7 was its last release — see
 [Moving from Docker Hub](#moving-from-docker-hub).
 
-- `:latest` follows `main` — CI-verified pre-release.
+- `:latest` follows `main` and is re-tagged on every GitHub Release.
 - `:dev` follows `dev` — work in progress.
 - `:sha-<short>` published for every push.
 - Semver-tagged images (`:0.6.0`, `:0`) published from GitHub Releases.
@@ -519,6 +571,49 @@ syncs the README and docs, and opens the `dev` -> `main` PR; after the PR
 is merged and `main` CI is green, `/release-cut <version>` tags `v<version>`
 and publishes the GitHub Release (whose notes are the CHANGELOG section).
 The publish workflow refuses a release whose tag does not match `VERSION`.
+
+---
+
+## Development
+
+Work happens on the `dev` branch and reaches `main` through a pull request.
+A PR merges only when the required checks are green: `build` (image build),
+CodeQL, and the CI jobs `Lint`, `Test`, `Config validation`, `Migration check`,
+and `Compose validation`. Lint (`ruff.toml`) selects `E, W, F, I, B` (pycodestyle,
+pyflakes, import sorting, flake8-bugbear) with `E501` ignored; run
+`uvx ruff@0.15.17 check .` before pushing.
+
+Run the test suite locally (Python 3.11):
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+The tests run against a temporary config directory. `STD_CONFIG_DIR` (default
+`/config`) is a dev/test knob that relocates the settings file, database, logs,
+images, and backups; leave it unset in production.
+
+Production runs under gunicorn with **exactly one worker** (see
+`gunicorn.conf.py`; the scheduler, health-check thread and register lock are
+in-process, so do not raise `workers`). `FLASK_DEBUG=1` runs `python app.py`
+(Werkzeug with auto-reload) instead; the default does not.
+
+Dependencies are pinned. Edit `requirements.in` (the direct dependencies), then
+regenerate the pinned `requirements.txt`:
+
+```bash
+uv pip compile --python-version 3.11 requirements.in -o requirements.txt
+```
+
+`requirements-dev.txt` adds pytest on top of the pinned set.
+
+Releases go through `/release-prep` and `/release-cut` (see
+[Versioning & Releases](#versioning--releases)). Contributor and agent
+guidance lives in [`CLAUDE.md`](CLAUDE.md); adopted engineering standards in
+[`standards.md`](standards.md); handoff prompts in [`prompts/`](prompts/); and
+non-obvious design decisions in [`docs/decisions.md`](docs/decisions.md).
+The design record is [`docs/PRD.md`](docs/PRD.md).
 
 ---
 

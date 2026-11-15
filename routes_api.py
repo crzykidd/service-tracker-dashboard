@@ -20,6 +20,7 @@ Module-level state local to this surface:
   intentional — see the function docstring.
 """
 
+import hmac
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -28,7 +29,7 @@ from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
 import synthesizer
-from extensions import db
+from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
 from models import Group, ServiceEntry
 from schemas import RegisterPayload
@@ -51,11 +52,18 @@ _UPSERT_LOCK = threading.Lock()
 def _check_bearer_auth(endpoint_label):
     """Validate the Authorization header against `api_token`.
 
-    Returns None on success, or a 401 Flask Response on failure.
+    Returns None on success, a 503 if no token is configured, or a 401
+    Flask Response on failure.
     """
-    auth_header = request.headers.get("Authorization", "")
-    expected = f"Bearer {current_app.config['api_token']}"
-    if auth_header == expected:
+    token = current_app.config.get("api_token")
+    if not token:
+        response = jsonify({"error": "API token not configured"})
+        response.status_code = 503
+        return response
+
+    auth_header = request.headers.get("Authorization") or ""
+    expected = f"Bearer {token}"
+    if hmac.compare_digest(auth_header.encode("utf-8"), expected.encode("utf-8")):
         return None
 
     client_ip = request.remote_addr
@@ -167,10 +175,18 @@ def upsert_service(canonical, app):
                 db.session.add(group_obj)
                 db.session.flush()
 
-        entry = ServiceEntry.query.filter_by(
-            host=canonical['host'],
-            container_name=canonical['container_name'],
-        ).first()
+        # Soft-deleted rows are visible here on purpose: a register for a
+        # deleted (host, container_name) resurrects it. Prefer an active
+        # row if both an active and a deleted one exist (deleted_at NULL
+        # sorts first via the IS NOT NULL ordering key).
+        entry = (
+            ServiceEntry.query.filter_by(
+                host=canonical['host'],
+                container_name=canonical['container_name'],
+            )
+            .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
+            .first()
+        )
 
         if entry is not None:
             if entry.is_static:
@@ -179,6 +195,13 @@ def upsert_service(canonical, app):
                     f"'{entry.host}' — static lock enabled."
                 )
                 return {"status": "skipped", "reason": "static lock"}, 200
+
+            if entry.deleted_at is not None:
+                logger.info(
+                    f"Register for soft-deleted '{entry.container_name}' on "
+                    f"'{entry.host}' - restoring it (was deleted {entry.deleted_at})."
+                )
+                entry.deleted_at = None
 
             now = datetime.now()
             entry.last_updated = now
@@ -301,6 +324,7 @@ def upsert_service(canonical, app):
 
 
 @api_bp.route('/api/v1/register', methods=['POST'])
+@csrf.exempt
 def api_v1_register():
     """Canonical register endpoint (v0.5.0+).
 

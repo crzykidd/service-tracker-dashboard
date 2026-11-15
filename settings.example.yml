@@ -28,6 +28,11 @@ widget_background_reload: 900
 # deleted by a daily background job (00:15 server local time).
 widget_value_retention_days: 30
 
+# Days a deleted service stays recoverable (Settings -> Deleted) before a
+# daily background job (00:25 server local time) removes it permanently.
+# 0 = purge deleted entries at the next run of that job.
+deleted_retention_days: 30
+
 # How to handle conflicts between user UI edits and incoming notifier
 # registers for the same service:
 #   user_wins     — UI edits stick; the notifier won't overwrite
@@ -44,3 +49,12 @@ register_field_ownership: user_wins
 # how long to default the user session, default is 120 minutes
 # can be set as USER_SESSION_LENGTH in ENV
 user_session_length: 120
+
+# Minutes without a notifier update before a dynamic service is flagged
+# stale (warning icon on the Dashboard, Tiled, and Compact views). Static
+# entries are never stale. The notifier re-scans every 60 s by default.
+stale_after_minutes: 5
+
+# Seconds to wait for a URL health check before giving up. A service can
+# override this on its edit page. Can be set as HEALTH_CHECK_TIMEOUT in ENV.
+health_check_timeout: 5

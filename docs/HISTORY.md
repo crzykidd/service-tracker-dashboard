@@ -214,3 +214,56 @@ because its provisioning and per-session overhead outweighed its benefit.
 ### Impact on existing installs
 
 None. Developer tooling only — no change to the app or images.
+
+---
+
+## Test suite added (v0.6.9 cycle)
+
+STD had no automated tests, so the `Test` check from `code-checkin-and-pr`
+was exempt. A pytest suite now lives in `tests/` (register auth, the
+`extra="forbid"` contract, `exposure_observations` absent vs `[]`, URL
+provenance, `register_field_ownership`, settings precedence), with a `Test`
+job in `ci.yml`. To make the app testable, the hardcoded `/config/...` paths
+now derive from a `STD_CONFIG_DIR` env var (default `/config`, behavior
+unchanged when unset); it is documented only under README Development, not as
+an operator setting. The operator must add `Test` as a required check in
+branch protection (manual).
+
+---
+
+## Engineering standards adoption (v0.6.8)
+
+### Why
+
+Project process had grown informally (hand-written workflow notes in
+`CLAUDE.md`, a Docker Hub-era release flow, and a vexp setup that was never
+recorded as an adoption). The crzynet `homelab-configs` repo defines shared
+standards; aligning with them makes check-in, release, and agent-handoff
+behavior consistent across projects.
+
+### What changed
+
+- vexp de-adopted (see "vexp removal" above).
+- Three standards adopted, each with a verbatim snippet in `CLAUDE.md`:
+  `handoff-prompt-workflow` 2.0.0, `code-checkin-and-pr` 1.2.0, and
+  `release-prep-and-cut` 1.1.0. Pins live in [`standards.md`](../standards.md).
+- `VERSION` file added as the single source of the in-app version, with a
+  tag==`VERSION` guard in `publish.yml`.
+- v0.6.8 was the first release cut through `/release-prep` and
+  `/release-cut`; it also removed Docker Hub publishing.
+- Judgment calls are logged in [`decisions.md`](./decisions.md).
+
+### Impact on existing installs
+
+Operators see only that `:dev` / `:latest` images now report the real version
+and that Docker Hub is no longer published. Everything else is developer
+process.
+
+---
+
+## Docs loose ends (v0.6.9 cycle)
+
+CHANGELOG historical dates corrected from git tags (the 0.1.x-0.4.x
+`2026-XX-XX` placeholders were 2025 dates); MIT `LICENSE` added (the README
+badge and link already pointed at one); README compatibility banner and
+registry wording refreshed.

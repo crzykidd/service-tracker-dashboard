@@ -12,9 +12,11 @@ off.
 """
 
 from collections import defaultdict
+from urllib.parse import urlparse
+
+from flask import url_for
 
 from models import Group
-
 
 VALID_AXES = ("group", "stack", "host")
 DEFAULT_AXIS = "group"
@@ -126,3 +128,31 @@ def _order_string_buckets(buckets, null_label):
     if None in buckets:
         result.append((null_label, buckets[None]))
     return result
+
+
+def safe_redirect_target(target, fallback=None):
+    """Return `target` only if it is a same-site relative path, else `fallback`.
+
+    Allowed: no scheme, no netloc, starts with a single '/', and not '//' or
+    '/\\' (browsers treat both as protocol-relative). `fallback` defaults to
+    the dashboard.
+    """
+    if fallback is None:
+        fallback = url_for("dashboard.dashboard")
+    if not isinstance(target, str) or not target:
+        return fallback
+    if "\\" in target or any(ord(c) < 32 for c in target):
+        return fallback
+    # Shape follows CodeQL's documented py/url-redirection sanitizer
+    # (backslash strip + no netloc + no scheme, with the safe value returned
+    # inside the guarded branch) so the analyzer recognises it as a barrier.
+    # The backslash case already returned above; the replace is for CodeQL.
+    target = target.replace("\\", "")
+    if (
+        not urlparse(target).netloc
+        and not urlparse(target).scheme
+        and target.startswith("/")
+        and not target.startswith("//")
+    ):
+        return target
+    return fallback

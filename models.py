@@ -7,12 +7,15 @@ themselves with `db.metadata` before autogenerate runs.
 
 from datetime import datetime, timedelta
 
+from flask import current_app, has_app_context
 from flask_login import UserMixin
 from sqlalchemy import func, select
 from sqlalchemy.orm import column_property
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
+
+DEFAULT_STALE_AFTER_MINUTES = 5
 
 
 class ServiceEntry(db.Model):
@@ -79,9 +82,32 @@ class ServiceEntry(db.Model):
     internalurl_source = db.Column(db.String(20), nullable=True)
     externalurl_source = db.Column(db.String(20), nullable=True)
 
+    # Soft delete (v0.6.9). NULL = active; a timestamp = deleted at that
+    # moment and recoverable from Settings -> Deleted until the purge job
+    # (deleted_retention_days) hard-deletes it. Naive local time, like
+    # last_updated. Use ServiceEntry.active() for anything user-facing.
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    # Per-service health-check options (v0.6.9). Operator-curated, never
+    # register fields. NULL timeout = use the global health_check_timeout.
+    health_check_timeout = db.Column(db.Integer, nullable=True)
+    health_check_verify_tls = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.true()
+    )
+
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
     )
+
+    @classmethod
+    def active(cls):
+        """Query of entries that are not soft-deleted."""
+        return cls.query.filter(cls.deleted_at.is_(None))
+
+    @classmethod
+    def deleted(cls):
+        """Query of soft-deleted entries (newest deletion first)."""
+        return cls.query.filter(cls.deleted_at.isnot(None)).order_by(cls.deleted_at.desc())
 
 # fields for backup
     def to_dict(self):
@@ -114,6 +140,9 @@ class ServiceEntry(db.Model):
             'published_ports': self.published_ports,
             'internalurl_source': self.internalurl_source,
             'externalurl_source': self.externalurl_source,
+            'health_check_timeout': self.health_check_timeout,
+            'health_check_verify_tls': self.health_check_verify_tls,
+            'deleted_at': self.deleted_at.strftime('%Y-%m-%d %H:%M:%S') if self.deleted_at else None,
         }
 
         # Add inline widget info if attached
@@ -129,14 +158,28 @@ class ServiceEntry(db.Model):
 
     @property
     def is_docker_status_stale(self):
-        if self.is_static:  # Static entries might not receive frequent API updates
+        """True when the notifier hasn't reported in within `stale_after_minutes`.
+
+        Static entries are never stale. A dynamic entry with no
+        `last_api_update` (never registered) counts as stale; the Tiled view
+        shows that case separately as "no update received".
+        """
+        if self.is_static:
             return False
         if self.last_api_update:
-            # Consider stale if last_api_update is older than 5 minutes
-            return (datetime.now() - self.last_api_update) > timedelta(minutes=5)
-        # If no API update has ever been recorded, and it's not static, consider it stale or unknown.
-        # For a newly added dynamic entry, this would be True until the first API update.
+            return (datetime.now() - self.last_api_update) > timedelta(minutes=_stale_after_minutes())
         return True
+
+
+def _stale_after_minutes():
+    """Configured staleness threshold; default 5 when unset/invalid or outside an app context."""
+    if not has_app_context():
+        return DEFAULT_STALE_AFTER_MINUTES
+    try:
+        value = int(current_app.config.get("stale_after_minutes", DEFAULT_STALE_AFTER_MINUTES))
+    except (TypeError, ValueError):
+        return DEFAULT_STALE_AFTER_MINUTES
+    return value if value >= 0 else DEFAULT_STALE_AFTER_MINUTES
 
 
 class Widget(db.Model):
@@ -147,6 +190,11 @@ class Widget(db.Model):
     widget_url = db.Column(db.String(255), nullable=False)
     widget_fields = db.Column(db.JSON, nullable=False)  # Store the fields as a JSON list
     widget_api_key = db.Column(db.String(255), nullable=True)  # New column for widget API key
+
+    @classmethod
+    def detached(cls):
+        """Widgets no ServiceEntry (active or soft-deleted) references."""
+        return cls.query.filter(~cls.services.any())
 
     def __repr__(self):
         return f'<Widget {self.widget_name}>'
@@ -234,6 +282,7 @@ class Group(db.Model):
     services_count = column_property(
         select(func.count(ServiceEntry.id))
         .where(ServiceEntry.group_id == id)
+        .where(ServiceEntry.deleted_at.is_(None))
         .correlate_except(ServiceEntry)
         .scalar_subquery()
     )
@@ -265,3 +314,16 @@ class User(db.Model, UserMixin):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+def hard_delete_entry(entry):
+    """Permanently delete a service entry.
+
+    The single place a ServiceEntry row is really removed: used by the
+    purge job and Settings -> Deleted -> Delete permanently. Caller commits.
+
+    The entry's widget (and its widget_value history) is kept: once no entry
+    references it, it is "detached" (Widget.detached()) and can be re-attached
+    or deleted from Settings -> Deleted.
+    """
+    db.session.delete(entry)

@@ -79,7 +79,6 @@
                     {% set _docker_status_lower = entry.docker_status.lower() if entry.docker_status else 'unknown' %}
                     {% set _is_good_docker = ('running' in _docker_status_lower and 'unhealthy' not in _docker_status_lower) or 'healthy' in _docker_status_lower %}
                     {% set _is_bad_docker  = 'exited' in _docker_status_lower or 'dead' in _docker_status_lower or 'unhealthy' in _docker_status_lower or 'restarting' in _docker_status_lower or 'removing' in _docker_status_lower or 'paused' in _docker_status_lower %}
-                    {% set _docker_age_min = ((now() - entry.last_api_update).total_seconds() / 60) if entry.last_api_update else None %}
 
                     {% if entry.is_static %}
                       {% set _docker_class   = 'status-icon-muted' %}
@@ -87,9 +86,9 @@
                     {% elif not entry.last_api_update %}
                       {% set _docker_class   = 'status-icon-bad' %}
                       {% set _docker_tooltip = 'Docker: no update received' %}
-                    {% elif entry.is_docker_status_stale or (_is_good_docker and _docker_age_min and _docker_age_min > 120) %}
+                    {% elif entry.is_docker_status_stale %}
                       {% set _docker_class   = 'status-icon-warn' %}
-                      {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — stale (' ~ (entry.last_api_update | time_since) ~ ')' %}
+                      {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — stale — updated ' ~ (entry.last_api_update | time_since) %}
                     {% elif _is_good_docker %}
                       {% set _docker_class   = 'status-icon-ok' %}
                       {% set _docker_tooltip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — updated ' ~ (entry.last_api_update | time_since) %}

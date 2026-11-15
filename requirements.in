@@ -1,0 +1,14 @@
+flask
+flask_sqlalchemy
+flask_login
+python-dotenv
+humanize
+requests
+python-dateutil
+PyYAML
+apscheduler
+alembic
+pydantic>=2,<3
+markdown
+Flask-WTF
+gunicorn

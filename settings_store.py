@@ -149,6 +149,7 @@ def discovered_hosts() -> List[str]:
     rows = (
         db.session.query(ServiceEntry.host)
         .join(ServiceExposure, ServiceExposure.service_entry_id == ServiceEntry.id)
+        .filter(ServiceEntry.deleted_at.is_(None))
         .distinct()
         .order_by(ServiceEntry.host.asc())
         .all()

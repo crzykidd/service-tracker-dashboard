@@ -6,6 +6,17 @@
    widget drawer, refresh-pause while interacting.
    ============================================================ */
 
+/* Shared CSRF-aware POST helper: adds the X-CSRFToken header from the
+   <meta name="csrf-token"> tag. Use for every fetch() that POSTs. */
+window.stdPost = function (url, options) {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  const opts = Object.assign({}, options, { method: 'POST' });
+  opts.headers = Object.assign({}, opts.headers, {
+    'X-CSRFToken': meta ? meta.content : ''
+  });
+  return fetch(url, opts);
+};
+
 (function () {
   'use strict';
 
@@ -323,7 +334,7 @@
 
   /* Shared fetch-delete helper used by tile, drawer, and dashboard row. */
   function fetchDelete(entryId, onSuccess, onError) {
-    fetch(`/api/v1/entries/${entryId}/delete`, { method: 'POST' })
+    stdPost(`/api/v1/entries/${entryId}/delete`)
       .then(r => r.ok ? onSuccess() : onError())
       .catch(onError);
   }

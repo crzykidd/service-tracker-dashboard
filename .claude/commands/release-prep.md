@@ -267,19 +267,27 @@ repo root, in order.
    temp copy with both rewritten. NEVER touch a real `/config`:
 
    ```
+   bash <<'EOF'
    alembic="uv run --python 3.11 --with-requirements requirements.txt alembic"
-   tmp=$(mktemp -d) && \
+   tmp=$(mktemp -d)
+   trap 'rm -rf "$tmp"' EXIT
    sed -e "s#sqlite:////config/services.db#sqlite:///$tmp/services.db#" \
        -e "s#%(here)s#$PWD#" alembic.ini > "$tmp/alembic.ini" && \
    $alembic -c "$tmp/alembic.ini" upgrade head && \
    [ "$($alembic -c "$tmp/alembic.ini" heads | grep -c .)" -eq 1 ] && \
    $alembic -c "$tmp/alembic.ini" current 2>&1 | grep -q '(head)' && \
-   echo "migration check OK"; rm -rf "$tmp"
+   { echo "migration check OK"; exit 0; }
+   echo "MIGRATION CHECK FAILED"; exit 1
+   EOF
    ```
 
    (Single-head and `(head)` asserts mirror the `migration-check` job. The
    `uv run` wrapper supplies Python 3.11 + `requirements.txt` so no global
-   alembic install is needed; if `alembic` is already on PATH, use it directly.)
+   alembic install is needed; if `alembic` is already on PATH, use it directly.
+   The `bash <<'EOF'` wrapper is required: the unquoted `$alembic` relies on
+   bash word-splitting, and zsh — the default interactive shell here — does not
+   split it, failing with "command not found". Treat anything other than
+   `migration check OK` as a failure.)
 
 If ANY check fails, STOP,
 report exactly what failed, and do not commit.

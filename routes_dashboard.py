@@ -15,10 +15,10 @@ the query params and hands them to the helper.
 """
 
 import logging
+import math
 import os
 import re
-from datetime import datetime
-from urllib.parse import urlparse
+from datetime import datetime, timedelta
 
 import markdown as _md
 import requests
@@ -37,19 +37,22 @@ from flask import (
     url_for,
 )
 from flask_login import login_required
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
 import settings_store
 import synthesizer
 from extensions import db
-from image_utils import fetch_icon_if_missing
-from models import Group, ServiceEntry, User, Widget, WidgetValue
+from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
+from models import Group, ServiceEntry, User, Widget, WidgetValue, hard_delete_entry
 from routes_auth import is_admin_required
+from settings_loader import CONFIG_DIR
 from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
     normalize_axis,
     normalize_show_urlless,
+    safe_redirect_target,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +118,56 @@ def flash_is_present(req):
     return '_flashes' in req.environ.get('flask._flashes', [])
 
 
+def _retention_days():
+    try:
+        return max(0, int(current_app.config.get("deleted_retention_days", 30)))
+    except (TypeError, ValueError):
+        return 30
+
+
+def _restore_hint():
+    days = _retention_days()
+    return (
+        f"It can be restored from Settings → Deleted for {days} "
+        f"day{'' if days == 1 else 's'}."
+    )
+
+
+def _parse_backup_datetime(value):
+    """Parse a backup timestamp ('%Y-%m-%d %H:%M:%S' or a YAML datetime)."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        logger.warning(f"Ignoring unparseable deleted_at in backup: {value!r}")
+        return None
+
+
+def _detached_widget_rows():
+    """Detached widgets with their newest value timestamp."""
+    rows = []
+    for w in Widget.detached().order_by(Widget.widget_name.asc(), Widget.id.asc()).all():
+        last = db.session.query(func.max(WidgetValue.last_updated)).filter(
+            WidgetValue.widget_id == w.id
+        ).scalar()
+        rows.append({'widget': w, 'last_value': last})
+    return rows
+
+
+def _deleted_entry_rows():
+    """Soft-deleted entries with the days left before the purge job runs."""
+    retention = timedelta(days=_retention_days())
+    now = datetime.now()
+    rows = []
+    for e in ServiceEntry.deleted().all():
+        remaining = (e.deleted_at + retention - now).total_seconds() / 86400
+        rows.append({'entry': e, 'days_left': max(0, math.ceil(remaining))})
+    return rows
+
+
 def _load_widget_values():
     widget_values = {}
     for wv in WidgetValue.query.all():
@@ -137,7 +190,7 @@ def dashboard():
     msg = request.args.get('msg')
 
     entries = (
-        ServiceEntry.query
+        ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
         .options(selectinload(ServiceEntry.exposures))
         .all()
@@ -175,7 +228,7 @@ def tiled_dashboard():
     axis, show_urlless, sort_in_group = _read_view_controls()
 
     entries = (
-        ServiceEntry.query
+        ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
         .options(selectinload(ServiceEntry.exposures))
         .all()
@@ -212,7 +265,7 @@ def compact_dash():
     )
 
     entries = (
-        ServiceEntry.query
+        ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
         .options(selectinload(ServiceEntry.exposures))
         .all()
@@ -252,6 +305,8 @@ def compact_dash():
 @login_required
 @is_admin_required
 def db_dump():
+    # All rows, soft-deleted included (marked in the template): this is
+    # the raw-table view, so hiding rows would defeat its purpose.
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)
 
@@ -260,7 +315,7 @@ def db_dump():
 @login_required
 @is_admin_required
 def settings():
-    BACKUP_DIR = current_app.config.get("backup_path", "/config/backups")
+    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
     image_dir = current_app.config['IMAGE_DIR']
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -273,7 +328,8 @@ def settings():
         if action == 'backup':
             backup_operation = request.form.get('backup_operation')
 
-            # Backup is always for all entries now
+            # Backup is always for all entries now, soft-deleted included
+            # (to_dict carries deleted_at so a restore round-trips it).
             entries = ServiceEntry.query.all()
             data = []
             for e in entries:
@@ -337,12 +393,19 @@ def settings():
                 elif restore_source == 'server':
                     selected_filename = request.form.get('server_backup_filename')
                     if selected_filename:
-                        # Basic security check: ensure filename doesn't try to escape BACKUP_DIR
-                        if ".." in selected_filename or selected_filename.startswith("/"):
+                        # Confine to BACKUP_DIR: a bare filename with a backup
+                        # extension whose resolved path stays inside the folder.
+                        safe_name = os.path.basename(selected_filename)
+                        backup_root = os.path.realpath(BACKUP_DIR)
+                        file_path = os.path.realpath(os.path.join(backup_root, safe_name))
+                        if (
+                            safe_name != selected_filename
+                            or not safe_name.endswith(('.yaml', '.yml'))
+                            or not file_path.startswith(backup_root + os.sep)
+                        ):
                             flash("Invalid server filename selected.", "danger")
                             return redirect(url_for('dashboard.settings'))
 
-                        file_path = os.path.join(BACKUP_DIR, selected_filename)
                         if os.path.exists(file_path) and os.path.isfile(file_path):
                             with open(file_path, 'r') as f:
                                 records = yaml.safe_load(f)
@@ -454,16 +517,26 @@ def settings():
                         # Ensure 'is_static' is handled correctly based on the item from backup
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
-                                setattr(entry, 'is_static', item_is_static_from_backup)
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget']:
+                                entry.is_static = item_is_static_from_backup
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls']:
                             setattr(entry, field, value)
+
+                    # deleted_at round-trips; absent (v0.6.8 backups) means active.
+                    entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
+
+                    # Health-check options round-trip; absent (older backups)
+                    # means the defaults: global timeout, verify TLS on.
+                    backup_timeout = item.get('health_check_timeout')
+                    entry.health_check_timeout = backup_timeout if isinstance(backup_timeout, int) and backup_timeout > 0 else None
+                    backup_verify = item.get('health_check_verify_tls')
+                    entry.health_check_verify_tls = True if backup_verify is None else bool(backup_verify)
 
 
                     # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
                     # (especially if item_is_static_from_backup was derived from .get with a default)
                     if not entry.id and hasattr(entry, 'is_static'): # if it's a new entry being added
                          if 'is_static' not in item: # if 'is_static' was not explicitly in the backup item dict
-                            setattr(entry, 'is_static', item_is_static_from_backup) # ensure it's set from .get default
+                            entry.is_static = item_is_static_from_backup # ensure it's set from .get default
 
                     entry.last_updated = datetime.now()
                     restored_count += 1
@@ -500,7 +573,7 @@ def settings():
 
 # Check which icon files are missing
         missing_icons = []
-        all_entries = ServiceEntry.query.all()
+        all_entries = ServiceEntry.active().all()
         for entry in all_entries:
             icon = entry.image_icon
             if icon and not os.path.exists(os.path.join(image_dir, icon)):
@@ -527,6 +600,14 @@ def settings():
          missing_icons=missing_icons,
          groups=groups,
          users=users,
+         deleted_rows=_deleted_entry_rows(),
+         detached_widgets=_detached_widget_rows(),
+         attachable_entries=ServiceEntry.active().filter(ServiceEntry.widget_id.is_(None))
+             .order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
+         deleted_retention_days=_retention_days(),
+         api_token_missing=not current_app.config.get('api_token'),
+         default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
+         default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
@@ -631,7 +712,12 @@ def delete_group():
     group = Group.query.get(group_id)
 
     if group:
-        if len(group.services) == 0:
+        # Only active services block deletion; soft-deleted ones are detached
+        # from the group so no dangling group_id is left behind.
+        active_services = [e for e in group.services if e.deleted_at is None]
+        if len(active_services) == 0:
+            for e in group.services:
+                e.group_id = None
             db.session.delete(group)
             db.session.commit()
             flash(f"🗑️ Group '{group.group_name}' deleted successfully.", "success")
@@ -656,13 +742,6 @@ def serve_image(filename):
 @is_admin_required
 def add_entry():
     image_dir = current_app.config['IMAGE_DIR']
-    raw_referrer = request.args.get('ref', '/')
-    parsed = urlparse(raw_referrer)
-    referrer = parsed.path
-    if parsed.query:
-        referrer += '?' + parsed.query
-    if not referrer.startswith('/'):
-        referrer = '/tiled_dash'
 
     if request.method == 'POST':
         # Needed by every error re-render of the add form below.
@@ -683,11 +762,11 @@ def add_entry():
             group_name = "None"
 
 
-        image_icon_raw = request.form.get('icon_image', '').strip().lower()
-        if image_icon_raw and not image_icon_raw.endswith('.svg'):
-            image_icon = f"{image_icon_raw}.svg"
-        else:
-            image_icon = image_icon_raw
+        image_icon_raw = request.form.get('icon_image', '').strip()
+        image_icon = safe_icon_filename(image_icon_raw) if image_icon_raw else ''
+        if image_icon_raw and not image_icon:
+            flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
+            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
@@ -695,6 +774,13 @@ def add_entry():
 
         # Check for duplicates
         existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
+        if existing and existing.deleted_at is not None:
+            flash(
+                f"An entry for '{container_name}' on host '{host}' was deleted. "
+                f"Restore it from Settings → Deleted instead of adding a new one.",
+                'danger',
+            )
+            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
         if existing:
             flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
             return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
@@ -706,8 +792,8 @@ def add_entry():
 
         # === ICON RESOLUTION LOGIC ===
         if image_icon:
-            icon_path = os.path.join(image_dir, image_icon)
-            if not os.path.exists(icon_path):
+            icon_path = icon_path_in_dir(image_dir, image_icon)
+            if icon_path and not os.path.exists(icon_path):
                 try:
                     icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
                     response = requests.get(icon_url, timeout=5)
@@ -737,6 +823,12 @@ def add_entry():
                 flash("Sort priority must be a number.", 'danger')
                 return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
+        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
+        if health_error:
+            flash(health_error, 'danger')
+            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+        verify_tls = request.form.get('health_check_verify_tls') == 'on'
+
         # === CREATE ENTRY ===
         # Look up or create group
         group_obj = Group.query.filter_by(group_name=group_name).first()
@@ -761,8 +853,10 @@ def add_entry():
             external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             sort_priority=sort_priority,
-            is_static=is_static
-)
+            is_static=is_static,
+            health_check_timeout=health_timeout,
+            health_check_verify_tls=verify_tls,
+        )
 
         db.session.add(entry)
         db.session.commit()
@@ -774,21 +868,36 @@ def add_entry():
     return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups)
 
 
+MAX_HEALTH_CHECK_TIMEOUT = 60
+
+
+def _parse_health_timeout(raw):
+    """Parse the per-service timeout form field.
+
+    Returns (value, error). Blank -> (None, None), meaning "use the global
+    default". Otherwise a positive int up to MAX_HEALTH_CHECK_TIMEOUT.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None, None
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if not 1 <= value <= MAX_HEALTH_CHECK_TIMEOUT:
+        return None, f"Health check timeout must be a whole number of seconds from 1 to {MAX_HEALTH_CHECK_TIMEOUT} (or blank for the default)."
+    return value, None
+
+
 @dashboard_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
 def edit_entry(id):
     image_dir = current_app.config['IMAGE_DIR']
-    entry = ServiceEntry.query.get_or_404(id)
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
     # Track the referrer for redirecting after save
-    raw_referrer = request.args.get('ref', '/')
-    parsed = urlparse(raw_referrer)
-    referrer = parsed.path
-    if parsed.query:
-        referrer += '?' + parsed.query
-    if not referrer.startswith('/'):
-        referrer = '/'
+    referrer = safe_redirect_target(request.args.get('ref'), url_for('dashboard.dashboard'))
 
     # Discover available widgets
     widgets_dir = '/app/widgets'
@@ -818,21 +927,16 @@ def edit_entry(id):
             if request.form.get('delete_confirmation') == entry.container_name:
 
 
-                # Delete the associated widget if no other services use it
-                if entry.widget_id:
-                    other_services = ServiceEntry.query.filter(
-                        ServiceEntry.widget_id == entry.widget_id,
-                        ServiceEntry.id != entry.id
-                    ).count()
-
-                    if other_services == 0:
-                        WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
-                        Widget.query.filter_by(id=entry.widget_id).delete()
-
-                db.session.delete(entry)
+                # Soft delete: recoverable from Settings -> Deleted. The widget
+                # stays attached; nothing else is removed.
+                entry.deleted_at = datetime.now()
                 db.session.commit()
-                flash(f"Deleted entry: {entry.container_name}", 'success')
-                return redirect(referrer)
+                flash(
+                    f"Deleted entry: {entry.container_name}. "
+                    f"{_restore_hint()}",
+                    'success',
+                )
+                return redirect(safe_redirect_target(referrer))
             else:
                 flash("Confirmation name does not match. Entry not deleted.", "warning")
                 return redirect(url_for('dashboard.edit_entry', id=id, ref=referrer))
@@ -857,6 +961,13 @@ def edit_entry(id):
         entry.internal_health_check_enabled = 'internal_health_check_enabled' in request.form
         entry.external_health_check_enabled = 'external_health_check_enabled' in request.form
         entry.is_static = 'is_static' in request.form
+
+        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
+        if health_error:
+            flash(health_error, "warning")
+        else:
+            entry.health_check_timeout = health_timeout
+        entry.health_check_verify_tls = 'health_check_verify_tls' in request.form
 
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:
@@ -897,10 +1008,21 @@ def edit_entry(id):
         entry.group_name = group.group_name
 
         # === ICON ===
-        raw_icon = request.form.get('image_icon', '').strip().lower()
-        entry.image_icon = f"{raw_icon}.svg" if raw_icon and not raw_icon.endswith('.svg') else raw_icon
-        icon_path = os.path.join(image_dir, entry.image_icon) if entry.image_icon else ''
-        if entry.image_icon and not os.path.exists(icon_path):
+        raw_icon = request.form.get('image_icon', '').strip()
+        icon_ok = True
+        if raw_icon:
+            safe_icon = safe_icon_filename(raw_icon)
+            if safe_icon:
+                entry.image_icon = safe_icon
+            else:
+                icon_ok = False
+                flash('Invalid icon name: icon not changed. Use letters, numbers, dots, dashes and underscores only.', 'warning')
+        else:
+            entry.image_icon = ''
+        icon_path = icon_path_in_dir(image_dir, entry.image_icon) if (icon_ok and entry.image_icon) else None
+        if not icon_ok:
+            pass
+        elif icon_path and not os.path.exists(icon_path):
             try:
                 icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{entry.image_icon}"
                 response = requests.get(icon_url, timeout=5)
@@ -967,7 +1089,7 @@ def edit_entry(id):
             logger.error(f"Update error: {e}")
             flash("Error saving changes", "danger")
 
-        return redirect(referrer)
+        return redirect(safe_redirect_target(referrer))
 
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
     return render_template("edit_entry.html",
@@ -984,22 +1106,49 @@ def edit_entry(id):
 def delete_entry_json(id):
     """JSON delete endpoint for JS-triggered deletes (tile trash icon, drawer delete button).
 
-    Returns {ok: true} on success. The caller is responsible for DOM cleanup or redirect.
+    Soft-deletes the entry (sets deleted_at). Returns {ok: true} on success. The caller is responsible for DOM cleanup or redirect.
     """
-    entry = ServiceEntry.query.get_or_404(id)
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
-    if entry.widget_id:
-        other_services = ServiceEntry.query.filter(
-            ServiceEntry.widget_id == entry.widget_id,
-            ServiceEntry.id != entry.id
-        ).count()
-        if other_services == 0:
-            WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
-            Widget.query.filter_by(id=entry.widget_id).delete()
-
-    db.session.delete(entry)
+    # Soft delete: recoverable from Settings -> Deleted. Widget stays attached.
+    entry.deleted_at = datetime.now()
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/settings/deleted/<int:id>/restore', methods=['POST'])
+@login_required
+@is_admin_required
+def restore_deleted_entry(id):
+    entry = ServiceEntry.deleted().filter(ServiceEntry.id == id).first_or_404()
+    clash = ServiceEntry.active().filter_by(
+        host=entry.host, container_name=entry.container_name
+    ).first()
+    if clash:
+        flash(
+            f"Cannot restore '{entry.container_name}' on '{entry.host}': an active "
+            f"entry with that name already exists.",
+            "danger",
+        )
+    else:
+        entry.deleted_at = None
+        db.session.commit()
+        logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host}'.")
+        flash(f"✅ Restored '{entry.container_name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+@dashboard_bp.route('/settings/deleted/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def purge_deleted_entry(id):
+    entry = ServiceEntry.deleted().filter(ServiceEntry.id == id).first_or_404()
+    name = entry.container_name
+    hard_delete_entry(entry)
+    db.session.commit()
+    logger.info(f"Permanently deleted entry '{name}'.")
+    flash(f"🗑️ Permanently deleted '{name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
 
 
 @dashboard_bp.route('/api/v1/changelog')
@@ -1030,3 +1179,36 @@ def changelog_api():
         ]
 
     return jsonify({'current': current, 'sections': result})
+
+
+@dashboard_bp.route('/settings/widgets/<int:id>/attach', methods=['POST'])
+@login_required
+@is_admin_required
+def attach_detached_widget(id):
+    widget = Widget.detached().filter(Widget.id == id).first_or_404()
+    entry = ServiceEntry.active().filter(
+        ServiceEntry.id == request.form.get('entry_id', type=int),
+        ServiceEntry.widget_id.is_(None),
+    ).first()
+    if not entry:
+        flash("Pick an active service that has no widget.", "danger")
+    else:
+        entry.widget_id = widget.id
+        db.session.commit()
+        logger.info(f"Attached widget {widget.id} ('{widget.widget_name}') to '{entry.container_name}'.")
+        flash(f"✅ Attached widget '{widget.widget_name}' to '{entry.container_name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+@dashboard_bp.route('/settings/widgets/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_detached_widget(id):
+    widget = Widget.detached().filter(Widget.id == id).first_or_404()
+    name = widget.widget_name
+    WidgetValue.query.filter_by(widget_id=widget.id).delete()
+    db.session.delete(widget)
+    db.session.commit()
+    logger.info(f"Deleted detached widget {id} ('{name}').")
+    flash(f"🗑️ Deleted detached widget '{name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))

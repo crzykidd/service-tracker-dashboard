@@ -29,6 +29,17 @@ jobs:
       - run: pip install ruff==0.15.17
       - run: ruff check .
 
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
   config-validate:
     name: Config validation
     runs-on: ubuntu-latest
