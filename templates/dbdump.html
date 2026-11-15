@@ -36,11 +36,12 @@
         <th>Static</th>
         <th>Priority</th> <!-- ✅ New column -->
         <th>Last API Update</th>
+        <th>Deleted At</th>
       </tr>
     </thead>
     <tbody>
       {% for entry in entries %}
-      <tr>
+      <tr{% if entry.deleted_at %} class="table-danger text-decoration-line-through" title="Soft-deleted"{% endif %}>
         <td>{{ entry.id }}</td>
         <td>{{ entry.host }}</td>
         <td>{{ entry.container_name }}</td>
@@ -61,6 +62,7 @@
         <td>{{ 'Yes' if entry.is_static else 'No' }}</td>
         <td>{{ entry.sort_priority if entry.sort_priority is not none else '' }}</td> <!-- ✅ New row field -->
         <td>{{ entry.last_api_update }}</td>
+        <td>{{ entry.deleted_at or '' }}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -29,6 +29,7 @@
 | 0.19    | 2026-11-15 | §12.2 delivered (unreleased): `ruff.toml` widened to `E, W, F, I, B` (E501 ignored); §3.1 lint note updated. No schema, contract, or job changes. |
 | 0.20    | 2026-11-15 | §12.3 delivered (unreleased): `widget_value_retention_days` / `register_field_ownership` now load; unset `api_token` returns 503 on register; constant-time token compare; token masked in logs; default-credential warnings. No schema or wire-contract changes. |
 | 0.21    | 2026-11-15 | §12.4 delivered (unreleased): Flask-WTF `CSRFProtect` on all UI POSTs and fetch calls; `/api/v1/register` exempt; `CSRFError` handler (flash+redirect or JSON 400). No schema or wire-contract changes. |
+| 0.22    | 2026-11-15 | §12.5 delivered (unreleased): soft-delete (`service_entry.deleted_at`, §5.5), Settings → Deleted tab, `deleted_retention_days` and the 00:25 purge job, resurrect-on-register, `deleted_at` in YAML backups. Wire contract unchanged. |
 
 ---
 
@@ -307,6 +308,14 @@ Restoring from a v0.5.0 backup leaves `internalurl_source` and
 imported from backup without exposure observations get NULL source
 columns, meaning the synthesizer is free to fill them in once
 exposure data arrives.
+
+### 5.5 v0.6.9 schema changes
+
+| Change | Detail |
+|--------|--------|
+| Column | `service_entry.deleted_at` (`DateTime`, nullable, indexed as `ix_service_entry_deleted_at`). NULL = active; a timestamp = soft-deleted at that time (naive server-local). Rows past `deleted_retention_days` are hard-deleted by the 00:25 purge job (§12.5). |
+
+Restoring a v0.6.8 backup leaves `deleted_at` NULL.
 
 ---
 
@@ -1029,7 +1038,7 @@ soft-deleted rows, which is server-side only.
   JS POSTs go through the shared `window.stdPost(url, options)` helper in
   `static/js/dashboard.js`. Tests enable CSRF only in `tests/test_csrf.py`.
 
-### 12.5 Soft-delete for service entries [`v069-05-soft-delete`] — Planned
+### 12.5 Soft-delete for service entries [`v069-05-soft-delete`] — Delivered (unreleased)
 
 Picks up the FUTURE.md "Soft-delete for service entries" entry.
 
@@ -1057,6 +1066,20 @@ Picks up the FUTURE.md "Soft-delete for service entries" entry.
   invisible would be worse. Logged at INFO.
 - **Backup/restore:** YAML backups include `deleted_at`; restore
   round-trips it. Backups from v0.6.8 restore with `deleted_at` NULL.
+
+As built: migration `e5a1c7d93b02`; `ServiceEntry.active()` /
+`.deleted()` helpers and a single `hard_delete_entry(entry)` in
+`models.py` (the pre-existing widget-if-unused delete moved there
+unchanged; §12.6 changes only that function). Deviations from the plan
+above: `/dbdump` shows deleted rows **marked** (struck through, Deleted
+At column) rather than hiding them; the register lookup prefers an
+active row over a deleted one; a static-locked deleted entry is not
+resurrected by register (static skip wins); the Group `services_count`
+badge counts active entries only and deleting a group detaches its
+soft-deleted entries (`group_id` → NULL); the widget refresh skips
+widgets whose services are all soft-deleted; `recompute_all` and the
+scheduled/manual backups deliberately include deleted rows. New routes:
+`POST /settings/deleted/<id>/restore` and `/delete` (admin, CSRF).
 
 ### 12.6 Widget detach on hard delete [`v069-06-widget-detach`] — Planned
 

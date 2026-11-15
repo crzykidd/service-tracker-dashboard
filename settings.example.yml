@@ -28,6 +28,11 @@ widget_background_reload: 900
 # deleted by a daily background job (00:15 server local time).
 widget_value_retention_days: 30
 
+# Days a deleted service stays recoverable (Settings -> Deleted) before a
+# daily background job (00:25 server local time) removes it permanently.
+# 0 = purge deleted entries at the next run of that job.
+deleted_retention_days: 30
+
 # How to handle conflicts between user UI edits and incoming notifier
 # registers for the same service:
 #   user_wins     — UI edits stick; the notifier won't overwrite

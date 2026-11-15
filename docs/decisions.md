@@ -5,6 +5,33 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Soft-delete call-site decisions (v069-05)
+
+`ServiceEntry.active()` is the filter for anything user-facing; the choices
+that weren't obvious:
+
+- **Deliberately all rows:** the register lookup (needs deleted rows to
+  resurrect; orders active before deleted), backups (scheduled and manual, so
+  `deleted_at` round-trips), both restore lookups, `recompute_all` (keeps
+  deleted rows' synthesized URLs fresh for a later restore), the add-entry
+  duplicate check (a deleted twin gets a "restore it instead" message),
+  `/dbdump` (raw-table view: shows deleted rows marked and struck through
+  rather than adding a filter), and `hard_delete_entry`'s "other services use
+  this widget" count (a soft-deleted entry still holds its widget).
+- **Static-locked deleted entry:** register skips it before resurrecting, so a
+  locked entry stays deleted until restored by hand.
+- **Widget refresh:** filters widgets (it queries `Widget`, not entries) to
+  those with no services or at least one active service.
+- **Group delete:** only active entries block it; the group's soft-deleted
+  entries get `group_id = NULL` so none dangle.
+- **`hard_delete_entry`** lives at the bottom of `models.py` (shared by
+  `routes_dashboard.py` and `jobs.py`; caller commits). The old inline
+  widget-if-unused code moved there unchanged so v069-06 edits one function.
+- Retention comparison uses naive local `datetime.now()`, matching
+  `last_updated`; `0` days purges everything soft-deleted at the next run.
+
+---
+
 ## 2026-11-15 — CSRF: JSON detection and general-suite opt-out
 
 The `CSRFError` handler answers JSON (400) when `request.is_json`, the path

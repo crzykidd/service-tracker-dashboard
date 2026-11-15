@@ -175,10 +175,18 @@ def upsert_service(canonical, app):
                 db.session.add(group_obj)
                 db.session.flush()
 
-        entry = ServiceEntry.query.filter_by(
-            host=canonical['host'],
-            container_name=canonical['container_name'],
-        ).first()
+        # Soft-deleted rows are visible here on purpose: a register for a
+        # deleted (host, container_name) resurrects it. Prefer an active
+        # row if both an active and a deleted one exist (deleted_at NULL
+        # sorts first via the IS NOT NULL ordering key).
+        entry = (
+            ServiceEntry.query.filter_by(
+                host=canonical['host'],
+                container_name=canonical['container_name'],
+            )
+            .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
+            .first()
+        )
 
         if entry is not None:
             if entry.is_static:
@@ -187,6 +195,13 @@ def upsert_service(canonical, app):
                     f"'{entry.host}' — static lock enabled."
                 )
                 return {"status": "skipped", "reason": "static lock"}, 200
+
+            if entry.deleted_at is not None:
+                logger.info(
+                    f"Register for soft-deleted '{entry.container_name}' on "
+                    f"'{entry.host}' - restoring it (was deleted {entry.deleted_at})."
+                )
+                entry.deleted_at = None
 
             now = datetime.now()
             entry.last_updated = now

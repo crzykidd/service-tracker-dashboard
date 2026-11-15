@@ -15,6 +15,7 @@
     <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">Groups</button>
     <button onclick="showSection('users')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-users">Users</button>
     <button onclick="showSection('exposure')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-exposure">Exposure</button>
+    <button onclick="showSection('deleted')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-deleted">Deleted{% if deleted_rows %} ({{ deleted_rows|length }}){% endif %}</button>
 
   </aside>
 
@@ -269,6 +270,60 @@
 
 
 
+    </section>
+
+    <!-- === Deleted Section === -->
+    <section id="section-deleted" class="section hidden">
+      <h2 class="text-2xl font-semibold mb-2">Deleted</h2>
+      <p class="text-gray-400 text-sm mb-4">
+        Deleted services are kept for
+        {% if deleted_retention_days == 0 %}
+          no time (<code>deleted_retention_days</code> is 0): they are removed at the next nightly purge (00:25).
+        {% else %}
+          {{ deleted_retention_days }} day{{ '' if deleted_retention_days == 1 else 's' }} (<code>deleted_retention_days</code>), then removed permanently by a nightly job (00:25).
+        {% endif %}
+        Restoring brings back the entry with its group, priority, and widget intact.
+      </p>
+      {% if deleted_rows %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="px-4 py-2">Name</th>
+                <th class="px-4 py-2">Host</th>
+                <th class="px-4 py-2">Deleted at</th>
+                <th class="px-4 py-2">Days until purge</th>
+                <th class="px-4 py-2 text-center">Controls</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700 bg-gray-900">
+              {% for row in deleted_rows %}
+              <tr class="hover:bg-gray-800">
+                <td class="px-4 py-2">{{ row.entry.container_name }}</td>
+                <td class="px-4 py-2">{{ row.entry.host }}</td>
+                <td class="px-4 py-2">{{ row.entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="px-4 py-2">{{ row.days_left }}</td>
+                <td class="px-4 py-2 text-right">
+                  <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                    <form method="POST" action="{{ url_for('dashboard.restore_deleted_entry', id=row.entry.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Restore</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('dashboard.purge_deleted_entry', id=row.entry.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" onclick="return confirm('Permanently delete this entry? This cannot be undone.')"
+                              class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete permanently</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-gray-400">No deleted entries.</p>
+      {% endif %}
     </section>
 
     <!-- === Groups Section === -->

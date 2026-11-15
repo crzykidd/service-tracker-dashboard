@@ -88,7 +88,7 @@ compose file; your config, database, and settings carry over unchanged. See
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
 - Daily YAML backups with retention.
-- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page.
+- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
 - Per-entry sort priority within groups; grouping and group sort.
@@ -137,6 +137,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
+| `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
 | `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
 | `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. If unset, a built-in default is used and Settings shows a warning (as it does while `admin` still has the default password). |
@@ -452,8 +453,10 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/tiled_dash`        | Grid-style dashboard.                    |
 | `/compact_dash`      | High-density compact view.               |
 | `/add`               | Manually add a new entry.                |
-| `/edit/<id>`         | Edit or delete an existing entry.        |
+| `/edit/<id>`         | Edit or delete (soft-delete) an existing entry. |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
+| `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
+| `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
@@ -482,6 +485,10 @@ cached in the `widget_value` table. Retention: rolling 30 days
 
 ## Behavior Notes
 
+- Deleting a service is a soft delete: it disappears from the dashboards and
+  stops being health-checked, and can be restored from Settings → Deleted
+  until `deleted_retention_days` passes. If its container registers again
+  first, the entry is restored automatically with its edits intact.
 - Entries marked `static` are not overwritten by API register calls.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.

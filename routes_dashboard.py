@@ -15,9 +15,10 @@ the query params and hands them to the helper.
 """
 
 import logging
+import math
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 import markdown as _md
@@ -43,7 +44,7 @@ import settings_store
 import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing
-from models import Group, ServiceEntry, User, Widget, WidgetValue
+from models import Group, ServiceEntry, User, Widget, WidgetValue, hard_delete_entry
 from routes_auth import is_admin_required
 from settings_loader import CONFIG_DIR
 from view_helpers import (
@@ -116,6 +117,45 @@ def flash_is_present(req):
     return '_flashes' in req.environ.get('flask._flashes', [])
 
 
+def _retention_days():
+    try:
+        return max(0, int(current_app.config.get("deleted_retention_days", 30)))
+    except (TypeError, ValueError):
+        return 30
+
+
+def _restore_hint():
+    days = _retention_days()
+    return (
+        f"It can be restored from Settings → Deleted for {days} "
+        f"day{'' if days == 1 else 's'}."
+    )
+
+
+def _parse_backup_datetime(value):
+    """Parse a backup timestamp ('%Y-%m-%d %H:%M:%S' or a YAML datetime)."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        logger.warning(f"Ignoring unparseable deleted_at in backup: {value!r}")
+        return None
+
+
+def _deleted_entry_rows():
+    """Soft-deleted entries with the days left before the purge job runs."""
+    retention = timedelta(days=_retention_days())
+    now = datetime.now()
+    rows = []
+    for e in ServiceEntry.deleted().all():
+        remaining = (e.deleted_at + retention - now).total_seconds() / 86400
+        rows.append({'entry': e, 'days_left': max(0, math.ceil(remaining))})
+    return rows
+
+
 def _load_widget_values():
     widget_values = {}
     for wv in WidgetValue.query.all():
@@ -138,7 +178,7 @@ def dashboard():
     msg = request.args.get('msg')
 
     entries = (
-        ServiceEntry.query
+        ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
         .options(selectinload(ServiceEntry.exposures))
         .all()
@@ -176,7 +216,7 @@ def tiled_dashboard():
     axis, show_urlless, sort_in_group = _read_view_controls()
 
     entries = (
-        ServiceEntry.query
+        ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
         .options(selectinload(ServiceEntry.exposures))
         .all()
@@ -213,7 +253,7 @@ def compact_dash():
     )
 
     entries = (
-        ServiceEntry.query
+        ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
         .options(selectinload(ServiceEntry.exposures))
         .all()
@@ -253,6 +293,8 @@ def compact_dash():
 @login_required
 @is_admin_required
 def db_dump():
+    # All rows, soft-deleted included (marked in the template): this is
+    # the raw-table view, so hiding rows would defeat its purpose.
     entries = ServiceEntry.query.order_by(ServiceEntry.id).all()
     return render_template("dbdump.html", entries=entries)
 
@@ -274,7 +316,8 @@ def settings():
         if action == 'backup':
             backup_operation = request.form.get('backup_operation')
 
-            # Backup is always for all entries now
+            # Backup is always for all entries now, soft-deleted included
+            # (to_dict carries deleted_at so a restore round-trips it).
             entries = ServiceEntry.query.all()
             data = []
             for e in entries:
@@ -456,8 +499,11 @@ def settings():
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
                                 entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget']:
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at']:
                             setattr(entry, field, value)
+
+                    # deleted_at round-trips; absent (v0.6.8 backups) means active.
+                    entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
 
 
                     # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
@@ -501,7 +547,7 @@ def settings():
 
 # Check which icon files are missing
         missing_icons = []
-        all_entries = ServiceEntry.query.all()
+        all_entries = ServiceEntry.active().all()
         for entry in all_entries:
             icon = entry.image_icon
             if icon and not os.path.exists(os.path.join(image_dir, icon)):
@@ -528,6 +574,8 @@ def settings():
          missing_icons=missing_icons,
          groups=groups,
          users=users,
+         deleted_rows=_deleted_entry_rows(),
+         deleted_retention_days=_retention_days(),
          api_token_missing=not current_app.config.get('api_token'),
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
          default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
@@ -635,7 +683,12 @@ def delete_group():
     group = Group.query.get(group_id)
 
     if group:
-        if len(group.services) == 0:
+        # Only active services block deletion; soft-deleted ones are detached
+        # from the group so no dangling group_id is left behind.
+        active_services = [e for e in group.services if e.deleted_at is None]
+        if len(active_services) == 0:
+            for e in group.services:
+                e.group_id = None
             db.session.delete(group)
             db.session.commit()
             flash(f"🗑️ Group '{group.group_name}' deleted successfully.", "success")
@@ -699,6 +752,13 @@ def add_entry():
 
         # Check for duplicates
         existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
+        if existing and existing.deleted_at is not None:
+            flash(
+                f"An entry for '{container_name}' on host '{host}' was deleted. "
+                f"Restore it from Settings → Deleted instead of adding a new one.",
+                'danger',
+            )
+            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
         if existing:
             flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
             return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
@@ -783,7 +843,7 @@ def add_entry():
 @is_admin_required
 def edit_entry(id):
     image_dir = current_app.config['IMAGE_DIR']
-    entry = ServiceEntry.query.get_or_404(id)
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
     # Track the referrer for redirecting after save
     raw_referrer = request.args.get('ref', '/')
@@ -822,20 +882,15 @@ def edit_entry(id):
             if request.form.get('delete_confirmation') == entry.container_name:
 
 
-                # Delete the associated widget if no other services use it
-                if entry.widget_id:
-                    other_services = ServiceEntry.query.filter(
-                        ServiceEntry.widget_id == entry.widget_id,
-                        ServiceEntry.id != entry.id
-                    ).count()
-
-                    if other_services == 0:
-                        WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
-                        Widget.query.filter_by(id=entry.widget_id).delete()
-
-                db.session.delete(entry)
+                # Soft delete: recoverable from Settings -> Deleted. The widget
+                # stays attached; nothing else is removed.
+                entry.deleted_at = datetime.now()
                 db.session.commit()
-                flash(f"Deleted entry: {entry.container_name}", 'success')
+                flash(
+                    f"Deleted entry: {entry.container_name}. "
+                    f"{_restore_hint()}",
+                    'success',
+                )
                 return redirect(referrer)
             else:
                 flash("Confirmation name does not match. Entry not deleted.", "warning")
@@ -988,22 +1043,49 @@ def edit_entry(id):
 def delete_entry_json(id):
     """JSON delete endpoint for JS-triggered deletes (tile trash icon, drawer delete button).
 
-    Returns {ok: true} on success. The caller is responsible for DOM cleanup or redirect.
+    Soft-deletes the entry (sets deleted_at). Returns {ok: true} on success. The caller is responsible for DOM cleanup or redirect.
     """
-    entry = ServiceEntry.query.get_or_404(id)
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
-    if entry.widget_id:
-        other_services = ServiceEntry.query.filter(
-            ServiceEntry.widget_id == entry.widget_id,
-            ServiceEntry.id != entry.id
-        ).count()
-        if other_services == 0:
-            WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
-            Widget.query.filter_by(id=entry.widget_id).delete()
-
-    db.session.delete(entry)
+    # Soft delete: recoverable from Settings -> Deleted. Widget stays attached.
+    entry.deleted_at = datetime.now()
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/settings/deleted/<int:id>/restore', methods=['POST'])
+@login_required
+@is_admin_required
+def restore_deleted_entry(id):
+    entry = ServiceEntry.deleted().filter(ServiceEntry.id == id).first_or_404()
+    clash = ServiceEntry.active().filter_by(
+        host=entry.host, container_name=entry.container_name
+    ).first()
+    if clash:
+        flash(
+            f"Cannot restore '{entry.container_name}' on '{entry.host}': an active "
+            f"entry with that name already exists.",
+            "danger",
+        )
+    else:
+        entry.deleted_at = None
+        db.session.commit()
+        logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host}'.")
+        flash(f"✅ Restored '{entry.container_name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+@dashboard_bp.route('/settings/deleted/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def purge_deleted_entry(id):
+    entry = ServiceEntry.deleted().filter(ServiceEntry.id == id).first_or_404()
+    name = entry.container_name
+    hard_delete_entry(entry)
+    db.session.commit()
+    logger.info(f"Permanently deleted entry '{name}'.")
+    flash(f"🗑️ Permanently deleted '{name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
 
 
 @dashboard_bp.route('/api/v1/changelog')

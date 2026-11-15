@@ -79,9 +79,25 @@ class ServiceEntry(db.Model):
     internalurl_source = db.Column(db.String(20), nullable=True)
     externalurl_source = db.Column(db.String(20), nullable=True)
 
+    # Soft delete (v0.6.9). NULL = active; a timestamp = deleted at that
+    # moment and recoverable from Settings -> Deleted until the purge job
+    # (deleted_retention_days) hard-deletes it. Naive local time, like
+    # last_updated. Use ServiceEntry.active() for anything user-facing.
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
     )
+
+    @classmethod
+    def active(cls):
+        """Query of entries that are not soft-deleted."""
+        return cls.query.filter(cls.deleted_at.is_(None))
+
+    @classmethod
+    def deleted(cls):
+        """Query of soft-deleted entries (newest deletion first)."""
+        return cls.query.filter(cls.deleted_at.isnot(None)).order_by(cls.deleted_at.desc())
 
 # fields for backup
     def to_dict(self):
@@ -114,6 +130,7 @@ class ServiceEntry(db.Model):
             'published_ports': self.published_ports,
             'internalurl_source': self.internalurl_source,
             'externalurl_source': self.externalurl_source,
+            'deleted_at': self.deleted_at.strftime('%Y-%m-%d %H:%M:%S') if self.deleted_at else None,
         }
 
         # Add inline widget info if attached
@@ -234,6 +251,7 @@ class Group(db.Model):
     services_count = column_property(
         select(func.count(ServiceEntry.id))
         .where(ServiceEntry.group_id == id)
+        .where(ServiceEntry.deleted_at.is_(None))
         .correlate_except(ServiceEntry)
         .scalar_subquery()
     )
@@ -265,3 +283,23 @@ class User(db.Model, UserMixin):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+def hard_delete_entry(entry):
+    """Permanently delete a service entry (and its widget if unused).
+
+    The single place a ServiceEntry row is really removed: used by the
+    purge job and Settings -> Deleted -> Delete permanently. Caller commits.
+    """
+    # Delete the associated widget if no other services use it
+    if entry.widget_id:
+        other_services = ServiceEntry.query.filter(
+            ServiceEntry.widget_id == entry.widget_id,
+            ServiceEntry.id != entry.id
+        ).count()
+
+        if other_services == 0:
+            WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
+            Widget.query.filter_by(id=entry.widget_id).delete()
+
+    db.session.delete(entry)

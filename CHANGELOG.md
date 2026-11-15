@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Deleted tab.** Deleted services now land here instead of
+  vanishing. Each row shows the name, host, when it was deleted, and the days
+  left before it is purged, with **Restore** and **Delete permanently**
+  buttons.
+- **`deleted_retention_days` setting** (default `30`; `0` removes deleted
+  entries at the next nightly run). A daily 00:25 job permanently removes
+  entries deleted longer ago than this.
+
+### Changed
+
+- **Deleting a service is now recoverable.** The trash icon, the tile drawer,
+  and the edit page's Delete button hide the entry (and stop its health checks
+  and widget refresh) instead of erasing it; the confirm popover and flash
+  message say it can be restored from Settings → Deleted for N days. Its
+  widget stays attached.
+- **A register for a deleted service restores it.** If a container that was
+  deleted here registers again before it is purged, STD brings back the same
+  entry (group, sort priority, and edits intact) rather than creating a blank
+  one.
+- YAML backups now include each entry's deletion time, and restore brings it
+  back; backups from earlier versions restore as before. `/dbdump` lists
+  deleted entries too, struck through with a Deleted At column.
+
 ### Fixed
 
 - **`widget_value_retention_days` and `register_field_ownership` now work.**
