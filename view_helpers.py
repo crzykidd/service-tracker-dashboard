@@ -143,9 +143,16 @@ def safe_redirect_target(target, fallback=None):
         return fallback
     if "\\" in target or any(ord(c) < 32 for c in target):
         return fallback
-    if not target.startswith("/") or target.startswith("//"):
-        return fallback
-    parsed = urlparse(target)
-    if parsed.scheme or parsed.netloc:
-        return fallback
-    return target
+    # Shape follows CodeQL's documented py/url-redirection sanitizer
+    # (backslash strip + no netloc + no scheme, with the safe value returned
+    # inside the guarded branch) so the analyzer recognises it as a barrier.
+    # The backslash case already returned above; the replace is for CodeQL.
+    target = target.replace("\\", "")
+    if (
+        not urlparse(target).netloc
+        and not urlparse(target).scheme
+        and target.startswith("/")
+        and not target.startswith("//")
+    ):
+        return target
+    return fallback
