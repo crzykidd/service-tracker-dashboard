@@ -5,6 +5,19 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Lint widened to E, W, F, I, B
+
+`ruff.toml` now selects `E, W, F, I, B` with `E501` ignored (line length is
+churn). Initial run: 30 findings (I001 x20, E402 x4, B009 x2, B010 x2, W291 x2);
+none was a real bug, so no CHANGELOG entry. B009/B010 were constant-name
+`getattr`/`setattr`, rewritten as plain attribute access (identical behavior).
+`per-file-ignores`: `alembic/versions/*.py` skips `I001`/`W291` (applied
+migrations are history; sorting them is pure churn, and the one W291 is inside
+a docstring); `alembic/env.py` skips `E402` (it must edit `sys.path` before
+importing app modules). No file-wide or rule-wide ignores otherwise.
+
+---
+
 ## 2026-11-15 — Test seam: `STD_CONFIG_DIR`, env set in conftest
 
 `app.py` builds the app at import and reads `/config` paths there, so

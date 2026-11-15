@@ -374,7 +374,7 @@ scripts/            ← manual helper scripts (test_widget.py; not a test suite)
 tests/              ← pytest suite (conftest.py sets STD_CONFIG_DIR before importing app)
 requirements-dev.txt ← pytest + runtime deps; CI/dev only, not in the image
 VERSION             ← bare-semver version source of truth
-ruff.toml           ← lint config for CI (E9 + F only)
+ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
 Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
 settings.example.yml, .env.example
 standards.md        ← adopted standards + pinned versions

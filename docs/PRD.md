@@ -26,6 +26,7 @@
 | 0.16    | 2026-11-15 | Docs refresh after the standards adoption. Added §11 (v0.6.7–v0.6.8 registry move and engineering standards); later sections renumbered (§11→§12, §12→§13, §13→§14). §3.1 module layout updated to the current tree. §6 retitled as a historical baseline. No code, schema, or contract changes. |
 | 0.17    | 2026-11-15 | Added §12 (v0.6.9 — Hardening and Safety Net, planned): test suite, wider lint, settings/API-token fixes, CSRF, soft-delete, widget detach, unified staleness, per-service health-check options, gunicorn + pinned deps, docs loose ends. Later sections renumbered (§12→§13, §13→§14, §14→§15). §15 Open Questions refreshed. No code changes yet. |
 | 0.18    | 2026-11-15 | §12.1 delivered (unreleased): pytest suite, `STD_CONFIG_DIR` testability seam, CI `Test` job; §13 required-checks text updated. No schema, contract, or job changes. |
+| 0.19    | 2026-11-15 | §12.2 delivered (unreleased): `ruff.toml` widened to `E, W, F, I, B` (E501 ignored); §3.1 lint note updated. No schema, contract, or job changes. |
 
 ---
 
@@ -174,7 +175,7 @@ scripts/            ← manual helper scripts (test_widget.py; not a test suite)
 tests/              ← pytest suite (v0.6.9)
 requirements-dev.txt ← pytest + runtime deps; CI/dev only
 VERSION             ← bare-semver version source of truth
-ruff.toml           ← lint config for CI (E9 + F only)
+ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
 Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
 settings.example.yml, .env.example
 standards.md        ← adopted standards + pinned versions
@@ -963,13 +964,19 @@ soft-deleted rows, which is server-side only.
   `app.py` is unchanged structurally). Icon downloads are stubbed in tests.
   Two `xfail(strict=True)` tests pin the §12.3 bugs.
 
-### 12.2 Wider lint [`v069-02-widen-lint`] — Planned
+### 12.2 Wider lint [`v069-02-widen-lint`] — Delivered (unreleased)
 
 - `ruff.toml` widens from `E9, F` to `E, W, F, I, B` (E501 ignored —
   line length is not worth the churn). One mechanical cleanup pass;
   no behavior changes. Any `B` finding that is a real bug is fixed and
   gets a CHANGELOG `Fixed` entry; anything ambiguous is
   `# noqa`-annotated with a reason rather than "fixed" blind.
+- **As built:** the cleanup found 30 findings (20 `I001`, 4 `E402`,
+  2 `B009`, 2 `B010`, 2 `W291`); none was a real bug (the `B009`/`B010`
+  were constant-name `getattr`/`setattr`, rewritten as plain attribute
+  access). `alembic/versions/*` is exempt from `I001`/`W291` and
+  `alembic/env.py` from `E402` (intentional `sys.path` setup) via
+  `per-file-ignores`.
 
 ### 12.3 Settings and API-token hardening [`v069-03-settings-and-token-hardening`] — Planned
 

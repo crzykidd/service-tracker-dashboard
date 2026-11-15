@@ -1,7 +1,7 @@
-import sys
 import json
-import os
 import logging
+import os
+import sys
 from importlib import import_module
 
 logging.basicConfig(
@@ -39,7 +39,7 @@ def main():
 
     try:
         module = import_module(f"widgets.{widget_module}.fetch_data")
-        fetch_func = getattr(module, "fetch_widget_data")
+        fetch_func = module.fetch_widget_data
     except Exception as e:
         print(f"❌ Failed to import widget fetcher: {e}")
         sys.exit(1)

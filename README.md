@@ -528,8 +528,9 @@ The publish workflow refuses a release whose tag does not match `VERSION`.
 Work happens on the `dev` branch and reaches `main` through a pull request.
 A PR merges only when the required checks are green: `build` (image build),
 CodeQL, and the CI jobs `Lint`, `Test`, `Config validation`, `Migration check`,
-and `Compose validation`. Lint (`ruff.toml`) is deliberately narrow: syntax errors
-and pyflakes only.
+and `Compose validation`. Lint (`ruff.toml`) selects `E, W, F, I, B` (pycodestyle,
+pyflakes, import sorting, flake8-bugbear) with `E501` ignored; run
+`uvx ruff@0.15.17 check .` before pushing.
 
 Run the test suite locally (Python 3.11):
 

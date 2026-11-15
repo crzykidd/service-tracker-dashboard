@@ -1,6 +1,7 @@
 import logging
-import requests
 from datetime import datetime, timedelta
+
+import requests
 
 logger = logging.getLogger(__name__)
 

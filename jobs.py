@@ -63,7 +63,7 @@ def update_widget_data_periodically(app):
 
                 try:
                     module = importlib.import_module(f"widgets.{widget_key}.fetch_data")
-                    fetch_func = getattr(module, "fetch_widget_data")
+                    fetch_func = module.fetch_widget_data
                     data = fetch_func(api_url, api_key, requested_fields, available_fields)
                 except Exception as e:
                     print(f"❌ Failed to load widget fetcher for '{widget_key}': {e}")

@@ -1,7 +1,8 @@
+import logging
 import os
 import shutil
+
 import yaml
-import logging
 
 # Directory holding settings.yml, the DB, logs, images and backups. Defaults to
 # /config (the container mount). STD_CONFIG_DIR is a dev/test knob so the test

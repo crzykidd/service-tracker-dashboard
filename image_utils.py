@@ -1,8 +1,8 @@
-import os
-import requests
-from datetime import datetime
 import inspect
+import os
+from datetime import datetime
 
+import requests
 
 
 def fetch_icon_if_missing(name, image_dir, logger, debug=False, source_hint=None):

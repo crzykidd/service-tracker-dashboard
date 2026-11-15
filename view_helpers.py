@@ -15,7 +15,6 @@ from collections import defaultdict
 
 from models import Group
 
-
 VALID_AXES = ("group", "stack", "host")
 DEFAULT_AXIS = "group"
 DEFAULT_SORT_IN_GROUP = "priority"

@@ -48,9 +48,9 @@ Algorithm (per direction, internal vs. external):
 
 from typing import Iterable, List, Optional, Tuple
 
+import settings_store
 from extensions import db
 from models import ServiceEntry, ServiceExposure
-import settings_store
 
 SOURCE_UI_EDIT = "ui_edit"
 SOURCE_EXPLICIT_LABEL = "explicit_label"

@@ -1,8 +1,9 @@
 import logging
-import requests
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)  
+import requests
+
+logger = logging.getLogger(__name__)
 
 def fetch_widget_data(api_url, api_key, widget_fields, available_fields):
     logger.info(f"📢 Entered fetch_widget_data for {api_url}")

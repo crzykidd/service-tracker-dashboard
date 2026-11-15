@@ -1,7 +1,15 @@
-# Lint config for CI (.github/workflows/ci.yml). Deliberately narrow: syntax
-# errors (E9) and pyflakes (F: undefined names, unused imports). Widen
-# deliberately, not by surprise.
+# Lint config for CI (.github/workflows/ci.yml). Rules: pycodestyle errors and
+# warnings (E, W), pyflakes (F), import sorting (I), and flake8-bugbear (B).
+# E501 (line length) is ignored: not worth the churn. Widen deliberately,
+# not by surprise.
 target-version = "py311"
 
 [lint]
-select = ["E9", "F"]
+select = ["E", "W", "F", "I", "B"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# env.py must tweak sys.path before importing app modules (intentional E402).
+"alembic/env.py" = ["E402"]
+# Applied migrations are history: no import-sort or whitespace churn.
+"alembic/versions/*.py" = ["I001", "W291"]

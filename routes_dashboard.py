@@ -455,7 +455,7 @@ def settings():
                         # Ensure 'is_static' is handled correctly based on the item from backup
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
-                                setattr(entry, 'is_static', item_is_static_from_backup)
+                                entry.is_static = item_is_static_from_backup
                         elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget']:
                             setattr(entry, field, value)
 
@@ -464,7 +464,7 @@ def settings():
                     # (especially if item_is_static_from_backup was derived from .get with a default)
                     if not entry.id and hasattr(entry, 'is_static'): # if it's a new entry being added
                          if 'is_static' not in item: # if 'is_static' was not explicitly in the backup item dict
-                            setattr(entry, 'is_static', item_is_static_from_backup) # ensure it's set from .get default
+                            entry.is_static = item_is_static_from_backup # ensure it's set from .get default
 
                     entry.last_updated = datetime.now()
                     restored_count += 1
