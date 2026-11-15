@@ -5,6 +5,42 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v0.6.9 scope: one large patch, and its design calls
+
+Review of v0.6.8 found two bugs, a security pass, a missing test suite,
+and the delete-safety-net features. Recommended split was 0.6.9
+(hardening) + 0.7.0 (safety net); **the operator chose to ship both as
+one 0.6.9.** Plan in PRD §12, one prompt per subsection.
+
+- **Patch, not minor.** Side effect: `/release-prep` won't run the
+  per-minor CHANGELOG archive step this time. The `2026-XX-XX` dates
+  that would have broken it are fixed anyway (§12.10) — git tags show
+  the real dates, and they're 2025, not 2026.
+- **Unset `API_TOKEN` → register returns 503**, UI keeps working.
+  Rejected: refusing to start (breaks UI-only installs).
+- **Soft-delete *and* widget detach** (operator choice). Soft-delete is
+  the recovery window; detach applies only at the eventual hard delete.
+- **Register resurrects a soft-deleted row** rather than leaving it
+  hidden or creating a fresh duplicate. A hard-deleted running container
+  already reappears on its next register today; resurrecting keeps the
+  curated state, which is the point of the feature.
+- **Single staleness threshold, default 5 min** (the model's current
+  value; the template's 120-min clause is redundant under OR). Notifier
+  re-scans every 60 s by default.
+- **CSRF tokens have no time limit** (`WTF_CSRF_TIME_LIMIT=None`) —
+  long-open dashboards otherwise 400 on the next POST.
+- **gunicorn with exactly one worker.** The register mutex, scheduler,
+  and health thread are in-process; multiple workers would duplicate
+  jobs and break the upsert lock.
+- **Testability via `STD_CONFIG_DIR`** (default `/config`) rather than
+  monkeypatching module constants; tests use `create_all()`, Alembic
+  stays covered by `Migration check`.
+- **Not in 0.6.9:** concurrent health checks, per-source API tokens,
+  `repo-sandbox-permissions` adoption (offered, not chosen). The stale
+  `release-prep-and-cut @ v1.0.0` text is upstream in `homelab-configs`.
+
+---
+
 ## 2026-11-15 — CLAUDE.md consolidation after the standards adoption
 
 - **Removed** "Git Workflow" and "Git Rules" (fully covered by the
