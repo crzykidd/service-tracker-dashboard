@@ -20,6 +20,7 @@ Module-level state local to this surface:
   intentional — see the function docstring.
 """
 
+import hmac
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -51,11 +52,18 @@ _UPSERT_LOCK = threading.Lock()
 def _check_bearer_auth(endpoint_label):
     """Validate the Authorization header against `api_token`.
 
-    Returns None on success, or a 401 Flask Response on failure.
+    Returns None on success, a 503 if no token is configured, or a 401
+    Flask Response on failure.
     """
-    auth_header = request.headers.get("Authorization", "")
-    expected = f"Bearer {current_app.config['api_token']}"
-    if auth_header == expected:
+    token = current_app.config.get("api_token")
+    if not token:
+        response = jsonify({"error": "API token not configured"})
+        response.status_code = 503
+        return response
+
+    auth_header = request.headers.get("Authorization") or ""
+    expected = f"Bearer {token}"
+    if hmac.compare_digest(auth_header.encode("utf-8"), expected.encode("utf-8")):
         return None
 
     client_ip = request.remote_addr

@@ -5,6 +5,19 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Default-credential check cached, dismissal is per-session
+
+The `changeme123` check hashes a password, so it runs once at startup (and
+again from `routes_auth.set_user_password` / `reset_user_password`) and is
+cached on `app.config`, not computed per request. `create_default_admin` also
+refreshes it because the admin row is created after `create_app()`. The Settings
+notice is dismissed client-side via `sessionStorage` (reappears next session),
+so dismissal needs no DB state. `FLASK_SECRET_KEY` set-but-empty is treated as
+unset. The "reset password" admin action sets `changeme123`, so it re-raises the
+warning by design.
+
+---
+
 ## 2026-11-15 — Lint widened to E, W, F, I, B
 
 `ruff.toml` now selects `E, W, F, I, B` with `E501` ignored (line length is

@@ -1,4 +1,7 @@
-"""Settings loader precedence and known bugs (PRD §12.3)."""
+"""Settings loader precedence, token hardening and credential warnings (PRD §12.3)."""
+
+import pathlib
+import re
 
 import pytest
 
@@ -46,10 +49,6 @@ def test_default_backup_path_follows_config_dir(settings_file):
     assert final["backup_path"] == f"{settings_loader.CONFIG_DIR}/backups"
 
 
-# --- Known v0.6.8 bugs: PRD §12.3 (prompt v069-03) removes these xfail marks ---
-
-
-@pytest.mark.xfail(strict=True, reason="PRD §12.3: settings.yml keys missing from VALID_KEYS are dropped")
 def test_file_only_keys_reach_config(settings_file):
     settings_file("widget_value_retention_days: 30\nregister_field_ownership: notifier_wins\n")
     final, _, _ = settings_loader.load_settings()
@@ -57,12 +56,69 @@ def test_file_only_keys_reach_config(settings_file):
     assert final.get("register_field_ownership") == "notifier_wins"
 
 
-@pytest.mark.xfail(strict=True, reason="PRD §12.3: unset api_token makes 'Bearer None' a valid credential")
-def test_unset_api_token_rejects_bearer_none(app, register):
+def test_new_key_defaults(settings_file):
+    final, _, _ = settings_loader.load_settings()
+    assert final["widget_value_retention_days"] == 30
+    assert final["register_field_ownership"] == "user_wins"
+
+
+def test_example_yml_keys_are_all_valid():
+    """Every key documented in settings.example.yml (even commented out) must load."""
+    text = (pathlib.Path(__file__).resolve().parent.parent / "settings.example.yml").read_text()
+    keys = set(re.findall(r"^#?([a-z][a-z0-9_]*):", text, flags=re.M))
+    assert keys, "no keys parsed from settings.example.yml"
+    assert keys <= set(settings_loader.VALID_KEYS), keys - set(settings_loader.VALID_KEYS)
+
+
+def test_mask_value():
+    assert settings_loader.mask_value("api_token", "secret") == "***"
+    assert settings_loader.mask_value("api_token", None) is None
+    assert settings_loader.mask_value("backup_path", "/x") == "/x"
+
+
+def test_api_token_not_logged(settings_file, monkeypatch, caplog):
+    monkeypatch.setenv("API_TOKEN", "s3cr3t-value")
+    with caplog.at_level("DEBUG", logger="settings_loader"):
+        settings_loader.load_settings()
+    assert "s3cr3t-value" not in caplog.text
+
+
+def test_unset_api_token_returns_503(app, register):
     original = app.config["api_token"]
     app.config["api_token"] = None
     try:
         resp = register(headers={"Authorization": "Bearer None"})
-        assert resp.status_code in (401, 503)
+        assert resp.status_code == 503
+        assert resp.get_json() == {"error": "API token not configured"}
+    finally:
+        app.config["api_token"] = original
+
+
+def test_missing_auth_header_is_401(register):
+    assert register(headers={}).status_code == 401
+
+
+def test_default_credential_flags(app, admin_client):
+    import routes_auth
+    from extensions import db
+    from models import User
+
+    # conftest admin uses a non-default password.
+    assert routes_auth.refresh_default_password_flag(app) is False
+    with app.app_context():
+        User.query.filter_by(username="admin").first().set_password("changeme123")
+        db.session.commit()
+    assert routes_auth.refresh_default_password_flag(app) is True
+    assert app.config["DEFAULT_ADMIN_PASSWORD_IN_USE"] is True
+    resp = admin_client.get("/settings")
+    assert b"Default credentials in use" in resp.data
+    app.config["DEFAULT_ADMIN_PASSWORD_IN_USE"] = False
+
+
+def test_token_missing_notice_on_settings(app, admin_client):
+    original = app.config["api_token"]
+    app.config["api_token"] = None
+    try:
+        assert b"API token not set" in admin_client.get("/settings").data
     finally:
         app.config["api_token"] = original

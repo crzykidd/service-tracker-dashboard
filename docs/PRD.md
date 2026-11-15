@@ -27,6 +27,7 @@
 | 0.17    | 2026-11-15 | Added §12 (v0.6.9 — Hardening and Safety Net, planned): test suite, wider lint, settings/API-token fixes, CSRF, soft-delete, widget detach, unified staleness, per-service health-check options, gunicorn + pinned deps, docs loose ends. Later sections renumbered (§12→§13, §13→§14, §14→§15). §15 Open Questions refreshed. No code changes yet. |
 | 0.18    | 2026-11-15 | §12.1 delivered (unreleased): pytest suite, `STD_CONFIG_DIR` testability seam, CI `Test` job; §13 required-checks text updated. No schema, contract, or job changes. |
 | 0.19    | 2026-11-15 | §12.2 delivered (unreleased): `ruff.toml` widened to `E, W, F, I, B` (E501 ignored); §3.1 lint note updated. No schema, contract, or job changes. |
+| 0.20    | 2026-11-15 | §12.3 delivered (unreleased): `widget_value_retention_days` / `register_field_ownership` now load; unset `api_token` returns 503 on register; constant-time token compare; token masked in logs; default-credential warnings. No schema or wire-contract changes. |
 
 ---
 
@@ -978,7 +979,7 @@ soft-deleted rows, which is server-side only.
   `alembic/env.py` from `E402` (intentional `sys.path` setup) via
   `per-file-ignores`.
 
-### 12.3 Settings and API-token hardening [`v069-03-settings-and-token-hardening`] — Planned
+### 12.3 Settings and API-token hardening [`v069-03-settings-and-token-hardening`] — Delivered (unreleased)
 
 - **Fix:** `settings_loader.VALID_KEYS` omits
   `widget_value_retention_days` and `register_field_ownership`, so both
@@ -999,6 +1000,16 @@ soft-deleted rows, which is server-side only.
   `"changeme-in-prod"` fallback is in use) or the `admin` user still
   has the `changeme123` password, log a WARNING at startup and show a
   dismissible notice on Settings for admins. No forced change.
+- **As built:** `widget_value_retention_days` (int, 30) and
+  `register_field_ownership` (str, `user_wins`) added to `VALID_KEYS`; a test
+  parses `settings.example.yml` (including `#key:` lines) against
+  `VALID_KEYS`. `settings_loader.SECRET_KEYS` / `mask_value()` mask secrets
+  in all startup/debug settings logs. `routes_auth.refresh_default_password_flag()`
+  computes the `changeme123` check once at startup and after password
+  set/reset, caching it in `app.config["DEFAULT_ADMIN_PASSWORD_IN_USE"]`
+  (`DEFAULT_SECRET_KEY_IN_USE` likewise). The Settings dismissal is per
+  browser session (`sessionStorage`). The two §12.1 `xfail` tests are now
+  passing tests.
 
 ### 12.4 CSRF protection [`v069-04-csrf`] — Planned
 

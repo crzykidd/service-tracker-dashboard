@@ -14,11 +14,13 @@ endpoints. Also home to:
   admin gate) in one file.
 """
 
+import logging
 from functools import wraps
 
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -33,6 +35,32 @@ from extensions import db, login_manager
 from models import User
 
 auth_bp = Blueprint("auth", __name__)
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_ADMIN_PASSWORD = "changeme123"
+
+
+def refresh_default_password_flag(app):
+    """Recompute whether `admin` still uses the default password.
+
+    Hashing is slow, so this runs at startup and after password changes and
+    the result is cached on app.config rather than computed per request.
+    """
+    in_use = False
+    try:
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").first()
+            in_use = bool(admin and admin.check_password(DEFAULT_ADMIN_PASSWORD))
+    except Exception as e:  # DB not migrated/created yet
+        logger.debug(f"Could not check default admin password: {e}")
+    app.config["DEFAULT_ADMIN_PASSWORD_IN_USE"] = in_use
+    if in_use:
+        logger.warning(
+            "⚠️ The 'admin' user still has the default password. "
+            "Change it under Settings → Users."
+        )
+    return in_use
 
 
 @login_manager.user_loader
@@ -92,6 +120,7 @@ def set_user_password(user_id):
 
     user.set_password(new_password)
     db.session.commit()
+    refresh_default_password_flag(current_app._get_current_object())
     flash(f"Password updated for {user.username}", "success")
     return redirect(url_for("dashboard.settings"))
 
@@ -127,6 +156,7 @@ def reset_user_password():
     if user:
         user.set_password("changeme123")
         db.session.commit()
+        refresh_default_password_flag(current_app._get_current_object())
         flash(f"🔁 Password reset for {user.username} to 'changeme123'", "info")
     else:
         flash("❌ User not found", "danger")

@@ -22,10 +22,10 @@ from health import health_bp
 from jobs import start_background_workers, verify_and_fetch_missing_icons
 from models import User
 from routes_api import api_bp
-from routes_auth import auth_bp
+from routes_auth import auth_bp, refresh_default_password_flag
 from routes_dashboard import dashboard_bp
 from routes_widgets import widgets_bp
-from settings_loader import CONFIG_DIR, load_settings
+from settings_loader import CONFIG_DIR, load_settings, mask_value
 
 DATABASE_PATH = os.path.join(CONFIG_DIR, 'services.db')
 LOGFILE = os.path.join(CONFIG_DIR, 'std.log')
@@ -79,7 +79,8 @@ def create_app():
 
     app = Flask(__name__)
     app.debug = IS_DEBUG
-    app.secret_key = os.getenv("FLASK_SECRET_KEY", "changeme-in-prod")
+    app.secret_key = os.getenv("FLASK_SECRET_KEY") or "changeme-in-prod"
+    app.config['DEFAULT_SECRET_KEY_IN_USE'] = not os.getenv("FLASK_SECRET_KEY")
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DATABASE_PATH}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=int(settings.get("user_session_length", 120)))
@@ -97,7 +98,7 @@ def create_app():
 
     logger.info("🔧 Loaded settings:")
     for k, v in settings.items():
-        logger.info(f"    {k} = {v}")
+        logger.info(f"    {k} = {mask_value(k, v)}")
 
     app.config.update(settings)
     # Snapshot the full loaded dict for the /settings page to render. The page
@@ -124,7 +125,19 @@ def create_app():
 
     logger.info("⚙️ Flask config (from settings):")
     for k in settings:
-        logger.info(f"    {k} = {app.config.get(k)}")
+        logger.info(f"    {k} = {mask_value(k, app.config.get(k))}")
+
+    if not app.config.get("api_token"):
+        logger.warning(
+            "⚠️ API_TOKEN is not set: /api/v1/register will return 503 "
+            "until api_token is configured."
+        )
+    if app.config['DEFAULT_SECRET_KEY_IN_USE']:
+        logger.warning(
+            "⚠️ FLASK_SECRET_KEY is not set: using the built-in default to sign "
+            "sessions. Set FLASK_SECRET_KEY to a long random value."
+        )
+    refresh_default_password_flag(app)
 
     os.makedirs(IMAGE_DIR, exist_ok=True)
 
@@ -175,6 +188,7 @@ def create_default_admin(app):
             logger.info("🛠️ Default admin user created (username: admin, password: changeme123)")
         else:
             logger.info("👤 Admin user already exists.")
+    refresh_default_password_flag(app)
 
 
 app = create_app()

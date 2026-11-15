@@ -130,7 +130,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 
 | Setting                    | Type   | ENV                          | Default            | What it does |
 |----------------------------|--------|------------------------------|--------------------|--------------|
-| `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. |
+| `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. If unset, register returns 503 until it is set. The token is masked in logs. |
 | `std_dozzle_url`           | string | `STD_DOZZLE_URL`             | —                  | Optional link to a Dozzle instance; enables a Tools section in the UI. |
 | `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where YAML backups are written. |
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
@@ -139,7 +139,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
-| `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. |
+| `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. If unset, a built-in default is used and Settings shows a warning (as it does while `admin` still has the default password). |
 
 ### Example `settings.yml`
 

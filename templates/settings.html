@@ -36,6 +36,38 @@
     <!-- === Info Section === -->
     <section id="section-info" class="section">
       <h2 class="text-2xl font-semibold mb-4">Service Info</h2>
+      {% if api_token_missing %}
+      <div class="mb-4 p-4 bg-red-900 text-red-100 rounded shadow">
+        <strong>API token not set.</strong> Notifier registers (<code>/api/v1/register</code>)
+        are disabled and return 503 until <code>API_TOKEN</code> (or <code>api_token</code> in
+        <code>settings.yml</code>) is set.
+      </div>
+      {% endif %}
+      {% if default_secret_key or default_admin_password %}
+      <div id="credential-warning" class="mb-4 p-4 bg-yellow-900 text-yellow-100 rounded shadow flex justify-between items-start" style="display:none">
+        <div>
+          <strong>Default credentials in use.</strong>
+          <ul class="list-disc list-inside">
+            {% if default_secret_key %}<li><code>FLASK_SECRET_KEY</code> is not set, so sessions are signed with a public default. Set <code>FLASK_SECRET_KEY</code> to a long random value and restart.</li>{% endif %}
+            {% if default_admin_password %}<li>The <code>admin</code> user still has the default password. Change it under Users.</li>{% endif %}
+          </ul>
+        </div>
+        <button type="button" id="credential-warning-dismiss" class="ml-4 underline">Dismiss</button>
+      </div>
+      <script>
+        (function () {
+          var box = document.getElementById('credential-warning');
+          var key = 'std-credential-warning-dismissed';
+          var dismissed = false;
+          try { dismissed = sessionStorage.getItem(key) === '1'; } catch (e) {}
+          if (!dismissed) { box.style.display = 'flex'; }
+          document.getElementById('credential-warning-dismiss').addEventListener('click', function () {
+            box.style.display = 'none';
+            try { sessionStorage.setItem(key, '1'); } catch (e) {}
+          });
+        })();
+      </script>
+      {% endif %}
       <div class="mb-4 p-4 bg-gray-700 rounded shadow">
         <h3 class="text-lg font-semibold text-white mb-2">Version Info</h3>
         <ul class="list-disc list-inside text-gray-300 space-y-1">

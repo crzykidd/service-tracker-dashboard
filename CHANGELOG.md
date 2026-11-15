@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`widget_value_retention_days` and `register_field_ownership` now work.**
+  Both were documented but silently ignored (from `settings.yml` and from the
+  environment); the defaults always applied. They are now read from either.
+- **An unset `API_TOKEN` no longer accepts a bogus header.** Previously
+  `Authorization: Bearer None` was accepted when no token was configured.
+  Now `/api/v1/register` returns `503 {"error": "API token not configured"}`
+  until a token is set, and Settings → Service Info shows a notice.
+  **Installs that never set `API_TOKEN` will now get 503 on register;** set
+  `API_TOKEN` (or `api_token` in `settings.yml`) to restore it.
+
+### Security
+
+- API token comparison is now constant-time.
+- The API token is masked (`***`) in startup and debug logs.
+- STD now warns (log and a dismissible notice on Settings) when
+  `FLASK_SECRET_KEY` is unset or the `admin` user still has the default
+  `changeme123` password. Nothing is forced; change them when you can.
+
 ## [0.6.8] — 2026-11-15
 
 ### Removed

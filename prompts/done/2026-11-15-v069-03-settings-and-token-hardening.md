@@ -1,10 +1,10 @@
 ---
 name: 2026-11-15-v069-03-settings-and-token-hardening
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15  # filled when the work is done
+result: Settings keys load, unset token 503, compare_digest, masked logs, default-credential warnings; 27 tests pass  # one-line summary of the outcome
 ---
 
 # Task: Fix dropped settings, the unset-token bypass, and add credential warnings (PRD §12.3)
