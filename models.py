@@ -88,6 +88,13 @@ class ServiceEntry(db.Model):
     # last_updated. Use ServiceEntry.active() for anything user-facing.
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
+    # Per-service health-check options (v0.6.9). Operator-curated, never
+    # register fields. NULL timeout = use the global health_check_timeout.
+    health_check_timeout = db.Column(db.Integer, nullable=True)
+    health_check_verify_tls = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.true()
+    )
+
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
     )
@@ -133,6 +140,8 @@ class ServiceEntry(db.Model):
             'published_ports': self.published_ports,
             'internalurl_source': self.internalurl_source,
             'externalurl_source': self.externalurl_source,
+            'health_check_timeout': self.health_check_timeout,
+            'health_check_verify_tls': self.health_check_verify_tls,
             'deleted_at': self.deleted_at.strftime('%Y-%m-%d %H:%M:%S') if self.deleted_at else None,
         }
 

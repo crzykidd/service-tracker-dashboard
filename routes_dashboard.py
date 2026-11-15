@@ -511,11 +511,18 @@ def settings():
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
                                 entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at']:
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls']:
                             setattr(entry, field, value)
 
                     # deleted_at round-trips; absent (v0.6.8 backups) means active.
                     entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
+
+                    # Health-check options round-trip; absent (older backups)
+                    # means the defaults: global timeout, verify TLS on.
+                    backup_timeout = item.get('health_check_timeout')
+                    entry.health_check_timeout = backup_timeout if isinstance(backup_timeout, int) and backup_timeout > 0 else None
+                    backup_verify = item.get('health_check_verify_tls')
+                    entry.health_check_verify_tls = True if backup_verify is None else bool(backup_verify)
 
 
                     # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
@@ -816,6 +823,12 @@ def add_entry():
                 flash("Sort priority must be a number.", 'danger')
                 return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
+        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
+        if health_error:
+            flash(health_error, 'danger')
+            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+        verify_tls = request.form.get('health_check_verify_tls') == 'on'
+
         # === CREATE ENTRY ===
         # Look up or create group
         group_obj = Group.query.filter_by(group_name=group_name).first()
@@ -840,8 +853,10 @@ def add_entry():
             external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             sort_priority=sort_priority,
-            is_static=is_static
-)
+            is_static=is_static,
+            health_check_timeout=health_timeout,
+            health_check_verify_tls=verify_tls,
+        )
 
         db.session.add(entry)
         db.session.commit()
@@ -851,6 +866,27 @@ def add_entry():
 
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
     return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups)
+
+
+MAX_HEALTH_CHECK_TIMEOUT = 60
+
+
+def _parse_health_timeout(raw):
+    """Parse the per-service timeout form field.
+
+    Returns (value, error). Blank -> (None, None), meaning "use the global
+    default". Otherwise a positive int up to MAX_HEALTH_CHECK_TIMEOUT.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None, None
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if not 1 <= value <= MAX_HEALTH_CHECK_TIMEOUT:
+        return None, f"Health check timeout must be a whole number of seconds from 1 to {MAX_HEALTH_CHECK_TIMEOUT} (or blank for the default)."
+    return value, None
 
 
 @dashboard_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
@@ -931,6 +967,13 @@ def edit_entry(id):
         entry.internal_health_check_enabled = 'internal_health_check_enabled' in request.form
         entry.external_health_check_enabled = 'external_health_check_enabled' in request.form
         entry.is_static = 'is_static' in request.form
+
+        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
+        if health_error:
+            flash(health_error, "warning")
+        else:
+            entry.health_check_timeout = health_timeout
+        entry.health_check_verify_tls = 'health_check_verify_tls' in request.form
 
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:

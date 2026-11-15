@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-service health-check options.** The edit and add pages have a new
+  "Advanced health check" section: a timeout (1-60 s, blank = default) and a
+  "Verify TLS certificate" checkbox. Untick it for self-signed internal URLs
+  that used to report `Error: SSLError`. Both are included in backups and
+  restores.
+- **`health_check_timeout` setting** (default `5`) sets the global health-check
+  timeout, previously hard-coded.
 - **Stale indicator on every view.** A service whose last notifier update is
   older than the threshold now shows an amber warning icon (tooltip "Stale —
   updated <time>") on the Dashboard table and Compact view as well as Tiled.

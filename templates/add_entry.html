@@ -72,6 +72,17 @@
         <input type="text" name="group_name_new" id="group_name_new" class="input-clean mt-2 hidden" placeholder="e.g., New Group Name">
       </div>
 
+      <!-- Advanced health check -->
+      <div class="mb-5">
+        <label for="health_check_timeout" class="block text-sm font-medium text-gray-400 mb-1">Health check timeout (seconds)</label>
+        <input type="number" name="health_check_timeout" id="health_check_timeout" class="input-clean" min="1" max="60" step="1" placeholder="Optional — blank uses the default" value="{{ entry.get('health_check_timeout', '') }}">
+        <div class="flex items-center mt-2">
+          <input type="checkbox" name="health_check_verify_tls" id="health_check_verify_tls" class="form-checkbox h-5 w-5 rounded border-gray-600" {% if not entry or entry.get('health_check_verify_tls') %}checked{% endif %}>
+          <label for="health_check_verify_tls" class="ml-2 text-sm text-gray-400">Verify TLS certificate</label>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">Untick for self-signed internal URLs.</p>
+      </div>
+
       <!-- Sort Priority -->
       <div class="mb-5">
         <label for="sort_priority" class="block text-sm font-medium text-gray-400 mb-1">Sort Priority</label>

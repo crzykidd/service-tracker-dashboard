@@ -136,6 +136,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where YAML backups are written. |
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
+| `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
@@ -152,6 +153,7 @@ std_dozzle_url: http://dozzle.local
 backup_path: /config/backups
 backup_days_to_keep: 7
 url_healthcheck_interval: 300
+health_check_timeout: 5
 widget_background_reload: 900
 widget_value_retention_days: 30
 register_field_ownership: user_wins
@@ -443,6 +445,10 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
 - Status code, response time, and timestamp are recorded per check.
+- Each check waits up to `health_check_timeout` seconds (default 5). A
+  service can override this, and turn off TLS certificate verification
+  (for self-signed internal URLs that otherwise show `Error: SSLError`),
+  under **Advanced health check** on its edit page (also on the Add page).
 - A failed check logs and moves on; it does not crash the loop.
 - UI shows color-coded status (green / yellow / red) with last-checked time.
 

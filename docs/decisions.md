@@ -5,6 +5,19 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Health-check options (v069-08)
+
+- **Invalid timeout on edit keeps the stored value** (flash warning, rest of the
+  form still saves), mirroring how sort priority is handled there. On Add an
+  invalid value re-renders the form.
+- **Restore sets the options explicitly** (defaults when absent) rather than
+  leaving an existing row's values, so a v0.6.8 backup restores to the
+  documented defaults.
+- **`verify` treats only an explicit `False` as off** in `check_url`, so a
+  missing attribute fails safe to verifying.
+
+---
+
 ## 2026-11-15 — Staleness indicator (v069-07)
 
 - **Never-updated dynamic entries:** model still returns stale (unchanged);

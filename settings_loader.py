@@ -28,6 +28,7 @@ VALID_KEYS = {
     "register_field_ownership": str,
     "deleted_retention_days": int,
     "stale_after_minutes": int,
+    "health_check_timeout": int,
 }
 
 # Keys whose values must never be written to logs in clear text.
@@ -50,6 +51,7 @@ DEFAULT_VALUES = {
     "register_field_ownership": "user_wins",
     "deleted_retention_days": 30,
     "stale_after_minutes": 5,
+    "health_check_timeout": 5,
 }
 def load_settings():
     file_config = {}

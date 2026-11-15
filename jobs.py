@@ -22,6 +22,7 @@ import logging
 import os
 import threading
 import time
+import warnings
 from datetime import datetime, timedelta
 from functools import partial
 
@@ -30,6 +31,7 @@ import yaml
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from urllib3.exceptions import InsecureRequestWarning
 
 from extensions import db
 from image_utils import fetch_icon_if_missing
@@ -101,6 +103,37 @@ def update_widget_data_periodically(app):
                 print(f"🔥 Exception while processing widget {widget.id}: {str(e)}")
 
 
+DEFAULT_HEALTH_CHECK_TIMEOUT = 5
+
+
+def _global_health_timeout(app):
+    try:
+        value = int(app.config.get("health_check_timeout", DEFAULT_HEALTH_CHECK_TIMEOUT))
+    except (TypeError, ValueError):
+        return DEFAULT_HEALTH_CHECK_TIMEOUT
+    return value if value > 0 else DEFAULT_HEALTH_CHECK_TIMEOUT
+
+
+def check_url(url, entry, default_timeout=DEFAULT_HEALTH_CHECK_TIMEOUT):
+    """Run one health check and return the status string.
+
+    Timeout is the entry's own `health_check_timeout` when set, else
+    `default_timeout` (the global setting). `verify` follows the entry's
+    `health_check_verify_tls`; when it is off, urllib3's
+    InsecureRequestWarning is silenced for this call only.
+    """
+    timeout = entry.health_check_timeout or default_timeout
+    verify = entry.health_check_verify_tls is not False
+    try:
+        with warnings.catch_warnings():
+            if not verify:
+                warnings.simplefilter("ignore", InsecureRequestWarning)
+            response = requests.get(url, timeout=timeout, verify=verify)
+        return str(response.status_code)
+    except Exception as e:
+        return f"Error: {type(e).__name__}"
+
+
 # Background health check loop
 def health_check_loop(app):
     URL_HEALTHCHECK_INTERVAL = app.config.get("url_healthcheck_interval", 60)
@@ -113,6 +146,7 @@ def health_check_loop(app):
             try:
                 log_output = ["\U0001f504 Running internal health checks..."]
                 entries = ServiceEntry.active().all()
+                default_timeout = _global_health_timeout(app)
 
                 for entry in entries:
                     show_log = False
@@ -121,24 +155,14 @@ def health_check_loop(app):
 
                     if entry.internal_health_check_enabled and entry.internalurl:
                         show_log = True
-                        try:
-                            response = requests.get(entry.internalurl, timeout=5)
-                            internal_status = str(response.status_code)
-                            entry.internal_health_check_status = internal_status
-                        except Exception as e:
-                            internal_status = f"Error: {type(e).__name__}"
-                            entry.internal_health_check_status = internal_status
+                        internal_status = check_url(entry.internalurl, entry, default_timeout)
+                        entry.internal_health_check_status = internal_status
                         entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                     if entry.external_health_check_enabled and entry.externalurl:
                         show_log = True
-                        try:
-                            response = requests.get(entry.externalurl, timeout=5)
-                            external_status = str(response.status_code)
-                            entry.external_health_check_status = external_status
-                        except Exception as e:
-                            external_status = f"Error: {type(e).__name__}"
-                            entry.external_health_check_status = external_status
+                        external_status = check_url(entry.externalurl, entry, default_timeout)
+                        entry.external_health_check_status = external_status
                         entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                     if show_log:

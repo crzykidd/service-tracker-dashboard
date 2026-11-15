@@ -62,6 +62,23 @@
         </div>
       </div>
 
+      {# ── Advanced health check ────────────────────────────── #}
+      <h3 class="edit-section-heading">Advanced health check</h3>
+      <div class="edit-section-fields">
+        <div>
+          <label for="health_check_timeout" class="block text-sm font-medium text-dashboard-secondary mb-1">Timeout (seconds)</label>
+          <input type="number" name="health_check_timeout" id="health_check_timeout" class="form-input" min="1" max="60" step="1" placeholder="Default" value="{{ entry.health_check_timeout if entry.health_check_timeout else '' }}">
+          <p class="edit-helper">Blank uses the global <code>health_check_timeout</code> setting. 1&ndash;60.</p>
+        </div>
+        <div>
+          <div class="flex items-center">
+            <input type="checkbox" name="health_check_verify_tls" id="health_check_verify_tls" class="form-checkbox h-4 w-4" {% if entry.health_check_verify_tls %}checked{% endif %}>
+            <label for="health_check_verify_tls" class="ml-2 text-sm text-dashboard-secondary">Verify TLS certificate</label>
+          </div>
+          <p class="edit-helper">Untick for self-signed internal URLs that otherwise report <code>Error: SSLError</code>.</p>
+        </div>
+      </div>
+
       {# ── Grouping & Display ───────────────────────────────── #}
       <h3 class="edit-section-heading">Grouping &amp; Display</h3>
       <div class="edit-section-fields">

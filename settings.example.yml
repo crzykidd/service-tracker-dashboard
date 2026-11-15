@@ -54,3 +54,7 @@ user_session_length: 120
 # stale (warning icon on the Dashboard, Tiled, and Compact views). Static
 # entries are never stale. The notifier re-scans every 60 s by default.
 stale_after_minutes: 5
+
+# Seconds to wait for a URL health check before giving up. A service can
+# override this on its edit page. Can be set as HEALTH_CHECK_TIMEOUT in ENV.
+health_check_timeout: 5

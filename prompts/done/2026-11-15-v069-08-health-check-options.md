@@ -1,10 +1,10 @@
 ---
 name: 2026-11-15-v069-08-health-check-options
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15
+result: Added health_check_timeout setting, per-service timeout and verify-TLS columns with edit/add UI, backup round-trip, check_url + tests
 ---
 
 # Task: Per-service health-check timeout and TLS-verify override (PRD §12.8)

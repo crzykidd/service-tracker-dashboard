@@ -32,6 +32,7 @@
 | 0.22    | 2026-11-15 | §12.5 delivered (unreleased): soft-delete (`service_entry.deleted_at`, §5.5), Settings → Deleted tab, `deleted_retention_days` and the 00:25 purge job, resurrect-on-register, `deleted_at` in YAML backups. Wire contract unchanged. |
 | 0.23    | 2026-11-15 | §12.6 delivered (unreleased): hard delete keeps the widget and its values as a detached widget; Settings → Deleted lists detached widgets with Attach/Delete; refresh job skips detached widgets. No schema or wire-contract changes. |
 | 0.24    | 2026-11-15 | §12.7 delivered (unreleased): `stale_after_minutes` setting (default 5) drives `is_docker_status_stale`; Tiled 120-minute clause removed; stale icon added to Dashboard and Compact. No schema or wire-contract changes. |
+| 0.25    | 2026-11-15 | §12.8 delivered (unreleased): `health_check_timeout` setting; per-service `health_check_timeout` / `health_check_verify_tls` columns (§5.5) editable on Edit and Add; backups round-trip both. Wire contract unchanged. |
 
 ---
 
@@ -317,7 +318,11 @@ exposure data arrives.
 |--------|--------|
 | Column | `service_entry.deleted_at` (`DateTime`, nullable, indexed as `ix_service_entry_deleted_at`). NULL = active; a timestamp = soft-deleted at that time (naive server-local). Rows past `deleted_retention_days` are hard-deleted by the 00:25 purge job (§12.5). |
 
-Restoring a v0.6.8 backup leaves `deleted_at` NULL.
+| Column | `service_entry.health_check_timeout` (`Integer` seconds, nullable; NULL = use the global `health_check_timeout` setting). Not indexed (not a lookup column). |
+| Column | `service_entry.health_check_verify_tls` (`Boolean`, NOT NULL, server default true). Existing rows keep verifying TLS. |
+
+Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
+options at their defaults.
 
 ---
 
@@ -1128,7 +1133,7 @@ still deletes it deliberately).
   separate red "no update received" state, and Dashboard keeps its red
   pill. Outside an app context the threshold falls back to 5.
 
-### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Planned
+### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered (unreleased)
 
 Resolves the Open Question on health-check timeouts (§15).
 
@@ -1143,6 +1148,16 @@ Resolves the Open Question on health-check timeouts (§15).
   (no contract change).
 - `verify_tls = false` passes `verify=False` to `requests` and
   suppresses the urllib3 InsecureRequestWarning for that call only.
+- **As built:** the per-URL check is `jobs.check_url(url, entry,
+  default_timeout)`; timeout is `entry.health_check_timeout` or the
+  global setting. The edit page has an "Advanced health check" section;
+  the Add page carries the same two fields (verify defaults on).
+  Timeout is validated as a whole number 1-60 (blank = default); an
+  invalid edit-page value is rejected with a warning and the stored
+  value kept. Both fields round-trip through YAML backup/restore
+  (absent in older backups = global timeout, verify on). No register
+  contract change: `schemas.py` untouched and `upsert_service` never
+  writes either column.
 - Out of scope: concurrent health checks. Sequential checks with longer
   per-service timeouts lengthen a pass; acceptable at homelab scale.
 
@@ -1271,7 +1286,7 @@ not lead.
   but doesn't let you revoke a single notifier host. Per-host tokens +
   last-seen tracking? Unscheduled; §12.3 only closes the
   unset-token hole.
-- ~~**Health check timeouts.**~~ Planned in §12.8 (per-service timeout
+- ~~**Health check timeouts.**~~ Resolved in §12.8 (per-service timeout
   and TLS-verify override).
 - **Read-replica for dashboard reads.** WAL handles concurrent reads
   fine at this scale, but if widget growth pushes DB size up, worth
