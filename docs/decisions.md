@@ -5,6 +5,30 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Adopting code-checkin-and-pr: migration-check DB, retention scope, F821
+
+- **Migration check uses a runner-local `/config`** (`sudo mkdir -p /config &&
+  sudo chown $USER /config`) rather than an env-var override in
+  `alembic/env.py`. `alembic.ini` hardcodes `sqlite:////config/services.db`;
+  creating the dir keeps the check running against the unmodified production
+  config and avoids a code change. Rejected: env override (runtime-adjacent
+  change for a CI-only need).
+- **Untagged GHCR versions are never pruned.** `publish.yml` uses
+  `build-push-action` with default provenance, so per-platform/attestation
+  manifests exist as untagged versions referenced by tagged indexes. Telling
+  referenced from orphaned is not worth the risk; accepted cost is some
+  untagged residue after tagged versions are pruned.
+- **F821 in `routes_dashboard.py` `/add` was a real bug.** A non-numeric sort
+  priority raised `NameError` (`groups` undefined) -> HTTP 500. Fixed by
+  loading `groups` at the top of the POST branch and passing it to all three
+  error re-renders (the other two silently rendered an empty group dropdown).
+  Operator-visible, so it has a CHANGELOG `### Fixed` entry.
+- **CI is push-only** (no `pull_request` trigger) to avoid duplicate
+  same-named check runs that leave required checks stuck "Expected".
+- Test check exempt (no suite); recorded in `standards.md`.
+
+---
+
 ## 2026-11-15 — vexp removal recorded in HISTORY, not CHANGELOG
 
 CLAUDE.md requires a CHANGELOG entry for every change, but CHANGELOG is

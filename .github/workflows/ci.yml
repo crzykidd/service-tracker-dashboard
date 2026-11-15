@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  # Push-only (no pull_request). Every dev push gets the full CI feedback, and the
+  # dev→main PR's required checks are satisfied by the head commit's push run
+  # (branch protection is non-strict). Triggering on both push AND pull_request
+  # produced duplicate same-named check runs that left required checks stuck at
+  # "Expected — Waiting for status to be reported", forcing a manual merge bypass.
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      # Pin ruff so CI matches the version developers run locally. An unpinned
+      # `pip install ruff` pulls whatever is newest, and a release that broadens
+      # the default rule set turns Lint red on unchanged code. Bump this
+      # deliberately, not by surprise. Rules are selected in ruff.toml.
+      - run: pip install ruff==0.15.17
+      - run: ruff check .
+
+  config-validate:
+    name: Config validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install pyyaml
+      - name: Validate config files
+        run: |
+          python3 << 'EOF'
+          import json, yaml, glob, sys
+          errors = []
+          yaml_files = (
+              ['docker-compose.yml', 'settings.example.yml']
+              + sorted(glob.glob('.github/workflows/*.yml'))
+          )
+          for f in yaml_files:
+              try: yaml.safe_load(open(f).read())
+              except Exception as e: errors.append(f'{f}: {e}')
+          json_files = ['.claude/settings.json'] + sorted(glob.glob('widgets/*/settings.json'))
+          for f in json_files:
+              try: json.load(open(f))
+              except Exception as e: errors.append(f'{f}: {e}')
+          if errors:
+              for e in errors: print(f'FAIL: {e}', file=sys.stderr)
+              sys.exit(1)
+          print(f'All config files valid ({len(yaml_files) + len(json_files)} checked)')
+          EOF
+
+  migration-check:
+    name: Migration check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      # alembic.ini hardcodes sqlite:////config/services.db (the production
+      # path). Rather than add an env override to env.py, give the runner a
+      # writable, empty /config so the check runs against the unmodified config.
+      - name: Prepare empty /config
+        run: |
+          sudo mkdir -p /config
+          sudo chown "$USER" /config
+      - name: Run migrations to head
+        run: alembic upgrade head
+      - name: Assert single head
+        run: |
+          n=$(alembic heads | grep -c .)
+          if [ "$n" -ne 1 ]; then
+            echo "ERROR: expected exactly 1 alembic head, found $n"
+            alembic heads
+            exit 1
+          fi
+      - name: Assert at head
+        run: |
+          alembic current 2>&1 | grep -q '(head)' || \
+            { echo 'ERROR: database is not at alembic head'; exit 1; }
+
+  compose-validate:
+    name: Compose validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose config --quiet

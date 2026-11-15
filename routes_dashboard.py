@@ -43,7 +43,7 @@ import settings_store
 import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing
-from models import Group, ServiceEntry, ServiceExposure, User, Widget, WidgetValue
+from models import Group, ServiceEntry, User, Widget, WidgetValue
 from routes_auth import is_admin_required
 from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
@@ -665,6 +665,8 @@ def add_entry():
         referrer = '/tiled_dash'
 
     if request.method == 'POST':
+        # Needed by every error re-render of the add form below.
+        groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
         host = request.form.get('host')
         container_name = request.form.get('application')
         internalurl = request.form.get('internal_url')
@@ -689,13 +691,13 @@ def add_entry():
 
         if not host or not container_name:
             flash('Host and Application (Container Name) are required.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form)
+            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
         # Check for duplicates
         existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
         if existing:
             flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
-            return render_template("add_entry.html", msg='duplicate', entry=request.form)
+            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
 
         # Booleans
         internal_health_check_enabled = request.form.get('internal_health_check') == 'on'

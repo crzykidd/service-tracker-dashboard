@@ -85,13 +85,46 @@ default:
 If you're unsure whether an action would violate one of the above, stop and ask before
 acting.
 
+<!--
+Source: standards/code-checkin-and-pr @ v1.2.0 (crzynet/homelab-configs).
+Paste the section below verbatim into the adopting project's CLAUDE.md.
+The full standard (publishing matrix, retention, CI check definitions) lives at:
+https://gitea.crzynet.com/crzynet/homelab-configs/src/branch/main/standards/code-checkin-and-pr/README.md
+-->
+
+## Code check-in (operational rules)
+
+This project adopts the `code-checkin-and-pr` standard. The full why-and-how lives at
+the source above; the rules below are the per-session do/don'ts a coding agent must
+honor by default:
+
+- **Never push directly to `main`.** `main` is protected. All changes land via a pull
+  request from `dev` → `main`, and only when every required check is green.
+- **Day-to-day work happens on `dev`** (or a short-lived branch off `dev`). Push to
+  `dev` freely.
+- **Commit message prefixes are required** — Conventional-Commits style:
+  - `feat:` — new user-facing feature
+  - `fix:` — bug fix
+  - `chore:` — config, tooling, dependencies, maintenance
+  - `docs:` — documentation-only changes
+- **Do not add `Co-authored-by:` trailers** unless the user explicitly asks.
+- **Doc updates ship in the same commit as the code they describe** — never as a
+  follow-up commit.
+- **Never bypass hooks** (no `--no-verify`, `--no-gpg-sign`, etc.) unless the user
+  explicitly asks. If a hook fails, fix the underlying issue.
+- **Stable releases are tagged from `main` only.** Don't tag from `dev`.
+
+If you're unsure whether an action would violate one of the above, stop and ask before
+acting.
+
 ## Commit style
 
 - `feat:` new feature
 - `chore:` config, tooling, maintenance
 - `fix:` bug fix
 - `docs:` documentation only changes
-- `refactor:` non-behavior-changing internal cleanup
+- `refactor:` non-behavior-changing internal cleanup (project extension to
+  the `code-checkin-and-pr` standard's prefix set)
 
 ## Stack
 
@@ -148,10 +181,11 @@ banner). Last release published to Docker Hub.
   - Create PR `dev` → `main` on GitHub.
   - Merge after CI passes.
   - Tag release from `main` via the GitHub Releases UI.
-- Never push directly to `main`.
-- Branch protection on `main` requires PR + green build, blocks
-  force-push and deletion.
-- Do NOT add `Co-authored-by` to commits.
+- Branch protection on `main` requires a PR plus green required checks
+  (`build`, `Lint`, `Config validation`, `Migration check`,
+  `Compose validation`, CodeQL), and blocks force-push and deletion.
+  `CI` (`.github/workflows/ci.yml`) runs on push to `dev`/`main` only.
+  The `Test` check is exempt until a test suite exists (see `standards.md`).
 
 ## Release Process
 

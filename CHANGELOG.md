@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Add Entry no longer errors on a non-numeric sort priority.** Entering
+  something other than a number in Sort Priority on the Add page now shows
+  the "Sort priority must be a number." message and re-displays the form,
+  instead of returning a server error. The group dropdown is also kept
+  populated when the form re-displays after a validation error.
+
 ## [0.6.7] — 2026-11-15
 
 STD is moving from Docker Hub to GitHub Container Registry (GHCR). If you

@@ -470,8 +470,11 @@ receives its last release at v0.6.7 — see
 - `:sha-<short>` published for every push.
 - Semver-tagged images (`:0.6.0`, `:0`) published from GitHub Releases.
 
-Branch protection: PRs into `main` must pass the build check; force-push
-and branch deletion are blocked. Work happens on `dev`, opens a PR to
+Branch protection: PRs into `main` must pass the image build check, CodeQL,
+and the CI checks (Lint, Config validation, Migration check, Compose
+validation); force-push and branch deletion are blocked. Old GHCR image
+versions are pruned automatically (30 most recent `sha-*`, 15 most recent
+semver; `latest`, `dev`, and major tags are kept). Work happens on `dev`, opens a PR to
 `main`, and merges only when CI is green. Release tags are cut from the
 GitHub Releases UI on `main`.
 
