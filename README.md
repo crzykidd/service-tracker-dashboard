@@ -481,6 +481,14 @@ Widget data is sampled on the `widget_background_reload` interval and
 cached in the `widget_value` table. Retention: rolling 30 days
 (introduced in v0.5.0).
 
+When a service is permanently deleted (Delete permanently, or the nightly
+purge) its widget is kept as a **detached widget** rather than erased: the
+settings and stored values remain, but it is no longer refreshed. Settings →
+Deleted lists detached widgets and lets you **Attach** one to an active service
+that has no widget, or **Delete** it (with its values). Widgets that belong
+only to soft-deleted services are also not refreshed until the service is
+restored.
+
 ---
 
 ## Behavior Notes

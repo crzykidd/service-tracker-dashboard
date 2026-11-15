@@ -30,7 +30,6 @@ import yaml
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import or_
 
 from extensions import db
 from image_utils import fetch_icon_if_missing
@@ -42,13 +41,11 @@ logger = logging.getLogger(__name__)
 
 def update_widget_data_periodically(app):
     with app.app_context():
-        # Skip widgets whose services are all soft-deleted (the widget stays
-        # attached to a deleted entry so Restore brings it back intact).
+        # Refresh only widgets with at least one active service. Skipped:
+        # widgets whose services are all soft-deleted (Restore brings them
+        # back intact) and detached widgets (no service references them).
         widgets = Widget.query.filter(
-            or_(
-                ~Widget.services.any(),
-                Widget.services.any(ServiceEntry.deleted_at.is_(None)),
-            )
+            Widget.services.any(ServiceEntry.deleted_at.is_(None))
         ).all()
 
         for widget in widgets:  # ✅ Now inside context

@@ -30,6 +30,7 @@
 | 0.20    | 2026-11-15 | §12.3 delivered (unreleased): `widget_value_retention_days` / `register_field_ownership` now load; unset `api_token` returns 503 on register; constant-time token compare; token masked in logs; default-credential warnings. No schema or wire-contract changes. |
 | 0.21    | 2026-11-15 | §12.4 delivered (unreleased): Flask-WTF `CSRFProtect` on all UI POSTs and fetch calls; `/api/v1/register` exempt; `CSRFError` handler (flash+redirect or JSON 400). No schema or wire-contract changes. |
 | 0.22    | 2026-11-15 | §12.5 delivered (unreleased): soft-delete (`service_entry.deleted_at`, §5.5), Settings → Deleted tab, `deleted_retention_days` and the 00:25 purge job, resurrect-on-register, `deleted_at` in YAML backups. Wire contract unchanged. |
+| 0.23    | 2026-11-15 | §12.6 delivered (unreleased): hard delete keeps the widget and its values as a detached widget; Settings → Deleted lists detached widgets with Attach/Delete; refresh job skips detached widgets. No schema or wire-contract changes. |
 
 ---
 
@@ -1081,7 +1082,7 @@ widgets whose services are all soft-deleted; `recompute_all` and the
 scheduled/manual backups deliberately include deleted rows. New routes:
 `POST /settings/deleted/<id>/restore` and `/delete` (admin, CSRF).
 
-### 12.6 Widget detach on hard delete [`v069-06-widget-detach`] — Planned
+### 12.6 Widget detach on hard delete [`v069-06-widget-detach`] — Delivered (unreleased)
 
 - When a service entry is hard-deleted (purge job or Delete
   permanently), its widget is **detached**, not deleted: the `Widget`
@@ -1093,6 +1094,16 @@ scheduled/manual backups deliberately include deleted rows. New routes:
 - **Settings → Deleted** gains a "Detached widgets" list: **Attach to
   service** (picker of entries with no widget) or **Delete** (removes
   the widget and its values).
+
+As built: `Widget.detached()` (no `ServiceEntry` references it);
+`hard_delete_entry` now only deletes the entry. Routes (admin, CSRF):
+`POST /settings/widgets/<id>/attach` (form field `entry_id`, active entries
+with `widget_id IS NULL` only) and `POST /settings/widgets/<id>/delete`. The
+refresh job now refreshes only widgets with at least one **active** service,
+so it skips both detached widgets and widgets referenced only by soft-deleted
+entries (this also stops refreshing pre-existing unreferenced widget rows).
+The edit page was left unchanged (it edits a widget in place; choosing "none"
+still deletes it deliberately).
 
 ### 12.7 Unified staleness indicator [`v069-07-staleness`] — Planned
 

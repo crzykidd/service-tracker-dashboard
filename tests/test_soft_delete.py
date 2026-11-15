@@ -112,19 +112,102 @@ def test_purge_retention_zero_purges_all_deleted(app):
         app.config["deleted_retention_days"] = 30
 
 
-def test_hard_delete_removes_unused_widget(app):
+def _widget_with_value(name="w"):
+    w = Widget(widget_name=name, widget_url="http://x", widget_fields=[])
+    db.session.add(w)
+    db.session.flush()
+    db.session.add(WidgetValue(widget_id=w.id, widget_value_key="k",
+                               widget_value="1", last_updated=datetime.utcnow()))
+    return w
+
+
+def _refreshed_ids(app, monkeypatch):
+    """Widget ids the refresh job selects (it stops at the missing settings.json)."""
+    seen = []
+    real_exists = jobs.os.path.exists
+
+    def fake_exists(path):
+        if str(path).endswith("settings.json"):
+            seen.append(path)
+            return False
+        return real_exists(path)
+
+    monkeypatch.setattr(jobs.os.path, "exists", fake_exists)
+    jobs.update_widget_data_periodically(app)
+    return seen
+
+
+def test_hard_delete_detaches_widget(app):
     with app.app_context():
-        w = Widget(widget_name="w", widget_url="http://x", widget_fields=[])
-        db.session.add(w)
-        db.session.flush()
-        db.session.add(WidgetValue(widget_id=w.id, widget_value_key="k",
-                                   widget_value="1", last_updated=datetime.utcnow()))
+        w = _widget_with_value()
         e = _make("svc1", widget_id=w.id)
         wid = w.id
         hard_delete_entry(e)
         db.session.commit()
+        assert Widget.query.get(wid) is not None
+        assert WidgetValue.query.filter_by(widget_id=wid).count() == 1
+        assert [x.id for x in Widget.detached().all()] == [wid]
+
+
+def test_refresh_skips_detached_and_soft_deleted_widgets(app, monkeypatch):
+    with app.app_context():
+        _widget_with_value("detached")
+        wd = _widget_with_value("softdeleted")
+        _make("gone", widget_id=wd.id, deleted_at=datetime.now())
+        wa = _widget_with_value("active")
+        _make("live", widget_id=wa.id)
+        db.session.commit()
+        seen = _refreshed_ids(app, monkeypatch)
+        assert [p for p in seen if p.endswith("active/settings.json")]
+        assert len(seen) == 1
+
+
+def test_attach_makes_widget_active_again(app, admin_client):
+    with app.app_context():
+        w = _widget_with_value()
+        wid = w.id
+        eid = _make("svc2").id
+        db.session.commit()
+    page = admin_client.get("/settings?section=deleted").get_data(as_text=True)
+    assert "Attach" in page and "svc2" in page
+    resp = admin_client.post(f"/settings/widgets/{wid}/attach", data={"entry_id": eid})
+    assert resp.status_code == 302
+    with app.app_context():
+        assert ServiceEntry.query.get(eid).widget_id == wid
+        assert Widget.detached().count() == 0
+
+
+def test_attach_rejects_entry_with_widget(app, admin_client):
+    with app.app_context():
+        w1, w2 = _widget_with_value("a"), _widget_with_value("b")
+        eid = _make("svc2", widget_id=w2.id).id
+        wid = w1.id
+        db.session.commit()
+    admin_client.post(f"/settings/widgets/{wid}/attach", data={"entry_id": eid})
+    with app.app_context():
+        assert ServiceEntry.query.get(eid).widget_id != wid
+        assert Widget.detached().count() == 1
+
+
+def test_delete_detached_widget_removes_values(app, admin_client):
+    with app.app_context():
+        wid = _widget_with_value().id
+        db.session.commit()
+    assert admin_client.post(f"/settings/widgets/{wid}/delete").status_code == 302
+    with app.app_context():
         assert Widget.query.get(wid) is None
         assert WidgetValue.query.filter_by(widget_id=wid).count() == 0
+
+
+def test_delete_widget_refuses_attached(app, admin_client):
+    with app.app_context():
+        w = _widget_with_value()
+        _make("svc1", widget_id=w.id)
+        wid = w.id
+        db.session.commit()
+    assert admin_client.post(f"/settings/widgets/{wid}/delete").status_code == 404
+    with app.app_context():
+        assert Widget.query.get(wid) is not None
 
 
 def test_register_resurrects_with_curated_state(app, register):

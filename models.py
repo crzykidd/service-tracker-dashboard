@@ -165,6 +165,11 @@ class Widget(db.Model):
     widget_fields = db.Column(db.JSON, nullable=False)  # Store the fields as a JSON list
     widget_api_key = db.Column(db.String(255), nullable=True)  # New column for widget API key
 
+    @classmethod
+    def detached(cls):
+        """Widgets no ServiceEntry (active or soft-deleted) references."""
+        return cls.query.filter(~cls.services.any())
+
     def __repr__(self):
         return f'<Widget {self.widget_name}>'
 
@@ -286,20 +291,13 @@ class User(db.Model, UserMixin):
 
 
 def hard_delete_entry(entry):
-    """Permanently delete a service entry (and its widget if unused).
+    """Permanently delete a service entry.
 
     The single place a ServiceEntry row is really removed: used by the
     purge job and Settings -> Deleted -> Delete permanently. Caller commits.
+
+    The entry's widget (and its widget_value history) is kept: once no entry
+    references it, it is "detached" (Widget.detached()) and can be re-attached
+    or deleted from Settings -> Deleted.
     """
-    # Delete the associated widget if no other services use it
-    if entry.widget_id:
-        other_services = ServiceEntry.query.filter(
-            ServiceEntry.widget_id == entry.widget_id,
-            ServiceEntry.id != entry.id
-        ).count()
-
-        if other_services == 0:
-            WidgetValue.query.filter_by(widget_id=entry.widget_id).delete()
-            Widget.query.filter_by(id=entry.widget_id).delete()
-
     db.session.delete(entry)

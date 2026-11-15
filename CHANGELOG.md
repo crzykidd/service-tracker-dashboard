@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Widget settings survive permanent deletion and can be re-attached.**
+  Permanently deleting a service (or the nightly purge) now keeps its widget and
+  stored values as a detached widget instead of erasing them. Settings →
+  Deleted has a new "Detached widgets" list with **Attach** (to an active
+  service with no widget) and **Delete**. Detached widgets, and widgets whose
+  services are all deleted, are no longer refreshed.
 - **Deleting a service is now recoverable.** The trash icon, the tile drawer,
   and the edit page's Delete button hide the entry (and stop its health checks
   and widget refresh) instead of erasing it; the confirm popover and flash

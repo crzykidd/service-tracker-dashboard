@@ -5,6 +5,23 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Widget detach and refresh filter (v069-06)
+
+- **Refresh filter:** `Widget.services.any(deleted_at IS NULL)`, i.e. only
+  widgets with an active service refresh. A widget referenced only by
+  soft-deleted entries stays skipped (as in v069-05): a restorable entry is
+  hidden and unchecked, so polling its upstream is wasted work; Restore
+  resumes it. Detached widgets are skipped by the same rule. Side effect:
+  legacy widget rows with no services (previously refreshed) are now skipped
+  too; they show up under Detached widgets.
+- **`hard_delete_entry`** only deletes the entry; widget and values are kept.
+  Retention pruning of `widget_value` is unchanged.
+- **Edit page not changed:** it updates the attached widget in place and only
+  creates a new row when the entry had none (or a dangling id), so it never
+  orphans a widget. Selecting "none" deletes the widget and values outright,
+  even if another entry shares it (pre-existing; widgets are not shared in
+  normal use) -- left as is, noted for the operator.
+
 ## 2026-11-15 — Soft-delete call-site decisions (v069-05)
 
 `ServiceEntry.active()` is the filter for anything user-facing; the choices
@@ -20,7 +37,7 @@ that weren't obvious:
   this widget" count (a soft-deleted entry still holds its widget).
 - **Static-locked deleted entry:** register skips it before resurrecting, so a
   locked entry stays deleted until restored by hand.
-- **Widget refresh:** filters widgets (it queries `Widget`, not entries) to
+- **Widget refresh:** (superseded by v069-06 below) filters widgets (it queries `Widget`, not entries) to
   those with no services or at least one active service.
 - **Group delete:** only active entries block it; the group's soft-deleted
   entries get `group_id = NULL` so none dangle.

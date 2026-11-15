@@ -324,6 +324,56 @@
       {% else %}
         <p class="text-gray-400">No deleted entries.</p>
       {% endif %}
+
+      <h3 class="text-xl font-semibold mt-8 mb-2">Detached widgets</h3>
+      <p class="text-gray-400 text-sm mb-4">
+        When a service is permanently deleted its widget settings and history are kept here.
+        Detached widgets are not refreshed. Attach one to a service that has no widget, or delete it.
+      </p>
+      {% if detached_widgets %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="px-4 py-2">Widget</th>
+                <th class="px-4 py-2">URL</th>
+                <th class="px-4 py-2">Last value</th>
+                <th class="px-4 py-2 text-center">Controls</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700 bg-gray-900">
+              {% for row in detached_widgets %}
+              <tr class="hover:bg-gray-800">
+                <td class="px-4 py-2">{{ row.widget.widget_name }}</td>
+                <td class="px-4 py-2">{{ row.widget.widget_url or '' }}</td>
+                <td class="px-4 py-2">{{ row.last_value.strftime('%Y-%m-%d %H:%M') if row.last_value else 'never' }}</td>
+                <td class="px-4 py-2 text-right">
+                  <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                    <form method="POST" action="{{ url_for('dashboard.attach_detached_widget', id=row.widget.id) }}" class="flex gap-2 items-center">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <select name="entry_id" required class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs">
+                        <option value="">Attach to service...</option>
+                        {% for e in attachable_entries %}
+                        <option value="{{ e.id }}">{{ e.container_name }} ({{ e.host }})</option>
+                        {% endfor %}
+                      </select>
+                      <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Attach</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('dashboard.delete_detached_widget', id=row.widget.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" onclick="return confirm('Delete this widget and its stored values? This cannot be undone.')"
+                              class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-gray-400">No detached widgets.</p>
+      {% endif %}
     </section>
 
     <!-- === Groups Section === -->

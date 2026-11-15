@@ -38,6 +38,7 @@ from flask import (
     url_for,
 )
 from flask_login import login_required
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
 import settings_store
@@ -143,6 +144,17 @@ def _parse_backup_datetime(value):
     except ValueError:
         logger.warning(f"Ignoring unparseable deleted_at in backup: {value!r}")
         return None
+
+
+def _detached_widget_rows():
+    """Detached widgets with their newest value timestamp."""
+    rows = []
+    for w in Widget.detached().order_by(Widget.widget_name.asc(), Widget.id.asc()).all():
+        last = db.session.query(func.max(WidgetValue.last_updated)).filter(
+            WidgetValue.widget_id == w.id
+        ).scalar()
+        rows.append({'widget': w, 'last_value': last})
+    return rows
 
 
 def _deleted_entry_rows():
@@ -575,6 +587,9 @@ def settings():
          groups=groups,
          users=users,
          deleted_rows=_deleted_entry_rows(),
+         detached_widgets=_detached_widget_rows(),
+         attachable_entries=ServiceEntry.active().filter(ServiceEntry.widget_id.is_(None))
+             .order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
          deleted_retention_days=_retention_days(),
          api_token_missing=not current_app.config.get('api_token'),
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
@@ -1116,3 +1131,36 @@ def changelog_api():
         ]
 
     return jsonify({'current': current, 'sections': result})
+
+
+@dashboard_bp.route('/settings/widgets/<int:id>/attach', methods=['POST'])
+@login_required
+@is_admin_required
+def attach_detached_widget(id):
+    widget = Widget.detached().filter(Widget.id == id).first_or_404()
+    entry = ServiceEntry.active().filter(
+        ServiceEntry.id == request.form.get('entry_id', type=int),
+        ServiceEntry.widget_id.is_(None),
+    ).first()
+    if not entry:
+        flash("Pick an active service that has no widget.", "danger")
+    else:
+        entry.widget_id = widget.id
+        db.session.commit()
+        logger.info(f"Attached widget {widget.id} ('{widget.widget_name}') to '{entry.container_name}'.")
+        flash(f"✅ Attached widget '{widget.widget_name}' to '{entry.container_name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+@dashboard_bp.route('/settings/widgets/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_detached_widget(id):
+    widget = Widget.detached().filter(Widget.id == id).first_or_404()
+    name = widget.widget_name
+    WidgetValue.query.filter_by(widget_id=widget.id).delete()
+    db.session.delete(widget)
+    db.session.commit()
+    logger.info(f"Deleted detached widget {id} ('{name}').")
+    flash(f"🗑️ Deleted detached widget '{name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='deleted'))
