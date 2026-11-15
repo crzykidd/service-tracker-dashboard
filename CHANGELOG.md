@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-11-15
+
 ### Added
 
 - **Per-service health-check options.** The edit and add pages have a new
@@ -21,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updated <time>") on the Dashboard table and Compact view as well as Tiled.
 - **`stale_after_minutes` setting** (default `5`) sets that threshold.
   Static entries are never stale.
-
 - **Settings → Deleted tab.** Deleted services now land here instead of
   vanishing. Each row shows the name, host, when it was deleted, and the days
   left before it is purged, with **Restore** and **Delete permanently**
@@ -41,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server with auto-reload.
 - **Dependencies are pinned.** Image builds install an exact, resolved set of
   versions, so a rebuild no longer picks up whatever is newest upstream.
-
 - **One staleness rule.** The Tiled view no longer has a separate 2-hour
   clause; the single `stale_after_minutes` threshold decides. The Tiled
   tooltip now reads "stale — updated <time>".
@@ -644,7 +644,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...HEAD
+[0.6.9]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.6

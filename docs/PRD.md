@@ -35,6 +35,7 @@
 | 0.25    | 2026-11-15 | §12.8 delivered (unreleased): `health_check_timeout` setting; per-service `health_check_timeout` / `health_check_verify_tls` columns (§5.5) editable on Edit and Add; backups round-trip both. Wire contract unchanged. |
 | 0.26    | 2026-11-15 | §12.9 delivered (unreleased): production runs gunicorn (one worker, four threads) via `gunicorn.conf.py`; startup work consolidated in `app.run_startup_tasks()`; `requirements.txt` fully pinned from `requirements.in`. §3 architecture and module layout updated. Wire contract unchanged. |
 | 0.27    | 2026-11-15 | §12.10 delivered (unreleased): CHANGELOG historical dates corrected from tags; MIT `LICENSE` added; README compatibility note and registry wording refreshed. No code, schema, or wire-contract changes. |
+| 0.28    | 2026-11-15 | v0.6.9 released. §12 retitled Delivered: pytest suite + required `Test` check, wider lint, settings and API-token fixes, CSRF protection, soft-delete with widget detach, unified staleness indicator, per-service health-check options, gunicorn + pinned dependencies. Schema: `deleted_at`, `health_check_timeout`, `health_check_verify_tls` (§5.5). No register-contract change. |
 
 ---
 
@@ -51,7 +52,7 @@
 9. [v0.6.1 — UI Rework Part 1 (Delivered)](#9-v061--ui-rework-part-1-delivered)
 10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
 11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
-12. [v0.6.9 — Hardening and Safety Net (Planned)](#12-v069--hardening-and-safety-net-planned)
+12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
 13. [Versioning, Branches, and Releases](#13-versioning-branches-and-releases)
 14. [Cross-Repo Coordination](#14-cross-repo-coordination)
 15. [Open Questions](#15-open-questions)
@@ -939,14 +940,11 @@ records what was delivered and why.
 
 ---
 
-## 12. v0.6.9 — Hardening and Safety Net (Planned)
+## 12. v0.6.9 — Hardening and Safety Net (Delivered)
 
-> **Status:** planned and scoped 2026-11-15. Not yet built. Each
-> subsection is one handoff prompt in `prompts/` (named in brackets);
-> run them in the order listed — later prompts assume the test harness
-> from §12.1 exists and the migrations chain in this order. When a
-> prompt lands, its subsection changes from "Planned" to "Delivered
-> (unreleased)"; `/release-prep 0.6.9` retitles the section on release.
+> **Status:** shipped in v0.6.9 (2026-11-15). Scoped 2026-11-15; each
+> subsection was one handoff prompt (named in brackets, now in
+> `prompts/done/`), run in the order listed.
 
 A deliberately large **patch** release that bundles the post-v0.6.8
 review findings: two real bugs, a security pass, a test suite, a
@@ -961,7 +959,7 @@ version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
 
-### 12.1 Test suite and CI `Test` check [`v069-01-test-suite`] — Delivered (unreleased)
+### 12.1 Test suite and CI `Test` check [`v069-01-test-suite`] — Delivered in v0.6.9
 
 - `pytest` suite under `tests/`, dev dependencies in
   `requirements-dev.txt` (not shipped in the image).
@@ -988,7 +986,7 @@ soft-deleted rows, which is server-side only.
   `app.py` is unchanged structurally). Icon downloads are stubbed in tests.
   Two `xfail(strict=True)` tests pin the §12.3 bugs.
 
-### 12.2 Wider lint [`v069-02-widen-lint`] — Delivered (unreleased)
+### 12.2 Wider lint [`v069-02-widen-lint`] — Delivered in v0.6.9
 
 - `ruff.toml` widens from `E9, F` to `E, W, F, I, B` (E501 ignored —
   line length is not worth the churn). One mechanical cleanup pass;
@@ -1002,7 +1000,7 @@ soft-deleted rows, which is server-side only.
   `alembic/env.py` from `E402` (intentional `sys.path` setup) via
   `per-file-ignores`.
 
-### 12.3 Settings and API-token hardening [`v069-03-settings-and-token-hardening`] — Delivered (unreleased)
+### 12.3 Settings and API-token hardening [`v069-03-settings-and-token-hardening`] — Delivered in v0.6.9
 
 - **Fix:** `settings_loader.VALID_KEYS` omits
   `widget_value_retention_days` and `register_field_ownership`, so both
@@ -1034,7 +1032,7 @@ soft-deleted rows, which is server-side only.
   browser session (`sessionStorage`). The two §12.1 `xfail` tests are now
   passing tests.
 
-### 12.4 CSRF protection [`v069-04-csrf`] — Delivered (unreleased)
+### 12.4 CSRF protection [`v069-04-csrf`] — Delivered in v0.6.9
 
 - `Flask-WTF` `CSRFProtect` on the app. Every HTML form posts
   `csrf_token()`; `base.html` carries a `<meta name="csrf-token">` and
@@ -1051,7 +1049,7 @@ soft-deleted rows, which is server-side only.
   JS POSTs go through the shared `window.stdPost(url, options)` helper in
   `static/js/dashboard.js`. Tests enable CSRF only in `tests/test_csrf.py`.
 
-### 12.5 Soft-delete for service entries [`v069-05-soft-delete`] — Delivered (unreleased)
+### 12.5 Soft-delete for service entries [`v069-05-soft-delete`] — Delivered in v0.6.9
 
 Picks up the FUTURE.md "Soft-delete for service entries" entry.
 
@@ -1094,7 +1092,7 @@ widgets whose services are all soft-deleted; `recompute_all` and the
 scheduled/manual backups deliberately include deleted rows. New routes:
 `POST /settings/deleted/<id>/restore` and `/delete` (admin, CSRF).
 
-### 12.6 Widget detach on hard delete [`v069-06-widget-detach`] — Delivered (unreleased)
+### 12.6 Widget detach on hard delete [`v069-06-widget-detach`] — Delivered in v0.6.9
 
 - When a service entry is hard-deleted (purge job or Delete
   permanently), its widget is **detached**, not deleted: the `Widget`
@@ -1117,7 +1115,7 @@ entries (this also stops refreshing pre-existing unreferenced widget rows).
 The edit page was left unchanged (it edits a widget in place; choosing "none"
 still deletes it deliberately).
 
-### 12.7 Unified staleness indicator [`v069-07-staleness`] — Delivered (unreleased)
+### 12.7 Unified staleness indicator [`v069-07-staleness`] — Delivered in v0.6.9
 
 - Today staleness is shown only on the Tiled view, and the logic is
   split: the model property uses 5 minutes and the template adds a
@@ -1139,7 +1137,7 @@ still deletes it deliberately).
   separate red "no update received" state, and Dashboard keeps its red
   pill. Outside an app context the threshold falls back to 5.
 
-### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered (unreleased)
+### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
 Resolves the Open Question on health-check timeouts (§15).
 
@@ -1167,7 +1165,7 @@ Resolves the Open Question on health-check timeouts (§15).
 - Out of scope: concurrent health checks. Sequential checks with longer
   per-service timeouts lengthen a pass; acceptable at homelab scale.
 
-### 12.9 Production WSGI server and pinned dependencies [`v069-09-gunicorn-and-pins`] — Delivered (unreleased)
+### 12.9 Production WSGI server and pinned dependencies [`v069-09-gunicorn-and-pins`] — Delivered in v0.6.9
 
 - The image runs **gunicorn** instead of the Werkzeug dev server
   (`python app.py`). **Exactly one worker** (`--workers 1`, several
@@ -1189,7 +1187,7 @@ Resolves the Open Question on health-check timeouts (§15).
   `requirements.in` via `uv pip compile --python-version 3.11`; the image
   is built for linux/amd64 only (publish.yml sets no platforms).
 
-### 12.10 Docs loose ends [`v069-10-docs-loose-ends`] — Delivered (unreleased)
+### 12.10 Docs loose ends [`v069-10-docs-loose-ends`] — Delivered in v0.6.9
 
 - CHANGELOG: replace the `2026-XX-XX` placeholder dates on 0.1.x–0.4.x
   with the real git-tag dates (all **2025**; e.g. v0.4.0 2025-06-05,

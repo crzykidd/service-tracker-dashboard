@@ -208,8 +208,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.6.8** (latest tag on `main`).
-In flight: all ten v0.6.9 prompts are done on `dev`; v0.6.9 is ready for `/release-prep 0.6.9`.
+Current shipped release: **v0.6.9** (latest tag on `main`).
+In flight: nothing scoped.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.

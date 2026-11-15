@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.6.8-blue)
+![Version](https://img.shields.io/badge/version-0.6.9-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -42,6 +42,31 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.6.9 (2026-11-15)
+
+A hardening and safety-net release. **Read before upgrading:** if you never
+set `API_TOKEN`, registers now return 503 until you do, and browser tabs left
+open across the upgrade need a reload before their next form submit or delete.
+
+- **Deletes are recoverable.** Deleted services go to the new Settings ->
+  Deleted tab for `deleted_retention_days` (default 30) before they are purged.
+  A container that registers again before then comes back with its group,
+  sort priority, and edits intact. Permanently deleting a service keeps its
+  widget as a detached widget you can re-attach.
+- **Stale indicator on every view**, driven by one `stale_after_minutes`
+  setting (default 5).
+- **Per-service health-check options:** a timeout and a "Verify TLS
+  certificate" switch for self-signed internal URLs, plus a global
+  `health_check_timeout` setting.
+- **Fixed:** `widget_value_retention_days` and `register_field_ownership` were
+  silently ignored and now work; an unset `API_TOKEN` no longer accepts a bogus
+  header.
+- **Security:** CSRF protection on every form and in-page request, a
+  constant-time token check, the token masked in logs, and warnings when the
+  default secret key or admin password is still in use.
+- **Runtime:** the image now runs gunicorn (one worker) with pinned
+  dependencies. No configuration change is needed.
 
 ### v0.6.8 (2026-11-15)
 
