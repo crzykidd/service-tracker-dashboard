@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.6.7-blue)
+![Version](https://img.shields.io/badge/version-0.6.8-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -43,6 +43,20 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.6.8 (2026-11-15)
+
+GHCR is now the only registry -- Docker Hub images are no longer published.
+If you still pull `crzykidd/service-tracker-dashboard` from Docker Hub you
+are frozen on v0.6.7; switch to `ghcr.io/crzykidd/service-tracker-dashboard`
+(see [Moving from Docker Hub](#moving-from-docker-hub)).
+
+- `:dev` and `:latest` images now show the real version number in
+  Settings -> Service Info, and the What's New popup works on them.
+- Fixed: the Add page no longer returns a server error when Sort Priority
+  isn't a number, and the group dropdown stays populated when the form
+  re-displays after a validation error.
+- The "moved to GHCR" banner from the v0.6.7 Docker Hub image is removed.
 
 ### v0.6.7 (2026-11-15)
 

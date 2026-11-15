@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-11-15
+
 ### Removed
 
 - **Docker Hub images are no longer published.** Anyone still pulling
   `crzykidd/service-tracker-dashboard` from Docker Hub stays on v0.6.7 and
   should switch to `ghcr.io/crzykidd/service-tracker-dashboard` — see
-  [Moving from Docker Hub](README.md#moving-from-docker-hub). The "moved to
+  [Moving from Docker Hub](https://github.com/crzykidd/service-tracker-dashboard#moving-from-docker-hub). The "moved to
   GHCR" banner (which only appeared in the v0.6.7 Docker Hub image) is
   removed from the app.
 
@@ -558,7 +560,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...HEAD
+[0.6.8]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/v0.6.6
 [0.6.5]: https://github.com/crzykidd/service-tracker-dashboard/releases/tag/0.6.5

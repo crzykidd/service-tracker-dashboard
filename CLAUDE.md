@@ -201,11 +201,10 @@ ask before acting.
 
 ## Build Status
 
-Current shipped release: **v0.6.7** (latest tag on `main`; v0.6.5 was
+Current shipped release: **v0.6.8** (latest tag on `main`, once cut; v0.6.5 was
 also released but its tag is the typo'd bare `0.6.5` — see the audit
 finding in this commit's history).
-In flight: cleanup release on `dev` — vexp removal, standards adoption,
-Docker Hub removal (`[Unreleased]` has entries).
+In flight: nothing scoped — `[Unreleased]` in CHANGELOG is empty.
 
 > Keep this to the two lines above — "latest tag" and "in flight."
 > Do not maintain a long per-version history here; the CHANGELOG and
