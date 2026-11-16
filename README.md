@@ -650,8 +650,27 @@ dashboard: ask it what is broken, add a new service, or tidy the groups.
    - "What did the `claude` key change today?" (it is in the audit log, which
      you can also read in Settings → API)
 
-An MCP server for Claude Desktop and Claude Code that wraps these endpoints is
-planned for this release; this section will describe how to set it up.
+### Claude Code: the MCP server
+
+The repository's [`mcp/`](mcp/README.md) directory holds a small MCP server that
+wraps these endpoints as tools (`health_summary`, `list_entries`,
+`create_manual_entry`, `add_check`, `upsert_group`, `set_widget` and so on), so
+Claude Code can manage STD without being told about the API. It runs on your
+machine, not in the container. A **read** key gives it only the read tools; a
+**write** key gives it all of them.
+
+```bash
+cd mcp && uv venv && uv pip install -r requirements.txt     # or python -m venv + pip
+claude mcp add std \
+  -e STD_URL=http://std.lan:8815 \
+  -e STD_API_KEY=std_xxxxxxxx \
+  -- /path/to/service-tracker-dashboard/mcp/.venv/bin/python /path/to/service-tracker-dashboard/mcp/std_mcp.py
+```
+
+Then ask Claude in plain language, as in the examples above. Everything it
+changes is recorded in the audit log under the key's name. Details, settings
+(`STD_VERIFY_TLS`, `STD_TIMEOUT`) and the tool list are in
+[`mcp/README.md`](mcp/README.md).
 
 ---
 

@@ -80,6 +80,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An unknown `/api/v1/...` URL or a wrong method now answers in the API's
     JSON error format when the request carries a Bearer key or asks for JSON
     (the browser keeps the normal page).
+- **MCP server for Claude Code** (`mcp/` in the repository, not in the
+  Docker image). A small stdio server that lets Claude manage STD through the
+  management API: see what is failing, list and read entries and health
+  history, add a manual entry with checks (including `OK` / `Error: <msg>`
+  body checks), edit or delete and restore entries, add, change, disable and
+  run checks, create or update groups, attach widgets, and read or change the
+  exposure settings. Point it at your STD with `STD_URL` and `STD_API_KEY`
+  and register it with `claude mcp add`; the README has the commands. A
+  **read** key exposes only the read tools. STD itself is unchanged.
 
 ### Fixed
 

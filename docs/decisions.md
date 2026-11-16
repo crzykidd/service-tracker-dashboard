@@ -5,6 +5,45 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v080-05 implementation calls (MCP server)
+
+- **Pinned `mcp==1.30.0` (the v1 line), not 2.x.** 2.x (latest 2.3.0, October)
+  renamed FastMCP to `MCPServer` and moved the import; the prompt and PRD say
+  FastMCP, and 1.30.0 (7 Sep) is a stable release well over two weeks old.
+  Moving to 2.x later is a one-import change plus a re-run of the tests.
+- **`httpx` for the client** (already an `mcp` dependency, and it has
+  `MockTransport` for tests and `WSGITransport` for running the server against
+  the real Flask app in-process).
+- **`mcp/requirements.txt` is compiled with `-c requirements.txt`**, so shared
+  packages (pydantic and others) stay on the app's pins and the CI `Test` job
+  can install both. `requirements-dev.txt` includes it: CI actually runs
+  the MCP tests, and the test module imports `httpx` directly, so a missing
+  install fails loudly, not silently skips. The runtime `requirements.txt` is
+  untouched.
+- **No `.dockerignore` existed and the Dockerfile does `COPY . .`**, so a new
+  one lists `mcp/`. No other entries were added; widening it is a separate call.
+- **No `mcp/__init__.py`, module loaded by path in tests.** A package named
+  `mcp` in the repo root would otherwise compete with the SDK on `sys.path`.
+- **PATCH tools take a `fields` object** (`update_entry`, `update_check`),
+  because a typed signature cannot tell "absent" from "null", and the API gives
+  those different meanings. Keys are checked against an allowed set client-side
+  for a readable error; the server remains the authority.
+- **`upsert_group` is client-side** (list, find by exact name, then POST or
+  PATCH). It cannot clear an icon or sort priority; use the UI or the API for
+  that. No server endpoint was added and `OPERATIONS` is unchanged.
+- **Two tools beyond the PRD list:** `list_widget_types` (needed to fill in
+  `set_widget`) and `remove_widget`. Both are thin wrappers of existing
+  endpoints. `whoami` is not a tool; it is used at startup.
+- **Scope gating registers tools, it does not replace the API check.** A read
+  key never sees write tools, and the API still returns 403 if one were called.
+  A key that fails `whoami` at startup exits with the reason (no tools).
+- **Tools return JSON text** (`-> dict` yields unstructured text content), and
+  failures raise `ToolError`, which the SDK turns into an `isError` result.
+- **httpx's INFO request logging is silenced** so the stdio server's stderr
+  stays quiet (URLs only, never the key, but still noise).
+
+---
+
 ## 2026-11-15 — v080-04 implementation calls (OpenAPI, audit view, docs)
 
 - **Own registry + pydantic, no flask-smorest/apispec.** `mgmt_openapi.OPERATIONS`

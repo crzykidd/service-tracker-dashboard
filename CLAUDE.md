@@ -209,7 +209,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 ## Build Status
 
 Current shipped release: **v0.7.1** (latest tag on `main`).
-In flight: v0.8.0 Management API (PRD §14; prompts `prompts/v080-*`).
+In flight: v0.8.0 Management API (PRD §14) fully built on `dev`; awaiting `/release-prep 0.8.0`.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -366,6 +366,9 @@ mgmt_openapi.py     ← management API route registry (OPERATIONS) + OpenAPI 3.1
 api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
 mgmt_schemas.py     ← management API pydantic requests (extra=forbid) + response TypedDicts
 mgmt_serializers.py ← model -> response-dict functions for the management API
+mcp/                ← stdio MCP server (std_mcp.py), HTTP client of the management API only;
+                      own requirements.in/.txt + README; NOT in the Docker image (.dockerignore);
+                      no __init__.py (a package named `mcp` would shadow the SDK)
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API

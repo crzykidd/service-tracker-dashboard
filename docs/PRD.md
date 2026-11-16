@@ -54,6 +54,7 @@
 | 0.44    | 2026-11-15 | §14.3 delivered (unreleased, v080-02): management endpoints for entries, checks, Check now, entry health and `/health/summary`; shared validation (`entry_rules.py`, dict-based validators in `check_form.py`) used by the UI and API; `mgmt_schemas.py` / `mgmt_serializers.py`. No schema change. Register wire contract unchanged. |
 | 0.45    | 2026-11-15 | §14.4 delivered (unreleased, v080-03): management endpoints for groups, widget types and instances (attach, detach, delete), exposure direction settings and a read-only masked `GET /config`; `widget_rules.py`. No schema change. Register wire contract unchanged. |
 | 0.46    | 2026-11-15 | §14.5 and the §14.6 Settings view delivered (unreleased, v080-04): `GET /api/v1/openapi.json` generated from a route registry (`mgmt_openapi.py`) plus the pydantic/TypedDict models, with completeness tests against `app.url_map`; Settings → API audit log view; README Management API and Managing STD with Claude sections; JSON 404/405 for unmatched `/api/v1/*` API-client requests. No schema change. Register wire contract unchanged. |
+| 0.47    | 2026-11-15 | §14.7 delivered (unreleased, v080-05), the last v0.8.0 chunk; §14 status line now "all chunks delivered": stdio MCP server `mcp/std_mcp.py` (read key = read tools only, write key = all), outside the Docker image (`.dockerignore`), tested in CI. No STD server change, no schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1729,7 +1730,8 @@ health columns.
 
 ## 14. v0.8.0 — Management API (Planned)
 
-> **Status:** planned. Scoped 2026-11-15. Each subsection is one handoff
+> **Status:** all chunks delivered (unreleased), awaiting `/release-prep 0.8.0`.
+> Scoped 2026-11-15. Each subsection is one handoff
 > prompt (named in brackets, in `prompts/`), run in the order listed.
 > Each chunk leaves the app working and the test suite green.
 
@@ -1980,7 +1982,7 @@ view of the log is not built yet.
 
 **As built (v080-04):** Settings → API lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
 
-### 14.7 MCP server [`v080-05-mcp-server`]
+### 14.7 MCP server [`v080-05-mcp-server`] — Delivered (unreleased)
 
 - A small **stdio MCP server** at `mcp/std_mcp.py` (its own
   `mcp/requirements.txt`, using the official `mcp` Python SDK). It is **not
@@ -1998,6 +2000,8 @@ view of the log is not built yet.
   at startup via `GET /api/v1/whoami`, which is added in v080-01.
 - **README:** a `claude mcp add` example.
 - **Tests:** each tool runs against a fake HTTP layer, with no network.
+
+**As built (v080-05):** `mcp/std_mcp.py` (FastMCP over stdio, `mcp==1.30.0`, `httpx` client) with its own `mcp/requirements.in` / `requirements.txt` and `mcp/README.md`. Env: `STD_URL`, `STD_API_KEY`, optional `STD_VERIFY_TLS` and `STD_TIMEOUT`. `main()` calls `GET /whoami` and exits with the reason on a bad key; a `read` key registers 9 read tools, a `write` key adds 12 write tools (21 in all). Beyond the §14.7 list: `list_widget_types` (so `set_widget` can be filled in) and `remove_widget`. `update_entry` / `update_check` take a `fields` object so that absent (untouched) and null (clear) stay distinct; `upsert_group` is client-side (list, then create or patch by exact name; optional `new_name`). Errors become tool errors as `HTTP <status> (<meaning>): <error>` plus the API's `details`. `.dockerignore` keeps `mcp/` out of the image; `requirements-dev.txt` includes `mcp/requirements.txt` so `tests/test_mcp_server.py` runs in the CI `Test` job (fake transport for every tool, scope gating, error mapping, every tool's method and path checked against `/api/v1/openapi.json`, and a flow against the real app via `httpx.WSGITransport`). No STD server change, no schema change.
 
 ### 14.8 Out of scope for v0.8.0
 

@@ -1,0 +1,2 @@
+# The MCP server runs on the operator's machine, not in the container.
+mcp/
