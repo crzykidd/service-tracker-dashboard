@@ -617,13 +617,15 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/images/<file>`     | Serve cached icon files.                 |
 | `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
 | `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope (admin API key). |
+| `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
 | `/login` `/logout`   | Local user auth.                         |
 
 ### Admin API keys (management API)
 
 Settings → **API** creates admin API keys for the management API under
-`/api/v1` (v0.8.0, in progress: so far only `GET /api/v1/whoami`; the entry,
-check and settings endpoints follow). Keys are separate from the notifier's
+`/api/v1` (v0.8.0, in progress: `whoami`, entries, checks, Check now, entry
+health and `/health/summary` so far; groups, widgets and runtime settings
+follow, then the OpenAPI spec and examples). Keys are separate from the notifier's
 `api_token`, which can only register services and is rejected here, and a
 management key is rejected by `/api/v1/register`.
 

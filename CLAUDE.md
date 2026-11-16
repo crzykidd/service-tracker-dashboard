@@ -359,8 +359,13 @@ routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
                       /settings, /settings/exposure
 routes_api.py       ← /api/v1/register
 routes_mgmt_api.py  ← management API blueprint (/api/v1, admin API key only, CSRF-exempt):
-                      require_api_key(scope), audit() + after_request audit hook, JSON errors
+                      require_api_key(scope), audit() + after_request audit hook, JSON errors;
+                      entries, checks and health endpoints (v080-02)
 api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
+mgmt_schemas.py     ← management API pydantic requests (extra=forbid) + response TypedDicts
+mgmt_serializers.py ← model -> response-dict functions for the management API
+entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
+check_form.py       ← health-check form parsing + dict-based validators shared with the API
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
 jobs.py             ← concurrent health scheduler, widget refresh, backup, retention/compaction, API audit purge

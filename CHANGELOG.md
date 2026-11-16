@@ -28,6 +28,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Settings view of the log comes in a later v0.8.0 step.
 - Database migration `d4a9e2c6b715` adds the `api_key` and `api_audit`
   tables.
+- **Management API: entries, checks and health** (needs a write key for
+  changes, a read key for reads), all under `/api/v1`:
+  - `GET /entries` (filters `source`, `status`, `group`, `host`, `q`,
+    `include_deleted`, `deleted_only`; paged with `limit`/`offset`),
+    `GET /entries/<id>`, `POST /entries` (a manual entry, with its service
+    checks and URL-check settings; a duplicate is a 409), `PATCH /entries/<id>`
+    (group, URLs, icon, sort priority, lock, description, and name/host on
+    manual entries), `DELETE /entries/<id>` (soft delete; `?permanent=true`
+    only for an already deleted entry) and `POST /entries/<id>/restore`.
+  - `GET` and `POST /entries/<id>/checks`, `PATCH` and `DELETE /checks/<id>`
+    (only service checks can be deleted; disable URL and container checks
+    instead) and `POST /entries/<id>/checks/run` (Check now).
+  - `GET /entries/<id>/health?range=24h|7d` returns the same data as the
+    detail panel, and `GET /health/summary` returns the Total / Passing /
+    Failing / Unknown / Stale counts plus every failing service with its
+    failing checks, messages and when each started failing.
+  - A URL set through the API is an operator edit, like one made in the UI, so
+    the notifier will not overwrite it. Fields reported by the notifier cannot
+    be changed (400, naming the fields). Every problem in a request is reported
+    per field.
 
 ## [0.7.1] — 2026-11-15
 

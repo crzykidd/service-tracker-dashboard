@@ -5,6 +5,51 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v080-02 implementation calls (entries, checks, health)
+
+- **API field names follow the dashboard, not the table.** `name` (not
+  `container_name`), `icon`, `locked`, `group` (a name in, `{id, name}` out);
+  checks reuse the backup vocabulary (`check_type`, `interval_seconds`,
+  `timeout_seconds`, `verify_tls`). Create takes service checks as `checks`
+  and URL-check settings as `url_checks: {internal, external}` (the PRD said
+  "a list of service checks plus URL-check settings" without a shape).
+- **Defaults differ from the form in two places.** A service check created
+  through the API is enabled unless `enabled:false` (the form's checkbox
+  defaults off, but an agent that adds a check wants it running), and an entry
+  with no `group` is ungrouped rather than put in the UI's literal "None"
+  group. URL checks still default to disabled.
+- **Strict string/number/bool types in request bodies.** `"60"` or `"yes"` is a
+  400 rather than being coerced (JSON `true` must not become `1`); value rules
+  stay in `check_form` / `entry_rules`, so pydantic checks shape only.
+- **Notifier-owned fields are a fixed deny-list, checked before pydantic.**
+  `NOTIFIER_OWNED_FIELDS` names them in a 400 (also derived/read-only output
+  fields such as `health` or `source`, so a GET-then-PATCH round trip fails
+  loudly instead of silently ignoring them). Other unknown keys fall to
+  `extra="forbid"`. Name and host on a notifier entry are a 400 even when the
+  value is unchanged.
+- **`limit` above 1000 is clamped, below 1 or non-numeric is a 400.** Same for
+  `offset` below 0.
+- **`status` filtering is done in Python.** Health state is derived, so any
+  status other than `all` loads the SQL-filtered rows (checks eager-loaded) and
+  filters with `matches_status`; `all` paginates in SQL. Fine at homelab scale;
+  the query count is flat either way.
+- **`since` for a failing check** is the earliest failed sample after the
+  latest passing one (two cheap aggregate queries per failing check), falling
+  back to `last_checked_at`, instead of walking `consecutive_failures` rows,
+  which breaks if the run is longer than the retained history.
+- **Edit's icon download and the quirky Edit behaviours were left alone.**
+  `/edit` still downloads in place (the security tests patch
+  `routes_dashboard.requests`) and still does not validate the name; only the
+  URL provenance and sort-priority parsing moved into `entry_rules`. Add moved
+  fully (basic limits, duplicate, icon, group). Messages and statuses are
+  unchanged.
+- **Check writes are refused on a deleted entry (409)**, as are entry PATCH,
+  Check now and add-check; reads still work on deleted entries.
+- **A check-id route 404s only for an unknown id.** `PATCH`/`DELETE
+  /checks/<id>` find the check, then the deleted-entry rule applies.
+
+---
+
 ## 2026-11-15 — v080-01 implementation calls (API keys and audit)
 
 - **Prefix is 8 hex chars, not a slice of the urlsafe secret.** `token_urlsafe`

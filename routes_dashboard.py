@@ -43,6 +43,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 import api_keys
 import check_form
+import entry_rules
 import health_history
 import jobs
 import settings_store
@@ -859,37 +860,24 @@ def add_entry():
             group_name = "None"
 
 
-        image_icon_raw = request.form.get('icon_image', '').strip()
-        image_icon = safe_icon_filename(image_icon_raw) if image_icon_raw else ''
-        if image_icon_raw and not image_icon:
+        image_icon, icon_error = entry_rules.resolve_icon(request.form.get('icon_image', ''))
+        if icon_error:
             flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
             return render_error()
 
-        if not container_name:
+        basic_errors = entry_rules.validate_basic(container_name, host, description)
+        if any(e['field'] == 'name' and 'required' in e['message'] for e in basic_errors):
             flash('Name is required.', 'danger')
             return render_error()
-        if len(container_name) > 100 or (host and len(host) > 100) or (description and len(description) > 255):
+        if basic_errors:
             flash('Name and Host are limited to 100 characters, Description to 255.', 'danger')
             return render_error()
 
         # Check for duplicates. An empty host is its own value: the key is
-        # (host or NULL, name). NULL never equals NULL in SQL, so match with IS NULL.
-        host_filter = ServiceEntry.host.is_(None) if host is None else ServiceEntry.host == host
-        where = f"on host '{host}'" if host else "with no host"
-        existing = (
-            ServiceEntry.query.filter(host_filter, ServiceEntry.container_name == container_name)
-            .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
-            .first()
-        )
-        if existing and existing.deleted_at is not None:
-            flash(
-                f"An entry for '{container_name}' {where} was deleted. "
-                f"Restore it from Settings → Deleted instead of adding a new one.",
-                'danger',
-            )
-            return render_error('duplicate')
+        # (host or NULL, name).
+        existing = entry_rules.find_duplicate(host, container_name)
         if existing:
-            flash(f"An entry for '{container_name}' {where} already exists.", 'danger')
+            flash(entry_rules.duplicate_message(existing, container_name, host), 'danger')
             return render_error('duplicate')
 
         # Booleans
@@ -897,19 +885,7 @@ def add_entry():
 
         # === ICON RESOLUTION LOGIC ===
         if image_icon:
-            icon_path = icon_path_in_dir(image_dir, image_icon)
-            if icon_path and not os.path.exists(icon_path):
-                try:
-                    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
-                    response = requests.get(icon_url, timeout=5)
-                    if response.status_code == 200:
-                        with open(icon_path, 'wb') as f:
-                            f.write(response.content)
-                        logger.info(f"⬇️ Downloaded user-supplied icon '{image_icon}' for '{container_name}'")
-                    else:
-                        logger.warning(f"⚠️ Icon '{image_icon}' not found (HTTP {response.status_code})")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to fetch icon '{image_icon}': {e}")
+            entry_rules.download_icon(image_dir, image_icon, container_name)
         else:
             derived_icon_name = container_name.lower().replace(" ", "-")
             image_icon = fetch_icon_if_missing(derived_icon_name, image_dir, logger, debug=current_app.debug)
@@ -919,14 +895,10 @@ def add_entry():
                 logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'.")
 
         # Optional sort priority (must be an int if provided)
-        sort_priority_raw = request.form.get('sort_priority', '').strip()
-        sort_priority = None
-        if sort_priority_raw:
-            try:
-                sort_priority = int(sort_priority_raw)
-            except ValueError:
-                flash("Sort priority must be a number.", 'danger')
-                return render_error()
+        sort_priority, sort_error = entry_rules.parse_sort_priority(request.form.get('sort_priority', ''))
+        if sort_error:
+            flash("Sort priority must be a number.", 'danger')
+            return render_error()
 
         if check_errors:
             for message in check_errors:
@@ -935,11 +907,7 @@ def add_entry():
 
         # === CREATE ENTRY ===
         # Look up or create group
-        group_obj = Group.query.filter_by(group_name=group_name).first()
-        if not group_obj:
-            group_obj = Group(group_name=group_name)
-            db.session.add(group_obj)
-            db.session.flush()  # ensures group_obj.id is populated before use
+        group_obj = entry_rules.get_or_create_group(group_name)
 
         # Now create entry with group_id. URLs typed in the UI get
         # source=ui_edit so future register calls and the synthesizer
@@ -1131,16 +1099,10 @@ def edit_entry(id):
         # precedence, the synthesizer won't touch it). Clearing the URL
         # resets source to null so synthesis can re-fill on the next
         # register. See synthesizer.py for the ordering rules.
-        new_internalurl = request.form.get('internalurl', '').strip() or None
-        new_externalurl = request.form.get('externalurl', '').strip() or None
-        url_changed = {'internal': new_internalurl != entry.internalurl,
-                       'external': new_externalurl != entry.externalurl}
-        if new_internalurl != entry.internalurl:
-            entry.internalurl = new_internalurl
-            entry.internalurl_source = synthesizer.SOURCE_UI_EDIT if new_internalurl else None
-        if new_externalurl != entry.externalurl:
-            entry.externalurl = new_externalurl
-            entry.externalurl_source = synthesizer.SOURCE_UI_EDIT if new_externalurl else None
+        url_changed = {
+            'internal': entry_rules.set_url(entry, 'internal', request.form.get('internalurl', '')),
+            'external': entry_rules.set_url(entry, 'external', request.form.get('externalurl', '')),
+        }
 
         ensure_url_checks(entry)
         if checks_submitted:
@@ -1156,11 +1118,8 @@ def edit_entry(id):
             # Unlocked: the container state was frozen, so re-evaluate it now.
             entry.container_check.last_checked_at = None
 
-        sort_priority_raw = request.form.get('sort_priority', '').strip()
-        try:
-            entry.sort_priority = int(sort_priority_raw) if sort_priority_raw else None
-        except ValueError:
-            entry.sort_priority = None
+        entry.sort_priority, sort_error = entry_rules.parse_sort_priority(request.form.get('sort_priority', ''))
+        if sort_error:
             flash("Sort priority must be a number.", "warning")
 
         # === GROUP HANDLING ===

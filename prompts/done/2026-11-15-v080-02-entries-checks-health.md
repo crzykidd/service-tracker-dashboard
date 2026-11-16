@@ -1,10 +1,10 @@
 ---
 name: v080-02-entries-checks-health
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15      # filled when the work is done
+result: Shared validation (entry_rules.py, dict validators in check_form.py), mgmt_schemas/serializers, 13 entries/checks/health endpoints with tests; full suite green
 ---
 
 # Task: Management API: entries, checks, and health

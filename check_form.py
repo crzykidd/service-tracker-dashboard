@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 
 from checker import split_host_port
 from models import (
+    CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
     CHECK_MODE_STATUS,
     CHECK_MODES,
@@ -98,16 +99,28 @@ def container_row_from_entry(entry):
     }
 
 
-def _parse_int(raw, low, high, label, unit_hint, errors, who):
-    raw = (raw or "").strip()
-    if not raw:
+def _coerce_interval(raw, low, high, label, errors, field):
+    """Whole seconds from `raw` (int, numeric string, blank or None).
+
+    Blank/None means "use the global setting" (returns None). Anything else
+    outside `low`..`high` appends a `{field, message}` error and returns None.
+    Booleans and floats are rejected so JSON `true` or `1.5` is not coerced.
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
         return None
-    try:
-        value = int(raw)
-    except ValueError:
-        value = None
+    value = None
+    if isinstance(raw, str):
+        try:
+            value = int(raw.strip())
+        except ValueError:
+            value = None
+    elif isinstance(raw, int) and not isinstance(raw, bool):
+        value = raw
     if value is None or not low <= value <= high:
-        errors.append(f"{who}: {label} must be a whole number of seconds from {low} to {high}{unit_hint}.")
+        errors.append({
+            "field": field,
+            "message": f"{label} must be a whole number of seconds from {low} to {high}",
+        })
         return None
     return value
 
@@ -142,19 +155,105 @@ def validate_target(check_type, target):
     return None
 
 
+# --- validation over plain dicts (shared by the form parser and the API) ------
+#
+# Each validator takes a dict and returns `(values, errors)`. `errors` is a list
+# of `{"field": str, "message": str}` (message has no trailing period and no
+# check label; callers add context). `values` is normalized and always
+# complete, with safe fallbacks for invalid fields, so callers that collect
+# every error can still render. The form passes raw strings, the API typed JSON.
+
+
+def validate_url_check_settings(d):
+    """Settings shared by URL checks and service checks.
+
+    Reads `enabled`, `mode`, `verify`, `interval`, `timeout`. Returns values
+    `{enabled, mode, verify, interval_value, timeout_value}`.
+    """
+    errors = []
+    mode = d.get("mode")
+    mode = CHECK_MODE_STATUS if mode is None or mode == "" else mode
+    if isinstance(mode, str):
+        mode = mode.strip()
+    if mode not in CHECK_MODES:
+        errors.append({"field": "mode", "message": "mode must be Status or Body"})
+        mode = CHECK_MODE_STATUS
+    values = {
+        "enabled": bool(d.get("enabled")),
+        "mode": mode,
+        "verify": bool(d.get("verify", True)),
+        "interval_value": _coerce_interval(
+            d.get("interval"), MIN_INTERVAL, MAX_INTERVAL, "interval", errors, "interval"),
+        "timeout_value": _coerce_interval(
+            d.get("timeout"), MIN_TIMEOUT, MAX_TIMEOUT, "timeout", errors, "timeout"),
+    }
+    return values, errors
+
+
+def validate_service_check(d):
+    """A service check: `name`, `check_type`, `target` plus the shared settings.
+
+    Returns values `{name, check_type, target, enabled, mode, verify,
+    interval_value, timeout_value}`.
+    """
+    errors = []
+    check_type = d.get("check_type")
+    check_type = CHECK_TYPE_HTTP if check_type is None or check_type == "" else check_type
+    if isinstance(check_type, str):
+        check_type = check_type.strip()
+    if check_type not in CHECK_TYPES:
+        errors.append({"field": "check_type", "message": "type must be HTTP/HTTPS, TCP or Ping"})
+        check_type = CHECK_TYPE_HTTP
+    name = d.get("name")
+    name = name.strip() if isinstance(name, str) else ""
+    if len(name) > NAME_MAX:
+        errors.append({"field": "name", "message": f"name is limited to {NAME_MAX} characters"})
+    target = d.get("target")
+    target = target.strip() if isinstance(target, str) else ""
+    problem = validate_target(check_type, target)
+    if problem:
+        errors.append({"field": "target", "message": problem})
+    common, common_errors = validate_url_check_settings(d)
+    values = {"name": name, "check_type": check_type, "target": target, **common}
+    return values, errors + common_errors
+
+
+def validate_container_check(d):
+    """The Container check: `enabled` and `interval`.
+
+    Returns values `{enabled, interval_value}`.
+    """
+    errors = []
+    values = {
+        "enabled": bool(d.get("enabled")),
+        "interval_value": _coerce_interval(
+            d.get("interval"), MIN_INTERVAL, MAX_INTERVAL, "interval", errors, "interval"),
+    }
+    return values, errors
+
+
+def _with_who(errors, who):
+    """Form-style messages: `Label: message.`"""
+    return [f"{who}: {e['message']}." for e in errors]
+
+
 def _parse_common(form, prefix, row, errors, who):
     """Fill the fields shared by URL rows and service rows."""
-    row["enabled"] = form.get(f"{prefix}enabled") is not None
-    mode = (form.get(f"{prefix}mode") or CHECK_MODE_STATUS).strip()
-    if mode not in CHECK_MODES:
-        errors.append(f"{who}: mode must be Status or Body.")
-        mode = CHECK_MODE_STATUS
-    row["mode"] = mode
-    row["verify"] = form.get(f"{prefix}verify") is not None
-    row["interval"] = (form.get(f"{prefix}interval") or "").strip()
-    row["timeout"] = (form.get(f"{prefix}timeout") or "").strip()
-    row["interval_value"] = _parse_int(row["interval"], MIN_INTERVAL, MAX_INTERVAL, "interval", "", errors, who)
-    row["timeout_value"] = _parse_int(row["timeout"], MIN_TIMEOUT, MAX_TIMEOUT, "timeout", "", errors, who)
+    raw = {
+        "enabled": form.get(f"{prefix}enabled") is not None,
+        "mode": (form.get(f"{prefix}mode") or CHECK_MODE_STATUS).strip(),
+        "verify": form.get(f"{prefix}verify") is not None,
+        "interval": (form.get(f"{prefix}interval") or "").strip(),
+        "timeout": (form.get(f"{prefix}timeout") or "").strip(),
+    }
+    values, problems = validate_url_check_settings(raw)
+    errors.extend(_with_who(problems, who))
+    row["enabled"] = raw["enabled"]
+    row["mode"] = values["mode"]
+    row["verify"] = raw["verify"]
+    row["interval"], row["timeout"] = raw["interval"], raw["timeout"]
+    row["interval_value"] = values["interval_value"]
+    row["timeout_value"] = values["timeout_value"]
 
 
 def parse_form(form, existing_service_ids=()):
@@ -186,20 +285,17 @@ def parse_form(form, existing_service_ids=()):
         raw_id = (form.get(f"{prefix}id") or "").strip()
         row["id"] = int(raw_id) if raw_id.isdigit() else None
         name = (form.get(f"{prefix}name") or "").strip()
-        row["name"] = name
         who = f"Service check {index}" + (f" ({name})" if name else "")
-        check_type = (form.get(f"{prefix}type") or CHECK_TYPE_HTTP).strip()
-        if check_type not in CHECK_TYPES:
-            errors.append(f"{who}: type must be HTTP/HTTPS, TCP or Ping.")
-            check_type = CHECK_TYPE_HTTP
-        row["check_type"] = check_type
-        target = (form.get(f"{prefix}target") or "").strip()
-        row["target"] = target
-        if len(name) > NAME_MAX:
-            errors.append(f"{who}: name is limited to {NAME_MAX} characters.")
-        problem = validate_target(check_type, target)
-        if problem:
-            errors.append(f"{who}: {problem}.")
+        raw = {
+            "name": name,
+            "check_type": (form.get(f"{prefix}type") or CHECK_TYPE_HTTP).strip(),
+            "target": (form.get(f"{prefix}target") or "").strip(),
+        }
+        values, problems = validate_service_check(raw)
+        errors.extend(_with_who(problems, who))
+        row["name"] = name
+        row["check_type"] = values["check_type"]
+        row["target"] = raw["target"]
         _parse_common(form, prefix, row, errors, who)
         if raw_id and row["id"] not in existing_service_ids:
             errors.append(f"{who}: this check no longer exists (it may have been removed in another window). Reload the page.")
@@ -212,12 +308,12 @@ def parse_container(form):
     form did not carry it (a page loaded before the row existed)."""
     if form.get("cc_row") is None:
         return None, []
-    errors = []
-    row = {"id": None, "enabled": form.get("cc_enabled") is not None}
-    row["interval"] = (form.get("cc_interval") or "").strip()
-    row["interval_value"] = _parse_int(
-        row["interval"], MIN_INTERVAL, MAX_INTERVAL, "interval", "", errors, "Container check")
-    return row, errors
+    raw = {"enabled": form.get("cc_enabled") is not None,
+           "interval": (form.get("cc_interval") or "").strip()}
+    values, problems = validate_container_check(raw)
+    row = {"id": None, "enabled": raw["enabled"], "interval": raw["interval"],
+           "interval_value": values["interval_value"]}
+    return row, _with_who(problems, "Container check")
 
 
 def apply_container(entry, row):
@@ -238,8 +334,9 @@ def _signature(check):
 
 
 def _assign(check, row):
-    is_http = row["check_type"] == CHECK_TYPE_HTTP
-    check.check_type = row["check_type"]
+    check_type = row.get("check_type", check.check_type)
+    is_http = check_type == CHECK_TYPE_HTTP
+    check.check_type = check_type
     check.mode = row["mode"] if is_http else CHECK_MODE_STATUS
     check.interval_seconds = row["interval_value"]
     check.timeout_seconds = row["timeout_value"]
@@ -283,3 +380,34 @@ def apply_rows(entry, url_rows, svc_rows):
     for check_id, check in existing.items():
         if check_id not in kept:
             entry.checks.remove(check)
+
+
+def apply_check_values(check, values):
+    """Write validated `values` (from the `validate_*` functions) onto one
+    existing check and make it due at the next tick if its settings changed.
+    Used by the management API; the form path goes through `apply_rows`.
+
+    URL checks and service checks take `values` from `validate_url_check_settings`
+    / `validate_service_check`; the container check from `validate_container_check`
+    (only `enabled` and `interval_value`).
+    """
+    before = _signature(check)
+    if check.kind == CHECK_KIND_CONTAINER:
+        check.interval_seconds = values["interval_value"]
+        check.enabled = values["enabled"]
+    else:
+        if check.kind == CHECK_KIND_SERVICE:
+            check.name = values["name"] or values["target"][:NAME_MAX]
+            check.target = values["target"]
+        _assign(check, values)
+    if _signature(check) != before:
+        check.last_checked_at = None
+
+
+def new_service_check(values):
+    """A not-yet-attached service `HealthCheck` from validated values."""
+    check = HealthCheck(kind=CHECK_KIND_SERVICE, consecutive_failures=0)
+    check.name = values["name"] or values["target"][:NAME_MAX]
+    check.target = values["target"]
+    _assign(check, values)
+    return check

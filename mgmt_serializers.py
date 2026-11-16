@@ -1,0 +1,123 @@
+"""Plain functions turning models into the response dicts typed in
+`mgmt_schemas.py` (v0.8.0, PRD 14). No queries beyond what is eager-loaded,
+except `entry_detail_out` (exposures, widget)."""
+
+from health_history import effective_target, iso_z
+from health_state import entry_health
+from mgmt_schemas import (
+    CheckLastOut,
+    CheckOut,
+    EntryDetailOut,
+    EntryHealthOut,
+    EntryOut,
+    ExposureOut,
+    NotifierOut,
+    WidgetOut,
+)
+from models import SOURCE_NOTIFIER, HealthCheck, ServiceEntry, check_counts
+
+
+def _local_iso(dt):
+    """Columns written with `datetime.now()` are server-local and naive."""
+    return dt.replace(microsecond=0).isoformat() if dt else None
+
+
+def check_out(entry: ServiceEntry, check: HealthCheck) -> CheckOut:
+    if check.last_ok is None:
+        state = "unknown"
+    else:
+        state = "up" if check.last_ok else "down"
+    last: CheckLastOut = {
+        "state": state,
+        "checked_at": iso_z(check.last_checked_at),
+        "latency_ms": check.last_latency_ms,
+        "status_code": check.last_status_code,
+        "message": check.last_message,
+    }
+    return {
+        "id": check.id,
+        "entry_id": check.service_entry_id,
+        "kind": check.kind,
+        "name": check.name or check.kind,
+        "check_type": check.check_type,
+        "target": effective_target(entry, check),
+        "mode": check.mode,
+        "enabled": bool(check.enabled),
+        "active": check_counts(entry, check),
+        "interval_seconds": check.interval_seconds,
+        "timeout_seconds": check.timeout_seconds,
+        "verify_tls": check.verify_tls is not False,
+        "consecutive_failures": check.consecutive_failures or 0,
+        "last": last,
+    }
+
+
+def health_out(entry: ServiceEntry) -> EntryHealthOut:
+    h = entry_health(entry)
+    return {
+        "state": h.state,
+        "label": h.label,
+        "checks_total": h.total,
+        "checks_failing": h.failing,
+        "failures": [{"check": name, "message": msg} for name, msg in h.failures],
+    }
+
+
+def entry_out(entry: ServiceEntry) -> EntryOut:
+    group = entry.group
+    return {
+        "id": entry.id,
+        "name": entry.container_name,
+        "host": entry.host,
+        "description": entry.description,
+        "source": entry.source,
+        "group": {"id": group.id, "name": group.group_name} if group else None,
+        "internalurl": entry.internalurl,
+        "externalurl": entry.externalurl,
+        "internalurl_source": entry.internalurl_source,
+        "externalurl_source": entry.externalurl_source,
+        "icon": entry.image_icon or None,
+        "sort_priority": entry.sort_priority,
+        "locked": bool(entry.is_static),
+        "stale": entry.source == SOURCE_NOTIFIER and entry.is_docker_status_stale,
+        "last_updated": _local_iso(entry.last_updated),
+        "deleted_at": _local_iso(entry.deleted_at),
+        "health": health_out(entry),
+        "checks": [check_out(entry, c) for c in entry.checks],
+    }
+
+
+def entry_detail_out(entry: ServiceEntry) -> EntryDetailOut:
+    exposures: list[ExposureOut] = [
+        {"layer": x.layer, "hostname": x.hostname, "tls": x.tls,
+         "path_prefix": x.path_prefix, "auth": x.auth}
+        for x in entry.exposures
+    ]
+    notifier: NotifierOut = {
+        "container_id": entry.container_id,
+        "stack_name": entry.stack_name,
+        "docker_status": entry.docker_status,
+        "started_at": entry.started_at,
+        "last_api_update": _local_iso(entry.last_api_update),
+        "image_registry": entry.image_registry,
+        "image_owner": entry.image_owner,
+        "image_name": entry.image_name,
+        "image_tag": entry.image_tag,
+        "reported_group_name": entry.notifier_reported_group_name,
+        "reported_sort_priority": entry.notifier_reported_sort_priority,
+        "networks": entry.networks,
+        "exposed_ports": entry.exposed_ports,
+        "published_ports": entry.published_ports,
+        "exposures": exposures,
+    }
+    widget = entry.widget
+    widget_out: WidgetOut | None = None
+    if widget is not None:
+        widget_out = {
+            "id": widget.id,
+            "type": widget.widget_name,
+            "url": widget.widget_url,
+            "fields": widget.widget_fields,
+            "widget_api_key_set": bool(widget.widget_api_key),
+        }
+    return {**entry_out(entry), "notifier": notifier, "widget": widget_out}

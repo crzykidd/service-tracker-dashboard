@@ -136,7 +136,8 @@ def _check_state(check):
     return "up" if check.last_ok else "down"
 
 
-def _target(entry, check):
+def effective_target(entry, check):
+    """What the check probes: a URL kind follows the entry's current URL."""
     if check.kind == "internal_url":
         return entry.internalurl
     if check.kind == "external_url":
@@ -154,7 +155,7 @@ def check_payload(entry, check, range_name="24h", now=None):
         "kind": check.kind,
         "name": check.name or check.kind,
         "check_type": check.check_type,
-        "target": _target(entry, check),
+        "target": effective_target(entry, check),
         "mode": check.mode,
         "state": _check_state(check),
         "last_checked_at": iso_z(check.last_checked_at),

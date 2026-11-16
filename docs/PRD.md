@@ -51,6 +51,7 @@
 | 0.41    | 2026-11-15 | v0.7.1 released: clickable Total / Passing / Failing count chips in the filter bar (§13.6) and the "Show uptime" toggle with inline 24h uptime strips (§13.7). No schema or register-contract change. |
 | 0.42    | 2026-11-15 | Added §14 (v0.8.0 — Management API, planned): admin API keys with read/write scopes, `/api/v1` REST for entries, checks, health, groups, widgets and runtime settings, OpenAPI spec, write audit log, stdio MCP server. Planned schema §5.7. Later sections renumbered (§14→§15, §15→§16, §16→§17). Register contract unchanged. No code changes yet. |
 | 0.43    | 2026-11-15 | §14.2 and §14.6 delivered (unreleased, v080-01): admin API keys (`api_key`, Settings → API tab, show-once), management blueprint skeleton (`require_api_key`, JSON errors, `GET /api/v1/whoami`), write audit log (`api_audit`, `audit()` helper, `after_request` hook, `api_audit_retention_days` + daily purge). Migration `d4a9e2c6b715`; §5.7 updated. Register wire contract unchanged. |
+| 0.44    | 2026-11-15 | §14.3 delivered (unreleased, v080-02): management endpoints for entries, checks, Check now, entry health and `/health/summary`; shared validation (`entry_rules.py`, dict-based validators in `check_form.py`) used by the UI and API; `mgmt_schemas.py` / `mgmt_serializers.py`. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1819,7 +1820,7 @@ token and needs no update.
   session; revoke keeps the row greyed out. Key names are unique including
   revoked keys. The audit list on this tab arrives with v080-04.
 
-### 14.3 Entries, checks and health [`v080-02-entries-checks-health`]
+### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered (unreleased)
 
 All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 200, maximum 1000) and `offset`, and returns `{items, total, limit, offset}`.
@@ -1845,6 +1846,40 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
   rule set. Form behaviour stays the same; existing tests prove it.
 - **Status codes:** a create returns 201 with the object. A validation
   failure returns 400 with every problem listed, per field.
+
+**As built (v080-02):**
+- Modules: `entry_rules.py` (name/host/description limits, duplicate check,
+  sort priority, icon name and download, group lookup, URL provenance
+  via `set_url`), `check_form.py` (now has `validate_service_check`,
+  `validate_url_check_settings`, `validate_container_check` over plain dicts
+  returning `(values, [{field, message}])`; the form parser wraps them and
+  keeps its messages), `mgmt_schemas.py` (pydantic requests `EntryCreate`,
+  `EntryPatch`, `ServiceCheckCreate`, `CheckPatch`, all `extra="forbid"` and
+  strict; response `TypedDict`s such as `EntryOut`, `CheckOut`, `Page`),
+  `mgmt_serializers.py` (plain functions returning those dicts) and the
+  endpoints in `routes_mgmt_api.py`. `/add` and `/edit/<id>` use the same rule
+  functions; their behaviour and messages are unchanged.
+- JSON names: `name` (not `container_name`), `icon`, `locked`, `group`
+  (`{id, name}` out, a name in), and checks use the backup vocabulary
+  (`check_type`, `interval_seconds`, `timeout_seconds`, `verify_tls`).
+  Create takes `checks` (service checks) and `url_checks`
+  (`{internal, external}` settings). Entry detail adds `notifier` (observed
+  facts and exposure rows) and `widget` (`widget_api_key_set`, never the key).
+- A service check created through the API is enabled unless `enabled:false`;
+  an entry created without a group is ungrouped (the UI's literal "None"
+  group is not reproduced).
+- Errors: validation problems are a 400 whose `details` is a list of
+  `{loc, msg, type}` (the same shape as a pydantic failure) with every
+  problem; a duplicate or a state conflict is 409 with `details`
+  (`{id, deleted}` for a duplicate); a PATCH naming notifier-owned or derived
+  fields, or name/host on a notifier entry, is a 400 that names them.
+  `limit` above 1000 is clamped; a non-numeric or negative one is a 400.
+- `GET /entries` with `status=all` paginates in SQL; with another status it
+  filters in Python (the state is derived) after one eager-loaded query, so
+  the query count does not grow with the number of entries.
+- `GET /health/summary` counts are `matches_status` over active entries (the
+  same rule as the filter-bar chips); `since` is the earliest failed sample
+  after the latest passing one, falling back to the last check time.
 
 ### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`]
 
