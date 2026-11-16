@@ -5,6 +5,48 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-03 checker engine: implementation calls
+
+- **Compaction works on whole clock hours only.** The cutoff is
+  `now - health_raw_hours` floored to the hour, so a run inside an hour is
+  merged exactly once and never split across two compaction passes (a literal
+  cutoff would leave two adjacent range rows for the cutoff hour). Samples
+  stay raw up to one hour longer than `health_raw_hours`. A single raw
+  success becomes a range of one (`ts_end = ts`) so it is not rescanned.
+  Range rows have `status_code` / `message` cleared.
+- **Purge uses `coalesce(ts_end, ts)`** so a compacted range survives until
+  its last sample is older than `health_history_days`. Purge is hourly at
+  :03 (before compaction at :05) and deletes in batches of 2000.
+- **Latency average is weighted by samples**, `latency_max_ms` is the max of
+  the maxima.
+- **Service-kind checks are already scheduled.** The selection handles any
+  enabled check with a target, not just URL kinds, so v070-04 only needs UI.
+  No legacy mirror for them.
+- **`ProbeResult` has a fifth field, `error_type`.** The legacy badge strings
+  (`Error: SSLError`, a digit for pass) are derived by `legacy_status()`;
+  `message` now carries `ExceptionName: text` as PRD 13.4 says (it was just
+  the legacy string before). Failing bodies on a 2xx status map to
+  `Error: CheckFailed` in the mirror; they only occur on non-URL-default
+  modes and the mirror goes in v070-05.
+- **Tick uses its own app context per pass** so the loop thread never
+  carries a stale identity map between ticks; `collect()` then `submit_due()`
+  in one tick, so a result lands at most one tick (5 s) after its probe
+  finishes.
+- **Ping timeout is per reply** (3 packets, 0.2 s apart), so a dead host can
+  take up to about 3x the timeout. `avg_rtt` is rounded to whole ms (a LAN
+  host shows 0).
+- **Ping fallback:** `SocketPermissionError` (or `PermissionError`) on the
+  privileged socket retries unprivileged; both failing gives `ICMP not
+  permitted`. Verified in the built image: with default caps and with
+  `--cap-drop NET_RAW` (the kernel's `ping_group_range` still allows the
+  datagram socket) pinging 127.0.0.1 and the default gateway succeeded.
+- **Check now needs login only**, not admin, matching "login, CSRF" in the
+  prompt; it only clears timestamps.
+- **`requirements.txt` regenerated with `uv pip compile`** (adds
+  `icmplib==3.0.4`; nothing else changed).
+
+---
+
 ## 2026-11-15 — v070-02 health schema: implementation calls
 
 - **Templates read `enabled` from the check rows, not the legacy column.**

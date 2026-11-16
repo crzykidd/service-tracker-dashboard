@@ -360,7 +360,8 @@ routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
 routes_api.py       ← /api/v1/register
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
-jobs.py             ← health check loop, widget refresh, backup, retention
+jobs.py             ← concurrent health scheduler, widget refresh, backup, retention/compaction
+checker.py          ← health-check probes (http/tcp/ping); pure network, no DB
 health.py           ← /healthz (liveness; /readyz not implemented)
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)

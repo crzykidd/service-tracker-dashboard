@@ -40,6 +40,7 @@
 | 0.30    | 2026-11-15 | Added §13 (v0.7.0 — Dashboard and Monitoring, planned): entry sources (notifier vs manual), health checks as their own tables with service checks (HTTP/HTTPS status or body mode, TCP, ping), concurrent checker, 7-day history with 24h raw + hourly-compacted successes, health rollup and status/source filters, Gatus-style 24h history in the detail surface. Planned schema in §5.6. Later sections renumbered (§13→§14, §14→§15, §15→§16). No register-contract change. No code changes yet. |
 | 0.31    | 2026-11-15 | §13.2 delivered (unreleased): `service_entry.source` / `description` / nullable `host` (migration `a7c3e9f15d28`, §5.6), register adoption of unlocked manual entries, manual-only Add page, source icon on Dashboard and Tiled, backups carry `source`/`description`. Lock relabelled "Lock (ignore notifier updates)". Register wire contract unchanged. |
 | 0.32    | 2026-11-15 | §13.3 delivered (unreleased): `health_check` / `health_result` tables and models (migration `b8e4d6a2c1f9`, §5.6) with the two URL-kind rows per entry copied from the legacy columns; register toggles, Add/Edit and backup/restore read and write the rows; the interim sequential checker records results and mirrors into the legacy status columns until §13.5. Register wire contract unchanged. |
+| 0.33    | 2026-11-15 | §13.4 delivered (unreleased): concurrent checker (`checker.py` probes for HTTP status/body, TCP and ping via pinned `icmplib`; `jobs.HealthScheduler`), settings `health_check_workers` / `health_raw_hours` / `health_history_days`, hourly compaction and purge jobs for `health_result`, `POST /service/<id>/checks/run`. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1414,7 +1415,7 @@ both URL rows. The migration test and the interim loop are in
   results into the legacy `*_status` / `*_update` columns so the
   current badges keep working.
 
-### 13.4 Checker engine and history retention [`v070-03-checker-engine`]
+### 13.4 Checker engine and history retention [`v070-03-checker-engine`] — Delivered (unreleased)
 
 - **Replaces `health_check_loop`.**
   - A scheduler thread wakes every 5 s, finds due checks (enabled, entry
@@ -1467,6 +1468,23 @@ both URL rows. The migration test and the interim loop are in
   - **Uptime %** = Σ `samples` where ok ÷ Σ `samples`, over 24 h or 7 d.
 - **Check now**: `POST /service/<id>/checks/run` (login and CSRF)
   queues all of that entry's enabled checks for the next scheduler tick.
+
+**As built:** probes live in `checker.py` (`probe_http`, `probe_tcp`,
+`probe_ping`, `run_probe`; each returns a `ProbeResult(ok, latency_ms,
+status_code, message, error_type)` and never raises). The scheduler is
+`jobs.HealthScheduler` (`select_due_jobs` builds plain-dict jobs, workers run
+`_run_job`, `collect()` and `record_check_result()` do every write on the
+`health-check-loop` thread, 5 s tick, per-tick app context). Service-kind
+checks with a target are scheduled too, ahead of their UI (§13.5). The URL
+rows still mirror into the legacy `*_status` / `*_update` columns until §13.6
+(`checker.legacy_status` keeps the `200` / `Error: SSLError` format the
+badges read). Settings: `health_check_workers` (8), `health_raw_hours` (24),
+`health_history_days` (7). Jobs: `compact_health_results` (hourly at :05) and
+`purge_health_results` (hourly at :03). Compaction only touches clock hours
+that lie wholly before `health_raw_hours` ago (one commit per check and
+hour), a lone sample becomes a range of one (`ts_end = ts`), and purge
+treats a range as old once its `ts_end` is. `icmplib==3.0.4` is pinned. No
+schema change.
 
 ### 13.5 Check configuration UI [`v070-04-check-config-ui`]
 

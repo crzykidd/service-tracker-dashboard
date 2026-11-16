@@ -1200,6 +1200,21 @@ def edit_entry(id):
                            selected_widget=selected_widget)
 
 
+@dashboard_bp.route('/service/<int:id>/checks/run', methods=['POST'])
+@login_required
+def run_checks_now(id):
+    """Check now: make every enabled check of this entry due at the next
+    scheduler tick (within about 5 seconds) by clearing `last_checked_at`."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    queued = 0
+    for check in entry.checks:
+        if check.enabled:
+            check.last_checked_at = None
+            queued += 1
+    db.session.commit()
+    return jsonify({'ok': True, 'queued': queued})
+
+
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required

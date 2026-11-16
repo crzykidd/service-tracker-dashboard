@@ -1,10 +1,10 @@
 ---
 name: v070-03-checker-engine
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15
+result: checker.py probes, concurrent HealthScheduler, retention compaction + purge jobs, check-now endpoint, icmplib pinned; tests green
 ---
 
 # Task: Concurrent checker, service-check types, history retention

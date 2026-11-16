@@ -29,6 +29,9 @@ VALID_KEYS = {
     "deleted_retention_days": int,
     "stale_after_minutes": int,
     "health_check_timeout": int,
+    "health_check_workers": int,
+    "health_raw_hours": int,
+    "health_history_days": int,
 }
 
 # Keys whose values must never be written to logs in clear text.
@@ -52,6 +55,9 @@ DEFAULT_VALUES = {
     "deleted_retention_days": 30,
     "stale_after_minutes": 5,
     "health_check_timeout": 5,
+    "health_check_workers": 8,
+    "health_raw_hours": 24,
+    "health_history_days": 7,
 }
 def load_settings():
     file_config = {}

@@ -30,6 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still works: its health-check settings are applied to the entry's two URL
   checks.
 
+- **Faster, concurrent health checks.** A scheduler now checks every 5
+  seconds for due checks and runs them in parallel (`health_check_workers`,
+  default 8), so one slow service no longer holds up the rest. A new check
+  runs at the next tick instead of after a full interval. The engine also
+  supports HTTP body checks, TCP connects and ping (the screens to configure
+  them follow).
+- **Health history is kept for a week.** Every check sample is stored for 24
+  hours (`health_raw_hours`), then successes are merged into one row per
+  hour and run while failures are kept as they happened;
+  everything older than `health_history_days` (7) is deleted. Hourly
+  background jobs do the compaction and cleanup.
+- **Check now endpoint** (`POST /service/<id>/checks/run`) schedules an
+  entry's enabled checks for the next tick; a button for it comes later.
+- **Ping needs `NET_RAW`.** Ping checks use the container's raw-socket
+  permission, which Docker grants by default. Without it a ping check fails
+  with "ICMP not permitted".
+
 ### Changed
 
 - **Add page creates manual entries only.** It asks for a Name (formerly

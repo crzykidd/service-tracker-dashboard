@@ -5,14 +5,9 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import jobs
+import checker
 from extensions import db
 from models import ServiceEntry, ensure_url_checks
-
-
-def _entry(timeout=None, verify=True):
-    """A check-shaped object: probe_url reads timeout_seconds / verify_tls."""
-    return SimpleNamespace(timeout_seconds=timeout, verify_tls=verify)
 
 
 def _check_entry(**kw):
@@ -23,26 +18,14 @@ def _check_entry(**kw):
     return e
 
 
-def test_global_timeout_used_when_entry_blank():
-    with patch("jobs.requests.get") as get:
+def test_probe_passes_timeout_and_verify():
+    with patch("checker.requests.get") as get:
         get.return_value.status_code = 200
-        assert jobs.probe_url("http://x", _entry(), default_timeout=9)["status"] == "200"
-    assert get.call_args.kwargs["timeout"] == 9
-
-
-def test_entry_timeout_wins():
-    with patch("jobs.requests.get") as get:
-        get.return_value.status_code = 204
-        jobs.probe_url("http://x", _entry(timeout=30), default_timeout=9)
-    assert get.call_args.kwargs["timeout"] == 30
-
-
-def test_verify_flag_passed_through():
-    with patch("jobs.requests.get") as get:
-        get.return_value.status_code = 200
-        jobs.probe_url("https://x", _entry(verify=True), 5)
+        checker.probe_http("http://x", "status", 9, True)
+        assert get.call_args.kwargs["timeout"] == 9
         assert get.call_args.kwargs["verify"] is True
-        jobs.probe_url("https://x", _entry(verify=False), 5)
+        checker.probe_http("https://x", "status", 30, False)
+        assert get.call_args.kwargs["timeout"] == 30
         assert get.call_args.kwargs["verify"] is False
 
 
@@ -53,28 +36,28 @@ def test_warning_suppressed_only_when_verify_false():
         warnings.warn("insecure", InsecureRequestWarning, stacklevel=2)
         return SimpleNamespace(status_code=200)
 
-    with patch("jobs.requests.get", side_effect=warn):
+    with patch("checker.requests.get", side_effect=warn):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            jobs.probe_url("https://x", _entry(verify=False), 5)
+            checker.probe_http("https://x", "status", 5, False)
             assert not caught
-            jobs.probe_url("https://x", _entry(verify=True), 5)
+            checker.probe_http("https://x", "status", 5, True)
             assert len(caught) == 1
 
 
 def test_error_status():
-    with patch("jobs.requests.get", side_effect=OSError("boom")):
-        out = jobs.probe_url("http://x", _entry(), 5)
-        assert out["status"] == "Error: OSError" and out["ok"] is False
-        assert out["status_code"] is None and out["message"] == "Error: OSError"
+    with patch("checker.requests.get", side_effect=OSError("boom")):
+        out = checker.probe_http("http://x", "status", 5, True)
+        assert out.ok is False and out.status_code is None
+        assert out.message == "OSError: boom" and checker.legacy_status(out) == "Error: OSError"
 
 
 def test_status_code_ok_threshold():
     for code, ok in ((200, True), (399, True), (400, False), (503, False)):
-        with patch("jobs.requests.get") as get:
+        with patch("checker.requests.get") as get:
             get.return_value.status_code = code
-            out = jobs.probe_url("http://x", _entry(), 5)
-        assert out["ok"] is ok and out["status_code"] == code
+            out = checker.probe_http("http://x", "status", 5, True)
+        assert out.ok is ok and out.status_code == code
 
 
 def test_model_defaults(app):

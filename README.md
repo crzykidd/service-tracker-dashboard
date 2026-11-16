@@ -161,6 +161,9 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
+| `health_check_workers`     | int    | `HEALTH_CHECK_WORKERS`       | `8`                | How many health checks run at the same time. |
+| `health_raw_hours`         | int    | `HEALTH_RAW_HOURS`           | `24`               | Hours every health-check sample is kept individually. Older successes are merged into one row per unbroken run per clock hour (failures are always kept); an hourly job at :05 does this. |
+| `health_history_days`      | int    | `HEALTH_HISTORY_DAYS`        | `7`                | Days of health-check history kept; an hourly job at :03 deletes older rows. |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
@@ -178,6 +181,9 @@ backup_path: /config/backups
 backup_days_to_keep: 7
 url_healthcheck_interval: 300
 health_check_timeout: 5
+health_check_workers: 8
+health_raw_hours: 24
+health_history_days: 7
 widget_background_reload: 900
 widget_value_retention_days: 30
 register_field_ownership: user_wins
@@ -465,7 +471,22 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 
 ## Health Checks
 
-- Run on the `url_healthcheck_interval` (default 300 seconds).
+- A scheduler wakes every 5 seconds and runs whichever checks are due, up to
+  `health_check_workers` (default 8) at a time, so one slow service no longer
+  delays the rest. A check is due once its interval (the
+  `url_healthcheck_interval` default of 300 seconds, or its own interval of
+  30 seconds or more) has passed since it last ran; a new check runs at the
+  next tick.
+- Check types: HTTP/HTTPS (status code, or in *body* mode a reply of `OK`;
+  an `Error: ...` reply shows the text as the failure message), TCP connect
+  to `host:port`, and ping (ICMP echo, 3 packets). Ping needs the `NET_RAW`
+  capability, which Docker grants by default; without it the check fails with
+  "ICMP not permitted". Configuring service checks, intervals and modes in
+  the UI arrives in a following v0.7.0 step; today the scheduler runs the
+  internal and external URL checks.
+- Every run is stored. Samples are kept individually for `health_raw_hours`
+  (24 h), then successes are merged into hourly ranges, and everything older
+  than `health_history_days` (7) is deleted.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
 - Status code, response time, and timestamp are recorded per check, as a

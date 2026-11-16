@@ -245,7 +245,36 @@ def test_edit_toggles_write_rows_and_form_reads_them(app, admin_client):
     assert not re.search(r'name="internal_health_check_enabled"[^>]*checked', page)
 
 
-# --- interim checker loop --------------------------------------------------------
+# --- checker loop writes (engine details live in test_checker.py) ----------------
+
+
+class _SyncExecutor:
+    """Runs submitted work inline so tests need no threads."""
+
+    def submit(self, fn, *args, **kwargs):
+        from concurrent.futures import Future
+
+        f = Future()
+        try:
+            f.set_result(fn(*args, **kwargs))
+        except Exception as e:  # pragma: no cover
+            f.set_exception(e)
+        return f
+
+    def shutdown(self, **kw):
+        pass
+
+
+def _pass(app, sched=None, hours=0):
+    """One full submit-and-collect pass; `hours` shifts the clock so checks
+    that just ran are due again."""
+    from datetime import timedelta
+
+    sched = sched or jobs.HealthScheduler(app, executor=_SyncExecutor())
+    now = datetime.utcnow() + timedelta(hours=hours)
+    sched.tick(now)       # submits (and runs inline)
+    sched.tick(now)       # collects and writes
+    return sched
 
 
 def test_loop_writes_result_updates_check_and_mirrors_legacy(app):
@@ -258,10 +287,10 @@ def test_loop_writes_result_updates_check_and_mirrors_legacy(app):
         other.url_check("internal").enabled = True
         db.session.commit()
 
-        with patch("jobs.requests.get") as get:
+        with patch("checker.requests.get") as get:
             get.return_value.status_code = 200
-            ran = jobs.run_url_checks_once(app)
-        assert ran == 1
+            _pass(app)
+        assert get.call_count == 1
         assert get.call_args.args[0] == "http://i" and get.call_args.kwargs["timeout"] == 7
 
         e = _get("probe")
@@ -282,16 +311,18 @@ def test_loop_failure_counts_and_mirrors_error_string(app):
         e = _make("down", internalurl="http://i")
         e.url_check("internal").enabled = True
         db.session.commit()
-        with patch("jobs.requests.get", side_effect=OSError("boom")):
-            jobs.run_url_checks_once(app)
-            jobs.run_url_checks_once(app)
+        sched = jobs.HealthScheduler(app, executor=_SyncExecutor())
+        with patch("checker.requests.get", side_effect=OSError("boom")):
+            _pass(app, sched)
+            _pass(app, sched, hours=1)
         e = _get("down")
         c = e.url_check("internal")
-        assert c.last_ok is False and c.last_message == "Error: OSError" and c.consecutive_failures == 2
+        assert c.last_ok is False and c.last_message == "OSError: boom" and c.consecutive_failures == 2
         assert e.internal_health_check_status == "Error: OSError"
-        with patch("jobs.requests.get") as get:
+        with patch("checker.requests.get") as get:
             get.return_value.status_code = 200
-            jobs.run_url_checks_once(app)
+            _pass(app, sched, hours=2)
+        db.session.expire_all()
         assert _get("down").url_check("internal").consecutive_failures == 0
 
 
@@ -300,8 +331,8 @@ def test_loop_skips_soft_deleted_entries(app):
         e = _make("trash", internalurl="http://i", deleted_at=datetime.now())
         e.url_check("internal").enabled = True
         db.session.commit()
-        with patch("jobs.requests.get") as get:
-            assert jobs.run_url_checks_once(app) == 0
+        with patch("checker.requests.get") as get:
+            _pass(app)
         assert not get.called
 
 
