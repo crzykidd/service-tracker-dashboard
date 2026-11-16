@@ -5,6 +5,45 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v0.8.0 Management API design calls
+
+Scoped with the operator; plan in PRD §14.
+
+- **Separate admin keys, not the notifier token.** `api_token` lives in
+  `settings.yml` on every Docker host running the notifier. Giving it
+  management power would turn any leaked host config into full dashboard
+  control. It stays register-only, and management uses DB-stored, named,
+  revocable keys with `read` and `write` scopes (operator's choice).
+  Rejected: reusing `api_token`; a single `admin_api_token` in settings
+  (it can't be revoked per key and rotating it needs a restart).
+- **SHA-256 for key hashes, not a password KDF.** Keys are 32+ random
+  bytes, so there is nothing to brute-force; a slow KDF would only add
+  latency to every API call.
+- **Management endpoints accept only the bearer key, never the session
+  cookie.** That makes them CSRF-exempt by construction instead of
+  half-exempt. Browser-side JSON endpoints stay session-only and
+  unchanged.
+- **API URL edits are `ui_edit`** (operator's choice). An agent acting for
+  the operator has the same intent as the browser, so the notifier and
+  synthesizer must not overwrite it. Rejected: a separate `api_edit`
+  provenance value.
+- **One validation path.** The Add/Edit check rules are refactored into
+  shared functions instead of copying them into API schemas, so the UI and
+  API can't drift.
+- **The MCP server is a separate stdio client in `mcp/`, not part of the
+  image.** The MCP SDK is async, while STD is Flask/gunicorn with one
+  worker. A stdio wrapper over the REST API keeps the image and attack
+  surface unchanged, and it runs next to Claude Code. Rejected: an MCP
+  endpoint hosted inside STD.
+- **`settings.yml` stays read-only over the API.** It is loaded once at
+  startup, so editing it remotely would mean writing the host's config
+  file and restarting. Only DB-stored runtime settings (exposure
+  directions) are writable.
+- **Users and passwords are excluded from the API.** An API key must not be
+  able to mint logins.
+
+---
+
 ## 2026-11-15 — Inline uptime strips: cookie, merged bars, id cap, reload refresh
 
 - **Cookie, not localStorage or a URL param**, as requested: the server reads
