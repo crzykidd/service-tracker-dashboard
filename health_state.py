@@ -8,7 +8,7 @@ dashboard signal.
 
 from dataclasses import dataclass
 
-from models import CHECK_KIND_EXTERNAL, CHECK_KIND_INTERNAL
+from models import check_counts
 
 STATE_UP = "up"
 STATE_DEGRADED = "degraded"
@@ -50,20 +50,6 @@ class EntryHealth:
         return self.label
 
 
-def _check_target(entry, check):
-    if check.kind == CHECK_KIND_INTERNAL:
-        return entry.internalurl
-    if check.kind == CHECK_KIND_EXTERNAL:
-        return entry.externalurl
-    return check.target
-
-
-def _counts(entry, check):
-    """True when `check` takes part in the rollup: enabled and has a target
-    to probe (a URL check whose URL was cleared can never run)."""
-    return bool(check.enabled) and bool((_check_target(entry, check) or "").strip())
-
-
 def entry_health(entry):
     """Roll `entry`'s checks up into an `EntryHealth`.
 
@@ -74,7 +60,7 @@ def entry_health(entry):
     - up: no check that has run is failing (checks still waiting for their
       first run do not hold the state back).
     """
-    active = [c for c in entry.checks if _counts(entry, c)]
+    active = [c for c in entry.checks if check_counts(entry, c)]
     if not active:
         return EntryHealth(STATE_NONE, 0, 0, ())
     ran = [c for c in active if c.last_ok is not None]

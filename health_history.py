@@ -10,7 +10,7 @@ preserved).
 from datetime import datetime, timedelta
 
 from extensions import db
-from models import HealthResult
+from models import HealthResult, check_counts
 
 RANGES = {
     # name: (bucket size, bucket count)
@@ -141,6 +141,8 @@ def _target(entry, check):
         return entry.internalurl
     if check.kind == "external_url":
         return entry.externalurl
+    if check.kind == "container":
+        return None
     return check.target
 
 
@@ -179,11 +181,12 @@ def check_payload(entry, check, range_name="24h", now=None):
 
 
 def entry_payload(entry, range_name="24h", now=None):
-    """Payload for the detail panel: every enabled check that has a target."""
+    """Payload for the detail panel: every check that counts (enabled, with a
+    target to probe; the container check on an unlocked notifier entry)."""
     now = now or datetime.utcnow()
     checks = [
         c for c in entry.checks
-        if c.enabled and (_target(entry, c) or "").strip()
+        if check_counts(entry, c)
     ]
     return {
         "entry_id": entry.id,

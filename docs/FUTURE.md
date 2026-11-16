@@ -263,10 +263,6 @@ history and filters.
   Ownership also needs deciding (do UI edits beat labels, as with URL
   provenance?). Parked on user direction: the notifier sends nothing
   new in 0.7.0.
-- **Docker state as a check.** Count `docker_status != running` or
-  staleness as a failing signal in the health rollup and the "Failing"
-  filter. Parked because it mixes two signals the operator may want
-  separate; 0.7.0 keeps Docker state as its own indicator.
 - **More check types.** DNS resolve (expect a record), HTTP keyword or
   JSON-path match, TLS certificate expiry. The 0.7.0 body mode (`OK` /
   `Error: <msg>`) covers the custom-endpoint case.

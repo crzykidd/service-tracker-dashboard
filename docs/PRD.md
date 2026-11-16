@@ -44,6 +44,7 @@
 | 0.34    | 2026-11-15 | §13.5 delivered (unreleased): "Health checks" section on Add and Edit (per-URL-check enabled/mode/interval/timeout/verify, repeatable service checks of type HTTP, TCP, Ping), server-side validation with input kept, flash messages on Add/Edit. No schema change. Register wire contract unchanged. |
 | 0.35    | 2026-11-15 | §13.6 delivered (unreleased): `health_state.py` rollup (up/degraded/down/unknown/none), shared `health_badge.html` on Dashboard (new Health column), Tiled and Compact, `status` / `source` filters beside `show_urlless` with filtered/total count, `checks` eager-loaded per page, legacy status mirror and `checker.legacy_status` removed (backups derive the legacy keys from the rows). No schema change. Register wire contract unchanged. |
 | 0.36    | 2026-11-15 | §13.7 delivered (unreleased), completing §13: `health_history.py`, `GET /service/<id>/health`, `partials/health_detail.html` + `static/js/health_detail.js`, panel in the Tiled drawer, a Dashboard expand row and the Edit page ("Health history"). §13 retitled Delivered (unreleased); §5.6 retitled. No schema change. Register wire contract unchanged. |
+| 0.37    | 2026-11-15 | §13.8 added, delivered (unreleased): Container check, Docker state as an automatic health check on every notifier entry (migration `c1d7a3e5f2b8`, kind `container`, evaluated by the scheduler). §13.1 state note and §5.6 `kind` list updated; former §13.8 (out of scope) is now §13.9 and no longer lists Docker state. Register contract unchanged. |
 
 ---
 
@@ -355,9 +356,10 @@ its index in the same migration.
 | Column | `service_entry.source` (`String(16)`, NOT NULL, server default `'notifier'`): `notifier` or `manual`. Backfill: `manual` where `last_api_update IS NULL`, else `notifier` (§13.2). |
 | Column | `service_entry.host` becomes nullable (manual entries may omit it). `(host, container_name)` index unchanged. |
 | Column | `service_entry.description` (`String(255)`, nullable). Operator text, mainly for manual entries. |
-| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service`), `name`, `check_type` (`http` / `tcp` / `ping`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows. |
+| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
 | Table  | `health_result`: one row per check sample or compacted success range. `check_id` FK (ON DELETE CASCADE), `ts`, `ts_end` (NULL for a single sample), `samples` (default 1), `ok`, `latency_ms` (average for a range), `latency_max_ms`, `status_code`, `message`. Composite index `(check_id, ts)` (also serves the FK). Timestamps are naive UTC. |
 | Data   | Migration creates the two URL-kind `health_check` rows for every entry, copying `*_health_check_enabled`, `health_check_timeout`, `health_check_verify_tls` and the last status. |
+| Data   | Migration `c1d7a3e5f2b8` inserts one enabled `container` row for every `source='notifier'` entry (soft-deleted included). No new columns or indexes; the downgrade deletes the rows and their results. |
 | Deprecated | `service_entry.internal_/external_health_check_enabled/_status/_update`, `health_check_timeout`, `health_check_verify_tls`: no longer read after v0.7.0; kept for rollback, dropped in a later release (FUTURE.md). |
 
 ---
@@ -1322,9 +1324,8 @@ accepts the field and ships first.
   | `unknown`  | checks are enabled but none has run yet |
   | `none`     | no enabled checks |
 
-  Docker state (`docker_status`, staleness) stays a separate signal and
-  is **not** a check (decision 2026-11-15; folding it in is parked in
-  FUTURE.md).
+  Docker state counts: every notifier entry has an automatic **Container**
+  check (§13.8). The Docker pill and stale icon on the views stay as well.
 
 ### 13.2 Entry sources and manual entries [`v070-01-entry-sources`] — Delivered (unreleased)
 
@@ -1628,12 +1629,59 @@ Dashboard gets a leading chevron column and an expand row (group-header
 The Edit page panel is a "Health history" block after the form, above
 "Reported by notifier".
 
-### 13.8 Out of scope for v0.7.0
+### 13.8 Container check [`v070-07-container-check`] — Delivered (unreleased)
+
+Every notifier entry carries an automatic **Container** check, so the
+notifier's report that a container is running counts as health. This
+supersedes the earlier 0.7.0 call that kept Docker state out of the rollup.
+
+- **Kind** `container`, `check_type` `docker`, `target` NULL, name
+  "Container". Exactly one per notifier entry, enabled by default; manual
+  entries have none. Created on register (new entry), on adoption of a manual
+  entry, on restore, by the migration, and by the scheduler's ensure pass.
+- **Evaluated by the scheduler thread**, never the pool and never the register
+  request. Due on the normal interval (its own `interval_seconds` or
+  `url_healthcheck_interval`). Result: ok when `docker_status` is `running`
+  (case-insensitive) and the entry is not stale (`last_api_update` within
+  `stale_after_minutes`); otherwise failing with `Container <status>`,
+  `No update from notifier for <N> min`, or `No update from notifier yet`.
+  `status_code` and `latency_ms` are NULL. Results use the same
+  `record_check_result` path, so history, compaction, purge, uptime and bars
+  need no changes.
+- **Immediate transitions:** a register that changes `docker_status` queues
+  `jobs.request_run([check id])`, so the change shows within about 5 s.
+- **Locked entries** (`is_static`) receive no registers, so the check is
+  neither scheduled nor counted while locked (like a disabled check); unlocking
+  resumes it. Soft-deleted entries are skipped as before.
+- **Rollup:** counts like any check. A Docker entry with no other checks is Up
+  when running and fresh and Down when exited or stale; running with a failing
+  URL check is Degraded; a disabled container check alone is Not monitored.
+  Filters are unchanged (`stale` still means notifier staleness).
+- **Configuration:** Edit shows a "Container (Docker state)" row (enabled and
+  interval, 30-86400) for notifier entries only. Add and manual entries do not.
+- **Detail panel:** renders like other checks (name "Container", no target
+  line, last message, bars). The Docker pill and stale icon stay.
+- **Backups:** the check's enabled/interval round-trip in `checks`; restoring a
+  backup without one creates it for notifier entries.
+- **Register contract:** unchanged; `schemas.py` is not touched.
+
+**As built:** `models.py` has `CHECK_KIND_CONTAINER`, `ensure_container_check`,
+`evaluate_container(entry, now)` (a pure read) and `check_counts(entry,
+check)`, the shared "can run / counts" rule now used by the rollup, the
+scheduler, the detail payload and Check now. `jobs.run_container_checks`
+runs inside `HealthScheduler.tick` after the pool submission pass.
+`select_due_jobs` never returns container checks. `check_form` has
+`container_row_from_entry`, `parse_container` (guarded by a hidden `cc_row`
+marker so a stale page does not disable the check) and `apply_container`. A
+register also queues a run when the container check is currently failing, so
+recovery after a stale spell shows at the next tick.
+
+### 13.9 Out of scope for v0.7.0
 
 Parked in FUTURE.md: alerting/notifications on failure;
-notifier-defined service checks (register field); Docker state as a
-check; DNS and keyword-match check types; uptime beyond 7 days and a
-public status page; dropping the deprecated health columns.
+notifier-defined service checks (register field); DNS and keyword-match check
+types; uptime beyond 7 days and a public status page; dropping the deprecated
+health columns.
 
 ---
 

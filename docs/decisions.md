@@ -5,6 +5,32 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-07 Container check: Docker state is a check (supersedes "Docker state is not a check")
+
+Reverses the v0.7.0 design call that kept Docker state out of the health
+rollup: the user chose an automatic per-entry check over a rollup-only
+fallback. Implementation calls:
+
+- **A real `health_check` row, not a rollup special case**, so history,
+  uptime, bars, compaction and the detail panel work unchanged.
+- **Evaluated on the scheduler thread** (a DB read; no pool, no network) and
+  never in the register request, which only queues `jobs.request_run`.
+- **Stale wins over status** in the message: with no recent report the stored
+  status is not trustworthy, so `No update from notifier for N min` is shown
+  even if the last status was `exited`.
+- **Register also queues a run while the container check is failing**, not
+  only when `docker_status` changes. Otherwise a stale entry that comes back
+  with the same `running` status would stay Down until the interval.
+- **Locked entries are skipped like a disabled check** (frozen state is not
+  evidence). Unlocking on Edit clears `last_checked_at` so it re-evaluates.
+- **`docker` is not in `CHECK_TYPES`**, so it cannot be picked on a service
+  check; the form's `cc_row` marker stops an old page from disabling it.
+- **No new column**, so no FK index; the migration is data-only and idempotent.
+- Test helpers in `test_checker.py` / `test_health_schema.py` now default to
+  manual entries so URL-check tests are not perturbed by the notifier-only check.
+
+---
+
 ## 2026-11-15 — v070-06 health detail panel: implementation calls
 
 - **Only enabled checks with a target appear in the panel** (the same

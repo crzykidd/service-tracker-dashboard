@@ -26,12 +26,17 @@ VALID_SOURCES = (SOURCE_NOTIFIER, SOURCE_MANUAL)
 CHECK_KIND_INTERNAL = 'internal_url'
 CHECK_KIND_EXTERNAL = 'external_url'
 CHECK_KIND_SERVICE = 'service'
+# Container state reported by the notifier (one per notifier entry, no target).
+CHECK_KIND_CONTAINER = 'container'
 URL_CHECK_KINDS = (CHECK_KIND_INTERNAL, CHECK_KIND_EXTERNAL)
-CHECK_KINDS = URL_CHECK_KINDS + (CHECK_KIND_SERVICE,)
+CHECK_KINDS = URL_CHECK_KINDS + (CHECK_KIND_SERVICE, CHECK_KIND_CONTAINER)
 CHECK_TYPE_HTTP = 'http'
 CHECK_TYPE_TCP = 'tcp'
 CHECK_TYPE_PING = 'ping'
 CHECK_TYPES = (CHECK_TYPE_HTTP, CHECK_TYPE_TCP, CHECK_TYPE_PING)
+# The container check's own type; not selectable on a service check.
+CHECK_TYPE_DOCKER = 'docker'
+CONTAINER_CHECK_NAME = 'Container'
 CHECK_MODE_STATUS = 'status'
 CHECK_MODE_BODY = 'body'
 CHECK_MODES = (CHECK_MODE_STATUS, CHECK_MODE_BODY)
@@ -213,6 +218,14 @@ class ServiceEntry(db.Model):
         return None
 
     @property
+    def container_check(self):
+        """The notifier entry's Container check row, or None."""
+        for check in self.checks:
+            if check.kind == CHECK_KIND_CONTAINER:
+                return check
+        return None
+
+    @property
     def service_checks(self):
         """Service-kind checks, in creation order."""
         return [c for c in self.checks if c.kind == CHECK_KIND_SERVICE]
@@ -300,6 +313,57 @@ def ensure_url_checks(entry):
     return entry
 
 
+def ensure_container_check(entry):
+    """Give a notifier entry its one Container check (enabled by default).
+
+    Manual entries get none. Idempotent. Caller commits.
+    """
+    if entry.source == SOURCE_NOTIFIER and entry.container_check is None:
+        entry.checks.append(HealthCheck(
+            kind=CHECK_KIND_CONTAINER,
+            name=CONTAINER_CHECK_NAME,
+            check_type=CHECK_TYPE_DOCKER,
+            mode=CHECK_MODE_STATUS,
+            verify_tls=True,
+            enabled=True,
+            consecutive_failures=0,
+        ))
+    return entry
+
+
+def evaluate_container(entry, now=None):
+    """(ok, message) for the entry's Container check, from what the notifier
+    last reported. A pure read; message is None when ok."""
+    now = now or datetime.now()
+    if entry.last_api_update is None:
+        return False, 'No update from notifier yet'
+    age = now - entry.last_api_update
+    if age > timedelta(minutes=_stale_after_minutes()):
+        return False, f'No update from notifier for {int(age.total_seconds() // 60)} min'
+    status = (entry.docker_status or '').strip()
+    if status.lower() == 'running':
+        return True, None
+    return False, f'Container {status}' if status else 'Container status unknown'
+
+
+def check_counts(entry, check):
+    """True when `check` can run and takes part in the rollup: enabled, and
+    - URL kinds: the entry has that URL; service: it has a target;
+    - container: the entry is an unlocked notifier entry (a locked entry gets
+      no registers, so its container state is frozen and not evidence)."""
+    if not check.enabled:
+        return False
+    if check.kind == CHECK_KIND_CONTAINER:
+        return entry.source == SOURCE_NOTIFIER and not entry.is_static
+    if check.kind == CHECK_KIND_INTERNAL:
+        target = entry.internalurl
+    elif check.kind == CHECK_KIND_EXTERNAL:
+        target = entry.externalurl
+    else:
+        target = check.target
+    return bool((target or '').strip())
+
+
 def _stale_after_minutes():
     """Configured staleness threshold; default 5 when unset/invalid or outside an app context."""
     if not has_app_context():
@@ -316,7 +380,9 @@ class HealthCheck(db.Model):
 
     URL kinds (`internal_url` / `external_url`) follow the entry's URL, so
     `target` is NULL; `service` rows carry their own target. Exactly one of
-    each URL kind per entry (see ensure_url_checks). NULL interval/timeout
+    each URL kind per entry (see ensure_url_checks), and one `container` row
+    per notifier entry (ensure_container_check; evaluated from the entry's
+    docker_status, no target). NULL interval/timeout
     mean "use the global setting".
     """
     __tablename__ = 'health_check'

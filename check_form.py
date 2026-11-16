@@ -9,6 +9,7 @@ Form field names:
   checks_form                       marker; absent means "section not submitted"
   uc_<internal|external>_<field>    URL-check fields (enabled, mode, interval,
                                     timeout, verify)
+  cc_row, cc_enabled, cc_interval   Container check (notifier entries on Edit)
   svc_row                           one per service-check row (the row key)
   svc_<key>_<field>                 id, name, type, target, mode, interval,
                                     timeout, verify, enabled
@@ -82,6 +83,19 @@ def rows_from_entry(entry):
         url_rows.append(_row_from_check(check, which, label) if check else _blank_url_row(which, label))
     svc_rows = [_row_from_check(c, key=f"id{c.id}") for c in entry.service_checks]
     return url_rows, svc_rows
+
+
+def container_row_from_entry(entry):
+    """The Container check's form row, or None when the entry has none
+    (manual entries)."""
+    check = entry.container_check
+    if check is None:
+        return None
+    return {
+        "id": check.id,
+        "enabled": bool(check.enabled),
+        "interval": "" if check.interval_seconds is None else str(check.interval_seconds),
+    }
 
 
 def _parse_int(raw, low, high, label, unit_hint, errors, who):
@@ -191,6 +205,31 @@ def parse_form(form, existing_service_ids=()):
             errors.append(f"{who}: this check no longer exists (it may have been removed in another window). Reload the page.")
         svc_rows.append(row)
     return url_rows, svc_rows, errors
+
+
+def parse_container(form):
+    """Parse the Container row. Returns (row, errors); row is None when the
+    form did not carry it (a page loaded before the row existed)."""
+    if form.get("cc_row") is None:
+        return None, []
+    errors = []
+    row = {"id": None, "enabled": form.get("cc_enabled") is not None}
+    row["interval"] = (form.get("cc_interval") or "").strip()
+    row["interval_value"] = _parse_int(
+        row["interval"], MIN_INTERVAL, MAX_INTERVAL, "interval", "", errors, "Container check")
+    return row, errors
+
+
+def apply_container(entry, row):
+    """Write a validated Container row onto `entry` (caller commits)."""
+    check = entry.container_check
+    if check is None or row is None:
+        return
+    before = (check.interval_seconds, check.enabled)
+    check.interval_seconds = row["interval_value"]
+    check.enabled = row["enabled"]
+    if (check.interval_seconds, check.enabled) != before:
+        check.last_checked_at = None
 
 
 def _signature(check):

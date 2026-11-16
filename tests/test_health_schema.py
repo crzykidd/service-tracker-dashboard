@@ -17,9 +17,13 @@ from models import HealthCheck, HealthResult, ServiceEntry, ensure_url_checks
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREVIOUS_HEAD = "a7c3e9f15d28"
+HEALTH_REV = "b8e4d6a2c1f9"  # the health-check tables migration
 
 
 def _make(name="svc1", host="host1", **kw):
+    # Manual by default: the notifier-only Container check is covered in
+    # test_container_check.py.
+    kw.setdefault("source", "manual")
     e = ServiceEntry(host=host, container_name=name, last_updated=datetime.now(), **kw)
     ensure_url_checks(e)
     db.session.add(e)
@@ -79,7 +83,7 @@ def test_migration_copies_legacy_health_values(tmp_path):
     db_path = str(tmp_path / "m.db")
     _alembic(tmp_path, db_path, "upgrade", PREVIOUS_HEAD)
     _seed_legacy(db_path)
-    _alembic(tmp_path, db_path, "upgrade", "head")
+    _alembic(tmp_path, db_path, "upgrade", HEALTH_REV)
 
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
@@ -121,7 +125,7 @@ def test_migration_downgrade_restores_legacy_enabled_and_round_trips(tmp_path):
     db_path = str(tmp_path / "m.db")
     _alembic(tmp_path, db_path, "upgrade", PREVIOUS_HEAD)
     _seed_legacy(db_path)
-    _alembic(tmp_path, db_path, "upgrade", "head")
+    _alembic(tmp_path, db_path, "upgrade", HEALTH_REV)
     con = sqlite3.connect(db_path)
     con.execute("UPDATE health_check SET enabled = 1 WHERE kind = 'external_url'")
     con.commit()
@@ -137,7 +141,7 @@ def test_migration_downgrade_restores_legacy_enabled_and_round_trips(tmp_path):
     assert got == (1, 1)
     con.close()
 
-    _alembic(tmp_path, db_path, "upgrade", "head")
+    _alembic(tmp_path, db_path, "upgrade", HEALTH_REV)
     con = sqlite3.connect(db_path)
     assert con.execute("SELECT COUNT(*) FROM health_check").fetchone() == (6,)
     con.close()
@@ -185,7 +189,7 @@ def test_register_create_makes_both_rows_and_maps_toggles(app, register):
     register(container_name="reg", internal_health_check_enabled=True)
     with app.app_context():
         e = _get("reg")
-        assert _kinds(e) == ["external_url", "internal_url"]
+        assert _kinds(e) == ["container", "external_url", "internal_url"]
         assert e.url_check("internal").enabled is True
         assert e.url_check("external").enabled is False
         # Legacy column no longer written.
@@ -199,7 +203,7 @@ def test_register_toggle_updates_row_and_absent_means_no_change(app, register):
         e = _get("t")
         assert e.url_check("internal").enabled is True
         assert e.url_check("external").enabled is False
-        assert len(e.checks) == 2
+        assert len(e.checks) == 3
     register(container_name="t")
     with app.app_context():
         e = _get("t")
@@ -213,7 +217,7 @@ def test_register_on_entry_without_rows_creates_them(app, register):
     register(container_name="bare", internal_health_check_enabled=True)
     with app.app_context():
         e = _get("bare")
-        assert _kinds(e) == ["external_url", "internal_url"] and e.url_check("internal").enabled
+        assert _kinds(e) == ["container", "external_url", "internal_url"] and e.url_check("internal").enabled
 
 
 def test_add_page_creates_rows_with_form_values(app, admin_client):

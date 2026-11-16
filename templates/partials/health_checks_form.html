@@ -92,6 +92,21 @@
     </div>
   </div>
   {% endfor %}
+  {% if container_row %}
+  <div class="rounded-lg border border-dashboard-accent p-3 space-y-3">
+    <input type="hidden" name="cc_row" value="1">
+    <div>
+      <div class="text-sm font-medium text-dashboard-primary">Container (Docker state)</div>
+      <div class="text-xs text-dashboard-secondary">Healthy while the notifier reports the container running and keeps reporting in. Not checked while the entry is locked.</div>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+      {{ num_field('cc_interval', 'cc_interval', container_row.interval, 30, 86400, 'Interval (s)') }}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {{ check_box('cc_enabled', 'cc_enabled', container_row.enabled, 'Enabled') }}
+    </div>
+  </div>
+  {% endif %}
   <p class="edit-helper">Blank interval or timeout uses the global setting. Interval 30&ndash;86400 seconds, timeout 1&ndash;60. Untick Verify TLS for self-signed certificates. Response body mode expects the page to answer <code>OK</code>.</p>
 
   <div class="flex items-center justify-between pt-2">

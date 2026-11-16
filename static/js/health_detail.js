@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  const TYPE_LABELS = { http: 'HTTP', tcp: 'TCP', ping: 'Ping' };
+  const TYPE_LABELS = { http: 'HTTP', tcp: 'TCP', ping: 'Ping', docker: 'Docker' };
   const STATE_LABELS = { up: 'Up', down: 'Down', unknown: 'Not run yet' };
   const CHECK_NOW_POLL_MS = 2000;      // re-fetch interval while a Check now is pending
   const CHECK_NOW_MAX_WAIT_MS = 75000; // scheduler tick (5 s) + up to a 60 s probe timeout

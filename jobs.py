@@ -36,6 +36,7 @@ import checker
 from extensions import db
 from image_utils import fetch_icon_if_missing
 from models import (
+    CHECK_KIND_CONTAINER,
     CHECK_KIND_EXTERNAL,
     CHECK_KIND_INTERNAL,
     HealthCheck,
@@ -43,7 +44,10 @@ from models import (
     ServiceEntry,
     Widget,
     WidgetValue,
+    check_counts,
+    ensure_container_check,
     ensure_url_checks,
+    evaluate_container,
     hard_delete_entry,
 )
 from settings_loader import CONFIG_DIR
@@ -193,8 +197,10 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
     Due = enabled, entry active, a target to probe (URL-kind: the entry's
     current URL; service: its own target) and `last_checked_at IS NULL or
     last_checked_at + interval <= now`. Rows missing for an entry get
-    created first (ensure_url_checks). Reads only; returns no ORM objects so
-    the workers never touch a session.
+    created first (ensure_url_checks / ensure_container_check). Container
+    checks are never returned: they are a DB read, evaluated on the
+    scheduler thread by `run_container_checks`. Reads only; returns no ORM
+    objects so the workers never touch a session.
     """
     now_utc = now_utc or datetime.utcnow()
     global_interval = _int_setting(app, "url_healthcheck_interval", DEFAULT_URL_INTERVAL)
@@ -205,6 +211,7 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
     for entry in ServiceEntry.active().all():
         before = len(entry.checks)
         ensure_url_checks(entry)
+        ensure_container_check(entry)
         if len(entry.checks) != before:
             added = True
     if added:
@@ -218,15 +225,15 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
         if check.id in skip_ids:
             continue
         entry = check.service_entry
+        if check.kind == CHECK_KIND_CONTAINER or not check_counts(entry, check):
+            continue
         if check.kind == CHECK_KIND_INTERNAL:
             target = entry.internalurl
         elif check.kind == CHECK_KIND_EXTERNAL:
             target = entry.externalurl
         else:
             target = check.target
-        target = (target or "").strip()
-        if not target:
-            continue
+        target = target.strip()
         interval = _check_interval(check, global_interval)
         if (
             check.id not in requested
@@ -243,6 +250,50 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
             "verify": check.verify_tls is not False,
         })
     return jobs_due
+
+
+def run_container_checks(app, now_utc=None, now_local=None):
+    """Evaluate every due Container check and record the results.
+
+    Runs on the scheduler thread, inline: the evaluation is a read of the
+    entry's docker_status / last_api_update, so there is no network and no
+    pool submission. Due like any check (interval, or a pending run request
+    from a register that changed the status). Locked, manual and soft-deleted
+    entries are skipped. Returns the number of results written.
+    """
+    now_utc = now_utc or datetime.utcnow()
+    global_interval = _int_setting(app, "url_healthcheck_interval", DEFAULT_URL_INTERVAL)
+    requested = _pending_run_requests()
+    checks = (
+        HealthCheck.query.join(ServiceEntry, HealthCheck.service_entry_id == ServiceEntry.id)
+        .filter(
+            HealthCheck.kind == CHECK_KIND_CONTAINER,
+            HealthCheck.enabled.is_(True),
+            ServiceEntry.deleted_at.is_(None),
+        )
+        .all()
+    )
+    written = 0
+    ran = []
+    for check in checks:
+        entry = check.service_entry
+        if not check_counts(entry, check):
+            continue
+        interval = _check_interval(check, global_interval)
+        if (
+            check.id not in requested
+            and check.last_checked_at is not None
+            and check.last_checked_at + timedelta(seconds=interval) > now_utc
+        ):
+            continue
+        ok, message = evaluate_container(entry, now_local)
+        record_check_result(check, checker.ProbeResult(ok=ok, latency_ms=None, message=message), now_utc)
+        ran.append(check.id)
+        written += 1
+    if written:
+        db.session.commit()
+    _clear_run_requests(ran)
+    return written
 
 
 def _run_job(job):
@@ -304,6 +355,7 @@ class HealthScheduler:
             try:
                 written = self.collect()
                 submitted = self.submit_due(now_utc)
+                written += run_container_checks(self.app, now_utc)
             except Exception:
                 db.session.rollback()
                 raise

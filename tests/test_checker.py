@@ -42,6 +42,9 @@ def _body(code, body, **kw):
 
 
 def _entry(name="svc", **kw):
+    # Manual by default: these tests are about the URL/service checks; the
+    # notifier-only Container check has its own tests (test_container_check.py).
+    kw.setdefault("source", "manual")
     e = ServiceEntry(host="h", container_name=name, last_updated=datetime.now(), **kw)
     ensure_url_checks(e)
     db.session.add(e)
@@ -237,7 +240,8 @@ def test_missing_url_rows_created_by_selection(app):
         db.session.commit()
         assert HealthCheck.query.count() == 0
         jobs.select_due_jobs(app)
-        assert HealthCheck.query.count() == 2
+        # Two URL rows plus the notifier entry's Container check.
+        assert HealthCheck.query.count() == 3
 
 
 # --- scheduler / single writer ----------------------------------------------------

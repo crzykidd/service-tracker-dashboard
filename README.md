@@ -512,12 +512,21 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   page: HTTP/HTTPS (full URL), TCP (`host:port`) and Ping (hostname or IP).
   The notifier never touches them. Removing one deletes it and its results
   when you save.
+- **Container check.** Every notifier (Docker) entry has an automatic
+  *Container* check: it passes while the notifier reports the container
+  `running` and has reported within `stale_after_minutes`, and fails with
+  `Container <state>` or `No update from notifier ...` otherwise. It is
+  evaluated by the scheduler (no network), shows up within about 5 seconds of
+  a state change, and has only an enabled switch and an interval on the Edit
+  page. Manual entries have none, and a locked entry's container check is not
+  run or counted until you unlock it.
 - A failed check logs and moves on; it does not crash the loop.
 
 ### Health checks and monitoring
 
 - **Kinds.** Each entry has an *Internal URL* and an *External URL* check
-  (they follow the entry's URLs) plus any *service checks* you add. Types:
+  (they follow the entry's URLs) plus any *service checks* you add, and
+  notifier entries also have a *Container* check (Docker state). Types:
   HTTP/HTTPS, TCP and Ping.
 - **Body mode.** An HTTP check in *response body* mode passes when the reply
   is `OK`; a reply of `Error: <message>` fails and shows `<message>`.

@@ -49,6 +49,7 @@ import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
+    CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
     CHECK_MODES,
     CHECK_TYPES,
@@ -62,6 +63,8 @@ from models import (
     User,
     Widget,
     WidgetValue,
+    check_counts,
+    ensure_container_check,
     ensure_url_checks,
     hard_delete_entry,
 )
@@ -965,6 +968,7 @@ def _restore_checks(entry, item):
     absent meaning disabled / global timeout / verify TLS on.
     """
     ensure_url_checks(entry)
+    ensure_container_check(entry)
     checks = item.get('checks')
     if isinstance(checks, list):
         # Service rows are replaced wholesale by what the backup carries.
@@ -974,6 +978,13 @@ def _restore_checks(entry, item):
             if not isinstance(cfg, dict):
                 continue
             kind = cfg.get('kind')
+            if kind == CHECK_KIND_CONTAINER:
+                # Notifier entries only; just enabled + interval round-trip.
+                check = entry.container_check
+                if check is not None:
+                    check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
+                    check.enabled = bool(cfg.get('enabled'))
+                continue
             if kind in URL_CHECK_KINDS:
                 check = entry.url_check(kind)
             elif kind == CHECK_KIND_SERVICE:
@@ -1034,10 +1045,12 @@ def edit_entry(id):
         else:
             logger.warning(f"Widget ID {entry.widget_id} not found")
 
-    def render_edit(form=None, url_rows=None, svc_rows=None):
+    def render_edit(form=None, url_rows=None, svc_rows=None, container_row=None):
         groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
         if url_rows is None:
             url_rows, svc_rows = check_form.rows_from_entry(entry)
+        if container_row is None:
+            container_row = check_form.container_row_from_entry(entry)
         return render_template("edit_entry.html",
                                entry=entry,
                                ref=referrer,
@@ -1046,7 +1059,8 @@ def edit_entry(id):
                                selected_widget=selected_widget,
                                form=form,
                                url_rows=url_rows,
-                               svc_rows=svc_rows)
+                               svc_rows=svc_rows,
+                               container_row=container_row)
 
     # Handle form submission
     if request.method == 'POST':
@@ -1074,10 +1088,15 @@ def edit_entry(id):
         if checks_submitted:
             url_rows, svc_rows, check_errors = check_form.parse_form(
                 request.form, {c.id for c in entry.service_checks})
+            container_row = None
+            if entry.container_check is not None:
+                container_row, container_errors = check_form.parse_container(request.form)
+                check_errors += container_errors
             if check_errors:
                 for message in check_errors:
                     flash(message, 'danger')
-                return render_edit(form=request.form, url_rows=url_rows, svc_rows=svc_rows)
+                return render_edit(form=request.form, url_rows=url_rows, svc_rows=svc_rows,
+                                   container_row=container_row)
 
         # === BASIC FIELDS ===
         new_host = request.form.get('host', '').strip()
@@ -1107,11 +1126,16 @@ def edit_entry(id):
         ensure_url_checks(entry)
         if checks_submitted:
             check_form.apply_rows(entry, url_rows, svc_rows)
+            check_form.apply_container(entry, container_row)
         # A changed URL is a new target: re-check it at the next tick.
         for which, changed in (('internal', url_changed['internal']), ('external', url_changed['external'])):
             if changed:
                 entry.url_check(which).last_checked_at = None
+        was_locked = entry.is_static
         entry.is_static = 'is_static' in request.form
+        if was_locked and not entry.is_static and entry.container_check is not None:
+            # Unlocked: the container state was frozen, so re-evaluate it now.
+            entry.container_check.last_checked_at = None
 
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:
@@ -1245,7 +1269,7 @@ def run_checks_now(id):
     tick (within about 5 seconds). The last result stays in place until the
     new one is written; `requested_at` lets the panel poll for it."""
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
-    ids = [check.id for check in entry.checks if check.enabled]
+    ids = [check.id for check in entry.checks if check_counts(entry, check)]
     jobs.request_run(ids)
     return jsonify({
         'ok': True,

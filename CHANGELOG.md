@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Docker container state is now an automatic health check.** Every
+  notifier (Docker) entry has a **Container** check that passes while the
+  notifier reports the container `running` and keeps reporting in, and fails
+  with `Container exited` (or the reported state) or `No update from notifier
+  for N min` otherwise. A Docker service with no URL or service checks now
+  shows Up or Down instead of "Not monitored", and a running container with a
+  failing URL check shows Degraded. It appears in the health detail panel with
+  history and uptime like any other check, updates within a few seconds when
+  the notifier reports a state change, and can be switched off or given its own
+  interval in the Health checks section of the Edit page. Locked entries and
+  manual entries do not have one. The Docker status pill and stale icon stay.
 - **Health detail panel with a 24-hour history strip.** Each service has a
   detail view of its enabled checks: current state, target, last checked,
   response time, last message, uptime for 24 hours and 7 days, and the 20
