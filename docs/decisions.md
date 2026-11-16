@@ -5,6 +5,19 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — `/widget_config` path built from the listdir name (CodeQL)
+
+CodeQL kept two `py/path-injection` alerts open on `routes_widgets.py`
+after v069-11: a `widget_name not in known` membership test is not a
+sanitizer it recognises, so the request value still reached
+`os.path.join`. The route now picks the matching entry *from*
+`os.listdir(widgets/)` and builds the path (and the warning log) from
+that name, so no request data reaches the filesystem. Behaviour is
+unchanged (unknown or traversal names still return `[]`); no CHANGELOG
+entry because operators see no difference.
+
+---
+
 ## 2026-11-15 — v070-07 Container check: Docker state is a check (supersedes "Docker state is not a check")
 
 Reverses the v0.7.0 design call that kept Docker state out of the health
