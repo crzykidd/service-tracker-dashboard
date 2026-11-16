@@ -48,6 +48,7 @@
 | 0.38    | 2026-11-15 | v0.7.0 released. §13 retitled Delivered: entry sources (notifier vs manual), health checks as their own tables with URL, service (HTTP/HTTPS status or body, TCP, ping) and automatic Container checks, concurrent checker with 24h raw + hourly-compacted 7-day history, health rollup badge and Status/Source filters, health detail panel with 24h/7d history. Schema in §5.6. Register wire contract unchanged; no notifier change needed. |
 | 0.39    | 2026-11-15 | §13.6 filter bar (unreleased, post-v0.7.0): "Total Services" replaced by clickable Total / Passing / Failing count chips that set the `status` filter; counts follow `source` / `show_urlless` but ignore `status`. No schema or register-contract change. |
 | 0.40    | 2026-11-15 | §13.7: inline 24h uptime strips (unreleased, post-v0.7.0): "Show uptime" filter-bar checkbox kept in the `std_show_uptime` cookie, `GET /health/strips`, `health_history.strips()`, `static/js/uptime_strip.js`. No schema change. Register wire contract unchanged. |
+| 0.41    | 2026-11-15 | v0.7.1 released: clickable Total / Passing / Failing count chips in the filter bar (§13.6) and the "Show uptime" toggle with inline 24h uptime strips (§13.7). No schema or register-contract change. |
 
 ---
 
@@ -1558,7 +1559,7 @@ schema change.
     `healthy` (up) / `unknown` (unknown or none) / `stale` (notifier
     entries that are stale).
   - `source` = `all` / `notifier` / `manual`.
-- The filter bar shows **Total / Passing / Failing** count chips, each a link
+- The filter bar shows **Total / Passing / Failing** count chips (v0.7.1), each a link
   that sets `status` to `all` / `healthy` / `failing`. They count entries
   after `source` and `show_urlless` but ignoring `status`, so each number
   equals what its link shows.
@@ -1638,7 +1639,7 @@ Dashboard gets a leading chevron column and an expand row (group-header
 The Edit page panel is a "Health history" block after the form, above
 "Reported by notifier".
 
-**Inline uptime strips (post-v0.7.0, unreleased).** A "Show uptime" checkbox
+**Inline uptime strips (v0.7.1).** A "Show uptime" checkbox
 in the filter bar (all three views, next to Show URL-less) is remembered in
 the `std_show_uptime` cookie (`1`/`0`, `Path=/`, `SameSite=Lax`, one year;
 only ever compared to `'1'`). On, each service shows one 24h strip: 48

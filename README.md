@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.7.0-blue)
+![Version](https://img.shields.io/badge/version-0.7.1-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -42,6 +42,19 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.7.1 (2026-11-15)
+
+Two dashboard conveniences on top of 0.7.0. No migrations, no configuration
+change.
+
+- **Clickable Total / Passing / Failing counts** replace "Total Services" in
+  the filter bar. Click one to filter the view to it; the active count is
+  highlighted.
+- **"Show uptime" checkbox** in the filter bar adds a compact 24-hour uptime
+  strip (48 half-hour bars plus the uptime %) to every service on Dashboard,
+  Tiled and Compact. Off by default and remembered in a browser cookie; hover
+  or tap a bar for the failure messages.
 
 ### v0.7.0 (2026-11-15)
 
