@@ -209,7 +209,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 ## Build Status
 
 Current shipped release: **v0.6.9** (latest tag on `main`).
-In flight: nothing scoped.
+In flight: v0.7.0 Dashboard and Monitoring (PRD §13; prompts `prompts/v070-*`).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.

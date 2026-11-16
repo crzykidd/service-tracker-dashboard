@@ -242,6 +242,44 @@ and proves insufficient.
 
 ---
 
+## Monitoring follow-ups (after v0.7.0)
+
+**Parked:** 2026-11-15, during the v0.7.0 "Dashboard and Monitoring"
+design session (PRD §13). Each item came up and was deliberately kept
+out of 0.7.0 to hold its scope to manual entries, the check model,
+history and filters.
+
+- **Alerting / notifications on failure.** For example webhook, ntfy,
+  Gotify or email when a check goes from ok to failing (or after N
+  consecutive failures; `health_check.consecutive_failures` already
+  exists for this). Parked because 0.7.0 is display-only monitoring;
+  alert delivery, de-duplication and quiet hours are a feature of their
+  own.
+- **Notifier-defined service checks.** A container label (e.g.
+  `dockernotifier.std.check.type=tcp`, `...check.target=...`) that the
+  notifier forwards so service checks come from compose, not the UI.
+  This is a **register-contract change**: STD must add the field to
+  `RegisterPayload` and ship first, then the notifier sends it.
+  Ownership also needs deciding (do UI edits beat labels, as with URL
+  provenance?). Parked on user direction: the notifier sends nothing
+  new in 0.7.0.
+- **Docker state as a check.** Count `docker_status != running` or
+  staleness as a failing signal in the health rollup and the "Failing"
+  filter. Parked because it mixes two signals the operator may want
+  separate; 0.7.0 keeps Docker state as its own indicator.
+- **More check types.** DNS resolve (expect a record), HTTP keyword or
+  JSON-path match, TLS certificate expiry. The 0.7.0 body mode (`OK` /
+  `Error: <msg>`) covers the custom-endpoint case.
+- **Longer history and a status page.** 30-day uptime, a public
+  read-only status page. 0.7.0 keeps 7 days.
+- **Drop the deprecated health columns.** `service_entry.*_health_check_*`
+  and the per-entry `health_check_timeout` / `health_check_verify_tls`
+  stop being read in 0.7.0 but are kept so a rollback to 0.6.9 still
+  works. Drop them in a later release's migration, and stop exporting
+  them in backups at the same time.
+
+---
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

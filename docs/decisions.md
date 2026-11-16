@@ -5,6 +5,51 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v0.7.0 "Dashboard and Monitoring" design calls
+
+Scoped in a design session; plan in PRD §13, follow-ups in FUTURE.md.
+
+- **No notifier change.** The user directed that the notifier keep
+  sending today's payload. Every 0.7.0 feature is STD-side; the URL-check
+  toggles in the payload map onto the new check rows.
+- **Manual vs notifier is a `source` column, not `is_static`.**
+  `is_static` was doing two jobs (lock and "not Docker"). It is now only
+  the lock. A register matching an unlocked manual entry *adopts* it,
+  which keeps the existing "pre-stage, then the notifier fills it in"
+  behaviour instead of creating a duplicate. Rejected: a separate
+  "adopt" button; matching manual rows never.
+- **Manual entries keep an optional host** (user call). The name is
+  stored in `container_name` rather than a new column, so the logical
+  key, its index and every query stay as they are.
+- **Checks are rows, not columns.** URL checks are `health_check` rows
+  whose target follows the entry URL. Service checks are separate rows.
+  This gives one engine and one history table for every kind. Rejected:
+  more columns on `service_entry`.
+- **Retention: raw 24 h, then hourly success ranges, failures kept
+  7 days** (the user's proposal, bounded per clock hour so 7-day hourly
+  bars and uptime % stay exact). Rejected: unbounded success ranges
+  (they force proportional splitting everywhere) and keeping all samples
+  for 7 days (about 10k rows per check at a 60 s interval).
+- **History bars are fixed time buckets** (48 × 30 min for 24 h), not
+  Gatus's "last N results" (user call). This keeps the strip's meaning
+  stable whatever the interval.
+- **Worker threads never touch the DB.** The scheduler thread writes
+  everything, because SQLite has a single writer and Flask-SQLAlchemy
+  sessions are not shared across threads.
+- **Ping uses `icmplib`, not the `ping` binary.** There is no subprocess
+  or extra apt package, and the image runs as root with Docker's default
+  `NET_RAW`. It falls back to an unprivileged socket and then reports
+  "ICMP not permitted".
+- **Legacy health columns are deprecated, not dropped,** in 0.7.0 so a
+  rollback to 0.6.9 keeps working. A temporary mirror keeps the old
+  badges correct between chunks 03 and 05.
+- **New health timestamps are naive UTC**, unlike the naive-local
+  `last_updated`. Converted for display.
+- **Compact gets no drawer;** its badge links to the Edit page's health
+  section instead of adding a third detail surface.
+
+---
+
 ## 2026-11-15 — release-prep-and-cut label corrected upstream, then re-synced
 
 The `@ v1.0.0` labels flagged in the two entries below were fixed at the

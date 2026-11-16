@@ -37,6 +37,7 @@
 | 0.27    | 2026-11-15 | §12.10 delivered (unreleased): CHANGELOG historical dates corrected from tags; MIT `LICENSE` added; README compatibility note and registry wording refreshed. No code, schema, or wire-contract changes. |
 | 0.28    | 2026-11-15 | v0.6.9 released. §12 retitled Delivered: pytest suite + required `Test` check, wider lint, settings and API-token fixes, CSRF protection, soft-delete with widget detach, unified staleness indicator, per-service health-check options, gunicorn + pinned dependencies. Schema: `deleted_at`, `health_check_timeout`, `health_check_verify_tls` (§5.5). No register-contract change. |
 | 0.29    | 2026-11-15 | §12.11 added (delivered in v0.6.9, folded into the prepared release): icon names, server-side restore filenames and `/widget_config` widget names confined to their folders; edit/CSRF redirects limited to same-site paths (`image_utils.safe_icon_filename`, `view_helpers.safe_redirect_target`). Closes 13 CodeQL alerts. No schema, contract, or job changes. |
+| 0.30    | 2026-11-15 | Added §13 (v0.7.0 — Dashboard and Monitoring, planned): entry sources (notifier vs manual), health checks as their own tables with service checks (HTTP/HTTPS status or body mode, TCP, ping), concurrent checker, 7-day history with 24h raw + hourly-compacted successes, health rollup and status/source filters, Gatus-style 24h history in the detail surface. Planned schema in §5.6. Later sections renumbered (§13→§14, §14→§15, §15→§16). No register-contract change. No code changes yet. |
 
 ---
 
@@ -54,9 +55,10 @@
 10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
 11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
-13. [Versioning, Branches, and Releases](#13-versioning-branches-and-releases)
-14. [Cross-Repo Coordination](#14-cross-repo-coordination)
-15. [Open Questions](#15-open-questions)
+13. [v0.7.0 — Dashboard and Monitoring (Planned)](#13-v070--dashboard-and-monitoring-planned)
+14. [Versioning, Branches, and Releases](#14-versioning-branches-and-releases)
+15. [Cross-Repo Coordination](#15-cross-repo-coordination)
+16. [Open Questions](#16-open-questions)
 
 ---
 
@@ -331,6 +333,21 @@ exposure data arrives.
 
 Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
 options at their defaults.
+
+### 5.6 v0.7.0 schema changes (planned)
+
+Planned for v0.7.0 (§13). One Alembic migration per chunk; each FK gets
+its index in the same migration.
+
+| Change | Detail |
+|--------|--------|
+| Column | `service_entry.source` (`String(16)`, NOT NULL, server default `'notifier'`): `notifier` or `manual`. Backfill: `manual` where `last_api_update IS NULL`, else `notifier` (§13.2). |
+| Column | `service_entry.host` becomes nullable (manual entries may omit it). `(host, container_name)` index unchanged. |
+| Column | `service_entry.description` (`String(255)`, nullable). Operator text, mainly for manual entries. |
+| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service`), `name`, `check_type` (`http` / `tcp` / `ping`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows. |
+| Table  | `health_result`: one row per check sample or compacted success range. `check_id` FK (ON DELETE CASCADE), `ts`, `ts_end` (NULL for a single sample), `samples` (default 1), `ok`, `latency_ms` (average for a range), `latency_max_ms`, `status_code`, `message`. Composite index `(check_id, ts)` (also serves the FK). Timestamps are naive UTC. |
+| Data   | Migration creates the two URL-kind `health_check` rows for every entry, copying `*_health_check_enabled`, `health_check_timeout`, `health_check_verify_tls` and the last status. |
+| Deprecated | `service_entry.internal_/external_health_check_enabled/_status/_update`, `health_check_timeout`, `health_check_verify_tls`: no longer read after v0.7.0; kept for rollback, dropped in a later release (FUTURE.md). |
 
 ---
 
@@ -908,7 +925,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §13 (Versioning, Branches, and Releases); this section
+release mechanics is §14 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -930,7 +947,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§13).
+  checks (§14).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -955,7 +972,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§14) is not engaged and every notifier
+consumer-leads ordering rule (§15) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1140,7 +1157,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§15).
+Resolves the Open Question on health-check timeouts (§16).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1234,7 +1251,261 @@ Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
 
 ---
 
-## 13. Versioning, Branches, and Releases
+## 13. v0.7.0 — Dashboard and Monitoring (Planned)
+
+> **Status:** planned. Scoped 2026-11-15. Each subsection is one handoff
+> prompt (named in brackets, in `prompts/`), run in the order listed.
+> Each chunk leaves the app working and the test suite green.
+
+A **minor** release with one theme: turn STD from a Docker inventory
+with URL pings into a **dashboard with simple monitoring**. That means
+three things:
+
+1. Non-Docker sites (router, NAS, SaaS, a printer) are a first-class
+   **manual** entry, not a fake container.
+2. Health checks become their own model, with a new **service check**
+   (HTTP/HTTPS status or body, TCP, ping) next to the internal and
+   external URL checks.
+3. **7 days of check history** with a Gatus-style 24-hour bar strip in
+   the detail view, plus a health **status filter** on every view.
+
+Because it is a minor, `/release-prep 0.7.0` runs the per-minor
+CHANGELOG archive step, which archives every closed series (0.1.x–0.6.x)
+into `docs/CHANGELOG-<minor>.x.md`. The 0.1.x–0.3.x blocks are
+`## [0.N.x] series — <date>` headers, not `## [0.N.PATCH]`. The
+release-prep run must treat each as the whole of its series and archive
+it as `docs/CHANGELOG-0.N.x.md`.
+
+**Cross-repo:** **no register-contract change.** The notifier keeps
+sending exactly what it sends today; `schemas.py` is untouched, so the
+ordering rule (§15) is not engaged. Every notifier version that works
+with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
+`external_health_check_enabled` keep their meaning: they enable or
+disable the entry's `internal_url` / `external_url` check rows. A
+notifier-defined service check (from container labels) would be a
+new register field. That is parked in FUTURE.md; if picked up, STD
+accepts the field and ships first.
+
+### 13.1 Concepts
+
+- **Entry**: one thing on the dashboard. Its **source** is `notifier`
+  (created and kept current by `/api/v1/register`) or `manual` (created
+  on the Add page).
+- **Check**: one configured probe on an entry. Three kinds:
+  - `internal_url` and `external_url` probe the entry's URL of that
+    name, so they always follow the current URL, including synthesizer
+    changes. Each entry has exactly one of each (possibly disabled).
+  - `service` checks have their own target and type. An entry can
+    have zero or more.
+- **Result**: one sample (`ok` true/false, latency, status code,
+  message). Every check produces a **health or failure**. The detail
+  is in the message.
+- **Health state** of an entry, rolled up from its enabled checks:
+
+  | State      | Meaning |
+  |------------|---------|
+  | `up`       | every enabled check's last result is ok |
+  | `degraded` | at least one ok and at least one failing |
+  | `down`     | every enabled check that has run is failing |
+  | `unknown`  | checks are enabled but none has run yet |
+  | `none`     | no enabled checks |
+
+  Docker state (`docker_status`, staleness) stays a separate signal and
+  is **not** a check (decision 2026-11-15; folding it in is parked in
+  FUTURE.md).
+
+### 13.2 Entry sources and manual entries [`v070-01-entry-sources`]
+
+- **Schema** (§5.6): `service_entry.source`, nullable `host`,
+  `description`.
+- **Backfill:** `last_api_update IS NULL` → `manual`, else `notifier`.
+- **Manual entries**:
+  - Fields: Name (stored in `container_name`, labelled "Name" in the
+    UI), optional Host, Description, Group, Icon, URLs, sort priority.
+  - No Docker fields: container id, stack, image, Docker status,
+    started-at and the "Reported by notifier" block are hidden on Edit.
+  - Never stale. Duplicate check on Add is (host, name), with an empty
+    host treated as its own value.
+- **Notifier entries**: behave as today. `is_static` is relabelled
+  **"Lock (ignore notifier updates)"**. It no longer means "manual",
+  and staleness is suppressed by `source == 'manual'` or the lock.
+- **The Add page creates manual entries only**; Docker entries come
+  from the notifier. Its wording changes from "application" or
+  container to "Name".
+- **Register adoption:** a register whose (host, container_name)
+  matches an unlocked **manual** entry adopts it: `source` becomes
+  `notifier` and the register updates it as usual. This preserves
+  today's "pre-stage an entry, then the notifier fills it in"
+  behaviour. A locked manual entry still returns `skipped`. A manual
+  entry with no host can never be matched.
+- **Backups** carry `source` and `description`. An older backup with no
+  `source` is backfilled by the same rule as the migration.
+- Dashboard and Tiled show a small source icon (Docker vs manual) where
+  the Docker pill sits today; manual entries show no Docker pill.
+
+### 13.3 Health-check schema and data migration [`v070-02-health-schema`]
+
+- **Tables** `health_check` and `health_result` (§5.6), with models
+  `HealthCheck` and `HealthResult`, and `ServiceEntry.checks`
+  (cascade delete).
+- **The migration** creates an `internal_url` and an `external_url`
+  check for every entry. It copies enabled, timeout and verify-TLS
+  from the entry columns, and seeds `last_*` from the legacy status
+  strings (a numeric code under 400 = ok; anything else = failing,
+  with the string as the message).
+- **New entries get both URL-kind rows:** the register create path, the
+  Add page and backup restore all create them.
+- **Register:** `internal_health_check_enabled` /
+  `external_health_check_enabled` set `enabled` on the matching row.
+  Absent means no change, as today.
+- **Add/Edit:** the existing toggles plus the timeout and verify-TLS
+  fields now read and write the check rows, so no visible change yet.
+- **Backups** export each entry's check *configuration* as a list (no
+  results). An older backup without `checks` is mapped from the legacy
+  columns.
+- **Legacy columns are deprecated:** no new code reads them. Until
+  §13.5 swaps the templates, the checker (§13.4) mirrors URL-kind
+  results into the legacy `*_status` / `*_update` columns so the
+  current badges keep working.
+
+### 13.4 Checker engine and history retention [`v070-03-checker-engine`]
+
+- **Replaces `health_check_loop`.**
+  - A scheduler thread wakes every 5 s, finds due checks (enabled, entry
+    active, URL-kind with a URL present, `last_checked_at + interval <=
+    now`) and submits them to a `ThreadPoolExecutor`.
+  - Pool size: new setting `health_check_workers`, default 8.
+  - Workers do network I/O only and return a result. The scheduler
+    thread does every DB write (SQLite single-writer; no session use in
+    worker threads). An in-flight set prevents double submission.
+- **Intervals**: per-check `interval_seconds` (minimum 30) or the
+  existing global `url_healthcheck_interval`. The timeout is per-check
+  or the global `health_check_timeout`.
+- **Check types**:
+  - `http`: covers HTTP and HTTPS, chosen by the URL scheme. A GET that
+    follows redirects, with verify-TLS per check. Two modes:
+    - **`status`** (default): an HTTP status below 400 = ok. The
+      message is the status code, or the exception class and text.
+    - **`body`**: reads at most 4 KB of the response.
+      - Body (trimmed) equals `OK` (case-insensitive) → ok.
+      - Body starts with `Error:` → failing, message = the text after
+        the prefix (trimmed, up to 200 chars).
+      - Anything else → failing, `Unexpected response: <first 60
+        chars>`.
+      - Status 400 or above → failing, using the `Error:` text if
+        present, else the status.
+  - `tcp`: target `host:port`. A connect within the timeout = ok, and
+    latency is the connect time.
+  - `ping`: ICMP echo via `icmplib` (new pinned dependency), 3 packets,
+    ok if any reply. The image runs as root and Docker's default
+    capability set includes `NET_RAW`. If a privileged socket fails, it
+    retries unprivileged; if both fail, the result is failing with
+    `ICMP not permitted`.
+- **Results**: each run writes one `health_result` row and updates the
+  check's cached `last_*` fields and `consecutive_failures`.
+- **History retention** (new settings):
+  - `health_raw_hours` (default 24): every sample is kept raw for this
+    long.
+  - `health_history_days` (default 7): total history.
+  - An hourly compaction job (at :05) handles raw rows older than
+    `health_raw_hours`:
+    - **Failures are kept as individual rows** until
+      `health_history_days`.
+    - **Successes** are merged into one range row per (check, clock
+      hour, unbroken run of successes): `ts` = first sample, `ts_end` =
+      last, `samples` = count, average and maximum latency. A failure
+      inside an hour splits the range.
+  - Rows older than `health_history_days` are deleted. Bound per check:
+    about 24h of raw samples plus at most 2 rows per hour for the rest
+    of the week, plus failures.
+  - **Uptime %** = Σ `samples` where ok ÷ Σ `samples`, over 24 h or 7 d.
+- **Check now**: `POST /service/<id>/checks/run` (login and CSRF)
+  queues all of that entry's enabled checks for the next scheduler tick.
+
+### 13.5 Check configuration UI [`v070-04-check-config-ui`]
+
+- **Edit page "Health checks" section** replaces the two toggles and the
+  v0.6.9 "Advanced health check" block:
+  - **Internal URL check / External URL check**: enabled, mode (status
+    or body), interval, timeout and verify TLS. The target is shown
+    read-only as the current URL.
+  - **Service checks**: a list with add and remove. Each has a name,
+    type (HTTP/HTTPS, TCP, Ping), target, mode (HTTP only), interval,
+    timeout, verify TLS (HTTP only) and enabled.
+- **Validation**:
+  - HTTP target must be an `http(s)://` URL.
+  - TCP target must be `host:port` with a port from 1 to 65535.
+  - Ping target must be a hostname or IP.
+  - Interval must be 30–86400 s; timeout 1–60 s.
+- **Add page**: the same section. A manual site usually gets one service
+  check.
+- **Flash messages on Add and Edit:** validation errors are shown inline
+  on these pages; today they only appear later on Settings (closes the
+  v0.6.9 QoL item).
+- Notifier entries can carry service checks too. They are operator
+  data; register never touches `service` rows.
+
+### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`]
+
+- **`health.py` is unchanged** (liveness). The rollup lives in a new
+  `health_state.py`:
+  - `entry_health(entry)` returns the state (§13.1), the counts, and the
+    worst message.
+  - Loaded with one query per page (checks joined, no N+1).
+- **One badge partial** (`partials/health_badge.html`) used by Dashboard,
+  Tiled and Compact:
+  - Shows a single coloured state dot or pill (up / degraded / down /
+    unknown / none), with the failing check names and messages in the
+    tooltip.
+  - Replaces every template-side parse of the legacy status strings
+    (`.isdigit()`, `'Error: SSLError'`).
+  - The legacy-column mirror from §13.3 is removed.
+- **Filter bar** (all three views; query params handled in
+  `view_helpers.py` next to `show_urlless`, kept across refresh):
+  - `status` = `all` (default) / `failing` (degraded or down) /
+    `healthy` (up) / `unknown` (unknown or none) / `stale` (notifier
+    entries that are stale).
+  - `source` = `all` / `notifier` / `manual`.
+- "Total Services" shows the filtered count over the total.
+
+### 13.7 Health detail and 24h history [`v070-06-health-detail`]
+
+- **Endpoint** `GET /service/<id>/health?range=24h|7d` (login required,
+  JSON). For each check it returns the config summary, the current
+  state, uptime % for 24 h and 7 d, the most recent failures (up to 20)
+  and a bar series:
+  - `24h`: 48 half-hour bars.
+  - `7d`: 168 hourly bars, each with `ok_samples`, `fail_samples` and
+    up to 3 failure messages. A range row that spans bars is split by
+    time-proportional sample count.
+  - A bar is green when all its samples are ok, red when any failed,
+    and grey when there were no samples.
+- **Detail panel** (`partials/health_detail.html` plus
+  `static/js/health_detail.js`), fetched lazily when opened:
+  - One block per check: name/kind, type and target, state, last
+    checked, latency, last message, and uptime for 24 h / 7 d.
+  - A Gatus-style bar strip with a hover tooltip (time range, ok/fail
+    counts, messages), a 24h / 7d toggle, and a list of recent
+    failures.
+  - A **Check now** button (uses `stdPost`).
+- **Where it appears:**
+  - **Tiled**: inside the existing tile drawer.
+  - **Dashboard**: a new expand row under each entry.
+  - **Edit page**: above "Reported by notifier".
+  - **Compact** has no drawer; its badge links to the Edit page's
+    health section.
+- Rendering uses plain divs and CSS (no chart library).
+
+### 13.8 Out of scope for v0.7.0
+
+Parked in FUTURE.md: alerting/notifications on failure;
+notifier-defined service checks (register field); Docker state as a
+check; DNS and keyword-match check types; uptime beyond 7 days and a
+public status page; dropping the deprecated health columns.
+
+---
+
+## 14. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -1273,12 +1544,12 @@ Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
 
 ---
 
-## 14. Cross-Repo Coordination
+## 15. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 14.1 Contract ownership
+### 15.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -1291,7 +1562,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 14.2 Release history
+### 15.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -1316,7 +1587,7 @@ not lead.
 
 ---
 
-## 15. Open Questions
+## 16. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)
