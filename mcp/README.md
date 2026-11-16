@@ -1,5 +1,11 @@
 # STD MCP server
 
+> **Not fully tested yet.** This MCP server and the management API it wraps are
+> new in v0.8.0. They pass the automated test suite but have not been fully tested
+> against real instances. Start with a **read** key, check the audit log in
+> Settings → API after any writes, and keep a recent backup before letting an
+> agent make changes.
+
 A small [MCP](https://modelcontextprotocol.io) server that lets Claude Code (or
 any MCP client) manage a Service Tracker Dashboard through its management API:
 ask what is failing, add a manual entry with checks, edit groups, attach

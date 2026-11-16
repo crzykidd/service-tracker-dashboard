@@ -498,6 +498,12 @@ state. Combine with the `?show_urlless=false` view-control filter
 
 ## Management API
 
+> **Not fully tested yet.** The management API and the MCP server are new in
+> v0.8.0. They pass the automated test suite but have not been fully tested
+> against real instances. Start with a **read** key, check the audit log in
+> Settings → API after any writes, and keep a recent backup before letting an
+> agent make changes.
+
 Everything you can do in the web UI can also be done over JSON, so a script or
 an agent such as Claude can maintain an instance: read every entry and its
 health, add manual sites and web checks, edit fields, move entries between
@@ -629,6 +635,12 @@ curl -s -X PUT "${H[@]}" "$STD/api/v1/entries/1/widget" -d '{
   (default 90).
 
 ## Managing STD with Claude
+
+> **Not fully tested yet.** The management API and the MCP server are new in
+> v0.8.0. They pass the automated test suite but have not been fully tested
+> against real instances. Start with a **read** key, check the audit log in
+> Settings → API after any writes, and keep a recent backup before letting an
+> agent make changes.
 
 You can let Claude (or any agent that can make HTTP calls) look after your
 dashboard: ask it what is broken, add a new service, or tidy the groups.
