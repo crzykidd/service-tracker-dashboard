@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.6.9-blue)
+![Version](https://img.shields.io/badge/version-0.7.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -42,6 +42,35 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.7.0 (2026-11-15)
+
+Dashboard and monitoring. STD is now a dashboard for Docker containers **and**
+anything else you run, with simple Gatus-style health monitoring. No notifier
+upgrade is needed. Four database migrations run on startup; back up
+`/config/services.db` first.
+
+- **Manual entries are first-class.** Non-Docker sites (router, NAS, SaaS)
+  are added on the Add page with a Name, optional Host and a Description,
+  shown as "Manual" and never flagged stale. A container that later registers
+  with the same host and name adopts the entry. "Locked" is now just "Lock
+  (ignore notifier updates)".
+- **Health checks.** Each entry has an Internal URL check, an External URL
+  check, an automatic **Container** check (Docker entries: passes while the
+  notifier reports it running) and any number of service checks: HTTP/HTTPS
+  (status code, or body mode where `OK` passes and `Error: <message>` fails
+  with that message), TCP (`host:port`) and Ping. Each has its own interval
+  and timeout, set in one "Health checks" section on Add and Edit.
+- **Concurrent checker with a week of history.** Checks run in parallel
+  (`health_check_workers`, default 8). Every sample is kept for 24 hours, then
+  successes are merged hourly while failures are kept; history is kept for 7
+  days (`health_raw_hours`, `health_history_days`).
+- **One health badge per service** (Up, Degraded, Down, Unknown, Not
+  monitored) on every view, and **Status / Source filters** in the filter bar.
+- **Health detail panel** in the Tiled drawer, a Dashboard expand row and the
+  Edit page: per-check state, uptime for 24h and 7d, recent failures, a
+  24h / 7d bar strip with tooltips, and **Check now**.
+- **Add and Edit show their messages** inline.
 
 ### v0.6.9 (2026-11-15)
 

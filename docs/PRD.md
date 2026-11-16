@@ -45,6 +45,7 @@
 | 0.35    | 2026-11-15 | §13.6 delivered (unreleased): `health_state.py` rollup (up/degraded/down/unknown/none), shared `health_badge.html` on Dashboard (new Health column), Tiled and Compact, `status` / `source` filters beside `show_urlless` with filtered/total count, `checks` eager-loaded per page, legacy status mirror and `checker.legacy_status` removed (backups derive the legacy keys from the rows). No schema change. Register wire contract unchanged. |
 | 0.36    | 2026-11-15 | §13.7 delivered (unreleased), completing §13: `health_history.py`, `GET /service/<id>/health`, `partials/health_detail.html` + `static/js/health_detail.js`, panel in the Tiled drawer, a Dashboard expand row and the Edit page ("Health history"). §13 retitled Delivered (unreleased); §5.6 retitled. No schema change. Register wire contract unchanged. |
 | 0.37    | 2026-11-15 | §13.8 added, delivered (unreleased): Container check, Docker state as an automatic health check on every notifier entry (migration `c1d7a3e5f2b8`, kind `container`, evaluated by the scheduler). §13.1 state note and §5.6 `kind` list updated; former §13.8 (out of scope) is now §13.9 and no longer lists Docker state. Register contract unchanged. |
+| 0.38    | 2026-11-15 | v0.7.0 released. §13 retitled Delivered: entry sources (notifier vs manual), health checks as their own tables with URL, service (HTTP/HTTPS status or body, TCP, ping) and automatic Container checks, concurrent checker with 24h raw + hourly-compacted 7-day history, health rollup badge and Status/Source filters, health detail panel with 24h/7d history. Schema in §5.6. Register wire contract unchanged; no notifier change needed. |
 
 ---
 
@@ -62,7 +63,7 @@
 10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
 11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
-13. [v0.7.0 — Dashboard and Monitoring (Delivered, unreleased)](#13-v070--dashboard-and-monitoring-delivered-unreleased)
+13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [Versioning, Branches, and Releases](#14-versioning-branches-and-releases)
 15. [Cross-Repo Coordination](#15-cross-repo-coordination)
 16. [Open Questions](#16-open-questions)
@@ -346,7 +347,7 @@ exposure data arrives.
 Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
 options at their defaults.
 
-### 5.6 v0.7.0 schema changes (delivered, unreleased)
+### 5.6 v0.7.0 schema changes
 
 Shipped in v0.7.0 (§13); v070-06 added no schema. One Alembic migration per chunk; each FK gets
 its index in the same migration.
@@ -1264,10 +1265,9 @@ Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
 
 ---
 
-## 13. v0.7.0 — Dashboard and Monitoring (Delivered, unreleased)
+## 13. v0.7.0 — Dashboard and Monitoring (Delivered)
 
-> **Status:** all chunks delivered (unreleased) on `dev`; awaiting
-> `/release-prep 0.7.0`. Scoped 2026-11-15. Each subsection is one handoff
+> **Status:** shipped in v0.7.0 (2026-11-15). Scoped 2026-11-15. Each subsection is one handoff
 > prompt (named in brackets, in `prompts/`), run in the order listed.
 > Each chunk left the app working and the test suite green.
 
@@ -1327,7 +1327,7 @@ accepts the field and ships first.
   Docker state counts: every notifier entry has an automatic **Container**
   check (§13.8). The Docker pill and stale icon on the views stay as well.
 
-### 13.2 Entry sources and manual entries [`v070-01-entry-sources`] — Delivered (unreleased)
+### 13.2 Entry sources and manual entries [`v070-01-entry-sources`] — Delivered in v0.7.0
 
 **As built:** migration `a7c3e9f15d28` adds `service_entry.source` (backfilled
 by the rule below), `description`, and makes `host` nullable.
@@ -1373,7 +1373,7 @@ record without a host is skipped unless it is manual.
 - Dashboard and Tiled show a small source icon (Docker vs manual) where
   the Docker pill sits today; manual entries show no Docker pill.
 
-### 13.3 Health-check schema and data migration [`v070-02-health-schema`] — Delivered (unreleased)
+### 13.3 Health-check schema and data migration [`v070-02-health-schema`] — Delivered in v0.7.0
 
 **As built:** migration `b8e4d6a2c1f9` creates `health_check` and
 `health_result` (indexes `ix_health_check_service_entry_id` and
@@ -1425,7 +1425,7 @@ both URL rows. The migration test and the interim loop are in
   results into the legacy `*_status` / `*_update` columns so the
   old badges kept working; §13.6 removed that mirror.
 
-### 13.4 Checker engine and history retention [`v070-03-checker-engine`] — Delivered (unreleased)
+### 13.4 Checker engine and history retention [`v070-03-checker-engine`] — Delivered in v0.7.0
 
 - **Replaces `health_check_loop`.**
   - A scheduler thread wakes every 5 s, finds due checks (enabled, entry
@@ -1498,7 +1498,7 @@ hour), a lone sample becomes a range of one (`ts_end = ts`), and purge
 treats a range as old once its `ts_end` is. `icmplib==3.0.4` is pinned. No
 schema change.
 
-### 13.5 Check configuration UI [`v070-04-check-config-ui`] — Delivered (unreleased)
+### 13.5 Check configuration UI [`v070-04-check-config-ui`] — Delivered in v0.7.0
 
 - **Edit page "Health checks" section** replaces the two toggles and the
   v0.6.9 "Advanced health check" block:
@@ -1535,7 +1535,7 @@ schema change.
   `last_checked_at`. `partials/flash_messages.html` is shared by Settings,
   Add and Edit. The old single timeout / verify-TLS fields are gone.
 
-### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`] — Delivered (unreleased)
+### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`] — Delivered in v0.7.0
 
 - **`health.py` is unchanged** (liveness). The rollup lives in a new
   `health_state.py`:
@@ -1580,7 +1580,7 @@ mirror and `checker.legacy_status` are gone: nothing reads the deprecated
 backups still emit those keys, derived from the check rows. New filter
 `time_since_utc` renders the naive-UTC check timestamps.
 
-### 13.7 Health detail and 24h history [`v070-06-health-detail`] — Delivered (unreleased)
+### 13.7 Health detail and 24h history [`v070-06-health-detail`] — Delivered in v0.7.0
 
 - **Endpoint** `GET /service/<id>/health?range=24h|7d` (login required,
   JSON). For each check it returns the config summary, the current
@@ -1629,7 +1629,7 @@ Dashboard gets a leading chevron column and an expand row (group-header
 The Edit page panel is a "Health history" block after the form, above
 "Reported by notifier".
 
-### 13.8 Container check [`v070-07-container-check`] — Delivered (unreleased)
+### 13.8 Container check [`v070-07-container-check`] — Delivered in v0.7.0
 
 Every notifier entry carries an automatic **Container** check, so the
 notifier's report that a container is running counts as health. This
