@@ -152,6 +152,16 @@
       </div>
     </form>
 
+    {# ── Health history (PRD 13.7) ─────────────────────────── #}
+    <hr class="my-10 border-dashboard-accent">
+    <div id="health-history" class="bg-dashboard-info-box rounded-lg p-6">
+      <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Health history</h2>
+      <p class="text-xs text-dashboard-secondary mb-4">
+        State, uptime and recent failures of this service's enabled checks.
+      </p>
+      {% with autoload=true %}{% include "partials/health_detail.html" %}{% endwith %}
+    </div>
+
     {% if not entry.is_manual %}
     <hr class="my-10 border-dashboard-accent">
 

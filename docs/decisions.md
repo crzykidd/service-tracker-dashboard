@@ -5,6 +5,47 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-06 health detail panel: implementation calls
+
+- **Only enabled checks with a target appear in the panel** (the same
+  "can run" rule as the rollup). Disabled checks keep their stored history
+  but are not shown; re-enabling brings the bars back.
+- **Buckets are clock-aligned,** the last bar being the current partial
+  half-hour (24h) or hour (7d), so a bar's edges do not move between
+  fetches. Window = 48 x 30 min / 168 x 1 h ending at the next boundary.
+- **Range rows are clipped to the window after splitting:** the sample count
+  is divided across every bucket the range overlaps (largest remainder), then
+  buckets outside the window are dropped, so a range straddling the edge
+  contributes only its inside share. Uptime reuses the same code with one
+  bucket, so 24h/7d uptime is a sample-weighted figure that agrees with the
+  bars.
+- **Unknown `range` falls back to `24h`** (like the other query params)
+  rather than 400.
+- **Uptime is `null` with no samples** (shown "n/a"), not 0 or 100.
+- **Edit-page panel sits outside the `<form>`** as its own "Health history"
+  block (anchor `#health-history`); the existing `#health` anchor still
+  points at the checks form, which Compact links to. It loads on page load.
+  Tiled loads when the drawer opens; Dashboard when the row expands.
+- **Open Dashboard expand row pauses auto-refresh** (as an open drawer
+  does), otherwise the 30 s reload would collapse it. The expand row follows
+  its entry on text filter and group collapse.
+- **Dashboard row panel is `position: sticky; left: 0`** with a capped width
+  so it stays in view when the table scrolls sideways on a phone.
+- **Server text is rendered with `textContent`** (failure messages come from
+  remote hosts); no innerHTML.
+- **Dark theme only.** The app has no light theme, so bar colours use the
+  existing status tokens. At 390 px the 7d strip drops its 1 px gap (168 bars
+  in ~330 px aliased to grey).
+- **CHANGELOG [Unreleased] was reconciled across chunks 01-06:** three
+  earlier lines described interim states ("nothing new is shown yet", "a
+  button for it comes later", "screens to configure them follow") and were
+  rewritten to describe 0.7.0 as shipped.
+- **PRD §3.1 module layout still omits `checker.py`, `health_state.py` and
+  `health_history.py`** (earlier chunks did not add them either); left for a
+  docs refresh. CLAUDE.md's layout lists all three.
+
+---
+
 ## 2026-11-15 — v070-05 rollup and filters: implementation calls
 
 - **Only checks that can run count in the rollup.** An enabled URL check

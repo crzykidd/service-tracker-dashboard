@@ -908,3 +908,82 @@
 .health-dot.health-down     { background-color: var(--color-status-bad); }
 .health-dot.health-unknown  { background-color: var(--color-status-muted); }
 .health-dot.health-none     { border: 1px solid var(--color-status-muted); }
+
+/* ── Health detail panel (PRD 13.7) ───────────────────── */
+.health-detail { font-size: 0.8rem; color: var(--color-text-secondary); }
+.health-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.health-range-toggle { display: inline-flex; border: 1px solid var(--color-border-input); border-radius: 6px; overflow: hidden; }
+.health-range-btn {
+  padding: 2px 10px; font-size: 0.75rem; background: none; color: var(--color-text-muted); cursor: pointer; border: 0;
+}
+.health-range-btn + .health-range-btn { border-left: 1px solid var(--color-border-input); }
+.health-range-btn.active { background: var(--color-accent); color: #fff; }
+.health-checknow-btn {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; font-size: 0.75rem;
+  border: 1px solid var(--color-border-input); border-radius: 6px; background: none;
+  color: var(--color-text-secondary); cursor: pointer;
+}
+.health-checknow-btn:hover:not(:disabled) { border-color: var(--color-border-focus); color: #fff; }
+.health-checknow-btn:disabled { opacity: 0.6; cursor: default; }
+.health-detail-note { color: var(--color-text-muted); font-style: italic; }
+.health-detail-error { color: var(--color-status-bad); font-style: normal; }
+
+.health-check { padding: 8px 0; border-top: 1px solid var(--color-border); }
+.health-check:first-child { border-top: 0; }
+.health-check-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.health-check-name { font-weight: 600; color: var(--color-text-primary); }
+.health-check-type {
+  padding: 0 6px; border-radius: var(--radius-badge); background: var(--color-bg-raised);
+  color: var(--color-text-muted); font-size: 0.7rem;
+}
+.health-check-state { margin-left: auto; font-weight: 600; }
+.health-text-up { color: var(--color-status-ok); }
+.health-text-down { color: var(--color-status-bad); }
+.health-text-unknown { color: var(--color-status-muted); }
+.health-dotmark { width: 8px; height: 8px; border-radius: 50%; background: var(--color-status-muted); flex: none; }
+.health-dotmark.health-up { background: var(--color-status-ok); }
+.health-dotmark.health-down { background: var(--color-status-bad); }
+.health-check-target { font-family: ui-monospace, monospace; font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; }
+.health-check-meta { color: var(--color-text-muted); margin-top: 2px; }
+.health-check-msg { color: var(--color-status-bad); margin-top: 2px; word-break: break-word; }
+
+.health-bars { display: flex; gap: 2px; height: 28px; margin-top: 8px; }
+.hbar { flex: 1 1 0; min-width: 0; border-radius: 2px; cursor: pointer; }
+.health-bars-7d { gap: 1px; }
+.hbar-ok { background: var(--color-status-ok); }
+.hbar-fail { background: var(--color-status-bad); }
+.hbar-none { background: var(--color-bg-raised); }
+.hbar:hover { filter: brightness(1.25); outline: 1px solid var(--color-text-secondary); }
+.health-axis { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--color-text-muted); margin-top: 2px; }
+
+.health-failures { margin-top: 6px; }
+.health-failures summary { cursor: pointer; color: var(--color-text-muted); }
+.health-failures ul { margin: 4px 0 0 0; padding: 0; list-style: none; max-height: 160px; overflow-y: auto; }
+.health-failures li { padding: 1px 0; word-break: break-word; }
+.health-fail-time { color: var(--color-text-muted); }
+
+.health-tooltip {
+  position: absolute; z-index: 1000; max-width: 280px; padding: 6px 8px; border-radius: 6px;
+  background: var(--color-bg-base); border: 1px solid var(--color-border-input);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 0.75rem; color: var(--color-text-secondary);
+  pointer-events: none;
+}
+.health-tooltip-time { font-weight: 600; color: var(--color-text-primary); }
+.health-tooltip-msg { color: var(--color-status-bad); word-break: break-word; }
+
+.health-expand-btn { background: none; border: 0; color: var(--color-text-muted); cursor: pointer; padding: 2px; line-height: 1; }
+.health-expand-btn:hover { color: var(--color-text-primary); }
+.health-expand-btn i { transition: transform 0.15s ease; display: inline-block; }
+.health-expand-btn.open i { transform: rotate(90deg); }
+.health-expand-row { background: var(--color-bg-surface); }
+.health-expand-row .health-detail { max-width: 720px; }
+.drawer-row-health { grid-template-columns: 1fr; }
+.drawer-row-health .drawer-label { display: none; }
+.tile-drawer.drawer-mode-widget .drawer-row-health { display: none; }
+@media (max-width: 640px) {
+  /* 168 bars in ~330 px: gaps would alias to grey, so drop them. */
+  .health-bars-7d { gap: 0; }
+  .health-bars-7d .hbar { border-radius: 0; }
+}
+/* The Dashboard table scrolls sideways on narrow screens; keep the panel in view. */
+.health-expand-inner { position: sticky; left: 0; width: min(720px, calc(100vw - 64px)); }

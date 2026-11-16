@@ -209,7 +209,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 ## Build Status
 
 Current shipped release: **v0.6.9** (latest tag on `main`).
-In flight: v0.7.0 Dashboard and Monitoring (PRD §13; prompts `prompts/v070-*`).
+In flight: v0.7.0 Dashboard and Monitoring (PRD §13) fully built on `dev`; awaiting `/release-prep 0.7.0`.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -364,6 +364,7 @@ jobs.py             ← concurrent health scheduler, widget refresh, backup, ret
 checker.py          ← health-check probes (http/tcp/ping); pure network, no DB
 health.py           ← /healthz (liveness; /readyz not implemented)
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) for the badges + status filter
+health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance

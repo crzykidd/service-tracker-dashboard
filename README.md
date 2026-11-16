@@ -487,9 +487,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   an `Error: ...` reply shows the text as the failure message), TCP connect
   to `host:port`, and ping (ICMP echo, 3 packets). Ping needs the `NET_RAW`
   capability, which Docker grants by default; without it the check fails with
-  "ICMP not permitted". Configuring service checks, intervals and modes in
-  the UI arrives in a following v0.7.0 step; today the scheduler runs the
-  internal and external URL checks.
+  "ICMP not permitted".
 - Every run is stored. Samples are kept individually for `health_raw_hours`
   (24 h), then successes are merged into hourly ranges, and everything older
   than `health_history_days` (7) is deleted.
@@ -515,7 +513,26 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   The notifier never touches them. Removing one deletes it and its results
   when you save.
 - A failed check logs and moves on; it does not crash the loop.
-- UI shows color-coded status (green / yellow / red) with last-checked time.
+
+### Health checks and monitoring
+
+- **Kinds.** Each entry has an *Internal URL* and an *External URL* check
+  (they follow the entry's URLs) plus any *service checks* you add. Types:
+  HTTP/HTTPS, TCP and Ping.
+- **Body mode.** An HTTP check in *response body* mode passes when the reply
+  is `OK`; a reply of `Error: <message>` fails and shows `<message>`.
+- **Retention.** `health_raw_hours` (24) keeps every sample; older successes
+  are merged into one row per hour and run, failures are kept as they
+  happened; `health_history_days` (7) bounds everything.
+- **Badge and filters.** One rolled-up badge per entry on every view, and
+  Status / Source filters beside "Group by" (see above).
+- **Detail view.** Open the Tiled drawer, the Dashboard row chevron or the
+  Edit page's "Health history" section to see each check's state, uptime
+  (24 h and 7 d), recent failures and a bar strip: green is all passes, red
+  is any failure, grey is no data. Hover or tap a bar for its time range and
+  failure messages. The **24h / 7d** toggle switches between 48 half-hour and
+  168 hourly bars, and **Check now** runs the entry's checks within a few
+  seconds. Compact has no panel; its dot links to the Edit page.
 
 ---
 
@@ -528,6 +545,8 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/compact_dash`      | High-density compact view.               |
 | `/add`               | Add a manual (non-Docker) entry.         |
 | `/edit/<id>`         | Edit or delete (soft-delete) an existing entry. |
+| `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
+| `/service/<id>/checks/run` | Check now (POST, login). |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |

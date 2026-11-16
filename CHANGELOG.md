@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Health detail panel with a 24-hour history strip.** Each service has a
+  detail view of its enabled checks: current state, target, last checked,
+  response time, last message, uptime for 24 hours and 7 days, and the 20
+  most recent failures. A Gatus-style strip of bars shows the history, green
+  when every check in that slot passed, red when any failed and grey with no
+  data; hover or tap a bar for the time range, pass/fail counts and failure
+  messages. A 24h / 7d toggle switches between 48 half-hour bars and 168
+  hourly bars, and **Check now** runs the service's checks immediately. It
+  opens in the Tiled drawer, in a new expand row on the Dashboard (chevron
+  at the start of each row) and on the Edit page under "Health history".
+  Compact keeps its badge link to the Edit page.
 - **One health badge per service on every view.** Each service shows a single
   rolled-up state from its enabled checks: Up (all passing), Degraded (some
   failing), Down (all failing), Unknown (enabled, not run yet) or Not
@@ -39,11 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error shows every problem at once and keeps everything you typed. The
   notifier never changes these checks.
 
-- **Health-check results are now stored.** Each URL check records its
+- **Health-check results are now stored.** Every check run records its
   status, response time and message in a new history table, and each check
   keeps its latest state (ok or failing, status code, response time,
-  consecutive failures). Nothing new is shown yet; the current badges look
-  and behave as before.
+  consecutive failures). The badges, filters and detail panel read from it.
 - **Backups carry each entry's health-check configuration** (enabled,
   timeout, verify-TLS and so on, no results). Restoring an older backup
   still works: its health-check settings are applied to the entry's two URL
@@ -52,16 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Faster, concurrent health checks.** A scheduler now checks every 5
   seconds for due checks and runs them in parallel (`health_check_workers`,
   default 8), so one slow service no longer holds up the rest. A new check
-  runs at the next tick instead of after a full interval. The engine also
-  supports HTTP body checks, TCP connects and ping (the screens to configure
-  them follow).
+  runs at the next tick instead of after a full interval. Checks can be
+  HTTP status, HTTP body (`OK` passes, `Error: <message>` fails with that
+  message), TCP connect or ping.
 - **Health history is kept for a week.** Every check sample is stored for 24
   hours (`health_raw_hours`), then successes are merged into one row per
   hour and run while failures are kept as they happened;
   everything older than `health_history_days` (7) is deleted. Hourly
   background jobs do the compaction and cleanup.
-- **Check now endpoint** (`POST /service/<id>/checks/run`) schedules an
-  entry's enabled checks for the next tick; a button for it comes later.
+- **Check now** button in the health detail panel (backed by
+  `POST /service/<id>/checks/run`) runs an entry's enabled checks at the next
+  scheduler tick, a few seconds later.
 - **Ping needs `NET_RAW`.** Ping checks use the container's raw-socket
   permission, which Docker grants by default. Without it a ping check fails
   with "ICMP not permitted".

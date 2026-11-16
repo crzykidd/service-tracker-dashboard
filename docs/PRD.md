@@ -43,6 +43,7 @@
 | 0.33    | 2026-11-15 | §13.4 delivered (unreleased): concurrent checker (`checker.py` probes for HTTP status/body, TCP and ping via pinned `icmplib`; `jobs.HealthScheduler`), settings `health_check_workers` / `health_raw_hours` / `health_history_days`, hourly compaction and purge jobs for `health_result`, `POST /service/<id>/checks/run`. No schema change. Register wire contract unchanged. |
 | 0.34    | 2026-11-15 | §13.5 delivered (unreleased): "Health checks" section on Add and Edit (per-URL-check enabled/mode/interval/timeout/verify, repeatable service checks of type HTTP, TCP, Ping), server-side validation with input kept, flash messages on Add/Edit. No schema change. Register wire contract unchanged. |
 | 0.35    | 2026-11-15 | §13.6 delivered (unreleased): `health_state.py` rollup (up/degraded/down/unknown/none), shared `health_badge.html` on Dashboard (new Health column), Tiled and Compact, `status` / `source` filters beside `show_urlless` with filtered/total count, `checks` eager-loaded per page, legacy status mirror and `checker.legacy_status` removed (backups derive the legacy keys from the rows). No schema change. Register wire contract unchanged. |
+| 0.36    | 2026-11-15 | §13.7 delivered (unreleased), completing §13: `health_history.py`, `GET /service/<id>/health`, `partials/health_detail.html` + `static/js/health_detail.js`, panel in the Tiled drawer, a Dashboard expand row and the Edit page ("Health history"). §13 retitled Delivered (unreleased); §5.6 retitled. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -60,7 +61,7 @@
 10. [v0.6.3–v0.6.6 — UI Overhaul Part 2 (Delivered)](#10-v063v066--ui-overhaul-part-2-delivered)
 11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
-13. [v0.7.0 — Dashboard and Monitoring (Planned)](#13-v070--dashboard-and-monitoring-planned)
+13. [v0.7.0 — Dashboard and Monitoring (Delivered, unreleased)](#13-v070--dashboard-and-monitoring-delivered-unreleased)
 14. [Versioning, Branches, and Releases](#14-versioning-branches-and-releases)
 15. [Cross-Repo Coordination](#15-cross-repo-coordination)
 16. [Open Questions](#16-open-questions)
@@ -174,9 +175,14 @@ routes_api.py       ← /api/v1/register
 routes_widgets.py   ← /widget_config/<widget_name>
 routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
                       Flask-Login user_loader
-jobs.py             ← URL health-check loop, widget refresh loop,
-                      daily backup, widget_value retention prune,
+jobs.py             ← concurrent health-check scheduler, health-result
+                      compaction/purge, widget refresh loop, daily
+                      backup, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
+checker.py          ← health-check probes (http/tcp/ping); network only, no DB
+check_form.py       ← Add/Edit health-check form parsing + validation
+health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none)
+health_history.py   ← history bars, uptime, recent failures for the detail panel
 health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
@@ -339,9 +345,9 @@ exposure data arrives.
 Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
 options at their defaults.
 
-### 5.6 v0.7.0 schema changes (planned; `source`, nullable `host`, `description`, `health_check` and `health_result` delivered, unreleased)
+### 5.6 v0.7.0 schema changes (delivered, unreleased)
 
-Planned for v0.7.0 (§13). One Alembic migration per chunk; each FK gets
+Shipped in v0.7.0 (§13); v070-06 added no schema. One Alembic migration per chunk; each FK gets
 its index in the same migration.
 
 | Change | Detail |
@@ -1256,11 +1262,12 @@ Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
 
 ---
 
-## 13. v0.7.0 — Dashboard and Monitoring (Planned)
+## 13. v0.7.0 — Dashboard and Monitoring (Delivered, unreleased)
 
-> **Status:** planned. Scoped 2026-11-15. Each subsection is one handoff
+> **Status:** all chunks delivered (unreleased) on `dev`; awaiting
+> `/release-prep 0.7.0`. Scoped 2026-11-15. Each subsection is one handoff
 > prompt (named in brackets, in `prompts/`), run in the order listed.
-> Each chunk leaves the app working and the test suite green.
+> Each chunk left the app working and the test suite green.
 
 A **minor** release with one theme: turn STD from a Docker inventory
 with URL pings into a **dashboard with simple monitoring**. That means
@@ -1569,7 +1576,7 @@ mirror and `checker.legacy_status` are gone: nothing reads the deprecated
 backups still emit those keys, derived from the check rows. New filter
 `time_since_utc` renders the naive-UTC check timestamps.
 
-### 13.7 Health detail and 24h history [`v070-06-health-detail`]
+### 13.7 Health detail and 24h history [`v070-06-health-detail`] — Delivered (unreleased)
 
 - **Endpoint** `GET /service/<id>/health?range=24h|7d` (login required,
   JSON). For each check it returns the config summary, the current
@@ -1596,6 +1603,27 @@ backups still emit those keys, derived from the check rows. New filter
   - **Compact** has no drawer; its badge links to the Edit page's
     health section.
 - Rendering uses plain divs and CSS (no chart library).
+
+**As built:** `health_history.py` holds the pure functions: `bars(check,
+range, now)`, `uptime(check, hours, now)`, `recent_failures(check, limit=20)`
+and the payload builders. Buckets are aligned to the clock (half-hour or
+hour boundaries, the last bar is the current partial one). A range row is
+split across the buckets it overlaps by time-proportional sample count
+(largest-remainder rounding, total preserved; portions outside the window
+are dropped); a range of one or a raw row lands in a single bucket. Up to 3
+distinct failure messages per bar. `GET /service/<id>/health?range=` (login,
+404 for missing or soft-deleted; an unknown `range` falls back to `24h`)
+returns every *enabled check with a target*: config summary, state
+(`up`/`down`/`unknown`), last checked (ISO, `Z`), latency, message, 24 h and
+7 d uptime (null with no samples), `failures`, `bars`. The shell is
+`partials/health_detail.html`; `static/js/health_detail.js` fetches lazily
+(Tiled drawer open, Dashboard row expand; autoloaded on Edit), re-fetches
+on the 24h/7d toggle, renders with DOM calls (no innerHTML of server text),
+and drives the tooltip and Check now (`stdPost`, re-fetch after 7 s).
+Dashboard gets a leading chevron column and an expand row (group-header
+`colspan` is now 13); an open row pauses auto-refresh like an open drawer.
+The Edit page panel is a "Health history" block after the form, above
+"Reported by notifier".
 
 ### 13.8 Out of scope for v0.7.0
 

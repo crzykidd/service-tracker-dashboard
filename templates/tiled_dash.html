@@ -366,6 +366,12 @@
                             </div>
                             {% endif %}
 
+                            {# Health detail (loaded when the drawer opens) #}
+                            <div class="drawer-row drawer-row-health">
+                                <span class="drawer-label">Health</span>
+                                <span class="drawer-value">{% include "partials/health_detail.html" %}</span>
+                            </div>
+
                             <hr class="drawer-divider">
 
                             {# Action row #}

@@ -42,6 +42,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
 import check_form
+import health_history
 import settings_store
 import synthesizer
 from extensions import db
@@ -1249,6 +1250,23 @@ def run_checks_now(id):
             queued += 1
     db.session.commit()
     return jsonify({'ok': True, 'queued': queued})
+
+
+@dashboard_bp.route('/service/<int:id>/health')
+@login_required
+def entry_health_detail(id):
+    """Detail panel data: per-check state, uptime, recent failures and the
+    24h / 7d bar series (PRD 13.7). `range` is `24h` (default) or `7d`."""
+    entry = (
+        ServiceEntry.active()
+        .options(selectinload(ServiceEntry.checks))
+        .filter(ServiceEntry.id == id)
+        .first_or_404()
+    )
+    range_name = request.args.get('range', '24h')
+    if range_name not in health_history.RANGES:
+        range_name = '24h'
+    return jsonify(health_history.entry_payload(entry, range_name))
 
 
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
