@@ -22,6 +22,7 @@ from flask_wtf.csrf import CSRFError
 
 from extensions import csrf, db, login_manager
 from health import health_bp
+from health_state import entry_health
 from jobs import start_background_workers, verify_and_fetch_missing_icons
 from models import User
 from routes_api import api_bp
@@ -154,6 +155,7 @@ def create_app():
         return {
             'now': datetime.now,
             'version_info': app.config['VERSION_INFO'],
+            'entry_health': entry_health,
         }
 
     @app.template_filter('time_since')
@@ -166,6 +168,13 @@ def create_app():
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=now.tzinfo)
         return humanize.naturaltime(now - dt)
+
+    @app.template_filter('time_since_utc')
+    def time_since_utc(dt):
+        """Like time_since, for the naive-UTC timestamps check rows store."""
+        if not dt:
+            return "never"
+        return humanize.naturaltime(datetime.utcnow() - dt)
 
     @app.errorhandler(CSRFError)
     def csrf_error(error):

@@ -49,7 +49,7 @@ def test_error_status():
     with patch("checker.requests.get", side_effect=OSError("boom")):
         out = checker.probe_http("http://x", "status", 5, True)
         assert out.ok is False and out.status_code is None
-        assert out.message == "OSError: boom" and checker.legacy_status(out) == "Error: OSError"
+        assert out.message == "OSError: boom"
 
 
 def test_status_code_ok_threshold():

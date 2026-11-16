@@ -317,7 +317,7 @@ def test_service_check_runs_and_records(app):
     with app.app_context():
         c = HealthCheck.query.filter_by(kind="service").one()
         assert c.last_ok is False and c.last_message == "timed out" and c.consecutive_failures == 1
-        assert ServiceEntry.query.one().internal_health_check_status is None  # no legacy mirror
+        assert ServiceEntry.query.one().internal_health_check_status is None
 
 
 def test_loop_survives_tick_errors_and_stops(app):

@@ -42,6 +42,7 @@
 | 0.32    | 2026-11-15 | §13.3 delivered (unreleased): `health_check` / `health_result` tables and models (migration `b8e4d6a2c1f9`, §5.6) with the two URL-kind rows per entry copied from the legacy columns; register toggles, Add/Edit and backup/restore read and write the rows; the interim sequential checker records results and mirrors into the legacy status columns until §13.5. Register wire contract unchanged. |
 | 0.33    | 2026-11-15 | §13.4 delivered (unreleased): concurrent checker (`checker.py` probes for HTTP status/body, TCP and ping via pinned `icmplib`; `jobs.HealthScheduler`), settings `health_check_workers` / `health_raw_hours` / `health_history_days`, hourly compaction and purge jobs for `health_result`, `POST /service/<id>/checks/run`. No schema change. Register wire contract unchanged. |
 | 0.34    | 2026-11-15 | §13.5 delivered (unreleased): "Health checks" section on Add and Edit (per-URL-check enabled/mode/interval/timeout/verify, repeatable service checks of type HTTP, TCP, Ping), server-side validation with input kept, flash messages on Add/Edit. No schema change. Register wire contract unchanged. |
+| 0.35    | 2026-11-15 | §13.6 delivered (unreleased): `health_state.py` rollup (up/degraded/down/unknown/none), shared `health_badge.html` on Dashboard (new Health column), Tiled and Compact, `status` / `source` filters beside `show_urlless` with filtered/total count, `checks` eager-loaded per page, legacy status mirror and `checker.legacy_status` removed (backups derive the legacy keys from the rows). No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1412,9 +1413,9 @@ both URL rows. The migration test and the interim loop are in
   results). An older backup without `checks` is mapped from the legacy
   columns.
 - **Legacy columns are deprecated:** no new code reads them. Until
-  §13.5 swaps the templates, the checker (§13.4) mirrors URL-kind
+  §13.6 swaps the templates, the checker (§13.4) mirrored URL-kind
   results into the legacy `*_status` / `*_update` columns so the
-  current badges keep working.
+  old badges kept working; §13.6 removed that mirror.
 
 ### 13.4 Checker engine and history retention [`v070-03-checker-engine`] — Delivered (unreleased)
 
@@ -1477,9 +1478,8 @@ status_code, message, error_type)` and never raises). The scheduler is
 `_run_job`, `collect()` and `record_check_result()` do every write on the
 `health-check-loop` thread, 5 s tick, per-tick app context). Service-kind
 checks with a target are scheduled too, ahead of their UI (§13.5). The URL
-rows still mirror into the legacy `*_status` / `*_update` columns until §13.6
-(`checker.legacy_status` keeps the `200` / `Error: SSLError` format the
-badges read). Settings: `health_check_workers` (8), `health_raw_hours` (24),
+rows mirrored into the legacy `*_status` / `*_update` columns until §13.6
+(removed there). Settings: `health_check_workers` (8), `health_raw_hours` (24),
 `health_history_days` (7). Jobs: `compact_health_results` (hourly at :05) and
 `purge_health_results` (hourly at :03). Compaction only touches clock hours
 that lie wholly before `health_raw_hours` ago (one commit per check and
@@ -1524,7 +1524,7 @@ schema change.
   `last_checked_at`. `partials/flash_messages.html` is shared by Settings,
   Add and Edit. The old single timeout / verify-TLS fields are gone.
 
-### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`]
+### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`] — Delivered (unreleased)
 
 - **`health.py` is unchanged** (liveness). The rollup lives in a new
   `health_state.py`:
@@ -1546,6 +1546,28 @@ schema change.
     entries that are stale).
   - `source` = `all` / `notifier` / `manual`.
 - "Total Services" shows the filtered count over the total.
+
+**As built:** `health_state.entry_health(entry)` returns a frozen
+`EntryHealth(state, total, failing, failures)` (plus `label` / `tooltip`).
+A check counts when it is enabled and has something to probe (a URL check
+whose URL is empty is skipped, since the scheduler never runs it). `none` =
+nothing counts; `unknown` = none has run; otherwise failing checks among those
+that have run decide `down` (all fail), `degraded` (some) or `up` (none).
+Checks still waiting for a first run do not hold `up` back. The three view
+handlers share `_load_view_entries()`, which `selectinload`s `checks`, so the
+page query count is flat in entry count (tested). `partials/health_badge.html`
+has three variants (`pill` Dashboard, `icon` Tiled, `compact` dot linking to
+`/edit/<id>#health`; the Edit page's checks section carries `id="health"`).
+Dashboard gets a Health column; its INT/EXT pills and Tiled's URL icons are
+plain links. `view_helpers` adds `normalize_status_filter` /
+`normalize_source_filter` (unknown values fall back to `all`) and applies both
+before grouping. `stale` is `source == notifier and is_docker_status_stale`.
+The filter selects use `view-control`, so the existing JS keeps them in the
+URL. "Total Services" shows `shown / total` only when they differ. The legacy
+mirror and `checker.legacy_status` are gone: nothing reads the deprecated
+`*_health_check_status` / `_update` columns except `dbdump.html` and restore;
+backups still emit those keys, derived from the check rows. New filter
+`time_since_utc` renders the naive-UTC check timestamps.
 
 ### 13.7 Health detail and 24h history [`v070-06-health-detail`]
 

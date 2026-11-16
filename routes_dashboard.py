@@ -70,6 +70,8 @@ from view_helpers import (
     group_and_sort_services,
     normalize_axis,
     normalize_show_urlless,
+    normalize_source_filter,
+    normalize_status_filter,
     safe_redirect_target,
 )
 
@@ -201,24 +203,42 @@ def _read_view_controls(default_sort_in_group=DEFAULT_SORT_IN_GROUP):
     return axis, show_urlless, sort_in_group
 
 
+def _read_filters():
+    """The status/source filters (PRD 13.6), normalized to known values."""
+    return (
+        normalize_status_filter(request.args.get("status")),
+        normalize_source_filter(request.args.get("source")),
+    )
+
+
+def _load_view_entries():
+    """Active entries for a dashboard view, with everything the templates
+    touch eager-loaded so the page costs a fixed number of queries."""
+    return (
+        ServiceEntry.active()
+        .options(joinedload(ServiceEntry.group))
+        .options(selectinload(ServiceEntry.exposures))
+        .options(selectinload(ServiceEntry.checks))
+        .all()
+    )
+
+
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
     axis, show_urlless, sort_in_group = _read_view_controls()
     msg = request.args.get('msg')
 
-    entries = (
-        ServiceEntry.active()
-        .options(joinedload(ServiceEntry.group))
-        .options(selectinload(ServiceEntry.exposures))
-        .all()
-    )
+    entries = _load_view_entries()
+    status, source = _read_filters()
 
     grouped_entries = group_and_sort_services(
         entries,
         axis=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
+        status=status,
+        source=source,
     )
 
     visible_total = sum(len(es) for _, es in grouped_entries)
@@ -228,6 +248,9 @@ def dashboard():
         "dashboard.html",
         grouped_entries=grouped_entries,
         total_entries=visible_total,
+        all_entries_count=len(entries),
+        status_filter=status,
+        source_filter=source,
         group_by=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
@@ -245,18 +268,16 @@ def dashboard():
 def tiled_dashboard():
     axis, show_urlless, sort_in_group = _read_view_controls()
 
-    entries = (
-        ServiceEntry.active()
-        .options(joinedload(ServiceEntry.group))
-        .options(selectinload(ServiceEntry.exposures))
-        .all()
-    )
+    entries = _load_view_entries()
+    status, source = _read_filters()
 
     grouped_entries = group_and_sort_services(
         entries,
         axis=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
+        status=status,
+        source=source,
     )
 
     visible_total = sum(len(es) for _, es in grouped_entries)
@@ -270,6 +291,9 @@ def tiled_dashboard():
         sort_in_group=sort_in_group,
         STD_DOZZLE_URL=current_app.config['std_dozzle_url'],
         total_entries=visible_total,
+        all_entries_count=len(entries),
+        status_filter=status,
+        source_filter=source,
         widget_values=widget_values,
         widget_fields=widget_fields,
     )
@@ -282,18 +306,16 @@ def compact_dash():
         default_sort_in_group="alphabetical"
     )
 
-    entries = (
-        ServiceEntry.active()
-        .options(joinedload(ServiceEntry.group))
-        .options(selectinload(ServiceEntry.exposures))
-        .all()
-    )
+    entries = _load_view_entries()
+    status, source = _read_filters()
 
     grouped_entries = group_and_sort_services(
         entries,
         axis=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
+        status=status,
+        source=source,
     )
 
     flattened_entries = []
@@ -311,6 +333,9 @@ def compact_dash():
         "compact_dash.html",
         flattened_entries=flattened_entries,
         total_entries=visible_total,
+        all_entries_count=len(entries),
+        status_filter=status,
+        source_filter=source,
         show_host=show_host,
         group_by=axis,
         show_urlless=show_urlless,

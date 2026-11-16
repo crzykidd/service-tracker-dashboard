@@ -254,11 +254,6 @@ class HealthScheduler:
                 continue
             record_check_result(check, result)
             entry = check.service_entry
-            if check.is_url_kind and entry is not None:
-                which = "internal" if check.kind == CHECK_KIND_INTERNAL else "external"
-                # TEMP: removed in v070-05 (templates still read the legacy status columns)
-                setattr(entry, f"{which}_health_check_status", checker.legacy_status(result))
-                setattr(entry, f"{which}_health_check_update", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             logger.info("%s - %s: %s", entry.container_name if entry else "?", check.kind,
                         "ok" if result.ok else f"failing ({result.message})")
             written += 1

@@ -1,10 +1,10 @@
 ---
 name: v070-05-rollup-and-filters
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15
+result: health_state rollup, shared health badge on all three views, status/source filters with filtered total, legacy mirror removed; tests, ruff and migration check green
 ---
 
 # Task: Health rollup badge and status/source filters

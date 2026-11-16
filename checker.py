@@ -201,13 +201,3 @@ def run_probe(job):
         return probe_http(job["target"], job.get("mode", "status"), job["timeout"], job.get("verify", True))
     except Exception as e:  # defensive: probes already catch everything
         return ProbeResult(False, 0, None, _exception_message(e), type(e).__name__)
-
-
-def legacy_status(result):
-    """The pre-0.7 status string the Dashboard/Tiled badges still read:
-    the status code when it is a pass or a >=400 failure, else
-    `Error: <ExceptionName>`."""
-    code = result.status_code
-    if code is not None and (result.ok or code >= 400):
-        return str(code)
-    return f"Error: {result.error_type or 'CheckFailed'}"

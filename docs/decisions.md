@@ -5,6 +5,44 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-05 rollup and filters: implementation calls
+
+- **Only checks that can run count in the rollup.** An enabled URL check
+  whose URL is empty (or a service check with no target) is skipped: the
+  scheduler never runs it, so counting it would leave the entry `unknown`
+  forever, or show a stale failure after the URL was cleared. A cleared URL
+  with only that check enabled therefore reads `none`.
+- **`up` when nothing that has run is failing,** even if another enabled check
+  is still waiting for its first run (a freshly added service check should
+  not flip a green entry to `unknown`). `unknown` is only "none has run".
+  Reading the PRD table as "every enabled check ok" would be stricter;
+  rejected because new checks would flap state.
+- **URL link icons lost their health colour.** The "keep the per-URL link
+  icons; only the health signal changes" instruction was read as: Dashboard
+  pills become neutral "Open" links and Tiled icons are blue links (grey
+  when no URL), with the last result in the tooltip / drawer. The status code
+  label on the Dashboard pill is gone (the badge replaces it).
+- **Dashboard gets a new Health column** (after URLs) rather than reusing the
+  Status (Docker) column; Docker stays a separate signal (decision earlier
+  today). The group-header `colspan` went 11 -> 12.
+- **Legacy mirror removed; backups still emit the legacy keys,** now derived
+  from the check rows (`_legacy_status` / `_legacy_update` in `models.py`,
+  update time converted to server-local) so a backup stays restorable by an
+  older STD. Restore still writes the status strings into the old columns
+  (generic field loop); nothing reads them but `dbdump.html`. Dropping the
+  columns is a later migration (not in this chunk).
+- **`time_since_utc` filter** added: check timestamps are naive UTC and
+  `time_since` assumes local time.
+- **"Total Services" format:** `shown / total` only when a filter (including
+  `show_urlless=false`) hides entries; plain number otherwise. Total is the
+  count of active entries.
+- **Unknown `status`/`source` values fall back to `all`** (as `group_by`
+  does), so a mangled bookmark never yields an empty page.
+- **Compact badge links to `/edit/<id>#health`;** the Edit page's checks
+  section got `id="health"` (a wrapper div).
+
+---
+
 ## 2026-11-15 — v070-04 check configuration UI: implementation calls
 
 - **Supersedes the v0.6.9 note that Add/Edit don't render flashes.** They do

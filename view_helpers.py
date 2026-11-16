@@ -16,7 +16,15 @@ from urllib.parse import urlparse
 
 from flask import url_for
 
-from models import Group
+from health_state import (
+    STATE_DEGRADED,
+    STATE_DOWN,
+    STATE_NONE,
+    STATE_UNKNOWN,
+    STATE_UP,
+    entry_health,
+)
+from models import SOURCE_MANUAL, SOURCE_NOTIFIER, Group
 
 VALID_AXES = ("group", "stack", "host")
 DEFAULT_AXIS = "group"
@@ -45,6 +53,41 @@ def normalize_show_urlless(value):
     return str(value).strip().lower() not in {"false", "0", "no", "off"}
 
 
+VALID_STATUS_FILTERS = ("all", "failing", "healthy", "unknown", "stale")
+VALID_SOURCE_FILTERS = ("all", "notifier", "manual")
+
+_STATUS_STATES = {
+    "failing": (STATE_DEGRADED, STATE_DOWN),
+    "healthy": (STATE_UP,),
+    "unknown": (STATE_UNKNOWN, STATE_NONE),
+}
+
+
+def normalize_status_filter(value):
+    """Query-string value -> one of VALID_STATUS_FILTERS (default 'all')."""
+    value = value.strip().lower() if isinstance(value, str) else ""
+    return value if value in VALID_STATUS_FILTERS else "all"
+
+
+def normalize_source_filter(value):
+    value = value.strip().lower() if isinstance(value, str) else ""
+    return value if value in VALID_SOURCE_FILTERS else "all"
+
+
+def matches_status(entry, status):
+    if status == "all":
+        return True
+    if status == "stale":
+        return entry.source == SOURCE_NOTIFIER and entry.is_docker_status_stale
+    return entry_health(entry).state in _STATUS_STATES[status]
+
+
+def matches_source(entry, source):
+    if source == "all":
+        return True
+    return entry.source == (SOURCE_MANUAL if source == "manual" else SOURCE_NOTIFIER)
+
+
 def entry_has_url(entry):
     return bool((entry.internalurl or "").strip()) or bool((entry.externalurl or "").strip())
 
@@ -62,6 +105,8 @@ def group_and_sort_services(
     axis=DEFAULT_AXIS,
     show_urlless=True,
     sort_in_group=DEFAULT_SORT_IN_GROUP,
+    status="all",
+    source="all",
 ):
     """Group and sort services for rendering.
 
@@ -79,6 +124,11 @@ def group_and_sort_services(
 
     if not show_urlless:
         services = [e for e in services if entry_has_url(e)]
+
+    status = normalize_status_filter(status)
+    source = normalize_source_filter(source)
+    if status != "all" or source != "all":
+        services = [e for e in services if matches_source(e, source) and matches_status(e, status)]
 
     buckets = defaultdict(list)
     for entry in services:

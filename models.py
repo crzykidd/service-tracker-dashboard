@@ -5,7 +5,7 @@ changes here. Imported by `alembic/env.py` so model classes register
 themselves with `db.metadata` before autogenerate runs.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import current_app, has_app_context
 from flask_login import UserMixin
@@ -166,11 +166,11 @@ class ServiceEntry(db.Model):
             # Legacy keys are kept (values read from the check rows) so an
             # older STD can still restore a backup made by this version.
             'internal_health_check_enabled': self.internal_check_enabled,
-            'internal_health_check_status': self.internal_health_check_status,
-            'internal_health_check_update': self.internal_health_check_update,
+            'internal_health_check_status': _legacy_status(self.url_check('internal')),
+            'internal_health_check_update': _legacy_update(self.url_check('internal')),
             'external_health_check_enabled': self.external_check_enabled,
-            'external_health_check_status': self.external_health_check_status,
-            'external_health_check_update': self.external_health_check_update,
+            'external_health_check_status': _legacy_status(self.url_check('external')),
+            'external_health_check_update': _legacy_update(self.url_check('external')),
             'image_registry': self.image_registry,
             'image_owner': self.image_owner,
             'image_name': self.image_name,
@@ -256,6 +256,28 @@ class ServiceEntry(db.Model):
         if self.last_api_update:
             return (datetime.now() - self.last_api_update) > timedelta(minutes=_stale_after_minutes())
         return True
+
+
+def _legacy_status(check):
+    """Pre-0.7 status string for a URL check row, for backups that older STD
+    versions can restore: the status code, else `Error: <ExceptionName>`.
+    NULL when the check has not run. Derived from the row (the legacy
+    columns are no longer written)."""
+    if check is None or check.last_ok is None:
+        return None
+    code = check.last_status_code
+    if code is not None and (check.last_ok or code >= 400):
+        return str(code)
+    name = (check.last_message or '').split(':', 1)[0].strip()
+    return f"Error: {name or 'CheckFailed'}"
+
+
+def _legacy_update(check):
+    """Last-checked time as the server-local string older STD stored."""
+    if check is None or check.last_checked_at is None:
+        return None
+    local = check.last_checked_at.replace(tzinfo=timezone.utc).astimezone()
+    return local.strftime('%Y-%m-%d %H:%M:%S')
 
 
 def ensure_url_checks(entry):

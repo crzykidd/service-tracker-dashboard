@@ -540,9 +540,15 @@
   color: #fff;
   font-size: 0.85rem;
 }
+.compact-tile .compact-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .compact-tile .compact-stale {
   flex-shrink: 0;
-  margin-left: auto;
   font-size: 16px;
   line-height: 1;
 }
@@ -872,3 +878,33 @@
   border-color: var(--color-status-bad);
   color: var(--color-status-bad);
 }
+
+/* ── Health rollup badge (PRD 13.6) ───────────────────── */
+.health-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 9999px;
+  font-size: 0.75rem; font-weight: 600; line-height: 1.4; white-space: nowrap;
+  color: #fff; cursor: default;
+}
+.health-pill i { font-size: 13px; line-height: 1; }
+.health-pill.health-up       { background-color: #16a34a; }
+.health-pill.health-degraded { background-color: #b45309; }
+.health-pill.health-down     { background-color: #dc2626; }
+.health-pill.health-unknown  { background-color: #4b5563; }
+.health-pill.health-none     { background: transparent; border: 1px dashed #6b7280; color: #9ca3af; }
+
+.health-icon.health-up       { color: var(--color-status-ok); }
+.health-icon.health-degraded { color: var(--color-status-warn); }
+.health-icon.health-down     { color: var(--color-status-bad); }
+.health-icon.health-unknown,
+.health-icon.health-none     { color: var(--color-status-muted); }
+
+.health-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  flex: none; align-self: center; margin-left: 6px;
+}
+.health-dot.health-up       { background-color: var(--color-status-ok); }
+.health-dot.health-degraded { background-color: var(--color-status-warn); }
+.health-dot.health-down     { background-color: var(--color-status-bad); }
+.health-dot.health-unknown  { background-color: var(--color-status-muted); }
+.health-dot.health-none     { border: 1px solid var(--color-status-muted); }

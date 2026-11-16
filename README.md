@@ -108,6 +108,12 @@ compose file; your config, database, and settings carry over unchanged. See
   above the service grid on all three views. State is URL-driven, so
   dashboards stay bookmarkable.
 - Internal + external URL health checks on a configurable interval.
+- **Health badge and filters.** One rolled-up health state per entry (up,
+  degraded, down, unknown, not monitored) on all three views, and `Status`
+  (`all` / `failing` / `healthy` / `unknown` / `stale`) and `Source`
+  (`all` / `notifier` / `manual`) filters next to `Group by`, kept in the URL
+  (`?status=failing&source=manual`). "Total Services" reads `shown / total`
+  when a filter hides entries.
 - Auto-downloads container icons from
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
 - Register endpoint for pushing container metadata from external tools.
@@ -490,7 +496,11 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
 - Status code, response time, and timestamp are recorded per check, as a
-  result row in the database (the badges still show the latest status).
+  result row in the database. An entry's badge rolls its enabled checks up:
+  **Up** (every check that has run passed), **Degraded** (some pass, some
+  fail), **Down** (every check that has run fails), **Unknown** (checks are
+  enabled but none has run yet), **Not monitored** (no enabled checks). A URL
+  check whose URL is empty does not count.
 - Each entry has an internal-URL and an external-URL check; the notifier's
   `*_health_check_enabled` flags turn them on, and each has its own timeout
   and verify-TLS options on the Edit page.

@@ -300,9 +300,11 @@ def test_loop_writes_result_updates_check_and_mirrors_legacy(app):
         assert e.url_check("external").last_checked_at is None
         results = HealthResult.query.filter_by(check_id=c.id).all()
         assert len(results) == 1 and results[0].ok is True and results[0].status_code == 200
-        # TEMP mirror into the legacy status columns.
-        assert e.internal_health_check_status == "200" and e.internal_health_check_update
-        assert e.external_health_check_status is None
+        # The legacy status columns are no longer written (backup derives them from the rows).
+        assert e.internal_health_check_status is None and e.internal_health_check_update is None
+        assert e.to_dict()["internal_health_check_status"] == "200"
+        assert e.to_dict()["internal_health_check_update"]
+        assert e.to_dict()["external_health_check_status"] is None
         assert HealthResult.query.count() == 1
 
 
@@ -318,7 +320,7 @@ def test_loop_failure_counts_and_mirrors_error_string(app):
         e = _get("down")
         c = e.url_check("internal")
         assert c.last_ok is False and c.last_message == "OSError: boom" and c.consecutive_failures == 2
-        assert e.internal_health_check_status == "Error: OSError"
+        assert e.to_dict()["internal_health_check_status"] == "Error: OSError"
         with patch("checker.requests.get") as get:
             get.return_value.status_code = 200
             _pass(app, sched, hours=2)

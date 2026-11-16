@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One health badge per service on every view.** Each service shows a single
+  rolled-up state from its enabled checks: Up (all passing), Degraded (some
+  failing), Down (all failing), Unknown (enabled, not run yet) or Not
+  monitored. The Dashboard has a new Health column, Tiled has a state icon in
+  the tile, and Compact has a dot that opens the Edit page's health section.
+  Hovering shows each failing check and its message.
+- **Status and Source filters** next to "Group by" on all three views. Status:
+  All, Failing (degraded or down), Healthy (up), Unknown (unknown or not
+  monitored), Stale (notifier entries gone quiet). Source: All, Notifier,
+  Manual. Both live in the URL, so they survive auto-refresh and bookmarks.
+  "Total Services" shows `shown / total` when a filter hides entries.
+
 - **Manual entries are now first-class.** Every entry has a source:
   `notifier` (kept current by the notifier) or `manual` (added on the Add
   page). Manual entries are for sites and services that are not Docker
@@ -55,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with "ICMP not permitted".
 
 ### Changed
+
+- **The INT / EXT links no longer carry a health colour.** Dashboard pills and
+  Tiled icons are plain links (tooltip shows the URL and its last result);
+  health is the new badge. The Tiled drawer shows each URL's last result from
+  the stored check data.
 
 - **Health checks are configured in one "Health checks" section** on the Edit
   and Add pages, replacing the two toggles and "Advanced health check". The
