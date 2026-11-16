@@ -57,7 +57,11 @@ def test_add_and_edit_pages_render_the_section(app, admin_client):
     with app.app_context():
         eid = _make(internalurl="http://a.example/")
     page = admin_client.get(f"/edit/{eid}").get_data(as_text=True)
-    assert "Health checks" in page and "http://a.example/" in page
+    assert "Health checks" in page
+    # The internal URL check shows its (read-only) target. Assert on the exact
+    # markup rather than a bare URL substring (CodeQL py/incomplete-url-
+    # substring-sanitization false positive on test code).
+    assert 'Target: <span class="font-mono">http://a.example/</span>' in page
     assert 'name="internal_health_check_enabled"' not in page  # old toggles are gone
     assert "Advanced health check" not in page
 
