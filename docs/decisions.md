@@ -5,6 +5,48 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-02 health schema: implementation calls
+
+- **Templates read `enabled` from the check rows, not the legacy column.**
+  The prompt says to stop writing the legacy `*_enabled` columns, but the
+  Dashboard/Tiled badges and the Edit toggles read them. Rather than keep
+  mirroring `enabled`, those bindings moved to `entry.internal_check_enabled`
+  / `external_check_enabled` (properties over the rows). Only the status and
+  update strings are still mirrored (the TEMP mirror).
+- **Backup keeps the legacy keys, derived from the rows.** `to_dict()` still
+  writes `internal/external_health_check_enabled`, `health_check_timeout` and
+  `health_check_verify_tls` (from the rows) next to the new `checks` list, so
+  a backup taken now restores correctly on an older STD (rollback story).
+  Restore ignores those keys when `checks` is present.
+- **Downgrade copies state back.** Because the legacy `*_enabled` / timeout /
+  verify columns are no longer written, the migration downgrade copies them
+  from the check rows before dropping the tables; otherwise a rollback would
+  silently revert operators' toggles to their pre-upgrade values.
+- **Legacy update time converted to UTC.** `*_health_check_update` is
+  server-local; `last_checked_at` is naive UTC (PRD 5.6). The migration
+  converts using the migrating host's local zone. An unparsable string gives
+  NULL.
+- **Status below 400 is ok, everything else failing**, in both the
+  migration seed and the checker. A numeric >=400 status stores the code and
+  uses the code string as the message; `Error: X` stores no code.
+- **Timeout/verify-TLS apply to both URL rows.** One form value writes both
+  rows; reads (Edit page, legacy backup keys) use the internal row, falling
+  back to external.
+- **`check_url` became `probe_url`** and takes a check (reads
+  `timeout_seconds` / `verify_tls`) and returns a dict (ok, status_code,
+  latency_ms, message, status) instead of just the status string.
+- **Restore replaces service-kind checks wholesale** with the backup's list
+  (an empty `checks` removes them); URL rows are matched by kind. Rejected:
+  merging, which would leave deleted checks behind.
+- **No uniqueness constraint on (entry, kind).** "Exactly one per URL kind"
+  is kept by `ensure_url_checks`; a partial unique index is a possible
+  hardening for a later chunk.
+- **No result pruning yet.** The interim loop writes a `health_result` row
+  per enabled check per pass with nothing deleting them; retention and
+  compaction belong to v070-03. Do not release between the two chunks.
+
+---
+
 ## 2026-11-15 — v070-01 entry sources: implementation calls
 
 - **Adoption also applies to a soft-deleted manual match.** The register

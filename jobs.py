@@ -35,7 +35,14 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from extensions import db
 from image_utils import fetch_icon_if_missing
-from models import ServiceEntry, Widget, WidgetValue, hard_delete_entry
+from models import (
+    HealthResult,
+    ServiceEntry,
+    Widget,
+    WidgetValue,
+    ensure_url_checks,
+    hard_delete_entry,
+)
 from settings_loader import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
@@ -114,24 +121,94 @@ def _global_health_timeout(app):
     return value if value > 0 else DEFAULT_HEALTH_CHECK_TIMEOUT
 
 
-def check_url(url, entry, default_timeout=DEFAULT_HEALTH_CHECK_TIMEOUT):
-    """Run one health check and return the status string.
+def probe_url(url, check, default_timeout=DEFAULT_HEALTH_CHECK_TIMEOUT):
+    """Run one URL health check and return its outcome as a dict.
 
-    Timeout is the entry's own `health_check_timeout` when set, else
-    `default_timeout` (the global setting). `verify` follows the entry's
-    `health_check_verify_tls`; when it is off, urllib3's
-    InsecureRequestWarning is silenced for this call only.
+    Timeout is the check's own `timeout_seconds` when set, else
+    `default_timeout` (the global setting). `verify` follows the check's
+    `verify_tls`; when it is off, urllib3's InsecureRequestWarning is
+    silenced for this call only.
+
+    Keys: ok (status < 400), status_code (int or None), latency_ms (int),
+    message (None when ok, else the status string), status (the legacy
+    string: "200" or "Error: <ExceptionName>").
     """
-    timeout = entry.health_check_timeout or default_timeout
-    verify = entry.health_check_verify_tls is not False
+    timeout = check.timeout_seconds or default_timeout
+    verify = check.verify_tls is not False
+    started = time.monotonic()
     try:
         with warnings.catch_warnings():
             if not verify:
                 warnings.simplefilter("ignore", InsecureRequestWarning)
             response = requests.get(url, timeout=timeout, verify=verify)
-        return str(response.status_code)
+        latency_ms = int((time.monotonic() - started) * 1000)
+        code = int(response.status_code)
+        ok = code < 400
+        return {
+            "ok": ok,
+            "status_code": code,
+            "latency_ms": latency_ms,
+            "message": None if ok else str(code),
+            "status": str(code),
+        }
     except Exception as e:
-        return f"Error: {type(e).__name__}"
+        latency_ms = int((time.monotonic() - started) * 1000)
+        status = f"Error: {type(e).__name__}"
+        return {
+            "ok": False,
+            "status_code": None,
+            "latency_ms": latency_ms,
+            "message": status,
+            "status": status,
+        }
+
+
+def record_check_result(check, outcome, now_utc=None):
+    """Store `outcome` (from probe_url) as a HealthResult and update the
+    check's cached `last_*` state. Caller commits."""
+    now_utc = now_utc or datetime.utcnow()
+    db.session.add(HealthResult(
+        check_id=check.id,
+        ts=now_utc,
+        ok=outcome["ok"],
+        latency_ms=outcome["latency_ms"],
+        latency_max_ms=outcome["latency_ms"],
+        status_code=outcome["status_code"],
+        message=outcome["message"],
+    ))
+    check.last_ok = outcome["ok"]
+    check.last_checked_at = now_utc
+    check.last_status_code = outcome["status_code"]
+    check.last_latency_ms = outcome["latency_ms"]
+    check.last_message = outcome["message"]
+    check.consecutive_failures = 0 if outcome["ok"] else (check.consecutive_failures or 0) + 1
+
+
+def run_url_checks_once(app):
+    """One sequential pass over every enabled URL-kind check of active
+    entries. Interim implementation: v070-03 replaces it with the concurrent
+    scheduler. Returns the number of checks run."""
+    default_timeout = _global_health_timeout(app)
+    ran = 0
+    entries = ServiceEntry.active().all()
+    for entry in entries:
+        ensure_url_checks(entry)
+        for which, url_attr in (("internal", "internalurl"), ("external", "externalurl")):
+            check = entry.url_check(which)
+            url = getattr(entry, url_attr)
+            if not (check and check.enabled and url):
+                continue
+            if check.id is None:
+                db.session.flush()
+            outcome = probe_url(url, check, default_timeout)
+            record_check_result(check, outcome)
+            # TEMP: removed in v070-05 (templates still read the legacy status columns)
+            setattr(entry, f"{which}_health_check_status", outcome["status"])
+            setattr(entry, f"{which}_health_check_update", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            ran += 1
+            logger.info(f"{entry.container_name} - {which}: {outcome['status']}")
+    db.session.commit()
+    return ran
 
 
 # Background health check loop
@@ -144,42 +221,12 @@ def health_check_loop(app):
             time.sleep(URL_HEALTHCHECK_INTERVAL)
             iteration += 1
             try:
-                log_output = ["\U0001f504 Running internal health checks..."]
-                entries = ServiceEntry.active().all()
-                default_timeout = _global_health_timeout(app)
-
-                for entry in entries:
-                    show_log = False
-                    internal_status = ""
-                    external_status = ""
-
-                    if entry.internal_health_check_enabled and entry.internalurl:
-                        show_log = True
-                        internal_status = check_url(entry.internalurl, entry, default_timeout)
-                        entry.internal_health_check_status = internal_status
-                        entry.internal_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-                    if entry.external_health_check_enabled and entry.externalurl:
-                        show_log = True
-                        external_status = check_url(entry.externalurl, entry, default_timeout)
-                        entry.external_health_check_status = external_status
-                        entry.external_health_check_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-                    if show_log:
-                        log_output.append(f"{entry.container_name} - Internal: {internal_status or 'N/A'} External: {external_status or 'N/A'}")
-
-                db.session.commit()
-                for line in log_output:
-                    logger.info(line)
+                logger.info("\U0001f504 Running URL health checks...")
+                run_url_checks_once(app)
             except Exception:
                 # Safety net: keep the worker thread alive across unexpected
                 # failures (DB errors, surprise requests exceptions, etc.).
-                service_count = len(entries) if "entries" in locals() else -1
-                logger.exception(
-                    "Health-check iteration %d failed (services=%d); continuing.",
-                    iteration,
-                    service_count,
-                )
+                logger.exception("Health-check iteration %d failed; continuing.", iteration)
                 try:
                     db.session.rollback()
                 except Exception:

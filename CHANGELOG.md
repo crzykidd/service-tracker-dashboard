@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backups carry `source` and `description`.** Restoring an older backup
   without them works: an entry the notifier never reported becomes manual.
 
+- **Health-check results are now stored.** Each URL check records its
+  status, response time and message in a new history table, and each check
+  keeps its latest state (ok or failing, status code, response time,
+  consecutive failures). Nothing new is shown yet; the current badges look
+  and behave as before.
+- **Backups carry each entry's health-check configuration** (enabled,
+  timeout, verify-TLS and so on, no results). Restoring an older backup
+  still works: its health-check settings are applied to the entry's two URL
+  checks.
+
 ### Changed
 
 - **Add page creates manual entries only.** It asks for a Name (formerly
@@ -34,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lock only stops notifier updates; it no longer means "not a Docker
   container" and no longer hides the Docker status on its own.
 - Entries with no host group under "Unknown host" in the Host view.
+- Health-check settings (the two URL toggles, timeout, verify-TLS) now live
+  in their own tables instead of on the service entry. The Add and Edit
+  pages work the same; the notifier's `internal_health_check_enabled` /
+  `external_health_check_enabled` keys set the matching check, and an
+  absent key still means no change. A second migration creates the checks
+  for every existing entry, copying the enabled flags, timeout, verify-TLS
+  and last status, so nothing needs to be re-entered.
 - Database migration adds `source` and `description` and lets `host` be empty.
   Existing entries the notifier never reported (no update time) become
   manual; all others stay notifier entries.

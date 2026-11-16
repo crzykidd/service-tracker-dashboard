@@ -26,7 +26,7 @@
                       {% set _int_class   = 'status-icon-muted' %}
                       {% set _int_tooltip = 'Internal URL not configured' %}
                       {% set _int_href    = '' %}
-                    {% elif not entry.internal_health_check_enabled %}
+                    {% elif not entry.internal_check_enabled %}
                       {% set _int_class   = 'status-icon-muted' %}
                       {% set _int_tooltip = 'Internal: monitoring disabled' %}
                       {% set _int_href    = entry.internalurl %}
@@ -53,7 +53,7 @@
                       {% set _ext_class   = 'status-icon-muted' %}
                       {% set _ext_tooltip = 'External URL not configured' %}
                       {% set _ext_href    = '' %}
-                    {% elif not entry.external_health_check_enabled %}
+                    {% elif not entry.external_check_enabled %}
                       {% set _ext_class   = 'status-icon-muted' %}
                       {% set _ext_tooltip = 'External: monitoring disabled' %}
                       {% set _ext_href    = entry.externalurl %}
@@ -266,7 +266,7 @@
                                 <span class="drawer-value">
                                     <a href="{{ entry.internalurl }}" target="_blank"
                                        class="text-blue-400 hover:underline break-all">{{ entry.internalurl }}</a>
-                                    {% if entry.internal_health_check_enabled and entry.internal_health_check_status %}
+                                    {% if entry.internal_check_enabled and entry.internal_health_check_status %}
                                       <span class="ml-1 text-gray-400 text-xs">
                                         — {{ entry.internal_health_check_status }}
                                         {% if entry.internal_health_check_update %}
@@ -285,7 +285,7 @@
                                 <span class="drawer-value">
                                     <a href="{{ entry.externalurl }}" target="_blank"
                                        class="text-blue-400 hover:underline break-all">{{ entry.externalurl }}</a>
-                                    {% if entry.external_health_check_enabled and entry.external_health_check_status %}
+                                    {% if entry.external_check_enabled and entry.external_health_check_status %}
                                       <span class="ml-1 text-gray-400 text-xs">
                                         — {{ entry.external_health_check_status }}
                                         {% if entry.external_health_check_update %}

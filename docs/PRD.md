@@ -39,6 +39,7 @@
 | 0.29    | 2026-11-15 | §12.11 added (delivered in v0.6.9, folded into the prepared release): icon names, server-side restore filenames and `/widget_config` widget names confined to their folders; edit/CSRF redirects limited to same-site paths (`image_utils.safe_icon_filename`, `view_helpers.safe_redirect_target`). Closes 13 CodeQL alerts. No schema, contract, or job changes. |
 | 0.30    | 2026-11-15 | Added §13 (v0.7.0 — Dashboard and Monitoring, planned): entry sources (notifier vs manual), health checks as their own tables with service checks (HTTP/HTTPS status or body mode, TCP, ping), concurrent checker, 7-day history with 24h raw + hourly-compacted successes, health rollup and status/source filters, Gatus-style 24h history in the detail surface. Planned schema in §5.6. Later sections renumbered (§13→§14, §14→§15, §15→§16). No register-contract change. No code changes yet. |
 | 0.31    | 2026-11-15 | §13.2 delivered (unreleased): `service_entry.source` / `description` / nullable `host` (migration `a7c3e9f15d28`, §5.6), register adoption of unlocked manual entries, manual-only Add page, source icon on Dashboard and Tiled, backups carry `source`/`description`. Lock relabelled "Lock (ignore notifier updates)". Register wire contract unchanged. |
+| 0.32    | 2026-11-15 | §13.3 delivered (unreleased): `health_check` / `health_result` tables and models (migration `b8e4d6a2c1f9`, §5.6) with the two URL-kind rows per entry copied from the legacy columns; register toggles, Add/Edit and backup/restore read and write the rows; the interim sequential checker records results and mirrors into the legacy status columns until §13.5. Register wire contract unchanged. |
 
 ---
 
@@ -335,7 +336,7 @@ exposure data arrives.
 Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
 options at their defaults.
 
-### 5.6 v0.7.0 schema changes (planned; `source`, nullable `host` and `description` delivered, unreleased)
+### 5.6 v0.7.0 schema changes (planned; `source`, nullable `host`, `description`, `health_check` and `health_result` delivered, unreleased)
 
 Planned for v0.7.0 (§13). One Alembic migration per chunk; each FK gets
 its index in the same migration.
@@ -1361,7 +1362,34 @@ record without a host is skipped unless it is manual.
 - Dashboard and Tiled show a small source icon (Docker vs manual) where
   the Docker pill sits today; manual entries show no Docker pill.
 
-### 13.3 Health-check schema and data migration [`v070-02-health-schema`]
+### 13.3 Health-check schema and data migration [`v070-02-health-schema`] — Delivered (unreleased)
+
+**As built:** migration `b8e4d6a2c1f9` creates `health_check` and
+`health_result` (indexes `ix_health_check_service_entry_id` and
+`ix_health_result_check_id_ts`) and inserts both URL-kind rows for every
+entry from the legacy columns; its downgrade copies `enabled`, timeout and
+verify-TLS back to the legacy columns, then drops both tables. Models
+`HealthCheck` / `HealthResult` and `ServiceEntry.checks` are in `models.py`,
+with `ServiceEntry.url_check('internal'|'external')`, `.service_checks`,
+the convenience properties `internal_check_enabled`, `external_check_enabled`,
+`url_check_timeout`, `url_check_verify_tls`, and `ensure_url_checks(entry)`
+(called by register create and update, Add, Edit and restore). The legacy
+`last_checked_at` is converted from server-local to naive UTC in the
+migration. The interim checker is `jobs.run_url_checks_once(app)` (called by
+`health_check_loop`), using `jobs.probe_url(url, check, default_timeout)`
+(replacing `check_url`); a status below 400 is ok. It writes one
+`HealthResult` per check per pass, updates the check's `last_*` and
+`consecutive_failures`, and mirrors the status string and a local
+timestamp into the legacy `*_status` / `*_update` columns (marked
+`# TEMP: removed in v070-05`). The Dashboard, Tiled and Edit templates read
+`enabled` and the shared timeout/verify values from the check rows. Backups
+export `checks` (config only, via `HealthCheck.to_config()`); the legacy
+`*_enabled`, `health_check_timeout` and `health_check_verify_tls` keys are
+still written, derived from the rows, so an older STD can restore them.
+Restore of a backup with `checks` applies URL rows by kind and replaces
+service rows wholesale; a backup without `checks` maps the legacy keys onto
+both URL rows. The migration test and the interim loop are in
+`tests/test_health_schema.py`.
 
 - **Tables** `health_check` and `health_result` (§5.6), with models
   `HealthCheck` and `HealthResult`, and `ServiceEntry.checks`

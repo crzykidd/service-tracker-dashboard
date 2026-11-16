@@ -45,14 +45,20 @@ import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
+    CHECK_KIND_SERVICE,
+    CHECK_MODES,
+    CHECK_TYPES,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
+    URL_CHECK_KINDS,
     VALID_SOURCES,
     Group,
+    HealthCheck,
     ServiceEntry,
     User,
     Widget,
     WidgetValue,
+    ensure_url_checks,
     hard_delete_entry,
 )
 from routes_auth import is_admin_required
@@ -536,7 +542,7 @@ def settings():
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
                                 entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls', 'host', 'source']:
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls', 'host', 'source', 'checks', 'internal_health_check_enabled', 'external_health_check_enabled']:
                             setattr(entry, field, value)
 
                     entry.source = item_source
@@ -545,13 +551,9 @@ def settings():
                     # deleted_at round-trips; absent (v0.6.8 backups) means active.
                     entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
 
-                    # Health-check options round-trip; absent (older backups)
-                    # means the defaults: global timeout, verify TLS on.
-                    backup_timeout = item.get('health_check_timeout')
-                    entry.health_check_timeout = backup_timeout if isinstance(backup_timeout, int) and backup_timeout > 0 else None
-                    backup_verify = item.get('health_check_verify_tls')
-                    entry.health_check_verify_tls = True if backup_verify is None else bool(backup_verify)
-
+                    # Health checks (v0.7.0): a new-format backup carries `checks`;
+                    # an older one is mapped from the legacy fields.
+                    _restore_checks(entry, item)
 
                     # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
                     # (especially if item_is_static_from_backup was derived from .get with a default)
@@ -883,14 +885,17 @@ def add_entry():
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(),
             group_id=group_obj.id if group_obj else None,
-            internal_health_check_enabled=internal_health_check_enabled,
-            external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             sort_priority=sort_priority,
             is_static=is_static,
-            health_check_timeout=health_timeout,
-            health_check_verify_tls=verify_tls,
         )
+        ensure_url_checks(entry)
+        for which, enabled in (('internal', internal_health_check_enabled),
+                               ('external', external_health_check_enabled)):
+            check = entry.url_check(which)
+            check.enabled = enabled
+            check.timeout_seconds = health_timeout
+            check.verify_tls = verify_tls
 
         db.session.add(entry)
         db.session.commit()
@@ -903,6 +908,57 @@ def add_entry():
 
 
 MAX_HEALTH_CHECK_TIMEOUT = 60
+
+
+def _positive_int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _restore_checks(entry, item):
+    """Apply a backup record's health-check configuration to `entry`.
+
+    New format: `item['checks']` is a list of check configs. URL-kind rows
+    are matched by kind; service rows are replaced wholesale. Old format (no
+    `checks`): the legacy `*_health_check_enabled`, `health_check_timeout`
+    and `health_check_verify_tls` fields are mapped onto the two URL rows,
+    absent meaning disabled / global timeout / verify TLS on.
+    """
+    ensure_url_checks(entry)
+    checks = item.get('checks')
+    if isinstance(checks, list):
+        # Service rows are replaced wholesale by what the backup carries.
+        for old in entry.service_checks:
+            entry.checks.remove(old)
+        for cfg in checks:
+            if not isinstance(cfg, dict):
+                continue
+            kind = cfg.get('kind')
+            if kind in URL_CHECK_KINDS:
+                check = entry.url_check(kind)
+            elif kind == CHECK_KIND_SERVICE:
+                check = HealthCheck(kind=CHECK_KIND_SERVICE, consecutive_failures=0)
+                entry.checks.append(check)
+            else:
+                continue
+            check.name = cfg.get('name')
+            if cfg.get('check_type') in CHECK_TYPES:
+                check.check_type = cfg['check_type']
+            check.target = cfg.get('target') if kind == CHECK_KIND_SERVICE else None
+            if cfg.get('mode') in CHECK_MODES:
+                check.mode = cfg['mode']
+            check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
+            check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
+            check.verify_tls = cfg.get('verify_tls') is not False
+            check.enabled = bool(cfg.get('enabled'))
+        return
+
+    timeout = _positive_int(item.get('health_check_timeout'))
+    verify = item.get('health_check_verify_tls') is not False
+    for which in ('internal', 'external'):
+        check = entry.url_check(which)
+        check.enabled = bool(item.get(f'{which}_health_check_enabled'))
+        check.timeout_seconds = timeout
+        check.verify_tls = verify
 
 
 def _parse_health_timeout(raw):
@@ -998,16 +1054,20 @@ def edit_entry(id):
             entry.externalurl = new_externalurl
             entry.externalurl_source = synthesizer.SOURCE_UI_EDIT if new_externalurl else None
 
-        entry.internal_health_check_enabled = 'internal_health_check_enabled' in request.form
-        entry.external_health_check_enabled = 'external_health_check_enabled' in request.form
+        ensure_url_checks(entry)
+        entry.url_check('internal').enabled = 'internal_health_check_enabled' in request.form
+        entry.url_check('external').enabled = 'external_health_check_enabled' in request.form
         entry.is_static = 'is_static' in request.form
 
         health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
         if health_error:
             flash(health_error, "warning")
         else:
-            entry.health_check_timeout = health_timeout
-        entry.health_check_verify_tls = 'health_check_verify_tls' in request.form
+            # Timeout and verify-TLS apply to both URL checks.
+            for which in ('internal', 'external'):
+                entry.url_check(which).timeout_seconds = health_timeout
+        for which in ('internal', 'external'):
+            entry.url_check(which).verify_tls = 'health_check_verify_tls' in request.form
 
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:

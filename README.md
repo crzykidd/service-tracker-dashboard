@@ -468,7 +468,11 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - Run on the `url_healthcheck_interval` (default 300 seconds).
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
-- Status code, response time, and timestamp are recorded per check.
+- Status code, response time, and timestamp are recorded per check, as a
+  result row in the database (the badges still show the latest status).
+- Each entry has an internal-URL and an external-URL check; the
+  `*_health_check_enabled` flags turn them on, and the timeout and
+  verify-TLS options apply to both.
 - Each check waits up to `health_check_timeout` seconds (default 5). A
   service can override this, and turn off TLS certificate verification
   (for self-signed internal URLs that otherwise show `Error: SSLError`),

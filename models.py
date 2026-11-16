@@ -21,6 +21,25 @@ SOURCE_NOTIFIER = 'notifier'
 SOURCE_MANUAL = 'manual'
 VALID_SOURCES = (SOURCE_NOTIFIER, SOURCE_MANUAL)
 
+# Health checks (v0.7.0). URL kinds follow the entry's internal/external URL
+# (target is NULL); 'service' checks are separate rows (added in a later chunk).
+CHECK_KIND_INTERNAL = 'internal_url'
+CHECK_KIND_EXTERNAL = 'external_url'
+CHECK_KIND_SERVICE = 'service'
+URL_CHECK_KINDS = (CHECK_KIND_INTERNAL, CHECK_KIND_EXTERNAL)
+CHECK_KINDS = URL_CHECK_KINDS + (CHECK_KIND_SERVICE,)
+CHECK_TYPE_HTTP = 'http'
+CHECK_TYPE_TCP = 'tcp'
+CHECK_TYPE_PING = 'ping'
+CHECK_TYPES = (CHECK_TYPE_HTTP, CHECK_TYPE_TCP, CHECK_TYPE_PING)
+CHECK_MODE_STATUS = 'status'
+CHECK_MODE_BODY = 'body'
+CHECK_MODES = (CHECK_MODE_STATUS, CHECK_MODE_BODY)
+
+_URL_CHECK_NAMES = {CHECK_KIND_INTERNAL: 'Internal URL', CHECK_KIND_EXTERNAL: 'External URL'}
+# Short names the templates and routes use: 'internal' / 'external'.
+_URL_CHECK_ALIASES = {'internal': CHECK_KIND_INTERNAL, 'external': CHECK_KIND_EXTERNAL}
+
 
 class ServiceEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -58,6 +77,15 @@ class ServiceEntry(db.Model):
         backref='service_entry',
         lazy=True,
         cascade='all, delete-orphan',
+    )
+    # Health checks (v0.7.0): two URL-kind rows per entry plus any service
+    # checks. Config and cached state live here, not on service_entry.
+    checks = db.relationship(
+        'HealthCheck',
+        backref='service_entry',
+        lazy=True,
+        cascade='all, delete-orphan',
+        order_by='HealthCheck.id',
     )
     sort_priority = db.Column(db.Integer, nullable=True, default=None)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
@@ -135,10 +163,12 @@ class ServiceEntry(db.Model):
             'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
             'last_api_update': self.last_api_update.strftime('%Y-%m-%d %H:%M:%S') if self.last_api_update else None,
             'docker_status': self.docker_status,
-            'internal_health_check_enabled': self.internal_health_check_enabled,
+            # Legacy keys are kept (values read from the check rows) so an
+            # older STD can still restore a backup made by this version.
+            'internal_health_check_enabled': self.internal_check_enabled,
             'internal_health_check_status': self.internal_health_check_status,
             'internal_health_check_update': self.internal_health_check_update,
-            'external_health_check_enabled': self.external_health_check_enabled,
+            'external_health_check_enabled': self.external_check_enabled,
             'external_health_check_status': self.external_health_check_status,
             'external_health_check_update': self.external_health_check_update,
             'image_registry': self.image_registry,
@@ -156,8 +186,9 @@ class ServiceEntry(db.Model):
             'published_ports': self.published_ports,
             'internalurl_source': self.internalurl_source,
             'externalurl_source': self.externalurl_source,
-            'health_check_timeout': self.health_check_timeout,
-            'health_check_verify_tls': self.health_check_verify_tls,
+            'health_check_timeout': self.url_check_timeout,
+            'health_check_verify_tls': self.url_check_verify_tls,
+            'checks': [c.to_config() for c in self.checks],
             'deleted_at': self.deleted_at.strftime('%Y-%m-%d %H:%M:%S') if self.deleted_at else None,
         }
 
@@ -171,6 +202,41 @@ class ServiceEntry(db.Model):
             }
 
         return data
+
+    def url_check(self, which):
+        """The entry's URL-kind check row: 'internal' / 'external' (or the
+        full kind name). None when the row does not exist yet."""
+        kind = _URL_CHECK_ALIASES.get(which, which)
+        for check in self.checks:
+            if check.kind == kind:
+                return check
+        return None
+
+    @property
+    def service_checks(self):
+        """Service-kind checks, in creation order."""
+        return [c for c in self.checks if c.kind == CHECK_KIND_SERVICE]
+
+    @property
+    def internal_check_enabled(self):
+        check = self.url_check('internal')
+        return bool(check and check.enabled)
+
+    @property
+    def external_check_enabled(self):
+        check = self.url_check('external')
+        return bool(check and check.enabled)
+
+    @property
+    def url_check_timeout(self):
+        """Timeout shared by the two URL checks (NULL = global default)."""
+        check = self.url_check('internal') or self.url_check('external')
+        return check.timeout_seconds if check else None
+
+    @property
+    def url_check_verify_tls(self):
+        check = self.url_check('internal') or self.url_check('external')
+        return True if check is None else check.verify_tls is not False
 
     @property
     def is_manual(self):
@@ -192,6 +258,26 @@ class ServiceEntry(db.Model):
         return True
 
 
+def ensure_url_checks(entry):
+    """Make sure `entry` has exactly its two URL-kind check rows.
+
+    Idempotent: adds only the missing ones (disabled, global timeout, verify
+    TLS on). Used by every path that creates or edits an entry. Caller commits.
+    """
+    for kind in URL_CHECK_KINDS:
+        if entry.url_check(kind) is None:
+            entry.checks.append(HealthCheck(
+                kind=kind,
+                name=_URL_CHECK_NAMES[kind],
+                check_type=CHECK_TYPE_HTTP,
+                mode=CHECK_MODE_STATUS,
+                verify_tls=True,
+                enabled=False,
+                consecutive_failures=0,
+            ))
+    return entry
+
+
 def _stale_after_minutes():
     """Configured staleness threshold; default 5 when unset/invalid or outside an app context."""
     if not has_app_context():
@@ -201,6 +287,100 @@ def _stale_after_minutes():
     except (TypeError, ValueError):
         return DEFAULT_STALE_AFTER_MINUTES
     return value if value >= 0 else DEFAULT_STALE_AFTER_MINUTES
+
+
+class HealthCheck(db.Model):
+    """One configured health check plus its cached latest state.
+
+    URL kinds (`internal_url` / `external_url`) follow the entry's URL, so
+    `target` is NULL; `service` rows carry their own target. Exactly one of
+    each URL kind per entry (see ensure_url_checks). NULL interval/timeout
+    mean "use the global setting".
+    """
+    __tablename__ = 'health_check'
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_entry_id = db.Column(
+        db.Integer,
+        db.ForeignKey('service_entry.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    kind = db.Column(db.String(16), nullable=False)
+    name = db.Column(db.String(100), nullable=True)
+    check_type = db.Column(db.String(8), nullable=False, default=CHECK_TYPE_HTTP, server_default=CHECK_TYPE_HTTP)
+    target = db.Column(db.String(255), nullable=True)
+    mode = db.Column(db.String(8), nullable=False, default=CHECK_MODE_STATUS, server_default=CHECK_MODE_STATUS)
+    interval_seconds = db.Column(db.Integer, nullable=True)
+    timeout_seconds = db.Column(db.Integer, nullable=True)
+    verify_tls = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # Cached latest state (naive UTC timestamp).
+    last_ok = db.Column(db.Boolean, nullable=True)
+    last_checked_at = db.Column(db.DateTime, nullable=True)
+    last_status_code = db.Column(db.Integer, nullable=True)
+    last_latency_ms = db.Column(db.Integer, nullable=True)
+    last_message = db.Column(db.String(255), nullable=True)
+    consecutive_failures = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+    results = db.relationship(
+        'HealthResult',
+        backref='check',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+
+    @property
+    def is_url_kind(self):
+        return self.kind in URL_CHECK_KINDS
+
+    def to_config(self):
+        """Configuration only (no cached state, no results), for backups."""
+        return {
+            'kind': self.kind,
+            'name': self.name,
+            'check_type': self.check_type,
+            'target': self.target,
+            'mode': self.mode,
+            'interval_seconds': self.interval_seconds,
+            'timeout_seconds': self.timeout_seconds,
+            'verify_tls': self.verify_tls,
+            'enabled': self.enabled,
+        }
+
+    def __repr__(self):
+        return f'<HealthCheck {self.kind} svc={self.service_entry_id} enabled={self.enabled}>'
+
+
+class HealthResult(db.Model):
+    """One check sample, or (later) a compacted range of successes.
+
+    `ts_end` is NULL for a single sample. Timestamps are naive UTC.
+    """
+    __tablename__ = 'health_result'
+
+    id = db.Column(db.Integer, primary_key=True)
+    check_id = db.Column(
+        db.Integer,
+        db.ForeignKey('health_check.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    ts = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    ts_end = db.Column(db.DateTime, nullable=True)
+    samples = db.Column(db.Integer, nullable=False, default=1, server_default='1')
+    ok = db.Column(db.Boolean, nullable=False)
+    latency_ms = db.Column(db.Float, nullable=True)
+    latency_max_ms = db.Column(db.Integer, nullable=True)
+    status_code = db.Column(db.Integer, nullable=True)
+    message = db.Column(db.String(255), nullable=True)
+
+    # The composite index also serves the check_id FK.
+    __table_args__ = (
+        db.Index('ix_health_result_check_id_ts', 'check_id', 'ts'),
+    )
+
+    def __repr__(self):
+        return f'<HealthResult check={self.check_id} ts={self.ts} ok={self.ok}>'
 
 
 class Widget(db.Model):

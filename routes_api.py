@@ -31,7 +31,7 @@ from pydantic import ValidationError
 import synthesizer
 from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
-from models import SOURCE_NOTIFIER, Group, ServiceEntry
+from models import SOURCE_NOTIFIER, Group, ServiceEntry, ensure_url_checks
 from schemas import RegisterPayload
 
 logger = logging.getLogger(__name__)
@@ -239,14 +239,15 @@ def upsert_service(canonical, app):
             if canonical.get("started_at"):
                 entry.started_at = canonical["started_at"]
 
-            if "internal_health_check_enabled" in canonical:
-                parsed = parse_bool(canonical["internal_health_check_enabled"])
-                if parsed is not None:
-                    entry.internal_health_check_enabled = parsed
-            if "external_health_check_enabled" in canonical:
-                parsed = parse_bool(canonical["external_health_check_enabled"])
-                if parsed is not None:
-                    entry.external_health_check_enabled = parsed
+            # Toggles set `enabled` on the matching URL check row; absent
+            # (or unparsable) means no change.
+            ensure_url_checks(entry)
+            for which in ("internal", "external"):
+                key = f"{which}_health_check_enabled"
+                if key in canonical:
+                    parsed = parse_bool(canonical[key])
+                    if parsed is not None:
+                        entry.url_check(which).enabled = parsed
 
             if image_meta["registry"]:
                 entry.image_registry = image_meta["registry"]
@@ -301,8 +302,6 @@ def upsert_service(canonical, app):
                 externalurl_source=synthesizer.SOURCE_EXPLICIT_LABEL if new_externalurl else None,
                 stack_name=canonical.get('stack_name'),
                 docker_status=canonical.get('docker_status'),
-                internal_health_check_enabled=parse_bool(canonical.get('internal_health_check_enabled')),
-                external_health_check_enabled=parse_bool(canonical.get('external_health_check_enabled')),
                 group_id=group_obj.id if group_obj else None,
                 started_at=canonical.get('started_at'),
                 last_updated=now,
@@ -319,6 +318,9 @@ def upsert_service(canonical, app):
                 exposed_ports=canonical.get('exposed_ports'),
                 published_ports=canonical.get('published_ports'),
             )
+            ensure_url_checks(entry)
+            for which in ("internal", "external"):
+                entry.url_check(which).enabled = bool(parse_bool(canonical.get(f"{which}_health_check_enabled")))
             db.session.add(entry)
             # Flush so entry.id is available for ServiceExposure FKs
             # before replace_exposures runs below.

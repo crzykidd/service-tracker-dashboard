@@ -50,7 +50,7 @@
           </label>
           <input type="url" name="internalurl" id="internal_url" class="form-input" value="{{ entry.internalurl or '' }}">
           <div class="flex items-center mt-1.5">
-            <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-4 w-4" {% if entry.internal_health_check_enabled %}checked{% endif %}>
+            <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-4 w-4" {% if entry.internal_check_enabled %}checked{% endif %}>
             <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health check enabled</label>
           </div>
           <p class="edit-helper">Clearing this field resets provenance and re-allows synthesis from exposure observations.</p>
@@ -63,7 +63,7 @@
           </label>
           <input type="url" name="externalurl" id="external_url" class="form-input" value="{{ entry.externalurl or '' }}">
           <div class="flex items-center mt-1.5">
-            <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-4 w-4" {% if entry.external_health_check_enabled %}checked{% endif %}>
+            <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-4 w-4" {% if entry.external_check_enabled %}checked{% endif %}>
             <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health check enabled</label>
           </div>
         </div>
@@ -74,12 +74,12 @@
       <div class="edit-section-fields">
         <div>
           <label for="health_check_timeout" class="block text-sm font-medium text-dashboard-secondary mb-1">Timeout (seconds)</label>
-          <input type="number" name="health_check_timeout" id="health_check_timeout" class="form-input" min="1" max="60" step="1" placeholder="Default" value="{{ entry.health_check_timeout if entry.health_check_timeout else '' }}">
+          <input type="number" name="health_check_timeout" id="health_check_timeout" class="form-input" min="1" max="60" step="1" placeholder="Default" value="{{ entry.url_check_timeout if entry.url_check_timeout else '' }}">
           <p class="edit-helper">Blank uses the global <code>health_check_timeout</code> setting. 1&ndash;60.</p>
         </div>
         <div>
           <div class="flex items-center">
-            <input type="checkbox" name="health_check_verify_tls" id="health_check_verify_tls" class="form-checkbox h-4 w-4" {% if entry.health_check_verify_tls %}checked{% endif %}>
+            <input type="checkbox" name="health_check_verify_tls" id="health_check_verify_tls" class="form-checkbox h-4 w-4" {% if entry.url_check_verify_tls %}checked{% endif %}>
             <label for="health_check_verify_tls" class="ml-2 text-sm text-dashboard-secondary">Verify TLS certificate</label>
           </div>
           <p class="edit-helper">Untick for self-signed internal URLs that otherwise report <code>Error: SSLError</code>.</p>
