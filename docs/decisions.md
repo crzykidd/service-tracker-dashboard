@@ -5,6 +5,34 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v080-04 implementation calls (OpenAPI, audit view, docs)
+
+- **Own registry + pydantic, no flask-smorest/apispec.** `mgmt_openapi.OPERATIONS`
+  is one declaration per endpoint; the spec is built with `TypeAdapter.json_schema()`.
+  Fewer dependencies, and the tests compare it to `app.url_map` and to each
+  view's `required_scope` (set by `require_api_key`). The registry is declared
+  beside, not on, the routes, so a new route needs two edits and a test fails
+  if either is forgotten.
+- **Response TypedDicts use `typing_extensions.TypedDict`.** pydantic refuses
+  `typing.TypedDict` below Python 3.12 and CI is 3.11. Both pythons run the suite.
+- **Generic `Page[T]` components are named `PageOf<Item>`** (pydantic titles
+  them all just "Page", which would collide). Union responses
+  (`DELETE /entries/{id}`) are inline `anyOf`.
+- **Spec is filtered by blueprint, not URL prefix**, so `/api/v1/register` and
+  the browser JSON routes under `/api/v1` stay out. `/openapi.json` itself is
+  public and listed.
+- **Unmatched `/api/v1/*` gets JSON only if `url_rule is None` and the caller
+  sends a Bearer header or `Accept: application/json`.** Routed requests
+  (browser routes, register) are never touched, and a plain browser still gets
+  the Flask page. Handled app-wide because blueprints cannot catch unrouted URLs.
+- **Audit filter is by `key_name` (the snapshot)**, via a dropdown of names
+  seen in the log, so revoked or deleted keys can still be filtered.
+- **README endpoint table is generated from the registry** and a test checks
+  every row is present, so docs cannot silently drift.
+- **MCP sentence left as a placeholder** in "Managing STD with Claude" for v080-05.
+
+---
+
 ## 2026-11-15 — v080-03 implementation calls (groups, widgets, settings, config)
 
 - **Group delete matches the UI (409 with active entries); `?force=true`

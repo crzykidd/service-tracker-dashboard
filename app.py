@@ -194,6 +194,30 @@ def create_app():
         target = ref.path + (f"?{ref.query}" if ref.query else "")
         return redirect(safe_redirect_target(target))
 
+    def _api_v1_json_error(error):
+        """Unmatched `/api/v1/*` URLs answer in the management API's JSON shape
+        when the caller looks like an API client (Bearer header or
+        `Accept: application/json`). Only unrouted requests (`url_rule is
+        None`) are touched, so browser routes and register keep Flask's pages."""
+        if (
+            request.url_rule is None
+            and request.path.startswith("/api/v1/")
+            and (request.headers.get("Authorization", "").lower().startswith("bearer ")
+                 or "application/json" in request.headers.get("Accept", ""))
+        ):
+            from routes_mgmt_api import json_error
+
+            message = "Not found" if error.code == 404 else "Method not allowed"
+            response = json_error(error.code, message,
+                                  "No such endpoint. See GET /api/v1/openapi.json.")
+            if error.code == 405 and getattr(error, "valid_methods", None):
+                response.headers["Allow"] = ", ".join(error.valid_methods)
+            return response
+        return error
+
+    app.register_error_handler(404, _api_v1_json_error)
+    app.register_error_handler(405, _api_v1_json_error)
+
     @app.errorhandler(403)
     def forbidden_error(error):
         return render_template("403.html"), 403

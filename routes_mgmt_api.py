@@ -32,6 +32,7 @@ import check_form
 import entry_rules
 import health_history
 import jobs
+import mgmt_openapi
 import routes_api
 import settings_loader
 import settings_store
@@ -218,6 +219,7 @@ def require_api_key(scope):
                                   f"This endpoint needs a '{scope}' key; this key is '{key.scope}'.")
             return view(*args, **kwargs)
 
+        wrapped.required_scope = scope   # read by the OpenAPI completeness test
         return wrapped
 
     return decorator
@@ -292,6 +294,13 @@ mgmt_bp.after_request(audit_response)
 
 
 # --- endpoints -----------------------------------------------------------------
+
+
+@mgmt_bp.route("/openapi.json", methods=["GET"])
+def openapi_spec():
+    """The OpenAPI 3.1 description of this blueprint. Public: shapes, not data."""
+    version = (current_app.config.get("VERSION_INFO") or {}).get("version") or ""
+    return jsonify(mgmt_openapi.build_spec(str(version)))
 
 
 @mgmt_bp.route("/whoami", methods=["GET"])

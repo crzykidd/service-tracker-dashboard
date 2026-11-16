@@ -30,14 +30,16 @@ through the web UI or directly via API.
    - [Moving from Docker Hub](#moving-from-docker-hub)
 6. [Database Migrations](#database-migrations)
 7. [API: Registering Services](#api-registering-services)
-8. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
-9. [Files and Paths](#files-and-paths)
-10. [Health Checks](#health-checks)
-11. [Routes](#routes)
-12. [Widgets](#widgets)
-13. [Behavior Notes](#behavior-notes)
-14. [Versioning & Releases](#versioning--releases)
-15. [Development](#development)
+8. [Management API](#management-api)
+9. [Managing STD with Claude](#managing-std-with-claude)
+10. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
+11. [Files and Paths](#files-and-paths)
+12. [Health Checks](#health-checks)
+13. [Routes](#routes)
+14. [Widgets](#widgets)
+15. [Behavior Notes](#behavior-notes)
+16. [Versioning & Releases](#versioning--releases)
+17. [Development](#development)
 
 ---
 
@@ -494,6 +496,165 @@ state. Combine with the `?show_urlless=false` view-control filter
 
 ---
 
+## Management API
+
+Everything you can do in the web UI can also be done over JSON, so a script or
+an agent such as Claude can maintain an instance: read every entry and its
+health, add manual sites and web checks, edit fields, move entries between
+groups, attach widgets, change exposure settings and triage failures. It is
+separate from [`/api/v1/register`](#api-registering-services), which stays
+exactly as it was.
+
+The machine-readable description is an OpenAPI 3.1 document at
+`GET /api/v1/openapi.json` (no key needed; it describes shapes, not data). It
+is generated from the same declarations the tests check against the routes, so
+it always matches the code.
+
+### Create a key and send it
+
+1. Open **Settings → API**, enter a name and pick a scope, and press
+   **Create key**.
+   - **read** can read everything (entries, checks, health, groups, widgets,
+     settings, the masked config).
+   - **write** can read and change.
+   - Use a read key for dashboards and monitoring, and a write key only for
+     things that should change STD.
+2. Copy the key now. It is shown **once** (`std_<prefix>_<secret>`); only a
+   hash is stored. A lost key is revoked and replaced.
+3. Send it on every request:
+
+```bash
+export STD=http://localhost:8815      # your STD base URL
+export KEY=std_xxxxxxxx_...           # the key you just created
+curl -s -H "Authorization: Bearer $KEY" "$STD/api/v1/whoami"
+# {"name":"agent","prefix":"ba45c874","scope":"write"}
+```
+
+The notifier's `api_token` is **register-only**: it cannot call any of these
+endpoints, and a management key is rejected by `/api/v1/register`. Browser
+sessions do not authenticate the management API either, so it needs no CSRF
+token.
+
+### Endpoints
+
+| Method | Path | Scope | What it does |
+|---|---|---|---|
+| GET | `/api/v1/openapi.json` | none | This OpenAPI document |
+| GET | `/api/v1/whoami` | read | Name, prefix and scope of the calling key |
+| GET | `/api/v1/entries` | read | List entries |
+| POST | `/api/v1/entries` | write | Add a manual entry |
+| GET | `/api/v1/entries/{id}` | read | Get one entry in full |
+| PATCH | `/api/v1/entries/{id}` | write | Edit an entry |
+| DELETE | `/api/v1/entries/{id}` | write | Delete an entry (soft) or remove it for good |
+| POST | `/api/v1/entries/{id}/restore` | write | Restore a deleted entry |
+| GET | `/api/v1/entries/{id}/checks` | read | List an entry's checks |
+| POST | `/api/v1/entries/{id}/checks` | write | Add a service check |
+| PATCH | `/api/v1/checks/{id}` | write | Edit or enable/disable a check |
+| DELETE | `/api/v1/checks/{id}` | write | Delete a service check |
+| POST | `/api/v1/entries/{id}/checks/run` | write | Check now |
+| GET | `/api/v1/entries/{id}/health` | read | Health history of an entry |
+| GET | `/api/v1/health/summary` | read | Counts and the failing entries |
+| GET | `/api/v1/groups` | read | List groups |
+| POST | `/api/v1/groups` | write | Create a group |
+| PATCH | `/api/v1/groups/{id}` | write | Rename or edit a group |
+| DELETE | `/api/v1/groups/{id}` | write | Delete a group |
+| GET | `/api/v1/widgets/types` | read | Widget types and their fields |
+| GET | `/api/v1/widgets` | read | List widget instances |
+| PUT | `/api/v1/entries/{id}/widget` | write | Attach or reconfigure an entry's widget |
+| DELETE | `/api/v1/entries/{id}/widget` | write | Detach an entry's widget |
+| DELETE | `/api/v1/widgets/{id}` | write | Delete a detached widget |
+| GET | `/api/v1/settings/exposure` | read | Exposure direction settings |
+| PUT | `/api/v1/settings/exposure` | write | Replace exposure direction settings |
+| GET | `/api/v1/config` | read | Effective configuration (read-only) |
+
+Ids are the numeric ids shown in the API output. Write endpoints that create
+something answer `201`. `PATCH` bodies take only the fields to change: a field
+you leave out is untouched, and a field sent as `null` clears it where that
+makes sense. Notifier-owned fields (container id, networks, ports, exposures
+and so on) cannot be edited, and a request that names one is rejected. The
+full request and response shapes are in the OpenAPI document.
+
+### Examples
+
+```bash
+H=(-H "Authorization: Bearer $KEY" -H "Content-Type: application/json")
+
+# What is failing right now? (counts plus each failing entry and why)
+curl -s "${H[@]}" "$STD/api/v1/health/summary"
+
+# Add a manual site with an HTTP check in body mode (passes when the reply is OK)
+curl -s -X POST "${H[@]}" "$STD/api/v1/entries" -d '{
+  "name": "Home Router", "host": "lan", "group": "Network",
+  "internalurl": "http://192.168.1.1",
+  "checks": [{"target": "http://192.168.1.1/healthz", "name": "Health endpoint",
+              "mode": "body", "interval_seconds": 60}]
+}'
+
+# Disable a check (ids come from GET /api/v1/entries/<id>/checks)
+curl -s -X PATCH "${H[@]}" "$STD/api/v1/checks/3" -d '{"enabled": false}'
+
+# Move an entry to another group (the group is created if it is new)
+curl -s -X PATCH "${H[@]}" "$STD/api/v1/entries/1" -d '{"group": "Infrastructure"}'
+
+# Attach a widget (see GET /api/v1/widgets/types for types and fields)
+curl -s -X PUT "${H[@]}" "$STD/api/v1/entries/1/widget" -d '{
+  "type": "sonarr", "url": "http://sonarr:8989",
+  "fields": ["wanted", "queued"], "widget_api_key": "<sonarr key>"
+}'
+```
+
+### Errors, pagination and the audit log
+
+- **Errors** are always `{"error": "<message>", "details": ...}`. Validation
+  failures are `400` and `details` is a list of `{loc, msg, type}` (or
+  `{field, message}` for value rules); `401` is a missing, invalid or revoked
+  key; `403` is a key whose scope is too low; `404` is an unknown id or
+  endpoint; `409` is a conflict with the current state (for example deleting a
+  group that still has entries, or editing a deleted entry). Requests with an
+  unknown field are rejected rather than ignored.
+- **Lists** return `{"items": [...], "total": N, "limit": N, "offset": N}` and
+  take `?limit=` (default 200, at most 1000) and `?offset=`. `GET /entries`
+  also filters by `status`, `source`, `host`, `group` and `q`, and hides
+  deleted entries unless `include_deleted` or `deleted_only` is set.
+- **Safety flags** on deletes: `DELETE /entries/<id>` soft-deletes (restore
+  with `POST .../restore`) and `?permanent=true` removes an already deleted
+  entry for good; `DELETE /groups/<id>?force=true` ungroups its entries
+  instead of refusing; `DELETE /entries/<id>/widget?delete=true` also removes
+  the widget.
+- **Audit log.** Every write (POST, PATCH, PUT, DELETE, including rejected
+  ones) is recorded with the key name, method, path, object, status and the
+  changed fields as `{field: [old, new]}`. Secrets such as a widget API key
+  are shown as `***`. **Settings → API → Audit log** lists the most recent 200
+  rows and can filter by key. Rows are kept for `api_audit_retention_days`
+  (default 90).
+
+## Managing STD with Claude
+
+You can let Claude (or any agent that can make HTTP calls) look after your
+dashboard: ask it what is broken, add a new service, or tidy the groups.
+
+1. In **Settings → API**, create a key named for the agent (for example
+   `claude`). Use **write** if it should make changes and **read** if it should
+   only look. Revoke it from the same page whenever you like.
+2. Give Claude the base URL of your STD (for example `http://std.lan:8815`)
+   and the key, and point it at `<base URL>/api/v1/openapi.json` so it knows
+   every endpoint and body. Keep the key out of shared chats and repositories.
+3. Ask in plain language. Examples:
+   - "Which services are failing, and since when?"
+   - "Add a manual entry for my NAS at http://nas.lan:5000 in the Storage
+     group, with a ping check and an HTTP check every minute."
+   - "Disable the external URL check on Jellyfin; it is behind a VPN."
+   - "Move everything on host `media` into a group called Media, then show me
+     the groups."
+   - "Attach a Sonarr widget to the Sonarr entry using this API key."
+   - "What did the `claude` key change today?" (it is in the audit log, which
+     you can also read in Settings → API)
+
+An MCP server for Claude Desktop and Claude Code that wraps these endpoints is
+planned for this release; this section will describe how to set it up.
+
+---
+
 ## Container Labels (via docker-api-notifier)
 
 If you run [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier)
@@ -616,6 +777,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
 | `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
+| `/api/v1/openapi.json` | OpenAPI 3.1 description of the management API (public). |
 | `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
 | `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
@@ -623,10 +785,8 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 
 ### Admin API keys (management API)
 
-Settings → **API** creates admin API keys for the management API under
-`/api/v1` (v0.8.0, in progress: `whoami`, entries, checks, Check now, entry
-health and `/health/summary` so far; groups, widgets and runtime settings
-follow, then the OpenAPI spec and examples). Keys are separate from the notifier's
+Settings → **API** creates admin API keys for the [management
+API](#management-api) under `/api/v1` (new in v0.8.0). Keys are separate from the notifier's
 `api_token`, which can only register services and is rejected here, and a
 management key is rejected by `/api/v1/register`.
 
@@ -640,7 +800,8 @@ management key is rejected by `/api/v1/register`.
   status. Revoked keys stay listed, greyed out.
 - Every write made with a key (POST, PATCH, PUT, DELETE, including rejected
   ones) is recorded in an audit log, with secret values masked. Rows are kept
-  for `api_audit_retention_days` (90).
+  for `api_audit_retention_days` (90). The most recent 200 are listed under the
+  key table (filter by key).
 
 ---
 

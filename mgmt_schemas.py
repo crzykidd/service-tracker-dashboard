@@ -13,9 +13,12 @@ are plain functions returning these dicts, and the OpenAPI generator
 `pydantic.TypeAdapter(SomeTypedDict).json_schema()`.
 """
 
-from typing import Any, Generic, TypedDict, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
+
+# pydantic refuses `typing.TypedDict` before Python 3.12, and CI runs 3.11.
+from typing_extensions import TypedDict
 
 # --- requests ------------------------------------------------------------------
 
@@ -151,6 +154,17 @@ class Page(TypedDict, Generic[T]):
 class ErrorOut(TypedDict):
     error: str
     details: Any
+
+
+class WhoamiOut(TypedDict):
+    name: str
+    prefix: str
+    scope: str                       # "read" | "write"
+
+
+class CheckDeleteOut(TypedDict):
+    id: int
+    deleted: bool
 
 
 class CheckLastOut(TypedDict):
@@ -294,6 +308,45 @@ class HealthSummaryOut(TypedDict):
     counts: SummaryCountsOut
     failing: list[SummaryEntryOut]
 
+
+
+class HealthFailureSampleOut(TypedDict):
+    ts: str | None
+    message: str | None
+    status_code: int | None
+
+
+class HealthBarOut(TypedDict):
+    start: str | None
+    end: str | None
+    ok: int                          # passing samples in the bucket
+    fail: int
+    messages: list[str]              # up to 3 distinct failure messages
+
+
+class CheckHealthOut(TypedDict):
+    id: int
+    kind: str
+    name: str
+    check_type: str
+    target: str | None
+    mode: str
+    state: str                       # "up" | "down" | "unknown"
+    last_checked_at: str | None
+    latency_ms: int | None
+    status_code: int | None
+    message: str | None
+    uptime_24h: float | None         # percent; null with no samples
+    uptime_7d: float | None
+    failures: list[HealthFailureSampleOut]   # newest first, up to 20
+    bars: list[HealthBarOut]
+
+
+class EntryHealthDetailOut(TypedDict):
+    entry_id: int
+    range: str                       # "24h" | "7d"
+    generated_at: str
+    checks: list[CheckHealthOut]
 
 
 class GroupOut(TypedDict):

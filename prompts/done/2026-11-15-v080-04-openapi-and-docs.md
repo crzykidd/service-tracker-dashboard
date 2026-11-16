@@ -1,10 +1,10 @@
 ---
 name: v080-04-openapi-and-docs
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15
+result: OpenAPI 3.1 spec from a route registry, Settings audit log view, README Management API + Claude sections, JSON 404/405 for API clients; suite green on 3.11 and 3.14
 ---
 
 # Task: OpenAPI spec, audit-log view, and API docs

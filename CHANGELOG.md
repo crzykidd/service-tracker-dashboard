@@ -24,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Write audit log.** Every write made through the management API is
   recorded (key name, method, path, result and the fields changed, with
   secret values masked). New setting `api_audit_retention_days` (default 90)
-  controls how long rows are kept; a daily job removes older ones. The
-  Settings view of the log comes in a later v0.8.0 step.
+  controls how long rows are kept; a daily job removes older ones. The log is
+  shown in Settings → API (see below).
 - Database migration `d4a9e2c6b715` adds the `api_key` and `api_audit`
   tables.
 - **Management API: entries, checks and health** (needs a write key for
@@ -66,6 +66,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     recomputes the synthesized URLs).
   - `GET /config` shows the effective settings and the app version, read-only,
     with `api_token` and any key, token, password or secret masked.
+- **Management API: OpenAPI spec, audit log view and docs.**
+  - `GET /api/v1/openapi.json` (no key needed) is an OpenAPI 3.1 description
+    of every management endpoint: scopes, query options, request bodies,
+    response shapes and the error format. It is generated from the code, so it
+    cannot drift. `/api/v1/register` is not part of it.
+  - **Settings → API → Audit log** lists the most recent 200 management-API
+    writes (time, key, method, path, object, status and the fields changed,
+    with secrets shown as `***`), with a filter by key.
+  - The README has new **Management API** and **Managing STD with Claude**
+    sections: creating a key, the endpoint table, curl examples, errors,
+    paging and the audit log.
+  - An unknown `/api/v1/...` URL or a wrong method now answers in the API's
+    JSON error format when the request carries a Bearer key or asks for JSON
+    (the browser keeps the normal page).
 
 ### Fixed
 

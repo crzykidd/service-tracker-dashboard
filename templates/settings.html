@@ -580,6 +580,58 @@
       {% else %}
       <p class="text-gray-400">No API keys yet.</p>
       {% endif %}
+
+      <h2 class="text-2xl font-semibold mt-10 mb-2">Audit log</h2>
+      <p class="text-gray-400 mb-4 text-sm">
+        Every write made through the management API (the most recent {{ audit_limit }}), including rejected ones.
+        Secret values are masked. Reads are not logged. Rows are kept for {{ current_config.get('api_audit_retention_days', 90) }} days.
+      </p>
+      <form method="GET" action="{{ url_for('dashboard.settings') }}" class="flex flex-wrap items-end gap-3 mb-4" id="audit-filter-form">
+        <input type="hidden" name="section" value="api">
+        <label class="text-sm">Key
+          <select name="audit_key" class="block mt-1 px-2 py-1 rounded bg-gray-900 border border-gray-600 text-white" onchange="this.form.submit()">
+            <option value="">All keys</option>
+            {% for n in audit_key_names %}
+            <option value="{{ n }}" {% if n == audit_filter %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <noscript><button type="submit" class="px-3 py-1 bg-gray-600 rounded text-white">Filter</button></noscript>
+      </form>
+      {% if audit_rows %}
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="api-audit-table" style="min-width:760px">
+        <thead class="bg-gray-700 text-gray-200">
+          <tr>
+            <th class="px-3 py-2">Time (UTC)</th>
+            <th class="px-3 py-2">Key</th>
+            <th class="px-3 py-2">Method</th>
+            <th class="px-3 py-2">Path</th>
+            <th class="px-3 py-2">Object</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in audit_rows %}
+          <tr class="border-t border-gray-700 align-top">
+            <td class="px-3 py-2 whitespace-nowrap">{{ a.row.ts.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td class="px-3 py-2">{{ a.row.key_name or '-' }}</td>
+            <td class="px-3 py-2">{{ a.row.method }}</td>
+            <td class="px-3 py-2 break-all"><code>{{ a.row.path }}</code></td>
+            <td class="px-3 py-2 whitespace-nowrap">{% if a.row.object_type %}{{ a.row.object_type }}{% if a.row.object_id %} #{{ a.row.object_id }}{% endif %}{% else %}-{% endif %}</td>
+            <td class="px-3 py-2 {% if a.row.status_code >= 400 %}text-red-400{% else %}text-green-400{% endif %}">{{ a.row.status_code }}</td>
+            <td class="px-3 py-2 break-all">
+              {% for line in a.changes %}<div><code class="text-xs">{{ line }}</code></div>{% else %}-{% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="text-gray-400" id="api-audit-empty">No API writes recorded{% if audit_filter %} for this key{% endif %}.</p>
+      {% endif %}
     </section>
 
     <!-- === Exposure Section === -->

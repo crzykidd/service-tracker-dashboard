@@ -14,6 +14,7 @@ Grouping/sorting for the three dashboard views lives in
 the query params and hands them to the helper.
 """
 
+import json
 import logging
 import math
 import os
@@ -59,6 +60,7 @@ from models import (
     SOURCE_NOTIFIER,
     URL_CHECK_KINDS,
     VALID_SOURCES,
+    ApiAudit,
     ApiKey,
     Group,
     HealthCheck,
@@ -378,6 +380,28 @@ def db_dump():
     return render_template("dbdump.html", entries=entries)
 
 
+AUDIT_VIEW_LIMIT = 200
+
+
+def _audit_change_lines(changes):
+    """Plain-text lines for an audit row's `{field: [old, new]}`. Jinja escapes
+    them on output; values are shortened, and secrets arrive already masked."""
+    if not isinstance(changes, dict):
+        return []
+
+    def show(value):
+        text = value if isinstance(value, str) else json.dumps(value, default=str)
+        return text if len(text) <= 120 else text[:117] + '...'
+
+    lines = []
+    for field, pair in changes.items():
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            lines.append(f'{field}: {show(pair[0])} -> {show(pair[1])}')
+        else:
+            lines.append(f'{field}: {show(pair)}')
+    return lines
+
+
 @dashboard_bp.route('/settings', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
@@ -663,6 +687,17 @@ def settings():
     exposure_hosts = settings_store.discovered_hosts()
     exposure_host_overrides = settings_store.get_host_layer_overrides()
 
+    audit_filter = (request.args.get('audit_key') or '').strip()
+    audit_query = ApiAudit.query
+    if audit_filter:
+        audit_query = audit_query.filter(ApiAudit.key_name == audit_filter)
+    audit_rows = [
+        {'row': r, 'changes': _audit_change_lines(r.changes)}
+        for r in audit_query.order_by(ApiAudit.ts.desc(), ApiAudit.id.desc()).limit(AUDIT_VIEW_LIMIT).all()
+    ]
+    audit_key_names = [n for (n,) in db.session.query(ApiAudit.key_name)
+                       .filter(ApiAudit.key_name.isnot(None)).distinct().order_by(ApiAudit.key_name).all()]
+
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -682,6 +717,10 @@ def settings():
          api_token_missing=not current_app.config.get('api_token'),
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
          default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
+         audit_rows=audit_rows,
+         audit_key_names=audit_key_names,
+         audit_filter=audit_filter,
+         audit_limit=AUDIT_VIEW_LIMIT,
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,

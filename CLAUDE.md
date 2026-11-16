@@ -360,7 +360,9 @@ routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
 routes_api.py       ← /api/v1/register
 routes_mgmt_api.py  ← management API blueprint (/api/v1, admin API key only, CSRF-exempt):
                       require_api_key(scope), audit() + after_request audit hook, JSON errors;
-                      entries, checks and health endpoints (v080-02)
+                      entries, checks, health, groups, widgets, settings, config, openapi.json
+mgmt_openapi.py     ← management API route registry (OPERATIONS) + OpenAPI 3.1 generator;
+                      add every new management route here (tests enforce it)
 api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
 mgmt_schemas.py     ← management API pydantic requests (extra=forbid) + response TypedDicts
 mgmt_serializers.py ← model -> response-dict functions for the management API

@@ -53,6 +53,7 @@
 | 0.43    | 2026-11-15 | §14.2 and §14.6 delivered (unreleased, v080-01): admin API keys (`api_key`, Settings → API tab, show-once), management blueprint skeleton (`require_api_key`, JSON errors, `GET /api/v1/whoami`), write audit log (`api_audit`, `audit()` helper, `after_request` hook, `api_audit_retention_days` + daily purge). Migration `d4a9e2c6b715`; §5.7 updated. Register wire contract unchanged. |
 | 0.44    | 2026-11-15 | §14.3 delivered (unreleased, v080-02): management endpoints for entries, checks, Check now, entry health and `/health/summary`; shared validation (`entry_rules.py`, dict-based validators in `check_form.py`) used by the UI and API; `mgmt_schemas.py` / `mgmt_serializers.py`. No schema change. Register wire contract unchanged. |
 | 0.45    | 2026-11-15 | §14.4 delivered (unreleased, v080-03): management endpoints for groups, widget types and instances (attach, detach, delete), exposure direction settings and a read-only masked `GET /config`; `widget_rules.py`. No schema change. Register wire contract unchanged. |
+| 0.46    | 2026-11-15 | §14.5 and the §14.6 Settings view delivered (unreleased, v080-04): `GET /api/v1/openapi.json` generated from a route registry (`mgmt_openapi.py`) plus the pydantic/TypedDict models, with completeness tests against `app.url_map`; Settings → API audit log view; README Management API and Managing STD with Claude sections; JSON 404/405 for unmatched `/api/v1/*` API-client requests. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1928,7 +1929,7 @@ Users and passwords are **not** exposed through the API (out of scope).
   env/file/default. Names that are secrets (`api_token`, anything ending
   `_key`, `_token`, `_password`, `_secret`) show `"***"` (null if unset).
 
-### 14.5 OpenAPI spec and docs [`v080-04-openapi-and-docs`]
+### 14.5 OpenAPI spec and docs [`v080-04-openapi-and-docs`] — Delivered (unreleased)
 
 - `GET /api/v1/openapi.json` (no auth; it describes shapes, not data) is an
   OpenAPI 3.1 document. It is generated from the pydantic request and
@@ -1939,7 +1940,22 @@ Users and passwords are **not** exposed through the API (out of scope).
   HTTP body check, disable a check), and a "Managing STD with Claude"
   section.
 
-### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`] — Delivered (unreleased; model, hook, retention)
+**As built (v080-04):** `mgmt_openapi.py` holds the route registry
+(`OPERATIONS`: one `Op` per endpoint with method, path, scope, summary,
+request model, response type and query parameters) and `build_spec()`, which
+emits OpenAPI 3.1 using `pydantic.TypeAdapter(...).json_schema()` for the
+`mgmt_schemas.py` models (no extra dependency). `GET /api/v1/openapi.json` is
+public and lives on the management blueprint, so it is in the registry too.
+`require_api_key` tags each view with `required_scope`, and
+`tests/test_mgmt_openapi.py` fails if any `mgmt_api.*` rule in `app.url_map`
+is missing from the registry (or the reverse), if a scope differs, if a
+`$ref` does not resolve, if `/api/v1/register` appears, or if the README
+endpoint table drifts. Filtering is by blueprint, so the browser-session JSON
+routes under `/api/v1` are never listed. Unmatched `/api/v1/*` URLs answer
+with the JSON error shape when the caller sends a Bearer header or
+`Accept: application/json`.
+
+### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`] — Delivered (unreleased)
 
 - **Model `ApiAudit`** (table `api_audit`): `id`, `ts` (UTC), `api_key_id`
   (FK, indexed, `ON DELETE SET NULL`), `key_name` (a snapshot), `method`,
@@ -1961,6 +1977,8 @@ or any name containing `secret`, `password` or `token`) as `"***"` for both
 old and new values before they reach the database. Unauthenticated requests
 are only logged. `jobs.purge_api_audit` runs daily at 00:35. The Settings
 view of the log is not built yet.
+
+**As built (v080-04):** Settings → API lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
 
 ### 14.7 MCP server [`v080-05-mcp-server`]
 
