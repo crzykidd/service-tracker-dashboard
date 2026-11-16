@@ -213,8 +213,11 @@ def require_api_key(scope):
             g.api_key_id, g.api_key_name = key.id, key.name
             _touch(key)
             if not api_keys.scope_allows(key.scope, scope):
-                logger.info("403 - API key '%s' (%s) lacks '%s' scope for %s %s",
-                            g.api_key_name, key.prefix, scope, request.method, request.path)
+                # Which key it was is recorded in the audit log (writes) and as
+                # the key's last-used time; nothing key-derived is logged here
+                # (CodeQL py/clear-text-logging-sensitive-data).
+                logger.info("403 - API key lacks '%s' scope for %s %s",
+                            scope, request.method, request.path)
                 return json_error(403, "Forbidden",
                                   f"This endpoint needs a '{scope}' key; this key is '{key.scope}'.")
             return view(*args, **kwargs)
