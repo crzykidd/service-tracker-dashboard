@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **"Show uptime" option in the filter bar.** Tick it to see a compact 24-hour
+  uptime strip on every service, on Dashboard, Tiled and Compact, without
+  opening each detail panel. The strip has 48 half-hour bars (red if any of
+  the service's checks failed in that slot, green if all passed, grey with no
+  data) and the 24h uptime percentage (Dashboard and Tiled; Compact shows
+  just the thin strip). Hover or tap a bar for the time, counts and failure
+  messages. It is off by default, remembered in a browser cookie, shows or
+  hides instantly without reloading, and fetches nothing while off.
+
 ### Changed
 
 - **The filter bar now shows clickable Total, Passing and Failing counts**

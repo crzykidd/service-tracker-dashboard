@@ -52,6 +52,13 @@
         Show URL-less
       </label>
 
+      <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
+        <input type="checkbox" id="showUptimeToggle"
+               class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+               {% if request.cookies.get('std_show_uptime') == '1' %}checked{% endif %}>
+        Show uptime
+      </label>
+
       {% if health_counts is defined %}
       <nav class="hc-chips" id="healthCounts" aria-label="Health counts">
         {% for key, label in [('total', 'Total'), ('passing', 'Passing'), ('failing', 'Failing')] %}

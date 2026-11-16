@@ -166,6 +166,7 @@
             {# Health column — rolled-up state across the entry's enabled checks #}
             <td class="px-3 py-2">
               {% include "partials/health_badge.html" %}
+              {% with variant='dashboard' %}{% include "partials/uptime_strip.html" %}{% endwith %}
             </td>
 
             {# Status column — Docker pill with icon + label #}

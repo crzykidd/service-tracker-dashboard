@@ -194,3 +194,63 @@ def entry_payload(entry, range_name="24h", now=None):
         "generated_at": iso_z(now),
         "checks": [check_payload(entry, c, range_name, now) for c in checks],
     }
+
+
+MAX_STRIP_IDS = 500
+
+
+def strips(entries, now=None):
+    """Inline 24h uptime strips for the dashboard views (PRD 13.7).
+
+    One strip per entry: the 48 half-hour buckets of every check that counts,
+    merged (a bucket is failed if any check failed in it). Reads all the
+    relevant `health_result` rows in ONE query and groups them in Python, so
+    the cost does not grow with the number of entries or checks. `entries`
+    should have `checks` eager-loaded. Returns
+    `{entry_id: {"bars": [...], "uptime": float | None}}`; an entry with no
+    check that counts gets `{"bars": [], "uptime": None}`.
+    """
+    now = now or datetime.utcnow()
+    size, count = RANGES["24h"]
+    end = _floor(now, size) + size
+    start = end - size * count
+
+    counted = {e.id: [c.id for c in e.checks if check_counts(e, c)] for e in entries}
+    check_ids = sorted({cid for ids in counted.values() for cid in ids})
+    by_check = {}
+    if check_ids:
+        rows = (
+            db.session.query(HealthResult)
+            .filter(HealthResult.check_id.in_(check_ids))
+            .filter(HealthResult.ts < end)
+            .filter(db.func.coalesce(HealthResult.ts_end, HealthResult.ts) >= start)
+            .order_by(HealthResult.ts)
+            .all()
+        )
+        for r in rows:
+            by_check.setdefault(r.check_id, []).append(r)
+
+    out = {}
+    for e in entries:
+        ids = counted[e.id]
+        if not ids:
+            out[e.id] = {"bars": [], "uptime": None}
+            continue
+        merged = [{"ok": 0, "fail": 0, "messages": []} for _ in range(count)]
+        for cid in ids:
+            for m, b in zip(merged, _bucketise(by_check.get(cid, []), start, size, count), strict=True):
+                m["ok"] += b["ok_samples"]
+                m["fail"] += b["fail_samples"]
+                for msg in b["messages"]:
+                    if msg not in m["messages"] and len(m["messages"]) < MAX_MESSAGES:
+                        m["messages"].append(msg)
+        ok = sum(m["ok"] for m in merged)
+        total = ok + sum(m["fail"] for m in merged)
+        for i, m in enumerate(merged):
+            m["start"] = iso_z(start + i * size)
+            m["end"] = iso_z(start + (i + 1) * size)
+        out[e.id] = {
+            "bars": merged,
+            "uptime": round(100.0 * ok / total, 1) if total else None,
+        }
+    return out

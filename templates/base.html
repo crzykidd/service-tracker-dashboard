@@ -11,10 +11,11 @@
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/health_detail.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/uptime_strip.js') }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 
-<body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans"
+<body class="bg-gray-900 text-gray-200 min-h-screen px-4 py-8 font-sans{% if request.cookies.get('std_show_uptime') == '1' %} show-uptime{% endif %}"
       data-view="{% block body_data_view %}{% endblock %}"
       data-std-version="{{ version_info.version | default('unknown') }}">
   <div class="max-w-screen-2xl mx-auto">

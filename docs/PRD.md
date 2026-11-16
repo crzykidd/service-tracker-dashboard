@@ -47,6 +47,7 @@
 | 0.37    | 2026-11-15 | §13.8 added, delivered (unreleased): Container check, Docker state as an automatic health check on every notifier entry (migration `c1d7a3e5f2b8`, kind `container`, evaluated by the scheduler). §13.1 state note and §5.6 `kind` list updated; former §13.8 (out of scope) is now §13.9 and no longer lists Docker state. Register contract unchanged. |
 | 0.38    | 2026-11-15 | v0.7.0 released. §13 retitled Delivered: entry sources (notifier vs manual), health checks as their own tables with URL, service (HTTP/HTTPS status or body, TCP, ping) and automatic Container checks, concurrent checker with 24h raw + hourly-compacted 7-day history, health rollup badge and Status/Source filters, health detail panel with 24h/7d history. Schema in §5.6. Register wire contract unchanged; no notifier change needed. |
 | 0.39    | 2026-11-15 | §13.6 filter bar (unreleased, post-v0.7.0): "Total Services" replaced by clickable Total / Passing / Failing count chips that set the `status` filter; counts follow `source` / `show_urlless` but ignore `status`. No schema or register-contract change. |
+| 0.40    | 2026-11-15 | §13.7: inline 24h uptime strips (unreleased, post-v0.7.0): "Show uptime" filter-bar checkbox kept in the `std_show_uptime` cookie, `GET /health/strips`, `health_history.strips()`, `static/js/uptime_strip.js`. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1636,6 +1637,22 @@ Dashboard gets a leading chevron column and an expand row (group-header
 `colspan` is now 13); an open row pauses auto-refresh like an open drawer.
 The Edit page panel is a "Health history" block after the form, above
 "Reported by notifier".
+
+**Inline uptime strips (post-v0.7.0, unreleased).** A "Show uptime" checkbox
+in the filter bar (all three views, next to Show URL-less) is remembered in
+the `std_show_uptime` cookie (`1`/`0`, `Path=/`, `SameSite=Lax`, one year;
+only ever compared to `'1'`). On, each service shows one 24h strip: 48
+half-hour bars merged from every check that counts (red if any check failed
+in the slot, green if all samples passed, grey with none) plus the 24h uptime
+% (Σ ok ÷ Σ samples; the Compact strip omits the %). It sits under the badge
+on Dashboard, along the bottom of a Tiled tile, and as a thin line on a
+Compact tile; a service with no check that counts shows a muted "—". Bars and
+tooltip reuse the detail panel's. Data comes from `GET /health/strips?ids=`
+(login; at most 500 ids; unknown or soft-deleted ids are omitted), served by
+`health_history.strips()` with a fixed number of queries (one `health_result`
+query for all checks, grouped in Python). `static/js/uptime_strip.js` fetches
+once per page load while the toggle is on (auto-refresh reloads the page, so
+refreshes re-fetch only while on) and never when off. No schema change.
 
 ### 13.8 Container check [`v070-07-container-check`] — Delivered in v0.7.0
 

@@ -1311,6 +1311,30 @@ def entry_health_detail(id):
     return jsonify(health_history.entry_payload(entry, range_name))
 
 
+@dashboard_bp.route('/health/strips')
+@login_required
+def health_strips():
+    """Inline 24h uptime strips for many entries in one request (PRD 13.7).
+    `ids` is a comma-separated list, capped at MAX_STRIP_IDS; unknown,
+    soft-deleted and non-numeric ids are silently left out."""
+    ids = []
+    for part in request.args.get('ids', '').split(','):
+        part = part.strip()
+        if part.isdigit() and int(part) not in ids:
+            ids.append(int(part))
+        if len(ids) >= health_history.MAX_STRIP_IDS:
+            break
+    if not ids:
+        return jsonify({})
+    entries = (
+        ServiceEntry.active()
+        .options(selectinload(ServiceEntry.checks))
+        .filter(ServiceEntry.id.in_(ids))
+        .all()
+    )
+    return jsonify({str(k): v for k, v in health_history.strips(entries).items()})
+
+
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required

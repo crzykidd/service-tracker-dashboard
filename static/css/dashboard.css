@@ -1000,3 +1000,25 @@
 .hc-chip.hc-passing strong { color: var(--color-status-ok); }
 .hc-chip.hc-alert strong { color: var(--color-status-bad); }
 .hc-chip.hc-active { border-color: #60a5fa; box-shadow: 0 0 0 1px #60a5fa; color: #fff; }
+
+/* ── Inline 24h uptime strip (PRD 13.7) ───────────────────── */
+.uptime-strip { display: none; }
+body.show-uptime .uptime-strip { display: flex; align-items: center; gap: 6px; }
+.uptime-strip .health-bars { flex: 1 1 auto; min-width: 0; margin-top: 0; height: 14px; gap: 1px; }
+.uptime-pct { font-size: 0.7rem; color: var(--color-text-secondary); white-space: nowrap; }
+.uptime-pct-none { color: var(--color-text-muted); }
+.uptime-strip-dashboard { margin-top: 6px; min-width: 200px; }
+/* Tiled: strip along the bottom edge of the tile, under the header row. */
+.uptime-strip-tile { position: absolute; left: 10px; right: 10px; bottom: 5px; }
+.uptime-strip-tile .health-bars { height: 10px; }
+body.show-uptime .tile { padding-bottom: 24px; }
+/* Compact: a very thin strip at the bottom of the tile, no % text. */
+.compact-tile { position: relative; }
+.uptime-strip-compact { position: absolute; left: 0.75rem; right: 0.75rem; bottom: 3px; }
+.uptime-strip-compact .health-bars { height: 4px; }
+body.show-uptime .compact-tile:not(.group-header) { padding-bottom: 0.9rem; }
+@media (max-width: 640px) {
+  /* 48 bars in ~300 px: drop the gaps like the detail panel's 7d strip. */
+  .uptime-strip .health-bars { gap: 0; }
+  .uptime-strip .hbar { border-radius: 0; }
+}
