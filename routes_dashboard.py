@@ -856,8 +856,9 @@ def add_entry():
         elif group_mode == 'new':
             group_name = request.form.get('group_name_new')
 
-        if not group_name:
-            group_name = "None"
+        # No group picked -> the entry is ungrouped (group_id NULL). This used
+        # to create/reuse a real group literally named "None".
+        group_name = (group_name or '').strip() or None
 
 
         image_icon, icon_error = entry_rules.resolve_icon(request.form.get('icon_image', ''))
@@ -907,7 +908,7 @@ def add_entry():
 
         # === CREATE ENTRY ===
         # Look up or create group
-        group_obj = entry_rules.get_or_create_group(group_name)
+        group_obj = entry_rules.get_or_create_group(group_name) if group_name else None
 
         # Now create entry with group_id. URLs typed in the UI get
         # source=ui_edit so future register calls and the synthesizer

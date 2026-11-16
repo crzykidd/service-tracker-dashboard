@@ -194,6 +194,23 @@ def test_add_creates_manual_entry_without_host(app, admin_client):
         assert e.source == "manual" and e.host is None
 
 
+def test_add_without_group_leaves_entry_ungrouped(app, admin_client):
+    """No group picked (or a blank one) -> group_id NULL, no 'None' group made."""
+    from models import Group
+
+    for name, data in (
+        ("NoGroup A", {"group_mode": "existing", "group_name_existing": ""}),
+        ("NoGroup B", {"group_mode": "new", "group_name_new": "   "}),
+        ("NoGroup C", {}),
+    ):
+        resp = admin_client.post("/add", data={"container_name": name, "icon_image": "x.svg", **data})
+        assert resp.status_code == 302
+    with app.app_context():
+        for name in ("NoGroup A", "NoGroup B", "NoGroup C"):
+            assert _get(name).group_id is None
+        assert Group.query.filter_by(group_name="None").first() is None
+
+
 def test_add_requires_a_name_not_a_host(admin_client):
     resp = admin_client.post("/add", data={"container_name": "", "host": "lab", "icon_image": "x.svg"})
     assert resp.status_code == 200

@@ -67,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GET /config` shows the effective settings and the app version, read-only,
     with `api_token` and any key, token, password or secret masked.
 
+### Fixed
+
+- **Add page no longer files group-less entries under a group named "None".**
+  Leaving the group blank now creates an ungrouped entry. Entries already in
+  a "None" group stay there; move them on the Edit page or delete the group.
+
 ## [0.7.1] — 2026-11-15
 
 ### Added
