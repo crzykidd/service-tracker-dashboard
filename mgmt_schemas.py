@@ -106,6 +106,34 @@ NOTIFIER_OWNED_FIELDS = frozenset({
 })
 
 
+class GroupCreate(_Request):
+    name: str
+    icon: str | None = None
+    sort_priority: int | None = None
+
+
+class GroupPatch(_Request):
+    name: str | None = None
+    icon: str | None = None              # null clears it
+    sort_priority: int | None = None     # null clears it
+
+
+class WidgetPut(_Request):
+    """Attach or reconfigure an entry's widget (a full replacement of type,
+    url and fields). `widget_api_key` omitted keeps the stored key; null
+    clears it."""
+
+    type: str
+    url: str
+    fields: list[str]
+    widget_api_key: str | None = None
+
+
+class ExposureSettingsPut(_Request):
+    layer_directions: dict[str, str]
+    host_overrides: dict[str, dict[str, str]] = {}
+
+
 # --- responses -----------------------------------------------------------------
 
 T = TypeVar("T")
@@ -266,3 +294,63 @@ class HealthSummaryOut(TypedDict):
     counts: SummaryCountsOut
     failing: list[SummaryEntryOut]
 
+
+
+class GroupOut(TypedDict):
+    id: int
+    name: str
+    sort_priority: int | None
+    icon: str | None
+    entry_count: int                 # active (not deleted) entries
+
+
+class GroupDeleteOut(TypedDict):
+    id: int
+    deleted: bool
+    ungrouped_entries: int
+
+
+class WidgetFieldOut(TypedDict):
+    key: str
+    label: str
+    description: str | None
+
+
+class WidgetTypeOut(TypedDict):
+    type: str
+    description: str | None
+    available_fields: list[WidgetFieldOut]
+
+
+class WidgetInstanceOut(WidgetOut):
+    entry_ids: list[int]             # every entry referencing it, deleted ones included
+    detached: bool
+
+
+class WidgetDetachOut(TypedDict):
+    entry_id: int
+    widget_id: int
+    deleted: bool                    # true when the widget and its values were removed
+
+
+class WidgetDeleteOut(TypedDict):
+    id: int
+    deleted: bool
+
+
+class ExposureSettingsOut(TypedDict):
+    layer_directions: dict[str, str]
+    host_overrides: dict[str, dict[str, str]]
+    discovered_layers: list[str]
+    discovered_hosts: list[str]
+    valid_directions: list[str]
+
+
+class ExposureSettingsSavedOut(ExposureSettingsOut):
+    recomputed: int                  # services whose URLs were recomputed
+
+
+class ConfigOut(TypedDict):
+    version: str
+    settings: dict[str, Any]         # secrets appear as "***" (null when unset)
+    sources: dict[str, str]          # "env" | "file" | "default" per setting

@@ -52,6 +52,7 @@
 | 0.42    | 2026-11-15 | Added §14 (v0.8.0 — Management API, planned): admin API keys with read/write scopes, `/api/v1` REST for entries, checks, health, groups, widgets and runtime settings, OpenAPI spec, write audit log, stdio MCP server. Planned schema §5.7. Later sections renumbered (§14→§15, §15→§16, §16→§17). Register contract unchanged. No code changes yet. |
 | 0.43    | 2026-11-15 | §14.2 and §14.6 delivered (unreleased, v080-01): admin API keys (`api_key`, Settings → API tab, show-once), management blueprint skeleton (`require_api_key`, JSON errors, `GET /api/v1/whoami`), write audit log (`api_audit`, `audit()` helper, `after_request` hook, `api_audit_retention_days` + daily purge). Migration `d4a9e2c6b715`; §5.7 updated. Register wire contract unchanged. |
 | 0.44    | 2026-11-15 | §14.3 delivered (unreleased, v080-02): management endpoints for entries, checks, Check now, entry health and `/health/summary`; shared validation (`entry_rules.py`, dict-based validators in `check_form.py`) used by the UI and API; `mgmt_schemas.py` / `mgmt_serializers.py`. No schema change. Register wire contract unchanged. |
+| 0.45    | 2026-11-15 | §14.4 delivered (unreleased, v080-03): management endpoints for groups, widget types and instances (attach, detach, delete), exposure direction settings and a read-only masked `GET /config`; `widget_rules.py`. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1881,7 +1882,7 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
   same rule as the filter-bar chips); `since` is the earliest failed sample
   after the latest passing one, falling back to the last check time.
 
-### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`]
+### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`] — Delivered (unreleased)
 
 | Method + path | Scope | Purpose |
 |---|---|---|
@@ -1899,6 +1900,33 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 | `GET /config` | read | Effective `settings.yml`/env values, read-only, with **secrets masked** (`api_token`, `secret_key`, widget keys) plus the app version. These are not editable through the API (they are loaded once at startup). |
 
 Users and passwords are **not** exposed through the API (out of scope).
+
+**As built (v080-03):**
+- `widget_rules.py` discovers plugins under `widgets/` (paths built from
+  `os.listdir` entries only) and validates type, URL (required, 255 max),
+  fields (non-empty, each a plugin `available_fields` key) and the API key
+  length. `/edit` is unchanged and still does not validate plugins.
+- JSON: group `{id, name, sort_priority, icon, entry_count}`; widget
+  `{id, type, url, fields, widget_api_key_set}` plus `entry_ids` and
+  `detached` on `GET /widgets`; `GET /widgets/types` items are
+  `{type, description, available_fields: [{key, label, description}]}`.
+  Responses are typed in `mgmt_schemas.py`.
+- Groups: deleting one with active entries is a 409, as in the UI (the
+  "entries become ungrouped" wording above is the `?force=true` behaviour);
+  deleted entries are always ungrouped. Names are trimmed, 100 max.
+- `PUT /entries/<id>/widget` replaces type/URL/fields; an omitted
+  `widget_api_key` keeps the stored one and `null` clears it. 201 when it
+  creates the widget, 200 when it updates. Refused (409) on a deleted entry.
+  `DELETE /entries/<id>/widget` is 404 when there is no widget.
+- `PUT /settings/exposure` takes `{layer_directions, host_overrides}`,
+  validates directions against `VALID_DIRECTIONS` (the UI silently drops bad
+  ones; the API answers 400), saves via `settings_store.save_exposure_settings`,
+  runs `synthesizer.recompute_all()` and returns the settings plus
+  `recomputed`.
+- `GET /config` returns `{version, settings, sources}`: every key in
+  `settings_loader.VALID_KEYS` plus `display_tools`, `sources` saying
+  env/file/default. Names that are secrets (`api_token`, anything ending
+  `_key`, `_token`, `_password`, `_secret`) show `"***"` (null if unset).
 
 ### 14.5 OpenAPI spec and docs [`v080-04-openapi-and-docs`]
 

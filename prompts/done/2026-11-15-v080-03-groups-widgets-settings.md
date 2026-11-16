@@ -1,10 +1,10 @@
 ---
 name: v080-03-groups-widgets-settings
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15      # filled when the work is done
+result: groups, widgets, exposure settings and masked config endpoints with tests and docs # one-line summary of the outcome
 ---
 
 # Task: Management API: groups, widgets, and runtime settings

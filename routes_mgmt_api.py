@@ -33,7 +33,10 @@ import entry_rules
 import health_history
 import jobs
 import routes_api
+import settings_loader
+import settings_store
 import synthesizer
+import widget_rules
 from extensions import csrf, db
 from health_state import STATE_DEGRADED, STATE_DOWN
 from image_utils import fetch_icon_if_missing
@@ -42,9 +45,20 @@ from mgmt_schemas import (
     CheckPatch,
     EntryCreate,
     EntryPatch,
+    ExposureSettingsPut,
+    GroupCreate,
+    GroupPatch,
     ServiceCheckCreate,
+    WidgetPut,
 )
-from mgmt_serializers import check_out, entry_detail_out, entry_out
+from mgmt_serializers import (
+    check_out,
+    entry_detail_out,
+    entry_out,
+    group_out,
+    widget_instance_out,
+    widget_out,
+)
 from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
@@ -56,6 +70,8 @@ from models import (
     HealthCheck,
     HealthResult,
     ServiceEntry,
+    Widget,
+    WidgetValue,
     check_counts,
     ensure_url_checks,
     hard_delete_entry,
@@ -879,3 +895,314 @@ def health_summary():
         failing.append({"id": e.id, "name": e.container_name, "host": e.host, "state": state,
                         "failures": failures})
     return jsonify({"counts": counts, "failing": failing})
+
+
+# --- groups --------------------------------------------------------------------
+
+GROUP_NAME_MAX = 100
+GROUP_ICON_MAX = 255
+
+
+def _group_problems(name, icon, name_sent=True, icon_sent=True):
+    errors = []
+    if name_sent:
+        if not (name or "").strip():
+            errors.append({"field": "name", "message": "name is required"})
+        elif len(name.strip()) > GROUP_NAME_MAX:
+            errors.append({"field": "name", "message": f"name is limited to {GROUP_NAME_MAX} characters"})
+    if icon_sent and icon and len(icon) > GROUP_ICON_MAX:
+        errors.append({"field": "icon", "message": f"icon is limited to {GROUP_ICON_MAX} characters"})
+    return errors
+
+
+def _group_snapshot(group):
+    return {"name": group.group_name, "sort_priority": group.group_sort_priority, "icon": group.group_icon}
+
+
+def _load_group(id):
+    group = db.session.get(Group, id)
+    if group is None:
+        abort(404, f"No group with id {id}.")
+    return group
+
+
+def _name_taken(name, exclude_id=None):
+    query = Group.query.filter(Group.group_name == name)
+    if exclude_id is not None:
+        query = query.filter(Group.id != exclude_id)
+    return query.first()
+
+
+@mgmt_bp.route("/groups", methods=["GET"])
+@require_api_key("read")
+def list_groups():
+    limit, offset = _page_args()
+    query = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc())
+    total = query.count()
+    return _page([group_out(g_) for g_ in query.limit(limit).offset(offset).all()], total, limit, offset)
+
+
+@mgmt_bp.route("/groups", methods=["POST"])
+@require_api_key("write")
+def create_group():
+    audit("group")
+    data = GroupCreate.model_validate(_json_body())
+    errors = _group_problems(data.name, data.icon)
+    if errors:
+        return _fail(errors)
+    name = data.name.strip()
+    with routes_api._UPSERT_LOCK:
+        existing = _name_taken(name)
+        if existing:
+            return json_error(409, f"A group named '{name}' already exists.", {"id": existing.id})
+        group = Group(group_name=name, group_icon=data.icon or None, group_sort_priority=data.sort_priority)
+        db.session.add(group)
+        db.session.commit()
+    audit("group", group.id, _diff({}, _group_snapshot(group)))
+    response = jsonify(group_out(group))
+    response.status_code = 201
+    return response
+
+
+@mgmt_bp.route("/groups/<int:id>", methods=["PATCH"])
+@require_api_key("write")
+def patch_group(id):
+    audit("group", id)
+    group = _load_group(id)
+    data = GroupPatch.model_validate(_json_body())
+    sent = data.model_fields_set
+    errors = _group_problems(data.name, data.icon, "name" in sent, "icon" in sent)
+    if errors:
+        return _fail(errors)
+    before = _group_snapshot(group)
+    with routes_api._UPSERT_LOCK:
+        if "name" in sent:
+            name = data.name.strip()
+            existing = _name_taken(name, exclude_id=id)
+            if existing:
+                return json_error(409, f"A group named '{name}' already exists.", {"id": existing.id})
+            group.group_name = name
+        if "icon" in sent:
+            group.group_icon = data.icon or None
+        if "sort_priority" in sent:
+            group.group_sort_priority = data.sort_priority
+        db.session.commit()
+    audit("group", id, _diff(before, _group_snapshot(group)))
+    return jsonify(group_out(group))
+
+
+@mgmt_bp.route("/groups/<int:id>", methods=["DELETE"])
+@require_api_key("write")
+def delete_group(id):
+    """Refuses while active entries use the group, as the Settings page does;
+    `?force=true` ungroups them first. Deleted entries are always ungrouped."""
+    audit("group", id)
+    group = _load_group(id)
+    force = _bool_arg("force")
+    with routes_api._UPSERT_LOCK:
+        active = [e for e in group.services if e.deleted_at is None]
+        if active and not force:
+            return json_error(409, "Cannot delete a group that has entries. Move them first, "
+                                   "or repeat with ?force=true to ungroup them.",
+                              {"id": id, "entry_count": len(active)})
+        for e in group.services:
+            e.group_id = None
+        name = group.group_name
+        db.session.delete(group)
+        db.session.commit()
+    audit("group", id, {"name": [name, None], "ungrouped_entries": [0, len(active)]})
+    return jsonify({"id": id, "deleted": True, "ungrouped_entries": len(active)})
+
+
+# --- widgets -------------------------------------------------------------------
+
+
+@mgmt_bp.route("/widgets/types", methods=["GET"])
+@require_api_key("read")
+def list_widget_types():
+    types = widget_rules.list_types()
+    return _page(types, len(types), len(types), 0)
+
+
+@mgmt_bp.route("/widgets", methods=["GET"])
+@require_api_key("read")
+def list_widgets():
+    limit, offset = _page_args()
+    query = Widget.query.options(selectinload(Widget.services)).order_by(Widget.id.asc())
+    total = query.count()
+    items = [widget_instance_out(w) for w in query.limit(limit).offset(offset).all()]
+    return _page(items, total, limit, offset)
+
+
+def _widget_snapshot(widget):
+    return {"type": widget.widget_name, "url": widget.widget_url,
+            "fields": widget.widget_fields, "widget_api_key": widget.widget_api_key}
+
+
+@mgmt_bp.route("/entries/<int:id>/widget", methods=["PUT"])
+@require_api_key("write")
+def put_entry_widget(id):
+    audit("widget")
+    entry = _load_entry(id, detail=True)
+    data = WidgetPut.model_validate(_json_body())
+    conflict = _require_active(entry)
+    if conflict:
+        return conflict
+    plugin, errors = widget_rules.validate_widget(data.type, data.url, data.fields)
+    if "widget_api_key" in data.model_fields_set:
+        errors += widget_rules.validate_api_key(data.widget_api_key)
+    if errors:
+        return _fail(errors)
+    url = data.url.strip()
+    fields = list(dict.fromkeys(data.fields))
+    with routes_api._UPSERT_LOCK:
+        widget = entry.widget
+        created = widget is None
+        before = {} if created else _widget_snapshot(widget)
+        if created:
+            widget = Widget(widget_name=plugin["type"], widget_url=url, widget_fields=fields,
+                            widget_api_key=data.widget_api_key)
+            db.session.add(widget)
+            db.session.flush()
+            entry.widget_id = widget.id
+        else:
+            widget.widget_name = plugin["type"]
+            widget.widget_url = url
+            widget.widget_fields = fields
+            if "widget_api_key" in data.model_fields_set:
+                widget.widget_api_key = data.widget_api_key
+        db.session.commit()
+    audit("widget", widget.id, {"entry_id": [None, id], **_diff(before, _widget_snapshot(widget))}
+          if created else _diff(before, _widget_snapshot(widget)))
+    response = jsonify(widget_out(widget))
+    response.status_code = 201 if created else 200
+    return response
+
+
+@mgmt_bp.route("/entries/<int:id>/widget", methods=["DELETE"])
+@require_api_key("write")
+def delete_entry_widget(id):
+    """Detach the entry's widget (kept, with its values, for re-attaching in
+    Settings → Widgets); `?delete=true` removes it and its values."""
+    audit("widget")
+    entry = _load_entry(id, detail=True)
+    delete = _bool_arg("delete")
+    conflict = _require_active(entry)
+    if conflict:
+        return conflict
+    widget = entry.widget
+    if widget is None:
+        abort(404, f"Entry {id} has no widget.")
+    widget_id = widget.id
+    with routes_api._UPSERT_LOCK:
+        entry.widget_id = None
+        removed = False
+        if delete and not any(e.id != id for e in widget.services):
+            WidgetValue.query.filter_by(widget_id=widget_id).delete()
+            db.session.delete(widget)
+            removed = True
+        db.session.commit()
+    audit("widget", widget_id, {"entry_id": [id, None], "deleted": [False, removed]})
+    return jsonify({"entry_id": id, "widget_id": widget_id, "deleted": removed})
+
+
+@mgmt_bp.route("/widgets/<int:id>", methods=["DELETE"])
+@require_api_key("write")
+def delete_widget(id):
+    audit("widget", id)
+    widget = db.session.get(Widget, id)
+    if widget is None:
+        abort(404, f"No widget with id {id}.")
+    with routes_api._UPSERT_LOCK:
+        if Widget.detached().filter(Widget.id == id).first() is None:
+            return json_error(409, "Only a detached widget can be deleted. Detach it from its entry first.",
+                              {"id": id, "entry_ids": sorted(e.id for e in widget.services)})
+        name = widget.widget_name
+        WidgetValue.query.filter_by(widget_id=id).delete()
+        db.session.delete(widget)
+        db.session.commit()
+    audit("widget", id, {"type": [name, None]})
+    return jsonify({"id": id, "deleted": True})
+
+
+# --- runtime settings ----------------------------------------------------------
+
+
+def _exposure_payload():
+    return {
+        "layer_directions": settings_store.get_layer_directions(),
+        "host_overrides": settings_store.get_host_layer_overrides(),
+        "discovered_layers": settings_store.discovered_layers(),
+        "discovered_hosts": settings_store.discovered_hosts(),
+        "valid_directions": list(settings_store.VALID_DIRECTIONS),
+    }
+
+
+@mgmt_bp.route("/settings/exposure", methods=["GET"])
+@require_api_key("read")
+def get_exposure_settings():
+    return jsonify(_exposure_payload())
+
+
+@mgmt_bp.route("/settings/exposure", methods=["PUT"])
+@require_api_key("write")
+def put_exposure_settings():
+    """Replaces both mappings, as the Settings form does, then recomputes
+    every service's synthesized URLs."""
+    audit("exposure_settings")
+    data = ExposureSettingsPut.model_validate(_json_body())
+    errors = []
+    valid = settings_store.VALID_DIRECTIONS
+    for layer, direction in data.layer_directions.items():
+        if not layer.strip():
+            errors.append({"field": "layer_directions", "message": "layer names cannot be empty"})
+        elif direction not in valid:
+            errors.append({"field": f"layer_directions.{layer}",
+                           "message": f"direction must be one of {', '.join(valid)}"})
+    for host, layer_map in data.host_overrides.items():
+        if not host.strip():
+            errors.append({"field": "host_overrides", "message": "host names cannot be empty"})
+        for layer, direction in layer_map.items():
+            if not layer.strip():
+                errors.append({"field": f"host_overrides.{host}", "message": "layer names cannot be empty"})
+            elif direction not in valid:
+                errors.append({"field": f"host_overrides.{host}.{layer}",
+                               "message": f"direction must be one of {', '.join(valid)}"})
+    if errors:
+        return _fail(errors)
+    before = {"layer_directions": settings_store.get_layer_directions(),
+              "host_overrides": settings_store.get_host_layer_overrides()}
+    with routes_api._UPSERT_LOCK:
+        settings_store.save_exposure_settings(data.layer_directions, data.host_overrides)
+        touched = synthesizer.recompute_all()
+        db.session.commit()
+    after = {"layer_directions": settings_store.get_layer_directions(),
+             "host_overrides": settings_store.get_host_layer_overrides()}
+    audit("exposure_settings", None, {**_diff(before, after), "recomputed": [None, touched]})
+    return jsonify({**_exposure_payload(), "recomputed": touched})
+
+
+_SECRET_SUFFIXES = ("_key", "_token", "_password", "_secret")
+
+
+def _config_is_secret(name):
+    n = name.lower()
+    return n in settings_loader.SECRET_KEYS or n.endswith(_SECRET_SUFFIXES) or n in _SECRET_NAMES
+
+
+@mgmt_bp.route("/config", methods=["GET"])
+@require_api_key("read")
+def get_config():
+    """Effective startup settings (read-only). Secrets show as "***", or null
+    when unset."""
+    cfg = current_app.config
+    from_env, from_file = cfg.get("CONFIG_FROM_ENV") or {}, cfg.get("CONFIG_FROM_FILE") or {}
+    names = list(settings_loader.VALID_KEYS) + ["display_tools"]
+    values, sources = {}, {}
+    for name in names:
+        value = cfg.get(name)
+        values[name] = (MASK if value else None) if _config_is_secret(name) else value
+        sources[name] = "env" if name in from_env else "file" if name in from_file else "default"
+    sources["display_tools"] = "derived"
+    version = (cfg.get("VERSION_INFO") or {}).get("version", "unknown")
+    return jsonify({"version": version, "settings": values, "sources": sources})

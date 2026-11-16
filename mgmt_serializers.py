@@ -11,7 +11,9 @@ from mgmt_schemas import (
     EntryHealthOut,
     EntryOut,
     ExposureOut,
+    GroupOut,
     NotifierOut,
+    WidgetInstanceOut,
     WidgetOut,
 )
 from models import SOURCE_NOTIFIER, HealthCheck, ServiceEntry, check_counts
@@ -121,3 +123,29 @@ def entry_detail_out(entry: ServiceEntry) -> EntryDetailOut:
             "widget_api_key_set": bool(widget.widget_api_key),
         }
     return {**entry_out(entry), "notifier": notifier, "widget": widget_out}
+
+
+def group_out(group) -> GroupOut:
+    return {
+        "id": group.id,
+        "name": group.group_name,
+        "sort_priority": group.group_sort_priority,
+        "icon": group.group_icon,
+        "entry_count": group.services_count or 0,
+    }
+
+
+def widget_out(widget) -> WidgetOut:
+    """The key itself is never serialised, only whether one is stored."""
+    return {
+        "id": widget.id,
+        "type": widget.widget_name,
+        "url": widget.widget_url,
+        "fields": widget.widget_fields,
+        "widget_api_key_set": bool(widget.widget_api_key),
+    }
+
+
+def widget_instance_out(widget) -> WidgetInstanceOut:
+    entry_ids = sorted(e.id for e in widget.services)
+    return {**widget_out(widget), "entry_ids": entry_ids, "detached": not entry_ids}

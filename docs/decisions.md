@@ -5,6 +5,43 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v080-03 implementation calls (groups, widgets, settings, config)
+
+- **Group delete matches the UI (409 with active entries); `?force=true`
+  ungroups them.** The PRD said "its entries become ungrouped (same as the
+  UI)", but the UI refuses. The code wins by default and `force` gives the PRD
+  behaviour on request. Soft-deleted entries are always ungrouped.
+- **Group PATCH rename to a taken name is a 409** (the UI handler would hit the
+  unique constraint); renaming to its own name is allowed. Names are trimmed
+  and limited to 100 characters, icons to 255. The UI handlers were not
+  changed.
+- **Widget validation lives in `widget_rules.py`; `/edit` is untouched.** The
+  API requires a known type, a non-empty URL and at least one field, all of
+  them valid for the plugin; `/edit` accepts anything.
+- **`PUT /entries/<id>/widget` key semantics:** omitted `widget_api_key` keeps
+  the stored key, `null` clears it, a string sets it. Fields are de-duplicated
+  keeping order. The audit only lists changed fields; the key is always `***`
+  (so a changed and an unchanged key look alike, as decided in v080-01).
+- **`?delete=true` only removes the widget if no other entry uses it**;
+  otherwise it just detaches. Widgets are normally one-per-entry so this is a
+  safety net.
+- **Widget and group writes are audited before the lookup**, so a 404 still
+  carries the object type in the audit row.
+- **Exposure PUT is strict where the UI is lenient.** The form drops invalid
+  directions silently; the API rejects them with a 400 and changes nothing.
+  Layers and hosts need not be "discovered" (the UI also accepts any).
+  `"neither"` values are stored, as with the form.
+- **`GET /config` adds a `sources` map** (env/file/default/derived) from the
+  startup snapshots, and masks by name: the known secret names plus the
+  `_key`/`_token`/`_password`/`_secret` suffixes. Only `settings_loader`'s
+  known keys are returned, never Flask internals. `secret_key` is not a
+  loaded setting, so it never appears.
+- **Widget types list is a `Page` envelope** (`total` = count, no real paging)
+  to keep every list endpoint one shape; items expose `key`, `label`,
+  `description` only (not the internal `api_path`).
+
+---
+
 ## 2026-11-15 — v080-02 implementation calls (entries, checks, health)
 
 - **API field names follow the dashboard, not the table.** `name` (not

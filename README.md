@@ -618,6 +618,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
 | `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
+| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
 | `/login` `/logout`   | Local user auth.                         |
 
 ### Admin API keys (management API)

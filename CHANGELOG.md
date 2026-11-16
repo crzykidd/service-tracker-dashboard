@@ -48,6 +48,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the notifier will not overwrite it. Fields reported by the notifier cannot
     be changed (400, naming the fields). Every problem in a request is reported
     per field.
+- **Management API: groups, widgets, exposure settings and config**
+  (write key for changes, read key for reads):
+  - `GET`/`POST /groups`, `PATCH`/`DELETE /groups/<id>`. A duplicate name is a
+    409. Like the Settings page, deleting a group that still has entries is
+    refused (409); add `?force=true` to ungroup them and delete it anyway.
+  - `GET /widgets/types` lists the widget plugins with their available fields;
+    `GET /widgets` lists widgets with their entries and whether they are
+    detached. `PUT /entries/<id>/widget` attaches or reconfigures a widget
+    (type, URL, fields and an optional API key, checked against the plugin);
+    `DELETE /entries/<id>/widget` detaches it (`?delete=true` removes it and
+    its values) and `DELETE /widgets/<id>` deletes a detached widget. A
+    widget's API key is never returned (only `widget_api_key_set`) and is
+    masked in the audit log.
+  - `GET`/`PUT /settings/exposure` read and replace the exposure direction
+    mappings and per-host overrides (same rules as Settings → Exposure; saving
+    recomputes the synthesized URLs).
+  - `GET /config` shows the effective settings and the app version, read-only,
+    with `api_token` and any key, token, password or secret masked.
 
 ## [0.7.1] — 2026-11-15
 

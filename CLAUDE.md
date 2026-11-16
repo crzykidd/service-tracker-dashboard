@@ -364,6 +364,7 @@ routes_mgmt_api.py  ← management API blueprint (/api/v1, admin API key only, C
 api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
 mgmt_schemas.py     ← management API pydantic requests (extra=forbid) + response TypedDicts
 mgmt_serializers.py ← model -> response-dict functions for the management API
+widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API
 routes_widgets.py   ← widget endpoints
