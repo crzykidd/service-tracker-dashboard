@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.7.0-blue)
+![Version](https://img.shields.io/badge/version-0.7.1-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -43,6 +43,19 @@ through the web UI or directly via API.
 
 ## What's New
 
+### v0.7.1 (2026-11-15)
+
+Two dashboard conveniences on top of 0.7.0. No migrations, no configuration
+change.
+
+- **Clickable Total / Passing / Failing counts** replace "Total Services" in
+  the filter bar. Click one to filter the view to it; the active count is
+  highlighted.
+- **"Show uptime" checkbox** in the filter bar adds a compact 24-hour uptime
+  strip (48 half-hour bars plus the uptime %) to every service on Dashboard,
+  Tiled and Compact. Off by default and remembered in a browser cookie; hover
+  or tap a bar for the failure messages.
+
 ### v0.7.0 (2026-11-15)
 
 Dashboard and monitoring. STD is now a dashboard for Docker containers **and**
@@ -71,6 +84,9 @@ upgrade is needed. Four database migrations run on startup; back up
   Edit page: per-check state, uptime for 24h and 7d, recent failures, a
   24h / 7d bar strip with tooltips, and **Check now**.
 - **Add and Edit show their messages** inline.
+- **Show uptime** (unreleased): a filter-bar checkbox, remembered in a cookie,
+  that adds a 24-hour uptime strip (48 half-hour bars and the uptime %) to
+  every service on Dashboard, Tiled and Compact.
 
 ### v0.6.9 (2026-11-15)
 
@@ -141,8 +157,12 @@ compose file; your config, database, and settings carry over unchanged. See
   degraded, down, unknown, not monitored) on all three views, and `Status`
   (`all` / `failing` / `healthy` / `unknown` / `stale`) and `Source`
   (`all` / `notifier` / `manual`) filters next to `Group by`, kept in the URL
-  (`?status=failing&source=manual`). "Total Services" reads `shown / total`
-  when a filter hides entries.
+  (`?status=failing&source=manual`). The filter bar shows clickable
+  **Total**, **Passing** and **Failing** counts that apply the matching
+  Status filter (they follow Source and Show URL-less, not Status).
+- **Show uptime** checkbox: when ticked, every service shows an inline 24h
+  uptime strip. Off by default; remembered in the `std_show_uptime` browser
+  cookie rather than the URL, and nothing is fetched while it is off.
 - Auto-downloads container icons from
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
 - Register endpoint for pushing container metadata from external tools.
@@ -584,6 +604,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/add`               | Add a manual (non-Docker) entry.         |
 | `/edit/<id>`         | Edit or delete (soft-delete) an existing entry. |
 | `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
+| `/health/strips?ids=1,2,3` | 24h uptime strips for up to 500 entries (JSON, login). |
 | `/service/<id>/checks/run` | Check now (POST, login). |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |

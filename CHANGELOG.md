@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-11-15
+
+### Added
+
+- **"Show uptime" option in the filter bar.** Tick it to see a compact 24-hour
+  uptime strip on every service, on Dashboard, Tiled and Compact, without
+  opening each detail panel. The strip has 48 half-hour bars (red if any of
+  the service's checks failed in that slot, green if all passed, grey with no
+  data) and the 24h uptime percentage (Dashboard and Tiled; Compact shows
+  just the thin strip). Hover or tap a bar for the time, counts and failure
+  messages. It is off by default, remembered in a browser cookie, shows or
+  hides instantly without reloading, and fetches nothing while off.
+
+### Changed
+
+- **The filter bar now shows clickable Total, Passing and Failing counts**
+  in place of "Total Services". Passing counts healthy (up) services and
+  Failing counts degraded or down ones; click a count to apply the matching
+  Status filter, and the active one is highlighted. The counts follow the
+  Source and Show URL-less filters but not the Status filter, so each number
+  matches the list you get when you click it. Unknown and Not monitored
+  services appear in Total only. The old `shown / total` text is gone.
+
 ## [0.7.0] — 2026-11-15
 
 ### Added
@@ -773,7 +796,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...v0.7.0
 [0.6.9]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...v0.6.8

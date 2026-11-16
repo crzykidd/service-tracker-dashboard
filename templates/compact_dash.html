@@ -18,7 +18,7 @@
     {% else %}
       {% set _target_url = item.entry.internalurl or item.entry.externalurl %}
       <div class="compact-tile{% if not _target_url %} cursor-default{% endif %}"
-           {% if _target_url %}onclick="window.open('{{ _target_url }}', '_blank')"{% endif %}>
+           {% if _target_url %}onclick="if (event.target.closest('.uptime-strip')) return; window.open('{{ _target_url }}', '_blank')"{% endif %}>
         <div>
           {% if item.entry.image_icon %}
             <img src="{{ url_for('dashboard.serve_image', filename=item.entry.image_icon) }}"
@@ -42,6 +42,7 @@
             </span>
           {% endif %}
         </span>
+        {% with entry=item.entry, variant='compact' %}{% include "partials/uptime_strip.html" %}{% endwith %}
       </div>
     {% endif %}
   {% endfor %}

@@ -73,6 +73,7 @@ from settings_loader import CONFIG_DIR
 from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
+    health_counts,
     normalize_axis,
     normalize_show_urlless,
     normalize_source_filter,
@@ -216,6 +217,18 @@ def _read_filters():
     )
 
 
+def _health_count_context(entries, show_urlless, source, status):
+    """Counts and server-built chip links for the filter bar. Each link
+    keeps every other current query param and swaps only `status`."""
+    counts = health_counts(entries, show_urlless=show_urlless, source=source)
+    base = request.args.to_dict()
+    links = {}
+    for key, value in (("total", "all"), ("passing", "healthy"), ("failing", "failing")):
+        links[key] = url_for(request.endpoint, **{**base, "status": value})
+    active = {"all": "total", "healthy": "passing", "failing": "failing"}.get(status)
+    return {"health_counts": counts, "health_links": links, "health_active": active}
+
+
 def _load_view_entries():
     """Active entries for a dashboard view, with everything the templates
     touch eager-loaded so the page costs a fixed number of queries."""
@@ -254,6 +267,7 @@ def dashboard():
         grouped_entries=grouped_entries,
         total_entries=visible_total,
         all_entries_count=len(entries),
+        **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
         group_by=axis,
@@ -297,6 +311,7 @@ def tiled_dashboard():
         STD_DOZZLE_URL=current_app.config['std_dozzle_url'],
         total_entries=visible_total,
         all_entries_count=len(entries),
+        **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
         widget_values=widget_values,
@@ -339,6 +354,7 @@ def compact_dash():
         flattened_entries=flattened_entries,
         total_entries=visible_total,
         all_entries_count=len(entries),
+        **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
         show_host=show_host,
@@ -1293,6 +1309,30 @@ def entry_health_detail(id):
     if range_name not in health_history.RANGES:
         range_name = '24h'
     return jsonify(health_history.entry_payload(entry, range_name))
+
+
+@dashboard_bp.route('/health/strips')
+@login_required
+def health_strips():
+    """Inline 24h uptime strips for many entries in one request (PRD 13.7).
+    `ids` is a comma-separated list, capped at MAX_STRIP_IDS; unknown,
+    soft-deleted and non-numeric ids are silently left out."""
+    ids = []
+    for part in request.args.get('ids', '').split(','):
+        part = part.strip()
+        if part.isdigit() and int(part) not in ids:
+            ids.append(int(part))
+        if len(ids) >= health_history.MAX_STRIP_IDS:
+            break
+    if not ids:
+        return jsonify({})
+    entries = (
+        ServiceEntry.active()
+        .options(selectinload(ServiceEntry.checks))
+        .filter(ServiceEntry.id.in_(ids))
+        .all()
+    )
+    return jsonify({str(k): v for k, v in health_history.strips(entries).items()})
 
 
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])

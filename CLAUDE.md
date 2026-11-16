@@ -208,7 +208,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.7.0** (latest tag on `main`).
+Current shipped release: **v0.7.1** (latest tag on `main`).
 In flight: nothing scoped.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record

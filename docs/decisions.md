@@ -5,6 +5,38 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Inline uptime strips: cookie, merged bars, id cap, reload refresh
+
+- **Cookie, not localStorage or a URL param**, as requested: the server reads
+  `std_show_uptime` to render the checkbox and the `show-uptime` body class
+  without a flash. It is only compared to `'1'`.
+- **One merged strip per service.** A slot is red if any counting check failed
+  in it; the % is Σ ok ÷ Σ samples over the 48 buckets (so it covers the
+  window ending at the current half-hour, slightly different from the detail
+  panel's rolling 24h figure).
+- **`/health/strips` caps at 500 ids by taking the first 500** (extra ids are
+  ignored, not a 400); the JS chunks at 500 so a huge page still gets every
+  strip. Non-numeric ids are skipped.
+- **Auto-refresh already reloads the page**, so "re-fetch each cycle while on"
+  needs no extra timer: the reload re-fetches only when the cookie is on.
+- **Strip containers are always in the markup** and hidden by CSS unless the
+  body has `show-uptime`, so toggling needs no reload. Clicking a strip does
+  not open the tile's URL (Tiled and Compact tile handlers ignore it).
+
+---
+
+## 2026-11-15 — Count chips ignore the Status filter; Stale has no chip
+
+The Total / Passing / Failing chips count entries after Source and Show
+URL-less but ignoring Status, so each number equals what its link shows and
+the chips stay stable while you switch between them. Unknown / Not monitored
+are in Total only and the `stale` status keeps only the Status select, as the
+design specified. The chip links are built server-side from `request.args`
+(not JS) and keep every other param. The Status select's `Healthy` option and
+the `Passing` chip label are the same filter (`status=healthy`).
+
+---
+
 ## 2026-11-15 — `/widget_config` path built from the listdir name (CodeQL)
 
 CodeQL kept two `py/path-injection` alerts open on `routes_widgets.py`

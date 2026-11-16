@@ -165,7 +165,7 @@ window.stdPost = function (url, options) {
       tile.style.cursor = 'pointer';
       tile.addEventListener('click', function (event) {
         // Don't fire if clicking an interactive child
-        if (event.target.closest('a, button')) return;
+        if (event.target.closest('a, button, .uptime-strip')) return;
         window.open(internalUrl || externalUrl, '_blank');
       });
     });

@@ -1,0 +1,5 @@
+{# Inline 24h uptime strip container (PRD 13.7). Expects `entry`; optional
+   `variant`: 'dashboard' (default), 'tile', 'compact'. Empty until
+   static/js/uptime_strip.js fills it; hidden by CSS unless the body has the
+   `show-uptime` class (set from the std_show_uptime cookie). #}
+<div class="uptime-strip uptime-strip-{{ variant | default('dashboard') }}" data-uptime-id="{{ entry.id }}"></div>
