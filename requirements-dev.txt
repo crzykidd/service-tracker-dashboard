@@ -1,3 +1,5 @@
 # Development / CI only. Not installed in the Docker image.
 -r requirements.txt
 pytest==8.4.2
+# The MCP server's dependencies (mcp/), so tests/test_mcp_server.py runs in CI.
+-r mcp/requirements.txt

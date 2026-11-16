@@ -558,6 +558,51 @@ class Setting(db.Model):
         return f'<Setting {self.key}={self.value!r}>'
 
 
+class ApiKey(db.Model):
+    """Admin API key for the management API (v0.8.0, PRD 14.2).
+
+    Only the SHA-256 of the full key is stored; the secret is shown once at
+    creation. `scope` is `read` or `write` (write includes read).
+    """
+    __tablename__ = 'api_key'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), unique=True, nullable=False)
+    prefix = db.Column(db.String(8), nullable=False, index=True)
+    key_hash = db.Column(db.String(64), nullable=False)
+    scope = db.Column(db.String(8), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    last_used_ip = db.Column(db.String(64), nullable=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def is_revoked(self):
+        return self.revoked_at is not None
+
+
+class ApiAudit(db.Model):
+    """One row per management-API write request (v0.8.0, PRD 14.6).
+
+    `key_name` is a snapshot so the row survives key deletion; `changes` is
+    `{field: [old, new]}` with secrets already masked.
+    """
+    __tablename__ = 'api_audit'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ts = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    api_key_id = db.Column(db.Integer, db.ForeignKey('api_key.id', ondelete='SET NULL'),
+                           nullable=True, index=True)
+    key_name = db.Column(db.String(64), nullable=True)
+    method = db.Column(db.String(8), nullable=False)
+    path = db.Column(db.String(255), nullable=False)
+    object_type = db.Column(db.String(32), nullable=True)
+    object_id = db.Column(db.String(64), nullable=True)
+    status_code = db.Column(db.Integer, nullable=False)
+    changes = db.Column(db.JSON, nullable=True)
+
+
 class Group(db.Model):
     __tablename__ = 'group'
 

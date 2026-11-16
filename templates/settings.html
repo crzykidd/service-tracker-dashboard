@@ -15,6 +15,7 @@
     <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">Groups</button>
     <button onclick="showSection('users')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-users">Users</button>
     <button onclick="showSection('exposure')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-exposure">Exposure</button>
+    <button onclick="showSection('api')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-api">API</button>
     <button onclick="showSection('deleted')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-deleted">Deleted{% if deleted_rows %} ({{ deleted_rows|length }}){% endif %}</button>
 
   </aside>
@@ -517,6 +518,120 @@
         </div>
         <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded">Create User</button>
       </form>
+    </section>
+
+    <!-- === API Section === -->
+    <section id="section-api" class="section hidden">
+      <h2 class="text-2xl font-semibold mb-4">API Keys</h2>
+      <p class="text-gray-400 mb-4 text-sm">
+        Admin keys for the management API (<code>Authorization: Bearer &lt;key&gt;</code>).
+        They are separate from the notifier's <code>api_token</code>, which only registers services.
+        A <strong>read</strong> key can read; a <strong>write</strong> key can read and change.
+      </p>
+
+      <form method="POST" action="{{ url_for('dashboard.create_api_key') }}" class="flex flex-wrap items-end gap-3 mb-6 bg-gray-800 p-4 rounded shadow">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="text-sm">Name
+          <input type="text" name="name" maxlength="64" required class="block mt-1 px-2 py-1 rounded bg-gray-900 border border-gray-600 text-white">
+        </label>
+        <label class="text-sm">Scope
+          <select name="scope" class="block mt-1 px-2 py-1 rounded bg-gray-900 border border-gray-600 text-white">
+            <option value="read">read</option>
+            <option value="write">write</option>
+          </select>
+        </label>
+        <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white">Create key</button>
+      </form>
+
+      {% if api_key_rows %}
+      <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="api-key-table">
+        <thead class="bg-gray-700 text-gray-200">
+          <tr>
+            <th class="px-4 py-2">Name</th>
+            <th class="px-4 py-2">Prefix</th>
+            <th class="px-4 py-2">Scope</th>
+            <th class="px-4 py-2">Created</th>
+            <th class="px-4 py-2">Last used</th>
+            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for k in api_key_rows %}
+          <tr class="border-t border-gray-700 {% if k.revoked_at %}opacity-50{% endif %}">
+            <td class="px-4 py-2">{{ k.name }}</td>
+            <td class="px-4 py-2"><code>{{ k.prefix }}</code></td>
+            <td class="px-4 py-2">{{ k.scope }}</td>
+            <td class="px-4 py-2">{{ k.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+            <td class="px-4 py-2">{% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if k.last_used_ip %} from {{ k.last_used_ip }}{% endif %}{% else %}never{% endif %}</td>
+            <td class="px-4 py-2">{% if k.revoked_at %}revoked {{ k.revoked_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}active{% endif %}</td>
+            <td class="px-4 py-2">
+              {% if not k.revoked_at %}
+              <form method="POST" action="{{ url_for('dashboard.revoke_api_key', id=k.id) }}" onsubmit="return confirm('Revoke key {{ k.name|e }}? Anything using it stops working.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="text-red-400 hover:text-red-300 underline">Revoke</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-gray-400">No API keys yet.</p>
+      {% endif %}
+
+      <h2 class="text-2xl font-semibold mt-10 mb-2">Audit log</h2>
+      <p class="text-gray-400 mb-4 text-sm">
+        Every write made through the management API (the most recent {{ audit_limit }}), including rejected ones.
+        Secret values are masked. Reads are not logged. Rows are kept for {{ current_config.get('api_audit_retention_days', 90) }} days.
+      </p>
+      <form method="GET" action="{{ url_for('dashboard.settings') }}" class="flex flex-wrap items-end gap-3 mb-4" id="audit-filter-form">
+        <input type="hidden" name="section" value="api">
+        <label class="text-sm">Key
+          <select name="audit_key" class="block mt-1 px-2 py-1 rounded bg-gray-900 border border-gray-600 text-white" onchange="this.form.submit()">
+            <option value="">All keys</option>
+            {% for n in audit_key_names %}
+            <option value="{{ n }}" {% if n == audit_filter %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <noscript><button type="submit" class="px-3 py-1 bg-gray-600 rounded text-white">Filter</button></noscript>
+      </form>
+      {% if audit_rows %}
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="api-audit-table" style="min-width:760px">
+        <thead class="bg-gray-700 text-gray-200">
+          <tr>
+            <th class="px-3 py-2">Time (UTC)</th>
+            <th class="px-3 py-2">Key</th>
+            <th class="px-3 py-2">Method</th>
+            <th class="px-3 py-2">Path</th>
+            <th class="px-3 py-2">Object</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in audit_rows %}
+          <tr class="border-t border-gray-700 align-top">
+            <td class="px-3 py-2 whitespace-nowrap">{{ a.row.ts.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td class="px-3 py-2">{{ a.row.key_name or '-' }}</td>
+            <td class="px-3 py-2">{{ a.row.method }}</td>
+            <td class="px-3 py-2 break-all"><code>{{ a.row.path }}</code></td>
+            <td class="px-3 py-2 whitespace-nowrap">{% if a.row.object_type %}{{ a.row.object_type }}{% if a.row.object_id %} #{{ a.row.object_id }}{% endif %}{% else %}-{% endif %}</td>
+            <td class="px-3 py-2 {% if a.row.status_code >= 400 %}text-red-400{% else %}text-green-400{% endif %}">{{ a.row.status_code }}</td>
+            <td class="px-3 py-2 break-all">
+              {% for line in a.changes %}<div><code class="text-xs">{{ line }}</code></div>{% else %}-{% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="text-gray-400" id="api-audit-empty">No API writes recorded{% if audit_filter %} for this key{% endif %}.</p>
+      {% endif %}
     </section>
 
     <!-- === Exposure Section === -->

@@ -49,6 +49,13 @@
 | 0.39    | 2026-11-15 | §13.6 filter bar (unreleased, post-v0.7.0): "Total Services" replaced by clickable Total / Passing / Failing count chips that set the `status` filter; counts follow `source` / `show_urlless` but ignore `status`. No schema or register-contract change. |
 | 0.40    | 2026-11-15 | §13.7: inline 24h uptime strips (unreleased, post-v0.7.0): "Show uptime" filter-bar checkbox kept in the `std_show_uptime` cookie, `GET /health/strips`, `health_history.strips()`, `static/js/uptime_strip.js`. No schema change. Register wire contract unchanged. |
 | 0.41    | 2026-11-15 | v0.7.1 released: clickable Total / Passing / Failing count chips in the filter bar (§13.6) and the "Show uptime" toggle with inline 24h uptime strips (§13.7). No schema or register-contract change. |
+| 0.42    | 2026-11-15 | Added §14 (v0.8.0 — Management API, planned): admin API keys with read/write scopes, `/api/v1` REST for entries, checks, health, groups, widgets and runtime settings, OpenAPI spec, write audit log, stdio MCP server. Planned schema §5.7. Later sections renumbered (§14→§15, §15→§16, §16→§17). Register contract unchanged. No code changes yet. |
+| 0.43    | 2026-11-15 | §14.2 and §14.6 delivered (unreleased, v080-01): admin API keys (`api_key`, Settings → API tab, show-once), management blueprint skeleton (`require_api_key`, JSON errors, `GET /api/v1/whoami`), write audit log (`api_audit`, `audit()` helper, `after_request` hook, `api_audit_retention_days` + daily purge). Migration `d4a9e2c6b715`; §5.7 updated. Register wire contract unchanged. |
+| 0.44    | 2026-11-15 | §14.3 delivered (unreleased, v080-02): management endpoints for entries, checks, Check now, entry health and `/health/summary`; shared validation (`entry_rules.py`, dict-based validators in `check_form.py`) used by the UI and API; `mgmt_schemas.py` / `mgmt_serializers.py`. No schema change. Register wire contract unchanged. |
+| 0.45    | 2026-11-15 | §14.4 delivered (unreleased, v080-03): management endpoints for groups, widget types and instances (attach, detach, delete), exposure direction settings and a read-only masked `GET /config`; `widget_rules.py`. No schema change. Register wire contract unchanged. |
+| 0.46    | 2026-11-15 | §14.5 and the §14.6 Settings view delivered (unreleased, v080-04): `GET /api/v1/openapi.json` generated from a route registry (`mgmt_openapi.py`) plus the pydantic/TypedDict models, with completeness tests against `app.url_map`; Settings → API audit log view; README Management API and Managing STD with Claude sections; JSON 404/405 for unmatched `/api/v1/*` API-client requests. No schema change. Register wire contract unchanged. |
+| 0.47    | 2026-11-15 | §14.7 delivered (unreleased, v080-05), the last v0.8.0 chunk; §14 status line now "all chunks delivered": stdio MCP server `mcp/std_mcp.py` (read key = read tools only, write key = all), outside the Docker image (`.dockerignore`), tested in CI. No STD server change, no schema change. Register wire contract unchanged. |
+| 0.48    | 2026-11-15 | v0.8.0 released. §14 retitled Delivered: admin API keys (read/write scopes) and write audit log, `/api/v1` management API for entries, checks, health, groups, widgets, exposure settings and config, generated OpenAPI spec, stdio MCP server in `mcp/`. Schema §5.7 (`api_key`, `api_audit`). Add-page "None" group fix. Register contract unchanged; no notifier change. |
 
 ---
 
@@ -67,9 +74,10 @@
 11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
-14. [Versioning, Branches, and Releases](#14-versioning-branches-and-releases)
-15. [Cross-Repo Coordination](#15-cross-repo-coordination)
-16. [Open Questions](#16-open-questions)
+14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
+15. [Versioning, Branches, and Releases](#15-versioning-branches-and-releases)
+16. [Cross-Repo Coordination](#16-cross-repo-coordination)
+17. [Open Questions](#17-open-questions)
 
 ---
 
@@ -365,6 +373,16 @@ its index in the same migration.
 | Data   | Migration creates the two URL-kind `health_check` rows for every entry, copying `*_health_check_enabled`, `health_check_timeout`, `health_check_verify_tls` and the last status. |
 | Data   | Migration `c1d7a3e5f2b8` inserts one enabled `container` row for every `source='notifier'` entry (soft-deleted included). No new columns or indexes; the downgrade deletes the rows and their results. |
 | Deprecated | `service_entry.internal_/external_health_check_enabled/_status/_update`, `health_check_timeout`, `health_check_verify_tls`: no longer read after v0.7.0; kept for rollback, dropped in a later release (FUTURE.md). |
+
+
+### 5.7 v0.8.0 schema changes
+
+Planned for v0.8.0 (§14). FKs get their index in the same migration. `api_key` and `api_audit` shipped in migration `d4a9e2c6b715` (v080-01); column types: `object_type` `String(32)`, `object_id` `String(64)` (ids are stored as text), `path` `String(255)`, `method` `String(8)`; indexes `ix_api_key_prefix`, `ix_api_key_created_by`, `ix_api_audit_ts`, `ix_api_audit_api_key_id`.
+
+| Change | Detail |
+|--------|--------|
+| Table | `api_key`: `id`, `name` (unique), `prefix` (indexed), `key_hash` (SHA-256 hex), `scope` (`read`/`write`), `created_at`, `created_by` (FK `user.id`, nullable, indexed), `last_used_at`, `last_used_ip`, `revoked_at`. |
+| Table | `api_audit`: `id`, `ts` (naive UTC, indexed), `api_key_id` (FK `api_key.id` ON DELETE SET NULL, indexed), `key_name`, `method`, `path`, `object_type`, `object_id`, `status_code`, `changes` (JSON). Pruned by `api_audit_retention_days`. |
 
 ---
 
@@ -942,7 +960,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §14 (Versioning, Branches, and Releases); this section
+release mechanics is §15 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -964,7 +982,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§14).
+  checks (§15).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -989,7 +1007,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§15) is not engaged and every notifier
+consumer-leads ordering rule (§16) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1174,7 +1192,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§16).
+Resolves the Open Question on health-check timeouts (§17).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1295,7 +1313,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§15) is not engaged. Every notifier version that works
+ordering rule (§16) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -1711,7 +1729,293 @@ health columns.
 
 ---
 
-## 14. Versioning, Branches, and Releases
+## 14. v0.8.0 — Management API (Delivered)
+
+> **Status:** shipped in v0.8.0 (2026-11-15). The management API and MCP server
+> have not yet been fully tested against real instances (README note).
+> Scoped 2026-11-15. Each subsection is one handoff
+> prompt (named in brackets, in `prompts/`), run in the order listed.
+> Each chunk leaves the app working and the test suite green.
+
+A **minor** release with one theme: everything an operator can do in the UI
+can also be done through an authenticated JSON API, so an agent such as
+Claude (or a script) can maintain an STD instance. That covers reading every
+entry and its health, adding manual sites and web checks, editing fields,
+groups, widgets and runtime settings, and triaging failures.
+
+Because it is a minor, `/release-prep 0.8.0` reaches the per-minor CHANGELOG
+archive step. The operator chose to keep the full CHANGELOG at 0.7.0; ask
+again at prep time.
+
+**Cross-repo:** **no register-contract change.** `POST /api/v1/register`
+and its `api_token` are untouched. The notifier keeps its register-only
+token and needs no update.
+
+### 14.1 Principles
+
+- **Separate credentials.** The notifier's `api_token` (in `settings.yml`,
+  present on every Docker host) stays **register-only**. Management uses
+  **admin API keys** created in the UI. A leaked notifier config can never
+  read or change the dashboard. The management API rejects `api_token`, and
+  register rejects management keys.
+- **Key-only auth.** Management endpoints authenticate with
+  `Authorization: Bearer <key>` only. They ignore session cookies, so they
+  are CSRF-exempt by construction. The existing browser endpoints (UI JSON
+  such as `/service/<id>/health`) are unchanged and stay session-only.
+- **Same rules as the UI.** One validation path per object.
+  - The Add/Edit check validation (`check_form.py`) and entry rules are
+    shared with the API, not copied.
+  - URL edits through the API take `ui_edit` provenance (operator intent,
+    protected from the notifier and synthesizer).
+  - Notifier-owned fields are read-only: `docker_status`, `container_id`,
+    `stack_name`, image fields, `started_at`, networks, ports, exposure
+    observations and the `notifier_reported_*` columns.
+  - API entry writes take the register handler's `_UPSERT_LOCK`, so they
+    serialize with registers.
+- **Strict schemas.** Request bodies are pydantic models with
+  `extra="forbid"`, as on register. Unknown fields are a 400 listing the
+  bad keys.
+- **Secrets are write-only.** API key secrets are shown once at creation.
+  The widget `widget_api_key` is never returned; reads return
+  `"widget_api_key_set": true|false`.
+- **Every write is audited** (§14.6).
+
+### 14.2 API keys [`v080-01-api-keys-and-audit`] — Delivered in v0.8.0
+
+- **Model `ApiKey`** (table `api_key`): `id`, `name` (unique, ≤64),
+  `prefix` (first 8 chars, for display and lookup), `key_hash`
+  (SHA-256 hex of the full key), `scope` (`read` or `write`, where `write`
+  includes read), `created_at`, `created_by` (FK `user.id`, nullable,
+  indexed), `last_used_at`, `last_used_ip`, `revoked_at`.
+- **Key format:** `std_<prefix>_<secret>`. It holds 32+ random bytes from
+  `secrets.token_urlsafe`. Because the key is high-entropy, a plain SHA-256
+  is sufficient (no KDF). Lookup is by `prefix`, then the hash is compared
+  with `hmac.compare_digest`.
+- **Settings → API tab** (admin only):
+  - **Create key** asks for a name and scope and shows the full key
+    **once**, with a copy button.
+  - Key list: name, prefix, scope, created, last used (time and IP),
+    **Revoke**.
+  - The recent audit log is shown here too (§14.6).
+- **Decorator `require_api_key(scope)`:**
+  - Missing or invalid key → 401 JSON. Revoked → 401. Read key on a write
+    endpoint → 403.
+  - Sets `g.api_key`.
+  - Updates `last_used_at` and IP, throttled to once a minute per key.
+  - Log lines show the key's name and prefix, never the secret.
+- **Blueprint `routes_mgmt_api.py`** (`/api/v1/...`, CSRF-exempt), with JSON
+  error handlers for 400, 401, 403, 404, 405, 409 and 422:
+  `{"error": "...", "details": ...}`.
+
+**As built (v080-01):** `api_keys.py` (`generate_key`, `verify`,
+`scope_allows`, `create_key`, `revoke_key`), `routes_mgmt_api.py` (blueprint
+`mgmt_api`, `require_api_key(scope)`, `audit()`, `json_error()`,
+`GET /api/v1/whoami`) and models `ApiKey` / `ApiAudit`.
+- The prefix is 8 hex characters (`secrets.token_hex(4)`), so it never
+  contains `_`; the secret is `token_urlsafe(32)` and may. A key is parsed
+  with `split("_", 2)`.
+- A 403 (read key on a write endpoint) still counts as an authenticated
+  request: `last_used_at` is touched and a write is audited.
+- Blueprint handlers return the JSON error shape for 400, 401, 403, 404, 405,
+  409 and 422 raised inside the blueprint, plus pydantic `ValidationError`
+  (400, field-level `details`) and unhandled exceptions (500). Routing-level
+  404/405 (no matching URL) are not handled by a blueprint and keep Flask's
+  default response.
+- Settings → API (admin, CSRF): create shows the key on the POST response page
+  (`api_key_created.html`, `Cache-Control: no-store`), never via flash or
+  session; revoke keeps the row greyed out. Key names are unique including
+  revoked keys. The audit list on this tab arrives with v080-04.
+
+### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered in v0.8.0
+
+All paths are under `/api/v1`. Every list endpoint takes `limit` (default
+200, maximum 1000) and `offset`, and returns `{items, total, limit, offset}`.
+
+| Method + path | Scope | Purpose |
+|---|---|---|
+| `GET /entries` | read | List, with filters `source`, `status` (`all`/`failing`/`healthy`/`unknown`/`stale`, the same as the UI), `group`, `host`, `q` (substring of name, host, stack, description), `include_deleted`, `deleted_only`. Each item has the entry fields, `health` (state, counts, failures) and `checks` (config plus last result). |
+| `GET /entries/<id>` | read | One entry in full, including `notifier` (read-only observed facts) and `widget` (no secret). |
+| `POST /entries` | write | Create a **manual** entry: name, host, description, group (name; created if missing), URLs, icon, sort priority, lock, and `checks` (a list of service checks plus URL-check settings). It follows the same duplicate rules as Add, so a duplicate is a 409. |
+| `PATCH /entries/<id>` | write | Partial update of operator fields: group, URLs, icon, sort priority, lock, description; also name and host on manual entries only. Notifier-owned fields → 400. |
+| `DELETE /entries/<id>` | write | Soft delete. `?permanent=true` hard-deletes, but only an already soft-deleted entry; otherwise 409. |
+| `POST /entries/<id>/restore` | write | Restore a soft-deleted entry. |
+| `GET /entries/<id>/checks` | read | The entry's checks. |
+| `POST /entries/<id>/checks` | write | Add a service check (http/tcp/ping). |
+| `PATCH /checks/<id>` | write | Update any check. URL-kind checks: enabled, mode, interval, timeout, verify. Container check: enabled, interval. Service checks: everything. |
+| `DELETE /checks/<id>` | write | Delete a **service** check. URL and container checks can't be deleted (409); disable them instead. |
+| `POST /entries/<id>/checks/run` | write | Check now (uses `jobs.request_run`). Returns `requested_at`. |
+| `GET /entries/<id>/health?range=24h\|7d` | read | The same payload as the UI detail panel. |
+| `GET /health/summary` | read | Counts (total, passing, failing, unknown, stale) plus every failing entry with its failing checks and messages, so an agent can triage in one call. |
+
+- **`check_form.py` validation is refactored** into functions that take
+  plain dicts, used by both the form parser and the API, so there is one
+  rule set. Form behaviour stays the same; existing tests prove it.
+- **Status codes:** a create returns 201 with the object. A validation
+  failure returns 400 with every problem listed, per field.
+
+**As built (v080-02):**
+- Modules: `entry_rules.py` (name/host/description limits, duplicate check,
+  sort priority, icon name and download, group lookup, URL provenance
+  via `set_url`), `check_form.py` (now has `validate_service_check`,
+  `validate_url_check_settings`, `validate_container_check` over plain dicts
+  returning `(values, [{field, message}])`; the form parser wraps them and
+  keeps its messages), `mgmt_schemas.py` (pydantic requests `EntryCreate`,
+  `EntryPatch`, `ServiceCheckCreate`, `CheckPatch`, all `extra="forbid"` and
+  strict; response `TypedDict`s such as `EntryOut`, `CheckOut`, `Page`),
+  `mgmt_serializers.py` (plain functions returning those dicts) and the
+  endpoints in `routes_mgmt_api.py`. `/add` and `/edit/<id>` use the same rule
+  functions; their behaviour and messages are unchanged.
+- JSON names: `name` (not `container_name`), `icon`, `locked`, `group`
+  (`{id, name}` out, a name in), and checks use the backup vocabulary
+  (`check_type`, `interval_seconds`, `timeout_seconds`, `verify_tls`).
+  Create takes `checks` (service checks) and `url_checks`
+  (`{internal, external}` settings). Entry detail adds `notifier` (observed
+  facts and exposure rows) and `widget` (`widget_api_key_set`, never the key).
+- A service check created through the API is enabled unless `enabled:false`;
+  an entry created without a group is ungrouped (the UI's literal "None"
+  group is not reproduced).
+- Errors: validation problems are a 400 whose `details` is a list of
+  `{loc, msg, type}` (the same shape as a pydantic failure) with every
+  problem; a duplicate or a state conflict is 409 with `details`
+  (`{id, deleted}` for a duplicate); a PATCH naming notifier-owned or derived
+  fields, or name/host on a notifier entry, is a 400 that names them.
+  `limit` above 1000 is clamped; a non-numeric or negative one is a 400.
+- `GET /entries` with `status=all` paginates in SQL; with another status it
+  filters in Python (the state is derived) after one eager-loaded query, so
+  the query count does not grow with the number of entries.
+- `GET /health/summary` counts are `matches_status` over active entries (the
+  same rule as the filter-bar chips); `since` is the earliest failed sample
+  after the latest passing one, falling back to the last check time.
+
+### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`] — Delivered in v0.8.0
+
+| Method + path | Scope | Purpose |
+|---|---|---|
+| `GET /groups` | read | Groups with priority, icon and active entry count. |
+| `POST /groups` | write | Create a group (unique name → 409 on duplicate). |
+| `PATCH /groups/<id>` | write | Rename, re-prioritise, set the icon. |
+| `DELETE /groups/<id>` | write | Delete. Its entries become ungrouped (same as the UI). |
+| `GET /widgets/types` | read | The widget plugins under `widgets/` with their `available_fields`. |
+| `GET /widgets` | read | Widget instances: type, URL, fields, `widget_api_key_set`, attached entry ids, `detached`. |
+| `PUT /entries/<id>/widget` | write | Attach or configure the entry's widget (type, URL, fields, optional API key). Validates the type and fields against the plugin. |
+| `DELETE /entries/<id>/widget` | write | Remove it from the entry. `?delete=true` deletes the widget and its values; otherwise it is detached. |
+| `DELETE /widgets/<id>` | write | Delete a detached widget. |
+| `GET /settings/exposure` | read | Per-interpreter direction mappings, per-host overrides, and discovered layers and hosts (`settings_store`). |
+| `PUT /settings/exposure` | write | Replace them, with the same validation as Settings → Exposure. |
+| `GET /config` | read | Effective `settings.yml`/env values, read-only, with **secrets masked** (`api_token`, `secret_key`, widget keys) plus the app version. These are not editable through the API (they are loaded once at startup). |
+
+Users and passwords are **not** exposed through the API (out of scope).
+
+**As built (v080-03):**
+- `widget_rules.py` discovers plugins under `widgets/` (paths built from
+  `os.listdir` entries only) and validates type, URL (required, 255 max),
+  fields (non-empty, each a plugin `available_fields` key) and the API key
+  length. `/edit` is unchanged and still does not validate plugins.
+- JSON: group `{id, name, sort_priority, icon, entry_count}`; widget
+  `{id, type, url, fields, widget_api_key_set}` plus `entry_ids` and
+  `detached` on `GET /widgets`; `GET /widgets/types` items are
+  `{type, description, available_fields: [{key, label, description}]}`.
+  Responses are typed in `mgmt_schemas.py`.
+- Groups: deleting one with active entries is a 409, as in the UI (the
+  "entries become ungrouped" wording above is the `?force=true` behaviour);
+  deleted entries are always ungrouped. Names are trimmed, 100 max.
+- `PUT /entries/<id>/widget` replaces type/URL/fields; an omitted
+  `widget_api_key` keeps the stored one and `null` clears it. 201 when it
+  creates the widget, 200 when it updates. Refused (409) on a deleted entry.
+  `DELETE /entries/<id>/widget` is 404 when there is no widget.
+- `PUT /settings/exposure` takes `{layer_directions, host_overrides}`,
+  validates directions against `VALID_DIRECTIONS` (the UI silently drops bad
+  ones; the API answers 400), saves via `settings_store.save_exposure_settings`,
+  runs `synthesizer.recompute_all()` and returns the settings plus
+  `recomputed`.
+- `GET /config` returns `{version, settings, sources}`: every key in
+  `settings_loader.VALID_KEYS` plus `display_tools`, `sources` saying
+  env/file/default. Names that are secrets (`api_token`, anything ending
+  `_key`, `_token`, `_password`, `_secret`) show `"***"` (null if unset).
+
+### 14.5 OpenAPI spec and docs [`v080-04-openapi-and-docs`] — Delivered in v0.8.0
+
+- `GET /api/v1/openapi.json` (no auth; it describes shapes, not data) is an
+  OpenAPI 3.1 document. It is generated from the pydantic request and
+  response models plus a route table, not hand-written, and a test fails if
+  a management route is missing from it.
+- **README "Management API"**: creating a key, the auth header, the endpoint
+  table, curl examples (list failing services, add a manual site with an
+  HTTP body check, disable a check), and a "Managing STD with Claude"
+  section.
+
+**As built (v080-04):** `mgmt_openapi.py` holds the route registry
+(`OPERATIONS`: one `Op` per endpoint with method, path, scope, summary,
+request model, response type and query parameters) and `build_spec()`, which
+emits OpenAPI 3.1 using `pydantic.TypeAdapter(...).json_schema()` for the
+`mgmt_schemas.py` models (no extra dependency). `GET /api/v1/openapi.json` is
+public and lives on the management blueprint, so it is in the registry too.
+`require_api_key` tags each view with `required_scope`, and
+`tests/test_mgmt_openapi.py` fails if any `mgmt_api.*` rule in `app.url_map`
+is missing from the registry (or the reverse), if a scope differs, if a
+`$ref` does not resolve, if `/api/v1/register` appears, or if the README
+endpoint table drifts. Filtering is by blueprint, so the browser-session JSON
+routes under `/api/v1` are never listed. Unmatched `/api/v1/*` URLs answer
+with the JSON error shape when the caller sends a Bearer header or
+`Accept: application/json`.
+
+### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`] — Delivered in v0.8.0
+
+- **Model `ApiAudit`** (table `api_audit`): `id`, `ts` (UTC), `api_key_id`
+  (FK, indexed, `ON DELETE SET NULL`), `key_name` (a snapshot), `method`,
+  `path`, `object_type`, `object_id`, `status_code`, `changes` (JSON
+  `{field: [old, new]}`, with secrets replaced by `"***"`).
+- **One row per write request** (POST, PATCH, PUT, DELETE), including
+  failures (4xx). Reads are not logged.
+- **Retention:** new setting `api_audit_retention_days` (default 90), with a
+  daily purge job.
+- **Settings → API** shows the most recent 200 rows, filterable by key.
+
+**As built (v080-01):** model, retention and the hook are in. The hook is
+`routes_mgmt_api.audit_response`, registered with `mgmt_bp.after_request`; it
+writes one row for each POST/PATCH/PUT/DELETE that carried a valid key
+(including 4xx and 403). Endpoints describe the change with
+`audit(object_type, object_id, {field: [old, new]})`, which masks secret
+fields (`widget_api_key`, `api_token`, `secret_key`, `key_hash`, `api_key`,
+or any name containing `secret`, `password` or `token`) as `"***"` for both
+old and new values before they reach the database. Unauthenticated requests
+are only logged. `jobs.purge_api_audit` runs daily at 00:35. The Settings
+view of the log is not built yet.
+
+**As built (v080-04):** Settings → API lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
+
+### 14.7 MCP server [`v080-05-mcp-server`] — Delivered in v0.8.0
+
+- A small **stdio MCP server** at `mcp/std_mcp.py` (its own
+  `mcp/requirements.txt`, using the official `mcp` Python SDK). It is **not
+  in the Docker image**; it runs on the operator's machine, next to Claude
+  Code.
+- It is configured with `STD_URL` and `STD_API_KEY` and talks only to the
+  REST API. It holds no DB access and duplicates no business logic.
+- **Tools**, as thin wrappers with typed inputs: `list_entries`,
+  `get_entry`, `health_summary`, `get_health_history`,
+  `create_manual_entry`, `update_entry`, `delete_entry`, `restore_entry`,
+  `add_check`, `update_check`, `delete_check`, `run_checks`,
+  `list_groups`, `upsert_group`, `list_widgets`, `set_widget`,
+  `get_exposure_settings`, `set_exposure_settings`, `get_config`.
+- A **read-only key exposes only the read tools**; it probes the key's scope
+  at startup via `GET /api/v1/whoami`, which is added in v080-01.
+- **README:** a `claude mcp add` example.
+- **Tests:** each tool runs against a fake HTTP layer, with no network.
+
+**As built (v080-05):** `mcp/std_mcp.py` (FastMCP over stdio, `mcp==1.30.0`, `httpx` client) with its own `mcp/requirements.in` / `requirements.txt` and `mcp/README.md`. Env: `STD_URL`, `STD_API_KEY`, optional `STD_VERIFY_TLS` and `STD_TIMEOUT`. `main()` calls `GET /whoami` and exits with the reason on a bad key; a `read` key registers 9 read tools, a `write` key adds 12 write tools (21 in all). Beyond the §14.7 list: `list_widget_types` (so `set_widget` can be filled in) and `remove_widget`. `update_entry` / `update_check` take a `fields` object so that absent (untouched) and null (clear) stay distinct; `upsert_group` is client-side (list, then create or patch by exact name; optional `new_name`). Errors become tool errors as `HTTP <status> (<meaning>): <error>` plus the API's `details`. `.dockerignore` keeps `mcp/` out of the image; `requirements-dev.txt` includes `mcp/requirements.txt` so `tests/test_mcp_server.py` runs in the CI `Test` job (fake transport for every tool, scope gating, error mapping, every tool's method and path checked against `/api/v1/openapi.json`, and a flow against the real app via `httpx.WSGITransport`). No STD server change, no schema change.
+
+### 14.8 Out of scope for v0.8.0
+
+- Per-host notifier tokens (§17), users and passwords through the API, and
+  rate limiting.
+- An HTTP-hosted MCP endpoint inside STD.
+- Editing `settings.yml` values through the API.
+- Webhooks or outbound alerts (FUTURE.md "Monitoring follow-ups").
+
+---
+
+## 15. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -1750,12 +2054,12 @@ health columns.
 
 ---
 
-## 15. Cross-Repo Coordination
+## 16. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 15.1 Contract ownership
+### 16.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -1768,7 +2072,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 15.2 Release history
+### 16.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -1793,14 +2097,15 @@ not lead.
 
 ---
 
-## 16. Open Questions
+## 17. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)
   may be too much for some widgets and not enough for others. A
   per-widget policy via the widget's `settings.json` is unscheduled;
   revisit once §12.3 ships and the global knob works.
-- **API tokens per-source.** A single shared token works for a homelab
+- **API tokens per-source.** (Admin/management keys are planned in §14;
+  this item is now only about the notifier's register token.) A single shared token works for a homelab
   but doesn't let you revoke a single notifier host. Per-host tokens +
   last-seen tracking? Unscheduled; §12.3 only closes the
   unset-token hole.

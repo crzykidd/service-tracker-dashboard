@@ -5,6 +5,227 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v080-05 implementation calls (MCP server)
+
+- **Pinned `mcp==1.30.0` (the v1 line), not 2.x.** 2.x (latest 2.3.0, October)
+  renamed FastMCP to `MCPServer` and moved the import; the prompt and PRD say
+  FastMCP, and 1.30.0 (7 Sep) is a stable release well over two weeks old.
+  Moving to 2.x later is a one-import change plus a re-run of the tests.
+- **`httpx` for the client** (already an `mcp` dependency, and it has
+  `MockTransport` for tests and `WSGITransport` for running the server against
+  the real Flask app in-process).
+- **`mcp/requirements.txt` is compiled with `-c requirements.txt`**, so shared
+  packages (pydantic and others) stay on the app's pins and the CI `Test` job
+  can install both. `requirements-dev.txt` includes it: CI actually runs
+  the MCP tests, and the test module imports `httpx` directly, so a missing
+  install fails loudly, not silently skips. The runtime `requirements.txt` is
+  untouched.
+- **No `.dockerignore` existed and the Dockerfile does `COPY . .`**, so a new
+  one lists `mcp/`. No other entries were added; widening it is a separate call.
+- **No `mcp/__init__.py`, module loaded by path in tests.** A package named
+  `mcp` in the repo root would otherwise compete with the SDK on `sys.path`.
+- **PATCH tools take a `fields` object** (`update_entry`, `update_check`),
+  because a typed signature cannot tell "absent" from "null", and the API gives
+  those different meanings. Keys are checked against an allowed set client-side
+  for a readable error; the server remains the authority.
+- **`upsert_group` is client-side** (list, find by exact name, then POST or
+  PATCH). It cannot clear an icon or sort priority; use the UI or the API for
+  that. No server endpoint was added and `OPERATIONS` is unchanged.
+- **Two tools beyond the PRD list:** `list_widget_types` (needed to fill in
+  `set_widget`) and `remove_widget`. Both are thin wrappers of existing
+  endpoints. `whoami` is not a tool; it is used at startup.
+- **Scope gating registers tools, it does not replace the API check.** A read
+  key never sees write tools, and the API still returns 403 if one were called.
+  A key that fails `whoami` at startup exits with the reason (no tools).
+- **Tools return JSON text** (`-> dict` yields unstructured text content), and
+  failures raise `ToolError`, which the SDK turns into an `isError` result.
+- **httpx's INFO request logging is silenced** so the stdio server's stderr
+  stays quiet (URLs only, never the key, but still noise).
+
+---
+
+## 2026-11-15 — v080-04 implementation calls (OpenAPI, audit view, docs)
+
+- **Own registry + pydantic, no flask-smorest/apispec.** `mgmt_openapi.OPERATIONS`
+  is one declaration per endpoint; the spec is built with `TypeAdapter.json_schema()`.
+  Fewer dependencies, and the tests compare it to `app.url_map` and to each
+  view's `required_scope` (set by `require_api_key`). The registry is declared
+  beside, not on, the routes, so a new route needs two edits and a test fails
+  if either is forgotten.
+- **Response TypedDicts use `typing_extensions.TypedDict`.** pydantic refuses
+  `typing.TypedDict` below Python 3.12 and CI is 3.11. Both pythons run the suite.
+- **Generic `Page[T]` components are named `PageOf<Item>`** (pydantic titles
+  them all just "Page", which would collide). Union responses
+  (`DELETE /entries/{id}`) are inline `anyOf`.
+- **Spec is filtered by blueprint, not URL prefix**, so `/api/v1/register` and
+  the browser JSON routes under `/api/v1` stay out. `/openapi.json` itself is
+  public and listed.
+- **Unmatched `/api/v1/*` gets JSON only if `url_rule is None` and the caller
+  sends a Bearer header or `Accept: application/json`.** Routed requests
+  (browser routes, register) are never touched, and a plain browser still gets
+  the Flask page. Handled app-wide because blueprints cannot catch unrouted URLs.
+- **Audit filter is by `key_name` (the snapshot)**, via a dropdown of names
+  seen in the log, so revoked or deleted keys can still be filtered.
+- **README endpoint table is generated from the registry** and a test checks
+  every row is present, so docs cannot silently drift.
+- **MCP sentence left as a placeholder** in "Managing STD with Claude" for v080-05.
+
+---
+
+## 2026-11-15 — v080-03 implementation calls (groups, widgets, settings, config)
+
+- **Group delete matches the UI (409 with active entries); `?force=true`
+  ungroups them.** The PRD said "its entries become ungrouped (same as the
+  UI)", but the UI refuses. The code wins by default and `force` gives the PRD
+  behaviour on request. Soft-deleted entries are always ungrouped.
+- **Group PATCH rename to a taken name is a 409** (the UI handler would hit the
+  unique constraint); renaming to its own name is allowed. Names are trimmed
+  and limited to 100 characters, icons to 255. The UI handlers were not
+  changed.
+- **Widget validation lives in `widget_rules.py`; `/edit` is untouched.** The
+  API requires a known type, a non-empty URL and at least one field, all of
+  them valid for the plugin; `/edit` accepts anything.
+- **`PUT /entries/<id>/widget` key semantics:** omitted `widget_api_key` keeps
+  the stored key, `null` clears it, a string sets it. Fields are de-duplicated
+  keeping order. The audit only lists changed fields; the key is always `***`
+  (so a changed and an unchanged key look alike, as decided in v080-01).
+- **`?delete=true` only removes the widget if no other entry uses it**;
+  otherwise it just detaches. Widgets are normally one-per-entry so this is a
+  safety net.
+- **Widget and group writes are audited before the lookup**, so a 404 still
+  carries the object type in the audit row.
+- **Exposure PUT is strict where the UI is lenient.** The form drops invalid
+  directions silently; the API rejects them with a 400 and changes nothing.
+  Layers and hosts need not be "discovered" (the UI also accepts any).
+  `"neither"` values are stored, as with the form.
+- **`GET /config` adds a `sources` map** (env/file/default/derived) from the
+  startup snapshots, and masks by name: the known secret names plus the
+  `_key`/`_token`/`_password`/`_secret` suffixes. Only `settings_loader`'s
+  known keys are returned, never Flask internals. `secret_key` is not a
+  loaded setting, so it never appears.
+- **Widget types list is a `Page` envelope** (`total` = count, no real paging)
+  to keep every list endpoint one shape; items expose `key`, `label`,
+  `description` only (not the internal `api_path`).
+
+---
+
+## 2026-11-15 — v080-02 implementation calls (entries, checks, health)
+
+- **API field names follow the dashboard, not the table.** `name` (not
+  `container_name`), `icon`, `locked`, `group` (a name in, `{id, name}` out);
+  checks reuse the backup vocabulary (`check_type`, `interval_seconds`,
+  `timeout_seconds`, `verify_tls`). Create takes service checks as `checks`
+  and URL-check settings as `url_checks: {internal, external}` (the PRD said
+  "a list of service checks plus URL-check settings" without a shape).
+- **Defaults differ from the form in two places.** A service check created
+  through the API is enabled unless `enabled:false` (the form's checkbox
+  defaults off, but an agent that adds a check wants it running), and an entry
+  with no `group` is ungrouped rather than put in the UI's literal "None"
+  group. URL checks still default to disabled.
+- **Strict string/number/bool types in request bodies.** `"60"` or `"yes"` is a
+  400 rather than being coerced (JSON `true` must not become `1`); value rules
+  stay in `check_form` / `entry_rules`, so pydantic checks shape only.
+- **Notifier-owned fields are a fixed deny-list, checked before pydantic.**
+  `NOTIFIER_OWNED_FIELDS` names them in a 400 (also derived/read-only output
+  fields such as `health` or `source`, so a GET-then-PATCH round trip fails
+  loudly instead of silently ignoring them). Other unknown keys fall to
+  `extra="forbid"`. Name and host on a notifier entry are a 400 even when the
+  value is unchanged.
+- **`limit` above 1000 is clamped, below 1 or non-numeric is a 400.** Same for
+  `offset` below 0.
+- **`status` filtering is done in Python.** Health state is derived, so any
+  status other than `all` loads the SQL-filtered rows (checks eager-loaded) and
+  filters with `matches_status`; `all` paginates in SQL. Fine at homelab scale;
+  the query count is flat either way.
+- **`since` for a failing check** is the earliest failed sample after the
+  latest passing one (two cheap aggregate queries per failing check), falling
+  back to `last_checked_at`, instead of walking `consecutive_failures` rows,
+  which breaks if the run is longer than the retained history.
+- **Edit's icon download and the quirky Edit behaviours were left alone.**
+  `/edit` still downloads in place (the security tests patch
+  `routes_dashboard.requests`) and still does not validate the name; only the
+  URL provenance and sort-priority parsing moved into `entry_rules`. Add moved
+  fully (basic limits, duplicate, icon, group). Messages and statuses are
+  unchanged.
+- **Check writes are refused on a deleted entry (409)**, as are entry PATCH,
+  Check now and add-check; reads still work on deleted entries.
+- **A check-id route 404s only for an unknown id.** `PATCH`/`DELETE
+  /checks/<id>` find the check, then the deleted-entry rule applies.
+
+---
+
+## 2026-11-15 — v080-01 implementation calls (API keys and audit)
+
+- **Prefix is 8 hex chars, not a slice of the urlsafe secret.** `token_urlsafe`
+  can contain `_`, which would break `std_<prefix>_<secret>` parsing. A hex
+  prefix has no `_`, and the key is split with `split("_", 2)` so a secret
+  containing `_` still parses.
+- **A scope mismatch (403) counts as an authenticated request.** The key was
+  valid, so `last_used_at` is touched and a write attempt is audited. This
+  keeps a read key probing write endpoints visible. Unauthenticated (401)
+  requests are only logged.
+- **Admin UI routes live in `routes_dashboard.py`, not the management
+  blueprint.** `/settings/api-keys` is a browser form route (session + CSRF
+  + admin), so it belongs with the other `/settings/*` routes; the
+  CSRF-exempt, key-only blueprint stays pure API.
+- **The create response is a dedicated page, not the Settings page.**
+  Re-rendering Settings would need its large context rebuilt; a small
+  `api_key_created.html` (no-store) shows the key once and links back.
+- **Key names are unique including revoked keys** (DB unique constraint per
+  the PRD), so a revoked name cannot be reused. The error message says so.
+- **Audit masking is by field name** (the known secret names plus any name
+  containing `secret`, `password` or `token`) and replaces both old and new
+  values, so an audit row never reveals a secret or whether it changed.
+  Conservative over precise.
+- **No `/api/v1` routing-level JSON 404/405 yet.** Flask blueprints do not
+  handle unmatched URLs, and `/api/v1/*` already holds browser JSON routes, so
+  a blanket app-level handler would change their behaviour. Raised views get
+  JSON errors; revisit in v080-04 with the OpenAPI work if wanted.
+- **Existing migration test adjusted.** `test_container_check.py` upgraded to
+  `head` and downgraded `-1`, which now removes this migration instead of the
+  container one; it now pins the container revision explicitly.
+
+---
+
+## 2026-11-15 — v0.8.0 Management API design calls
+
+Scoped with the operator; plan in PRD §14.
+
+- **Separate admin keys, not the notifier token.** `api_token` lives in
+  `settings.yml` on every Docker host running the notifier. Giving it
+  management power would turn any leaked host config into full dashboard
+  control. It stays register-only, and management uses DB-stored, named,
+  revocable keys with `read` and `write` scopes (operator's choice).
+  Rejected: reusing `api_token`; a single `admin_api_token` in settings
+  (it can't be revoked per key and rotating it needs a restart).
+- **SHA-256 for key hashes, not a password KDF.** Keys are 32+ random
+  bytes, so there is nothing to brute-force; a slow KDF would only add
+  latency to every API call.
+- **Management endpoints accept only the bearer key, never the session
+  cookie.** That makes them CSRF-exempt by construction instead of
+  half-exempt. Browser-side JSON endpoints stay session-only and
+  unchanged.
+- **API URL edits are `ui_edit`** (operator's choice). An agent acting for
+  the operator has the same intent as the browser, so the notifier and
+  synthesizer must not overwrite it. Rejected: a separate `api_edit`
+  provenance value.
+- **One validation path.** The Add/Edit check rules are refactored into
+  shared functions instead of copying them into API schemas, so the UI and
+  API can't drift.
+- **The MCP server is a separate stdio client in `mcp/`, not part of the
+  image.** The MCP SDK is async, while STD is Flask/gunicorn with one
+  worker. A stdio wrapper over the REST API keeps the image and attack
+  surface unchanged, and it runs next to Claude Code. Rejected: an MCP
+  endpoint hosted inside STD.
+- **`settings.yml` stays read-only over the API.** It is loaded once at
+  startup, so editing it remotely would mean writing the host's config
+  file and restarting. Only DB-stored runtime settings (exposure
+  directions) are writable.
+- **Users and passwords are excluded from the API.** An API key must not be
+  able to mint logins.
+
+---
+
 ## 2026-11-15 — Inline uptime strips: cookie, merged bars, id cap, reload refresh
 
 - **Cookie, not localStorage or a URL param**, as requested: the server reads

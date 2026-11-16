@@ -14,6 +14,7 @@ Grouping/sorting for the three dashboard views lives in
 the query params and hands them to the helper.
 """
 
+import json
 import logging
 import math
 import os
@@ -37,11 +38,13 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
+import api_keys
 import check_form
+import entry_rules
 import health_history
 import jobs
 import settings_store
@@ -57,6 +60,8 @@ from models import (
     SOURCE_NOTIFIER,
     URL_CHECK_KINDS,
     VALID_SOURCES,
+    ApiAudit,
+    ApiKey,
     Group,
     HealthCheck,
     ServiceEntry,
@@ -375,6 +380,28 @@ def db_dump():
     return render_template("dbdump.html", entries=entries)
 
 
+AUDIT_VIEW_LIMIT = 200
+
+
+def _audit_change_lines(changes):
+    """Plain-text lines for an audit row's `{field: [old, new]}`. Jinja escapes
+    them on output; values are shortened, and secrets arrive already masked."""
+    if not isinstance(changes, dict):
+        return []
+
+    def show(value):
+        text = value if isinstance(value, str) else json.dumps(value, default=str)
+        return text if len(text) <= 120 else text[:117] + '...'
+
+    lines = []
+    for field, pair in changes.items():
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            lines.append(f'{field}: {show(pair[0])} -> {show(pair[1])}')
+        else:
+            lines.append(f'{field}: {show(pair)}')
+    return lines
+
+
 @dashboard_bp.route('/settings', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
@@ -660,6 +687,17 @@ def settings():
     exposure_hosts = settings_store.discovered_hosts()
     exposure_host_overrides = settings_store.get_host_layer_overrides()
 
+    audit_filter = (request.args.get('audit_key') or '').strip()
+    audit_query = ApiAudit.query
+    if audit_filter:
+        audit_query = audit_query.filter(ApiAudit.key_name == audit_filter)
+    audit_rows = [
+        {'row': r, 'changes': _audit_change_lines(r.changes)}
+        for r in audit_query.order_by(ApiAudit.ts.desc(), ApiAudit.id.desc()).limit(AUDIT_VIEW_LIMIT).all()
+    ]
+    audit_key_names = [n for (n,) in db.session.query(ApiAudit.key_name)
+                       .filter(ApiAudit.key_name.isnot(None)).distinct().order_by(ApiAudit.key_name).all()]
+
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -679,6 +717,11 @@ def settings():
          api_token_missing=not current_app.config.get('api_token'),
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
          default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
+         audit_rows=audit_rows,
+         audit_key_names=audit_key_names,
+         audit_filter=audit_filter,
+         audit_limit=AUDIT_VIEW_LIMIT,
+         api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
@@ -852,41 +895,29 @@ def add_entry():
         elif group_mode == 'new':
             group_name = request.form.get('group_name_new')
 
-        if not group_name:
-            group_name = "None"
+        # No group picked -> the entry is ungrouped (group_id NULL). This used
+        # to create/reuse a real group literally named "None".
+        group_name = (group_name or '').strip() or None
 
 
-        image_icon_raw = request.form.get('icon_image', '').strip()
-        image_icon = safe_icon_filename(image_icon_raw) if image_icon_raw else ''
-        if image_icon_raw and not image_icon:
+        image_icon, icon_error = entry_rules.resolve_icon(request.form.get('icon_image', ''))
+        if icon_error:
             flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
             return render_error()
 
-        if not container_name:
+        basic_errors = entry_rules.validate_basic(container_name, host, description)
+        if any(e['field'] == 'name' and 'required' in e['message'] for e in basic_errors):
             flash('Name is required.', 'danger')
             return render_error()
-        if len(container_name) > 100 or (host and len(host) > 100) or (description and len(description) > 255):
+        if basic_errors:
             flash('Name and Host are limited to 100 characters, Description to 255.', 'danger')
             return render_error()
 
         # Check for duplicates. An empty host is its own value: the key is
-        # (host or NULL, name). NULL never equals NULL in SQL, so match with IS NULL.
-        host_filter = ServiceEntry.host.is_(None) if host is None else ServiceEntry.host == host
-        where = f"on host '{host}'" if host else "with no host"
-        existing = (
-            ServiceEntry.query.filter(host_filter, ServiceEntry.container_name == container_name)
-            .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
-            .first()
-        )
-        if existing and existing.deleted_at is not None:
-            flash(
-                f"An entry for '{container_name}' {where} was deleted. "
-                f"Restore it from Settings → Deleted instead of adding a new one.",
-                'danger',
-            )
-            return render_error('duplicate')
+        # (host or NULL, name).
+        existing = entry_rules.find_duplicate(host, container_name)
         if existing:
-            flash(f"An entry for '{container_name}' {where} already exists.", 'danger')
+            flash(entry_rules.duplicate_message(existing, container_name, host), 'danger')
             return render_error('duplicate')
 
         # Booleans
@@ -894,19 +925,7 @@ def add_entry():
 
         # === ICON RESOLUTION LOGIC ===
         if image_icon:
-            icon_path = icon_path_in_dir(image_dir, image_icon)
-            if icon_path and not os.path.exists(icon_path):
-                try:
-                    icon_url = f"https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/{image_icon}"
-                    response = requests.get(icon_url, timeout=5)
-                    if response.status_code == 200:
-                        with open(icon_path, 'wb') as f:
-                            f.write(response.content)
-                        logger.info(f"⬇️ Downloaded user-supplied icon '{image_icon}' for '{container_name}'")
-                    else:
-                        logger.warning(f"⚠️ Icon '{image_icon}' not found (HTTP {response.status_code})")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to fetch icon '{image_icon}': {e}")
+            entry_rules.download_icon(image_dir, image_icon, container_name)
         else:
             derived_icon_name = container_name.lower().replace(" ", "-")
             image_icon = fetch_icon_if_missing(derived_icon_name, image_dir, logger, debug=current_app.debug)
@@ -916,14 +935,10 @@ def add_entry():
                 logger.info(f"⚠️ Could not automatically fetch icon for '{container_name}'.")
 
         # Optional sort priority (must be an int if provided)
-        sort_priority_raw = request.form.get('sort_priority', '').strip()
-        sort_priority = None
-        if sort_priority_raw:
-            try:
-                sort_priority = int(sort_priority_raw)
-            except ValueError:
-                flash("Sort priority must be a number.", 'danger')
-                return render_error()
+        sort_priority, sort_error = entry_rules.parse_sort_priority(request.form.get('sort_priority', ''))
+        if sort_error:
+            flash("Sort priority must be a number.", 'danger')
+            return render_error()
 
         if check_errors:
             for message in check_errors:
@@ -932,11 +947,7 @@ def add_entry():
 
         # === CREATE ENTRY ===
         # Look up or create group
-        group_obj = Group.query.filter_by(group_name=group_name).first()
-        if not group_obj:
-            group_obj = Group(group_name=group_name)
-            db.session.add(group_obj)
-            db.session.flush()  # ensures group_obj.id is populated before use
+        group_obj = entry_rules.get_or_create_group(group_name) if group_name else None
 
         # Now create entry with group_id. URLs typed in the UI get
         # source=ui_edit so future register calls and the synthesizer
@@ -1128,16 +1139,10 @@ def edit_entry(id):
         # precedence, the synthesizer won't touch it). Clearing the URL
         # resets source to null so synthesis can re-fill on the next
         # register. See synthesizer.py for the ordering rules.
-        new_internalurl = request.form.get('internalurl', '').strip() or None
-        new_externalurl = request.form.get('externalurl', '').strip() or None
-        url_changed = {'internal': new_internalurl != entry.internalurl,
-                       'external': new_externalurl != entry.externalurl}
-        if new_internalurl != entry.internalurl:
-            entry.internalurl = new_internalurl
-            entry.internalurl_source = synthesizer.SOURCE_UI_EDIT if new_internalurl else None
-        if new_externalurl != entry.externalurl:
-            entry.externalurl = new_externalurl
-            entry.externalurl_source = synthesizer.SOURCE_UI_EDIT if new_externalurl else None
+        url_changed = {
+            'internal': entry_rules.set_url(entry, 'internal', request.form.get('internalurl', '')),
+            'external': entry_rules.set_url(entry, 'external', request.form.get('externalurl', '')),
+        }
 
         ensure_url_checks(entry)
         if checks_submitted:
@@ -1153,11 +1158,8 @@ def edit_entry(id):
             # Unlocked: the container state was frozen, so re-evaluate it now.
             entry.container_check.last_checked_at = None
 
-        sort_priority_raw = request.form.get('sort_priority', '').strip()
-        try:
-            entry.sort_priority = int(sort_priority_raw) if sort_priority_raw else None
-        except ValueError:
-            entry.sort_priority = None
+        entry.sort_priority, sort_error = entry_rules.parse_sort_priority(request.form.get('sort_priority', ''))
+        if sort_error:
             flash("Sort priority must be a number.", "warning")
 
         # === GROUP HANDLING ===
@@ -1349,6 +1351,41 @@ def delete_entry_json(id):
     entry.deleted_at = datetime.now()
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/settings/api-keys', methods=['POST'])
+@login_required
+@is_admin_required
+def create_api_key():
+    """Create an admin API key and show the full key once, on this response.
+
+    The key is deliberately not flashed or put in the session; it exists only
+    in the rendered page and is never retrievable again.
+    """
+    name = (request.form.get('name') or '').strip()
+    scope = request.form.get('scope') or ''
+    error = api_keys.validate_name(name)
+    if not error and scope not in api_keys.SCOPES:
+        error = "Choose a scope: read or write."
+    if error:
+        flash(error, "danger")
+        return redirect(url_for('dashboard.settings', section='api'))
+    key, full_key = api_keys.create_key(name, scope, created_by=current_user.id)
+    logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
+    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@dashboard_bp.route('/settings/api-keys/<int:id>/revoke', methods=['POST'])
+@login_required
+@is_admin_required
+def revoke_api_key(id):
+    key = db.get_or_404(ApiKey, id)
+    api_keys.revoke_key(key)
+    logger.info(f"Revoked API key '{key.name}' ({key.prefix}) by {current_user.username}.")
+    flash(f"Revoked API key '{key.name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='api'))
 
 
 @dashboard_bp.route('/settings/deleted/<int:id>/restore', methods=['POST'])

@@ -406,7 +406,7 @@ def test_migration_creates_container_rows_for_notifier_entries_only(tmp_path):
          (None, "m1", "2026-01-01 00:00:00", 1, "manual", None)])
     con.commit()
     con.close()
-    _alembic(tmp_path, db_path, "upgrade", "head")
+    _alembic(tmp_path, db_path, "upgrade", "c1d7a3e5f2b8")
     con = sqlite3.connect(db_path)
     rows = con.execute(
         "SELECT e.container_name, c.name, c.check_type, c.target, c.mode, c.enabled, c.verify_tls, "
@@ -425,7 +425,7 @@ def test_migration_creates_container_rows_for_notifier_entries_only(tmp_path):
     assert con.execute("SELECT COUNT(*) FROM health_check WHERE kind='container'").fetchone() == (0,)
     assert con.execute("SELECT COUNT(*) FROM health_result").fetchone() == (0,)
     con.close()
-    _alembic(tmp_path, db_path, "upgrade", "head")
+    _alembic(tmp_path, db_path, "upgrade", "c1d7a3e5f2b8")
     con = sqlite3.connect(db_path)
     assert con.execute("SELECT COUNT(*) FROM health_check WHERE kind='container'").fetchone() == (2,)
     con.close()

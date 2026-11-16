@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-15
+
+> The management API and the MCP server are new in this release and have not
+> been fully tested against real instances yet. Start with a read key, check
+> the audit log after writes, and keep a recent backup.
+
+### Added
+
+- **Admin API keys (Settings → API).** Create named keys with a **read** or
+  **write** scope for the upcoming management API. The full key is shown once
+  with a Copy button (only a hash is stored); the list shows each key's
+  prefix, scope, creation time, last use (time and IP) and status, and a
+  Revoke button. Revoked keys stay listed, greyed out. These keys are
+  separate from the notifier's `api_token`: the notifier token cannot use the
+  management API, and a management key cannot register services. Your
+  notifier setup is unchanged.
+- **`GET /api/v1/whoami`**, the first management-API endpoint, returns the
+  calling key's name, prefix and scope. The management API accepts only
+  `Authorization: Bearer <key>` (a logged-in browser session alone gets 401)
+  and answers errors as JSON (`{"error", "details"}`).
+- **Write audit log.** Every write made through the management API is
+  recorded (key name, method, path, result and the fields changed, with
+  secret values masked). New setting `api_audit_retention_days` (default 90)
+  controls how long rows are kept; a daily job removes older ones. The log is
+  shown in Settings → API (see below).
+- Database migration `d4a9e2c6b715` adds the `api_key` and `api_audit`
+  tables.
+- **Management API: entries, checks and health** (needs a write key for
+  changes, a read key for reads), all under `/api/v1`:
+  - `GET /entries` (filters `source`, `status`, `group`, `host`, `q`,
+    `include_deleted`, `deleted_only`; paged with `limit`/`offset`),
+    `GET /entries/<id>`, `POST /entries` (a manual entry, with its service
+    checks and URL-check settings; a duplicate is a 409), `PATCH /entries/<id>`
+    (group, URLs, icon, sort priority, lock, description, and name/host on
+    manual entries), `DELETE /entries/<id>` (soft delete; `?permanent=true`
+    only for an already deleted entry) and `POST /entries/<id>/restore`.
+  - `GET` and `POST /entries/<id>/checks`, `PATCH` and `DELETE /checks/<id>`
+    (only service checks can be deleted; disable URL and container checks
+    instead) and `POST /entries/<id>/checks/run` (Check now).
+  - `GET /entries/<id>/health?range=24h|7d` returns the same data as the
+    detail panel, and `GET /health/summary` returns the Total / Passing /
+    Failing / Unknown / Stale counts plus every failing service with its
+    failing checks, messages and when each started failing.
+  - A URL set through the API is an operator edit, like one made in the UI, so
+    the notifier will not overwrite it. Fields reported by the notifier cannot
+    be changed (400, naming the fields). Every problem in a request is reported
+    per field.
+- **Management API: groups, widgets, exposure settings and config**
+  (write key for changes, read key for reads):
+  - `GET`/`POST /groups`, `PATCH`/`DELETE /groups/<id>`. A duplicate name is a
+    409. Like the Settings page, deleting a group that still has entries is
+    refused (409); add `?force=true` to ungroup them and delete it anyway.
+  - `GET /widgets/types` lists the widget plugins with their available fields;
+    `GET /widgets` lists widgets with their entries and whether they are
+    detached. `PUT /entries/<id>/widget` attaches or reconfigures a widget
+    (type, URL, fields and an optional API key, checked against the plugin);
+    `DELETE /entries/<id>/widget` detaches it (`?delete=true` removes it and
+    its values) and `DELETE /widgets/<id>` deletes a detached widget. A
+    widget's API key is never returned (only `widget_api_key_set`) and is
+    masked in the audit log.
+  - `GET`/`PUT /settings/exposure` read and replace the exposure direction
+    mappings and per-host overrides (same rules as Settings → Exposure; saving
+    recomputes the synthesized URLs).
+  - `GET /config` shows the effective settings and the app version, read-only,
+    with `api_token` and any key, token, password or secret masked.
+- **Management API: OpenAPI spec, audit log view and docs.**
+  - `GET /api/v1/openapi.json` (no key needed) is an OpenAPI 3.1 description
+    of every management endpoint: scopes, query options, request bodies,
+    response shapes and the error format. It is generated from the code, so it
+    cannot drift. `/api/v1/register` is not part of it.
+  - **Settings → API → Audit log** lists the most recent 200 management-API
+    writes (time, key, method, path, object, status and the fields changed,
+    with secrets shown as `***`), with a filter by key.
+  - The README has new **Management API** and **Managing STD with Claude**
+    sections: creating a key, the endpoint table, curl examples, errors,
+    paging and the audit log.
+  - An unknown `/api/v1/...` URL or a wrong method now answers in the API's
+    JSON error format when the request carries a Bearer key or asks for JSON
+    (the browser keeps the normal page).
+- **MCP server for Claude Code** (`mcp/` in the repository, not in the
+  Docker image). A small stdio server that lets Claude manage STD through the
+  management API: see what is failing, list and read entries and health
+  history, add a manual entry with checks (including `OK` / `Error: <msg>`
+  body checks), edit or delete and restore entries, add, change, disable and
+  run checks, create or update groups, attach widgets, and read or change the
+  exposure settings. Point it at your STD with `STD_URL` and `STD_API_KEY`
+  and register it with `claude mcp add`; the README has the commands. A
+  **read** key exposes only the read tools. STD itself is unchanged.
+
+### Fixed
+
+- **Add page no longer files group-less entries under a group named "None".**
+  Leaving the group blank now creates an ungrouped entry. Entries already in
+  a "None" group stay there; move them on the Edit page or delete the group.
+
 ## [0.7.1] — 2026-11-15
 
 ### Added
@@ -796,7 +891,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...v0.7.0
 [0.6.9]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...v0.6.9
