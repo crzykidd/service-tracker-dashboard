@@ -18,6 +18,7 @@
       <table class="min-w-full table-auto text-sm text-left border-collapse">
         <thead class="bg-gray-700 text-gray-200">
           <tr>
+            <th class="px-1 py-2 w-6"></th>
             <th class="px-3 py-2">Logo</th>
             <th class="px-3 py-2">Group</th>
             <th class="px-3 py-2">Container</th>
@@ -25,6 +26,7 @@
             <th class="px-3 py-2">Host</th>
             <th class="px-3 py-2">Widget</th>
             <th class="px-3 py-2">URLs</th>
+            <th class="px-3 py-2">Health</th>
             <th class="px-3 py-2">Status</th>
             {% if display_tools %}
               <th class="px-3 py-2">Tools</th>
@@ -37,7 +39,7 @@
           {% set group_index = loop.index0 %}
           <tbody>
             <tr class="bg-gray-800 font-semibold cursor-pointer" onclick="toggleGroup('{{ group_index }}')">
-              <td colspan="11" class="px-4 py-2">
+              <td colspan="13" class="px-4 py-2">
                 <span id="toggle-icon-{{ group_index }}">▼</span>
                   {{ group }}
                   <span class="text-sm text-gray-400 ml-2">({{ group_entries|length }})</span>
@@ -51,6 +53,13 @@
                 data-entry data-group="{{ entry.group.group_name if entry.group else 'Ungrouped' }}"
                 data-container="{{ entry.container_name }}"
                 data-stack="{{ entry.stack_name }}">
+
+            <td class="px-1 py-2 align-middle">
+              <button type="button" class="health-expand-btn" data-health-expand="{{ entry.id }}"
+                      aria-expanded="false" aria-label="Show health history" title="Health history">
+                <i class="ti ti-chevron-right" aria-hidden="true"></i>
+              </button>
+            </td>
 
             <td class="px-3 py-2">
               <div style="height:40px;max-width:40px;">
@@ -97,7 +106,7 @@
               {% endwith %}
             </td>
             <td class="px-3 py-2">{{ entry.stack_name or '' }}</td>
-            <td class="px-3 py-2">{{ entry.host }}</td>
+            <td class="px-3 py-2">{{ entry.host or "" }}</td>
             <td class="px-3 py-2 align-top">
               {% if entry.widget_id %}
                 {% set widget_data = widget_values.get(entry.widget_id) %}
@@ -127,68 +136,45 @@
               {% endif %}
             </td>
 
-            {# URLs column — INT/EXT status pills with icon + label #}
+            {# URLs column — INT/EXT link pills; health is the badge in the Health column #}
             <td class="px-3 py-2 space-y-0.5">
               {% if entry.internalurl %}
-                {% if not entry.internal_health_check_enabled %}
-                  {% set _i_pill  = 'status-pill-gray' %}
-                  {% set _i_label = 'NA' %}
-                  {% set _i_tip   = entry.internalurl ~ ' — Not Monitored' %}
-                {% elif entry.internal_health_check_status == 'Error: SSLError' %}
-                  {% set _i_pill  = 'status-pill-yellow' %}
-                  {% set _i_label = 'SSL' %}
-                  {% set _i_tip   = entry.internalurl ~ ' — SSL Error — updated ' ~ (entry.internal_health_check_update | time_since) %}
-                {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
-                  {% set _i_pill  = 'status-pill-green' %}
-                  {% set _i_label = entry.internal_health_check_status %}
-                  {% set _i_tip   = entry.internalurl ~ ' — ' ~ entry.internal_health_check_status ~ ' — updated ' ~ (entry.internal_health_check_update | time_since) %}
-                {% else %}
-                  {% set _i_pill  = 'status-pill-red' %}
-                  {% set _i_label = entry.internal_health_check_status or '?' %}
-                  {% set _i_tip   = entry.internalurl ~ ' — ' ~ (entry.internal_health_check_status or '?') ~ ' — updated ' ~ (entry.internal_health_check_update | time_since) %}
-                {% endif %}
+                {% set _i_last %}{% with check=entry.url_check('internal') %}{% include "partials/check_result_text.html" %}{% endwith %}{% endset %}
                 <div>
                   <span class="text-xs text-gray-400">INT:</span>
-                  <a href="{{ entry.internalurl }}" target="_blank" title="{{ _i_tip }}">
-                    <span class="status-pill {{ _i_pill }}">
-                      <i class="ti ti-home" aria-hidden="true"></i>{{ _i_label }}
+                  <a href="{{ entry.internalurl }}" target="_blank" title="{{ entry.internalurl }}{% if _i_last|trim %} — {{ _i_last|trim }}{% endif %}">
+                    <span class="status-pill status-pill-gray">
+                      <i class="ti ti-home" aria-hidden="true"></i>Open
                     </span>
                   </a>
                 </div>
               {% endif %}
 
               {% if entry.externalurl %}
-                {% if not entry.external_health_check_enabled %}
-                  {% set _e_pill  = 'status-pill-gray' %}
-                  {% set _e_label = 'NA' %}
-                  {% set _e_tip   = entry.externalurl ~ ' — Not Monitored' %}
-                {% elif entry.external_health_check_status == 'Error: SSLError' %}
-                  {% set _e_pill  = 'status-pill-yellow' %}
-                  {% set _e_label = 'SSL' %}
-                  {% set _e_tip   = entry.externalurl ~ ' — SSL Error — updated ' ~ (entry.external_health_check_update | time_since) %}
-                {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
-                  {% set _e_pill  = 'status-pill-green' %}
-                  {% set _e_label = entry.external_health_check_status %}
-                  {% set _e_tip   = entry.externalurl ~ ' — ' ~ entry.external_health_check_status ~ ' — updated ' ~ (entry.external_health_check_update | time_since) %}
-                {% else %}
-                  {% set _e_pill  = 'status-pill-red' %}
-                  {% set _e_label = entry.external_health_check_status or '?' %}
-                  {% set _e_tip   = entry.externalurl ~ ' — ' ~ (entry.external_health_check_status or '?') ~ ' — updated ' ~ (entry.external_health_check_update | time_since) %}
-                {% endif %}
+                {% set _e_last %}{% with check=entry.url_check('external') %}{% include "partials/check_result_text.html" %}{% endwith %}{% endset %}
                 <div>
                   <span class="text-xs text-gray-400">EXT:</span>
-                  <a href="{{ entry.externalurl }}" target="_blank" title="{{ _e_tip }}">
-                    <span class="status-pill {{ _e_pill }}">
-                      <i class="ti ti-world" aria-hidden="true"></i>{{ _e_label }}
+                  <a href="{{ entry.externalurl }}" target="_blank" title="{{ entry.externalurl }}{% if _e_last|trim %} — {{ _e_last|trim }}{% endif %}">
+                    <span class="status-pill status-pill-gray">
+                      <i class="ti ti-world" aria-hidden="true"></i>Open
                     </span>
                   </a>
                 </div>
               {% endif %}
             </td>
 
+            {# Health column — rolled-up state across the entry's enabled checks #}
+            <td class="px-3 py-2">
+              {% include "partials/health_badge.html" %}
+            </td>
+
             {# Status column — Docker pill with icon + label #}
             <td class="px-3 py-2">
-              {% if not entry.is_static %}
+              {% if entry.is_manual %}
+                <span class="status-pill status-pill-gray" title="Manual entry{% if entry.description %} — {{ entry.description }}{% endif %}">
+                  <i class="ti ti-link" aria-hidden="true"></i>Manual
+                </span>
+              {% else %}
                 {% set _d_tooltip = (entry.last_api_update | time_since) if entry.last_api_update else 'No update timestamp' %}
 
                 {% if not entry.last_api_update %}
@@ -216,8 +202,6 @@
                 {% if entry.image_tag %}
                   <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>
                 {% endif %}
-              {% else %}
-                <span class="text-xs text-gray-400 italic">Static</span>
               {% endif %}
             </td>
 
@@ -257,6 +241,12 @@
                   </button>
                 {% endif %}
               </div>
+            </td>
+          </tr>
+          <tr class="health-expand-row border-b border-gray-700" id="health-row-{{ entry.id }}"
+              data-group-id="{{ group_index }}" hidden>
+            <td colspan="13" class="px-4 py-3">
+              <div class="health-expand-inner">{% include "partials/health_detail.html" %}</div>
             </td>
           </tr>
           {% endfor %}

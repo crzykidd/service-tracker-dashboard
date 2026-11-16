@@ -28,10 +28,17 @@ from datetime import datetime, timedelta
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
+import jobs
 import synthesizer
 from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
-from models import Group, ServiceEntry
+from models import (
+    SOURCE_NOTIFIER,
+    Group,
+    ServiceEntry,
+    ensure_container_check,
+    ensure_url_checks,
+)
 from schemas import RegisterPayload
 
 logger = logging.getLogger(__name__)
@@ -146,7 +153,11 @@ def upsert_service(canonical, app):
     or "synthesized". It never touches ui_edit or explicit_label
     URLs.
 
-    is_static rows short-circuit with a 200 + skipped body — that
+    Entry source (v0.7.0): a matching `manual` row that is not locked is
+    adopted (source -> "notifier") and then updated as usual. New rows are
+    created as "notifier".
+
+    Locked (is_static) rows short-circuit with a 200 + skipped body — that
     behavior is unchanged from v0.4.x.
     """
     image_meta = resolve_image_metadata(
@@ -165,6 +176,7 @@ def upsert_service(canonical, app):
     # with "user_wins" before any request hits this function.
     mode = app.config.get("register_field_ownership", "user_wins")
 
+    run_container_check = False
     with _UPSERT_LOCK:
         group_obj = None
         group_name = canonical.get("group_name")
@@ -196,6 +208,15 @@ def upsert_service(canonical, app):
                 )
                 return {"status": "skipped", "reason": "static lock"}, 200
 
+            if entry.is_manual:
+                # Pre-staged on the Add page; the notifier now owns it.
+                logger.info(
+                    f"Adopting manual entry '{entry.container_name}' on "
+                    f"'{entry.host}' - source is now 'notifier'."
+                )
+                entry.source = SOURCE_NOTIFIER
+                ensure_container_check(entry)
+
             if entry.deleted_at is not None:
                 logger.info(
                     f"Register for soft-deleted '{entry.container_name}' on "
@@ -223,18 +244,27 @@ def upsert_service(canonical, app):
             if canonical.get("stack_name"):
                 entry.stack_name = canonical["stack_name"]
             if canonical.get("docker_status"):
+                # A changed status (or a register that ends a failing
+                # container check, e.g. after a stale spell) re-evaluates the
+                # Container check at the next tick rather than at the interval.
+                container = entry.container_check
+                run_container_check = container is not None and (
+                    entry.docker_status != canonical["docker_status"] or container.last_ok is False
+                )
                 entry.docker_status = canonical["docker_status"]
             if canonical.get("started_at"):
                 entry.started_at = canonical["started_at"]
 
-            if "internal_health_check_enabled" in canonical:
-                parsed = parse_bool(canonical["internal_health_check_enabled"])
-                if parsed is not None:
-                    entry.internal_health_check_enabled = parsed
-            if "external_health_check_enabled" in canonical:
-                parsed = parse_bool(canonical["external_health_check_enabled"])
-                if parsed is not None:
-                    entry.external_health_check_enabled = parsed
+            # Toggles set `enabled` on the matching URL check row; absent
+            # (or unparsable) means no change.
+            ensure_url_checks(entry)
+            ensure_container_check(entry)
+            for which in ("internal", "external"):
+                key = f"{which}_health_check_enabled"
+                if key in canonical:
+                    parsed = parse_bool(canonical[key])
+                    if parsed is not None:
+                        entry.url_check(which).enabled = parsed
 
             if image_meta["registry"]:
                 entry.image_registry = image_meta["registry"]
@@ -278,6 +308,7 @@ def upsert_service(canonical, app):
             entry = ServiceEntry(
                 host=canonical['host'],
                 container_name=canonical['container_name'],
+                source=SOURCE_NOTIFIER,
                 container_id=canonical.get('container_id'),
                 internalurl=new_internalurl,
                 externalurl=new_externalurl,
@@ -288,8 +319,6 @@ def upsert_service(canonical, app):
                 externalurl_source=synthesizer.SOURCE_EXPLICIT_LABEL if new_externalurl else None,
                 stack_name=canonical.get('stack_name'),
                 docker_status=canonical.get('docker_status'),
-                internal_health_check_enabled=parse_bool(canonical.get('internal_health_check_enabled')),
-                external_health_check_enabled=parse_bool(canonical.get('external_health_check_enabled')),
                 group_id=group_obj.id if group_obj else None,
                 started_at=canonical.get('started_at'),
                 last_updated=now,
@@ -306,6 +335,10 @@ def upsert_service(canonical, app):
                 exposed_ports=canonical.get('exposed_ports'),
                 published_ports=canonical.get('published_ports'),
             )
+            ensure_url_checks(entry)
+            ensure_container_check(entry)
+            for which in ("internal", "external"):
+                entry.url_check(which).enabled = bool(parse_bool(canonical.get(f"{which}_health_check_enabled")))
             db.session.add(entry)
             # Flush so entry.id is available for ServiceExposure FKs
             # before replace_exposures runs below.
@@ -320,6 +353,9 @@ def upsert_service(canonical, app):
         synthesizer.synthesize_for_entry(entry)
 
         db.session.commit()
+        if run_container_check:
+            # In-memory request only; the scheduler thread writes the result.
+            jobs.request_run([entry.container_check.id])
         return entry.to_dict(), 200
 
 

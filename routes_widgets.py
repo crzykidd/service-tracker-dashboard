@@ -23,13 +23,25 @@ def widget_config(widget_name):
     # Only names of directories actually present under the widgets dir are
     # accepted; anything else (traversal included) gets the empty list.
     widgets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'widgets')
+    # The path is built from the directory name os.listdir returned, never
+    # from the request value, so no user input reaches the filesystem path
+    # (and CodeQL's py/path-injection sees no tainted flow).
     try:
-        known = {d for d in os.listdir(widgets_dir) if d != '__pycache__' and os.path.isdir(os.path.join(widgets_dir, d))}
+        entries = os.listdir(widgets_dir)
     except OSError:
-        known = set()
-    if widget_name not in known:
+        entries = []
+    safe_name = next(
+        (
+            d for d in entries
+            if d == widget_name
+            and d != '__pycache__'
+            and os.path.isdir(os.path.join(widgets_dir, d))
+        ),
+        None,
+    )
+    if safe_name is None:
         return jsonify([])
-    path = os.path.join(widgets_dir, widget_name, 'settings.json')
+    path = os.path.join(widgets_dir, safe_name, 'settings.json')
     if not os.path.exists(path):
         return jsonify([])  # Or 404 if you prefer
 
@@ -38,5 +50,5 @@ def widget_config(widget_name):
             config = json.load(f)
             return jsonify(config.get("available_fields", []))  # ✅ FIXED
         except Exception as e:
-            current_app.logger.warning(f"Failed to load widget settings for {widget_name}: {e}")
+            current_app.logger.warning(f"Failed to load widget settings for {safe_name}: {e}")
             return jsonify([])

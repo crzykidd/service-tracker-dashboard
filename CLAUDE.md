@@ -121,7 +121,7 @@ If you're unsure whether an action would violate one of the above, stop and ask 
 acting.
 
 <!--
-Source: standards/release-prep-and-cut @ v1.0.0 (crzynet/homelab-configs).
+Source: standards/release-prep-and-cut @ v1.1.0 (crzynet/homelab-configs).
 Paste the section below verbatim into the adopting project's CLAUDE.md.
 The full standard (two-phase prep/cut workflow, archive trigger, validation
 steps, adoption checklist) lives at:
@@ -208,7 +208,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.6.9** (latest tag on `main`).
+Current shipped release: **v0.7.0** (latest tag on `main`).
 In flight: nothing scoped.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
@@ -360,8 +360,11 @@ routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
 routes_api.py       ← /api/v1/register
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
-jobs.py             ← health check loop, widget refresh, backup, retention
+jobs.py             ← concurrent health scheduler, widget refresh, backup, retention/compaction
+checker.py          ← health-check probes (http/tcp/ping); pure network, no DB
 health.py           ← /healthz (liveness; /readyz not implemented)
+health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) for the badges + status filter
+health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance

@@ -21,18 +21,7 @@
 
   <!-- Main Content Area -->
   <div class="flex-1 space-y-10">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div id="flash-container" class="space-y-2">
-          {% for category, message in messages %}
-            <div class="flash-alert flex items-center justify-between text-sm px-4 py-2 rounded shadow bg-green-600 text-white">
-              <span>{{ message }}</span>
-              <button class="text-white hover:text-gray-300" onclick="this.parentElement.remove()">×</button>
-            </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+    {% include "partials/flash_messages.html" %}
     
     <!-- === Info Section === -->
     <section id="section-info" class="section">
@@ -256,7 +245,7 @@
               <p class="text-sm text-gray-400">
                 <strong class="text-gray-300">Connected Container:</strong><br>
                 {% if widget.services and widget.services[0] %}
-                  {{ widget.services[0].container_name }} ({{ widget.services[0].host }})
+                  {{ widget.services[0].container_name }} ({{ widget.services[0].host or "no host" }})
                 {% else %}
                   —
                 {% endif %}
@@ -300,7 +289,7 @@
               {% for row in deleted_rows %}
               <tr class="hover:bg-gray-800">
                 <td class="px-4 py-2">{{ row.entry.container_name }}</td>
-                <td class="px-4 py-2">{{ row.entry.host }}</td>
+                <td class="px-4 py-2">{{ row.entry.host or "" }}</td>
                 <td class="px-4 py-2">{{ row.entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</td>
                 <td class="px-4 py-2">{{ row.days_left }}</td>
                 <td class="px-4 py-2 text-right">
@@ -354,7 +343,7 @@
                       <select name="entry_id" required class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs">
                         <option value="">Attach to service...</option>
                         {% for e in attachable_entries %}
-                        <option value="{{ e.id }}">{{ e.container_name }} ({{ e.host }})</option>
+                        <option value="{{ e.id }}">{{ e.container_name }} ({{ e.host or "no host" }})</option>
                         {% endfor %}
                       </select>
                       <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Attach</button>

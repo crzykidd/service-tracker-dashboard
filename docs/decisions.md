@@ -5,6 +5,335 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — `/widget_config` path built from the listdir name (CodeQL)
+
+CodeQL kept two `py/path-injection` alerts open on `routes_widgets.py`
+after v069-11: a `widget_name not in known` membership test is not a
+sanitizer it recognises, so the request value still reached
+`os.path.join`. The route now picks the matching entry *from*
+`os.listdir(widgets/)` and builds the path (and the warning log) from
+that name, so no request data reaches the filesystem. Behaviour is
+unchanged (unknown or traversal names still return `[]`); no CHANGELOG
+entry because operators see no difference.
+
+---
+
+## 2026-11-15 — v070-07 Container check: Docker state is a check (supersedes "Docker state is not a check")
+
+Reverses the v0.7.0 design call that kept Docker state out of the health
+rollup: the user chose an automatic per-entry check over a rollup-only
+fallback. Implementation calls:
+
+- **A real `health_check` row, not a rollup special case**, so history,
+  uptime, bars, compaction and the detail panel work unchanged.
+- **Evaluated on the scheduler thread** (a DB read; no pool, no network) and
+  never in the register request, which only queues `jobs.request_run`.
+- **Stale wins over status** in the message: with no recent report the stored
+  status is not trustworthy, so `No update from notifier for N min` is shown
+  even if the last status was `exited`.
+- **Register also queues a run while the container check is failing**, not
+  only when `docker_status` changes. Otherwise a stale entry that comes back
+  with the same `running` status would stay Down until the interval.
+- **Locked entries are skipped like a disabled check** (frozen state is not
+  evidence). Unlocking on Edit clears `last_checked_at` so it re-evaluates.
+- **`docker` is not in `CHECK_TYPES`**, so it cannot be picked on a service
+  check; the form's `cc_row` marker stops an old page from disabling it.
+- **No new column**, so no FK index; the migration is data-only and idempotent.
+- Test helpers in `test_checker.py` / `test_health_schema.py` now default to
+  manual entries so URL-check tests are not perturbed by the notifier-only check.
+
+---
+
+## 2026-11-15 — v070-06 health detail panel: implementation calls
+
+- **Only enabled checks with a target appear in the panel** (the same
+  "can run" rule as the rollup). Disabled checks keep their stored history
+  but are not shown; re-enabling brings the bars back.
+- **Buckets are clock-aligned,** the last bar being the current partial
+  half-hour (24h) or hour (7d), so a bar's edges do not move between
+  fetches. Window = 48 x 30 min / 168 x 1 h ending at the next boundary.
+- **Range rows are clipped to the window after splitting:** the sample count
+  is divided across every bucket the range overlaps (largest remainder), then
+  buckets outside the window are dropped, so a range straddling the edge
+  contributes only its inside share. Uptime reuses the same code with one
+  bucket, so 24h/7d uptime is a sample-weighted figure that agrees with the
+  bars.
+- **Unknown `range` falls back to `24h`** (like the other query params)
+  rather than 400.
+- **Uptime is `null` with no samples** (shown "n/a"), not 0 or 100.
+- **Edit-page panel sits outside the `<form>`** as its own "Health history"
+  block (anchor `#health-history`); the existing `#health` anchor still
+  points at the checks form, which Compact links to. It loads on page load.
+  Tiled loads when the drawer opens; Dashboard when the row expands.
+- **Open Dashboard expand row pauses auto-refresh** (as an open drawer
+  does), otherwise the 30 s reload would collapse it. The expand row follows
+  its entry on text filter and group collapse.
+- **Dashboard row panel is `position: sticky; left: 0`** with a capped width
+  so it stays in view when the table scrolls sideways on a phone.
+- **Server text is rendered with `textContent`** (failure messages come from
+  remote hosts); no innerHTML.
+- **Dark theme only.** The app has no light theme, so bar colours use the
+  existing status tokens. At 390 px the 7d strip drops its 1 px gap (168 bars
+  in ~330 px aliased to grey).
+- **CHANGELOG [Unreleased] was reconciled across chunks 01-06:** three
+  earlier lines described interim states ("nothing new is shown yet", "a
+  button for it comes later", "screens to configure them follow") and were
+  rewritten to describe 0.7.0 as shipped.
+- **PRD §3.1 module layout still omits `checker.py`, `health_state.py` and
+  `health_history.py`** (earlier chunks did not add them either); left for a
+  docs refresh. CLAUDE.md's layout lists all three.
+
+---
+
+## 2026-11-15 — v070-05 rollup and filters: implementation calls
+
+- **Only checks that can run count in the rollup.** An enabled URL check
+  whose URL is empty (or a service check with no target) is skipped: the
+  scheduler never runs it, so counting it would leave the entry `unknown`
+  forever, or show a stale failure after the URL was cleared. A cleared URL
+  with only that check enabled therefore reads `none`.
+- **`up` when nothing that has run is failing,** even if another enabled check
+  is still waiting for its first run (a freshly added service check should
+  not flip a green entry to `unknown`). `unknown` is only "none has run".
+  Reading the PRD table as "every enabled check ok" would be stricter;
+  rejected because new checks would flap state.
+- **URL link icons lost their health colour.** The "keep the per-URL link
+  icons; only the health signal changes" instruction was read as: Dashboard
+  pills become neutral "Open" links and Tiled icons are blue links (grey
+  when no URL), with the last result in the tooltip / drawer. The status code
+  label on the Dashboard pill is gone (the badge replaces it).
+- **Dashboard gets a new Health column** (after URLs) rather than reusing the
+  Status (Docker) column; Docker stays a separate signal (decision earlier
+  today). The group-header `colspan` went 11 -> 12.
+- **Legacy mirror removed; backups still emit the legacy keys,** now derived
+  from the check rows (`_legacy_status` / `_legacy_update` in `models.py`,
+  update time converted to server-local) so a backup stays restorable by an
+  older STD. Restore still writes the status strings into the old columns
+  (generic field loop); nothing reads them but `dbdump.html`. Dropping the
+  columns is a later migration (not in this chunk).
+- **`time_since_utc` filter** added: check timestamps are naive UTC and
+  `time_since` assumes local time.
+- **"Total Services" format:** `shown / total` only when a filter (including
+  `show_urlless=false`) hides entries; plain number otherwise. Total is the
+  count of active entries.
+- **Unknown `status`/`source` values fall back to `all`** (as `group_by`
+  does), so a mangled bookmark never yields an empty page.
+- **Compact badge links to `/edit/<id>#health`;** the Edit page's checks
+  section got `id="health"` (a wrapper div).
+
+---
+
+## 2026-11-15 — v070-04 check configuration UI: implementation calls
+
+- **Supersedes the v0.6.9 note that Add/Edit don't render flashes.** They do
+  now (`partials/flash_messages.html`, shared with Settings, colour by
+  category: `danger` red, `warning` amber, else green). Validation errors on
+  Add/Edit flash and re-render with the operator's input kept.
+- **Stale flashes.** The Dashboard views still render no flashes, so
+  "Logged in" / "Entry updated" notices queue until a page that does. Add and
+  Edit drop queued non-warning/non-danger flashes on entry
+  (`_drop_stale_success_flashes`) so they do not surface as noise; warnings
+  and errors are kept (the failed delete confirmation redirects to Edit).
+  Rejected: rendering flashes in `base.html` (touches every page, out of
+  scope). Existing tests that read flashes from the session after an Add
+  error now assert on the rendered page.
+- **`checks_form` marker.** Edit only touches checks when the hidden marker is
+  posted, so scripted or older POSTs that do not know the section leave
+  checks alone (the old toggles meant "absent = off").
+- **Whole form rejected on any check error;** all errors are listed at once.
+  Rejected: saving the valid parts (partial saves are confusing).
+- **Blank service-check name defaults to the target** (clipped to 100)
+  instead of erroring; a name is not needed to run a check.
+- **Service-check ids that do not belong to the entry are an error,** not
+  silently recreated, so a stale form (check deleted in another tab) cannot
+  resurrect or cross-edit checks. Cap of 20 service checks per entry.
+- **Non-HTTP checks store mode `status` and verify on,** whatever the hidden
+  HTTP-only fields posted.
+- **Ping target accepts hostname or IP only** (no port, no path); IPv6 with
+  or without brackets for TCP, bare for ping. `checker._split_host_port` is
+  now public `split_host_port`.
+- **Add page URL fields** keep their old names (`internal_url`,
+  `external_url`); the Add page now keeps the typed URLs, group, sort
+  priority, icon and lock on an error re-render.
+- **Mobile.** Verified at 390 px with headless Chromium: the form fits. The
+  existing top nav overflows horizontally at that width on every page
+  (pre-existing, not touched).
+
+---
+
+## 2026-11-15 — v070-03 checker engine: implementation calls
+
+- **Compaction works on whole clock hours only.** The cutoff is
+  `now - health_raw_hours` floored to the hour, so a run inside an hour is
+  merged exactly once and never split across two compaction passes (a literal
+  cutoff would leave two adjacent range rows for the cutoff hour). Samples
+  stay raw up to one hour longer than `health_raw_hours`. A single raw
+  success becomes a range of one (`ts_end = ts`) so it is not rescanned.
+  Range rows have `status_code` / `message` cleared.
+- **Purge uses `coalesce(ts_end, ts)`** so a compacted range survives until
+  its last sample is older than `health_history_days`. Purge is hourly at
+  :03 (before compaction at :05) and deletes in batches of 2000.
+- **Latency average is weighted by samples**, `latency_max_ms` is the max of
+  the maxima.
+- **Service-kind checks are already scheduled.** The selection handles any
+  enabled check with a target, not just URL kinds, so v070-04 only needs UI.
+  No legacy mirror for them.
+- **`ProbeResult` has a fifth field, `error_type`.** The legacy badge strings
+  (`Error: SSLError`, a digit for pass) are derived by `legacy_status()`;
+  `message` now carries `ExceptionName: text` as PRD 13.4 says (it was just
+  the legacy string before). Failing bodies on a 2xx status map to
+  `Error: CheckFailed` in the mirror; they only occur on non-URL-default
+  modes and the mirror goes in v070-05.
+- **Tick uses its own app context per pass** so the loop thread never
+  carries a stale identity map between ticks; `collect()` then `submit_due()`
+  in one tick, so a result lands at most one tick (5 s) after its probe
+  finishes.
+- **Ping timeout is per reply** (3 packets, 0.2 s apart), so a dead host can
+  take up to about 3x the timeout. `avg_rtt` is rounded to whole ms (a LAN
+  host shows 0).
+- **Ping fallback:** `SocketPermissionError` (or `PermissionError`) on the
+  privileged socket retries unprivileged; both failing gives `ICMP not
+  permitted`. Verified in the built image: with default caps and with
+  `--cap-drop NET_RAW` (the kernel's `ping_group_range` still allows the
+  datagram socket) pinging 127.0.0.1 and the default gateway succeeded.
+- **Check now needs login only**, not admin, matching "login, CSRF" in the
+  prompt; it only clears timestamps.
+- **`requirements.txt` regenerated with `uv pip compile`** (adds
+  `icmplib==3.0.4`; nothing else changed).
+
+---
+
+## 2026-11-15 — v070-02 health schema: implementation calls
+
+- **Templates read `enabled` from the check rows, not the legacy column.**
+  The prompt says to stop writing the legacy `*_enabled` columns, but the
+  Dashboard/Tiled badges and the Edit toggles read them. Rather than keep
+  mirroring `enabled`, those bindings moved to `entry.internal_check_enabled`
+  / `external_check_enabled` (properties over the rows). Only the status and
+  update strings are still mirrored (the TEMP mirror).
+- **Backup keeps the legacy keys, derived from the rows.** `to_dict()` still
+  writes `internal/external_health_check_enabled`, `health_check_timeout` and
+  `health_check_verify_tls` (from the rows) next to the new `checks` list, so
+  a backup taken now restores correctly on an older STD (rollback story).
+  Restore ignores those keys when `checks` is present.
+- **Downgrade copies state back.** Because the legacy `*_enabled` / timeout /
+  verify columns are no longer written, the migration downgrade copies them
+  from the check rows before dropping the tables; otherwise a rollback would
+  silently revert operators' toggles to their pre-upgrade values.
+- **Legacy update time converted to UTC.** `*_health_check_update` is
+  server-local; `last_checked_at` is naive UTC (PRD 5.6). The migration
+  converts using the migrating host's local zone. An unparsable string gives
+  NULL.
+- **Status below 400 is ok, everything else failing**, in both the
+  migration seed and the checker. A numeric >=400 status stores the code and
+  uses the code string as the message; `Error: X` stores no code.
+- **Timeout/verify-TLS apply to both URL rows.** One form value writes both
+  rows; reads (Edit page, legacy backup keys) use the internal row, falling
+  back to external.
+- **`check_url` became `probe_url`** and takes a check (reads
+  `timeout_seconds` / `verify_tls`) and returns a dict (ok, status_code,
+  latency_ms, message, status) instead of just the status string.
+- **Restore replaces service-kind checks wholesale** with the backup's list
+  (an empty `checks` removes them); URL rows are matched by kind. Rejected:
+  merging, which would leave deleted checks behind.
+- **No uniqueness constraint on (entry, kind).** "Exactly one per URL kind"
+  is kept by `ensure_url_checks`; a partial unique index is a possible
+  hardening for a later chunk.
+- **No result pruning yet.** The interim loop writes a `health_result` row
+  per enabled check per pass with nothing deleting them; retention and
+  compaction belong to v070-03. Do not release between the two chunks.
+
+---
+
+## 2026-11-15 — v070-01 entry sources: implementation calls
+
+- **Adoption also applies to a soft-deleted manual match.** The register
+  path already resurrects a soft-deleted row it matches; adoption runs before
+  that, so a deleted manual entry that the notifier reports comes back as a
+  notifier entry. Rejected: skipping deleted manual rows (would create a
+  duplicate beside the deleted one, the thing resurrect-on-register avoids).
+- **Adoption keeps operator-owned fields.** `description`, group, sort priority
+  and UI-edited URLs are untouched; only `source` flips, and the usual register
+  merge then applies.
+- **Lock hides nothing by itself.** Templates used `is_static` for both "locked"
+  and "no Docker pill". The Docker pill/drawer row/stale icon now key off
+  `is_manual`; the lock icon and "no trash button" still key off `is_static`.
+  A locked notifier entry therefore shows its Docker status again (it is not
+  stale, by `is_docker_status_stale`).
+- **Add form field renamed `application` to `container_name`,** matching the
+  Edit form. Hand-written POSTs to `/add` using the old name will get "Name is
+  required".
+- **Edit page host rules.** Blank Host saves as NULL for manual entries only; a
+  notifier entry keeps the old behaviour (empty string) so its logical key
+  is not silently changed. Description is saved from the Edit form for manual
+  entries only.
+- **Restore skips hostless non-manual records** (the logical key needs a host)
+  and counts them as skipped. Restore ignores a backup's `source` value if it is
+  not `notifier` or `manual` and falls back to the backfill rule.
+- **Lock hint wording** is one line, "register calls from the notifier for this
+  entry are ignored", and the Add page checkbox uses the same label.
+- **Migration test runs alembic in a subprocess** against a temp copy of
+  `alembic.ini`, so `fileConfig()` cannot reconfigure logging in the pytest
+  process.
+
+---
+
+## 2026-11-15 — v0.7.0 "Dashboard and Monitoring" design calls
+
+Scoped in a design session; plan in PRD §13, follow-ups in FUTURE.md.
+
+- **No notifier change.** The user directed that the notifier keep
+  sending today's payload. Every 0.7.0 feature is STD-side; the URL-check
+  toggles in the payload map onto the new check rows.
+- **Manual vs notifier is a `source` column, not `is_static`.**
+  `is_static` was doing two jobs (lock and "not Docker"). It is now only
+  the lock. A register matching an unlocked manual entry *adopts* it,
+  which keeps the existing "pre-stage, then the notifier fills it in"
+  behaviour instead of creating a duplicate. Rejected: a separate
+  "adopt" button; matching manual rows never.
+- **Manual entries keep an optional host** (user call). The name is
+  stored in `container_name` rather than a new column, so the logical
+  key, its index and every query stay as they are.
+- **Checks are rows, not columns.** URL checks are `health_check` rows
+  whose target follows the entry URL. Service checks are separate rows.
+  This gives one engine and one history table for every kind. Rejected:
+  more columns on `service_entry`.
+- **Retention: raw 24 h, then hourly success ranges, failures kept
+  7 days** (the user's proposal, bounded per clock hour so 7-day hourly
+  bars and uptime % stay exact). Rejected: unbounded success ranges
+  (they force proportional splitting everywhere) and keeping all samples
+  for 7 days (about 10k rows per check at a 60 s interval).
+- **History bars are fixed time buckets** (48 × 30 min for 24 h), not
+  Gatus's "last N results" (user call). This keeps the strip's meaning
+  stable whatever the interval.
+- **Worker threads never touch the DB.** The scheduler thread writes
+  everything, because SQLite has a single writer and Flask-SQLAlchemy
+  sessions are not shared across threads.
+- **Ping uses `icmplib`, not the `ping` binary.** There is no subprocess
+  or extra apt package, and the image runs as root with Docker's default
+  `NET_RAW`. It falls back to an unprivileged socket and then reports
+  "ICMP not permitted".
+- **Legacy health columns are deprecated, not dropped,** in 0.7.0 so a
+  rollback to 0.6.9 keeps working. A temporary mirror keeps the old
+  badges correct between chunks 03 and 05.
+- **New health timestamps are naive UTC**, unlike the naive-local
+  `last_updated`. Converted for display.
+- **Compact gets no drawer;** its badge links to the Edit page's health
+  section instead of adding a third detail surface.
+
+---
+
+## 2026-11-15 — release-prep-and-cut label corrected upstream, then re-synced
+
+The `@ v1.0.0` labels flagged in the two entries below were fixed at the
+source (`homelab-configs/standards/release-prep-and-cut`: snippet, both
+command templates, README adoption step and example prompt now say
+`v1.1.0`). STD's verbatim copies (CLAUDE.md snippet source line,
+`.claude/commands/release-prep.md` and `release-cut.md` headers) were then
+re-synced to match. Label only; the command content was already 1.1.0.
+
+---
+
 ## 2026-11-15 — CodeQL path and redirect fixes (v069-11)
 
 - **Invalid icon on Add/Edit flashes, but those templates don't render

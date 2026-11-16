@@ -5,7 +5,7 @@ changes here. Imported by `alembic/env.py` so model classes register
 themselves with `db.metadata` before autogenerate runs.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import current_app, has_app_context
 from flask_login import UserMixin
@@ -17,10 +17,39 @@ from extensions import db
 
 DEFAULT_STALE_AFTER_MINUTES = 5
 
+SOURCE_NOTIFIER = 'notifier'
+SOURCE_MANUAL = 'manual'
+VALID_SOURCES = (SOURCE_NOTIFIER, SOURCE_MANUAL)
+
+# Health checks (v0.7.0). URL kinds follow the entry's internal/external URL
+# (target is NULL); 'service' checks are separate rows (added in a later chunk).
+CHECK_KIND_INTERNAL = 'internal_url'
+CHECK_KIND_EXTERNAL = 'external_url'
+CHECK_KIND_SERVICE = 'service'
+# Container state reported by the notifier (one per notifier entry, no target).
+CHECK_KIND_CONTAINER = 'container'
+URL_CHECK_KINDS = (CHECK_KIND_INTERNAL, CHECK_KIND_EXTERNAL)
+CHECK_KINDS = URL_CHECK_KINDS + (CHECK_KIND_SERVICE, CHECK_KIND_CONTAINER)
+CHECK_TYPE_HTTP = 'http'
+CHECK_TYPE_TCP = 'tcp'
+CHECK_TYPE_PING = 'ping'
+CHECK_TYPES = (CHECK_TYPE_HTTP, CHECK_TYPE_TCP, CHECK_TYPE_PING)
+# The container check's own type; not selectable on a service check.
+CHECK_TYPE_DOCKER = 'docker'
+CONTAINER_CHECK_NAME = 'Container'
+CHECK_MODE_STATUS = 'status'
+CHECK_MODE_BODY = 'body'
+CHECK_MODES = (CHECK_MODE_STATUS, CHECK_MODE_BODY)
+
+_URL_CHECK_NAMES = {CHECK_KIND_INTERNAL: 'Internal URL', CHECK_KIND_EXTERNAL: 'External URL'}
+# Short names the templates and routes use: 'internal' / 'external'.
+_URL_CHECK_ALIASES = {'internal': CHECK_KIND_INTERNAL, 'external': CHECK_KIND_EXTERNAL}
+
 
 class ServiceEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    host = db.Column(db.String(100), nullable=False)
+    # NULL host is allowed for manual entries (v0.7.0).
+    host = db.Column(db.String(100), nullable=True)
     container_name = db.Column(db.String(100), nullable=False)
     container_id = db.Column(db.String(100), nullable=True)
     internalurl = db.Column(db.String(255), nullable=True)
@@ -53,6 +82,15 @@ class ServiceEntry(db.Model):
         backref='service_entry',
         lazy=True,
         cascade='all, delete-orphan',
+    )
+    # Health checks (v0.7.0): two URL-kind rows per entry plus any service
+    # checks. Config and cached state live here, not on service_entry.
+    checks = db.relationship(
+        'HealthCheck',
+        backref='service_entry',
+        lazy=True,
+        cascade='all, delete-orphan',
+        order_by='HealthCheck.id',
     )
     sort_priority = db.Column(db.Integer, nullable=True, default=None)
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
@@ -95,6 +133,15 @@ class ServiceEntry(db.Model):
         db.Boolean, nullable=False, default=True, server_default=db.true()
     )
 
+    # Entry source (v0.7.0): 'notifier' (created/kept current by
+    # /api/v1/register) or 'manual' (created on the Add page). A register
+    # that matches an unlocked manual entry adopts it (-> 'notifier').
+    # `is_static` is only the lock; it no longer means "manual".
+    source = db.Column(
+        db.String(16), nullable=False, default=SOURCE_NOTIFIER, server_default=SOURCE_NOTIFIER
+    )
+    description = db.Column(db.String(255), nullable=True)
+
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
     )
@@ -121,12 +168,14 @@ class ServiceEntry(db.Model):
             'last_updated': self.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
             'last_api_update': self.last_api_update.strftime('%Y-%m-%d %H:%M:%S') if self.last_api_update else None,
             'docker_status': self.docker_status,
-            'internal_health_check_enabled': self.internal_health_check_enabled,
-            'internal_health_check_status': self.internal_health_check_status,
-            'internal_health_check_update': self.internal_health_check_update,
-            'external_health_check_enabled': self.external_health_check_enabled,
-            'external_health_check_status': self.external_health_check_status,
-            'external_health_check_update': self.external_health_check_update,
+            # Legacy keys are kept (values read from the check rows) so an
+            # older STD can still restore a backup made by this version.
+            'internal_health_check_enabled': self.internal_check_enabled,
+            'internal_health_check_status': _legacy_status(self.url_check('internal')),
+            'internal_health_check_update': _legacy_update(self.url_check('internal')),
+            'external_health_check_enabled': self.external_check_enabled,
+            'external_health_check_status': _legacy_status(self.url_check('external')),
+            'external_health_check_update': _legacy_update(self.url_check('external')),
             'image_registry': self.image_registry,
             'image_owner': self.image_owner,
             'image_name': self.image_name,
@@ -134,14 +183,17 @@ class ServiceEntry(db.Model):
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
+            'source': self.source,
+            'description': self.description,
             'sort_priority': self.sort_priority,
             'networks': self.networks,
             'exposed_ports': self.exposed_ports,
             'published_ports': self.published_ports,
             'internalurl_source': self.internalurl_source,
             'externalurl_source': self.externalurl_source,
-            'health_check_timeout': self.health_check_timeout,
-            'health_check_verify_tls': self.health_check_verify_tls,
+            'health_check_timeout': self.url_check_timeout,
+            'health_check_verify_tls': self.url_check_verify_tls,
+            'checks': [c.to_config() for c in self.checks],
             'deleted_at': self.deleted_at.strftime('%Y-%m-%d %H:%M:%S') if self.deleted_at else None,
         }
 
@@ -156,19 +208,160 @@ class ServiceEntry(db.Model):
 
         return data
 
+    def url_check(self, which):
+        """The entry's URL-kind check row: 'internal' / 'external' (or the
+        full kind name). None when the row does not exist yet."""
+        kind = _URL_CHECK_ALIASES.get(which, which)
+        for check in self.checks:
+            if check.kind == kind:
+                return check
+        return None
+
+    @property
+    def container_check(self):
+        """The notifier entry's Container check row, or None."""
+        for check in self.checks:
+            if check.kind == CHECK_KIND_CONTAINER:
+                return check
+        return None
+
+    @property
+    def service_checks(self):
+        """Service-kind checks, in creation order."""
+        return [c for c in self.checks if c.kind == CHECK_KIND_SERVICE]
+
+    @property
+    def internal_check_enabled(self):
+        check = self.url_check('internal')
+        return bool(check and check.enabled)
+
+    @property
+    def external_check_enabled(self):
+        check = self.url_check('external')
+        return bool(check and check.enabled)
+
+    @property
+    def url_check_timeout(self):
+        """Timeout shared by the two URL checks (NULL = global default)."""
+        check = self.url_check('internal') or self.url_check('external')
+        return check.timeout_seconds if check else None
+
+    @property
+    def url_check_verify_tls(self):
+        check = self.url_check('internal') or self.url_check('external')
+        return True if check is None else check.verify_tls is not False
+
+    @property
+    def is_manual(self):
+        """True for entries created on the Add page (no notifier behind them)."""
+        return self.source == SOURCE_MANUAL
+
     @property
     def is_docker_status_stale(self):
         """True when the notifier hasn't reported in within `stale_after_minutes`.
 
-        Static entries are never stale. A dynamic entry with no
+        Manual and locked entries are never stale. A dynamic entry with no
         `last_api_update` (never registered) counts as stale; the Tiled view
         shows that case separately as "no update received".
         """
-        if self.is_static:
+        if self.is_manual or self.is_static:
             return False
         if self.last_api_update:
             return (datetime.now() - self.last_api_update) > timedelta(minutes=_stale_after_minutes())
         return True
+
+
+def _legacy_status(check):
+    """Pre-0.7 status string for a URL check row, for backups that older STD
+    versions can restore: the status code, else `Error: <ExceptionName>`.
+    NULL when the check has not run. Derived from the row (the legacy
+    columns are no longer written)."""
+    if check is None or check.last_ok is None:
+        return None
+    code = check.last_status_code
+    if code is not None and (check.last_ok or code >= 400):
+        return str(code)
+    name = (check.last_message or '').split(':', 1)[0].strip()
+    return f"Error: {name or 'CheckFailed'}"
+
+
+def _legacy_update(check):
+    """Last-checked time as the server-local string older STD stored."""
+    if check is None or check.last_checked_at is None:
+        return None
+    local = check.last_checked_at.replace(tzinfo=timezone.utc).astimezone()
+    return local.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def ensure_url_checks(entry):
+    """Make sure `entry` has exactly its two URL-kind check rows.
+
+    Idempotent: adds only the missing ones (disabled, global timeout, verify
+    TLS on). Used by every path that creates or edits an entry. Caller commits.
+    """
+    for kind in URL_CHECK_KINDS:
+        if entry.url_check(kind) is None:
+            entry.checks.append(HealthCheck(
+                kind=kind,
+                name=_URL_CHECK_NAMES[kind],
+                check_type=CHECK_TYPE_HTTP,
+                mode=CHECK_MODE_STATUS,
+                verify_tls=True,
+                enabled=False,
+                consecutive_failures=0,
+            ))
+    return entry
+
+
+def ensure_container_check(entry):
+    """Give a notifier entry its one Container check (enabled by default).
+
+    Manual entries get none. Idempotent. Caller commits.
+    """
+    if entry.source == SOURCE_NOTIFIER and entry.container_check is None:
+        entry.checks.append(HealthCheck(
+            kind=CHECK_KIND_CONTAINER,
+            name=CONTAINER_CHECK_NAME,
+            check_type=CHECK_TYPE_DOCKER,
+            mode=CHECK_MODE_STATUS,
+            verify_tls=True,
+            enabled=True,
+            consecutive_failures=0,
+        ))
+    return entry
+
+
+def evaluate_container(entry, now=None):
+    """(ok, message) for the entry's Container check, from what the notifier
+    last reported. A pure read; message is None when ok."""
+    now = now or datetime.now()
+    if entry.last_api_update is None:
+        return False, 'No update from notifier yet'
+    age = now - entry.last_api_update
+    if age > timedelta(minutes=_stale_after_minutes()):
+        return False, f'No update from notifier for {int(age.total_seconds() // 60)} min'
+    status = (entry.docker_status or '').strip()
+    if status.lower() == 'running':
+        return True, None
+    return False, f'Container {status}' if status else 'Container status unknown'
+
+
+def check_counts(entry, check):
+    """True when `check` can run and takes part in the rollup: enabled, and
+    - URL kinds: the entry has that URL; service: it has a target;
+    - container: the entry is an unlocked notifier entry (a locked entry gets
+      no registers, so its container state is frozen and not evidence)."""
+    if not check.enabled:
+        return False
+    if check.kind == CHECK_KIND_CONTAINER:
+        return entry.source == SOURCE_NOTIFIER and not entry.is_static
+    if check.kind == CHECK_KIND_INTERNAL:
+        target = entry.internalurl
+    elif check.kind == CHECK_KIND_EXTERNAL:
+        target = entry.externalurl
+    else:
+        target = check.target
+    return bool((target or '').strip())
 
 
 def _stale_after_minutes():
@@ -180,6 +373,102 @@ def _stale_after_minutes():
     except (TypeError, ValueError):
         return DEFAULT_STALE_AFTER_MINUTES
     return value if value >= 0 else DEFAULT_STALE_AFTER_MINUTES
+
+
+class HealthCheck(db.Model):
+    """One configured health check plus its cached latest state.
+
+    URL kinds (`internal_url` / `external_url`) follow the entry's URL, so
+    `target` is NULL; `service` rows carry their own target. Exactly one of
+    each URL kind per entry (see ensure_url_checks), and one `container` row
+    per notifier entry (ensure_container_check; evaluated from the entry's
+    docker_status, no target). NULL interval/timeout
+    mean "use the global setting".
+    """
+    __tablename__ = 'health_check'
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_entry_id = db.Column(
+        db.Integer,
+        db.ForeignKey('service_entry.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    kind = db.Column(db.String(16), nullable=False)
+    name = db.Column(db.String(100), nullable=True)
+    check_type = db.Column(db.String(8), nullable=False, default=CHECK_TYPE_HTTP, server_default=CHECK_TYPE_HTTP)
+    target = db.Column(db.String(255), nullable=True)
+    mode = db.Column(db.String(8), nullable=False, default=CHECK_MODE_STATUS, server_default=CHECK_MODE_STATUS)
+    interval_seconds = db.Column(db.Integer, nullable=True)
+    timeout_seconds = db.Column(db.Integer, nullable=True)
+    verify_tls = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # Cached latest state (naive UTC timestamp).
+    last_ok = db.Column(db.Boolean, nullable=True)
+    last_checked_at = db.Column(db.DateTime, nullable=True)
+    last_status_code = db.Column(db.Integer, nullable=True)
+    last_latency_ms = db.Column(db.Integer, nullable=True)
+    last_message = db.Column(db.String(255), nullable=True)
+    consecutive_failures = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+    results = db.relationship(
+        'HealthResult',
+        backref='check',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+
+    @property
+    def is_url_kind(self):
+        return self.kind in URL_CHECK_KINDS
+
+    def to_config(self):
+        """Configuration only (no cached state, no results), for backups."""
+        return {
+            'kind': self.kind,
+            'name': self.name,
+            'check_type': self.check_type,
+            'target': self.target,
+            'mode': self.mode,
+            'interval_seconds': self.interval_seconds,
+            'timeout_seconds': self.timeout_seconds,
+            'verify_tls': self.verify_tls,
+            'enabled': self.enabled,
+        }
+
+    def __repr__(self):
+        return f'<HealthCheck {self.kind} svc={self.service_entry_id} enabled={self.enabled}>'
+
+
+class HealthResult(db.Model):
+    """One check sample, or (later) a compacted range of successes.
+
+    `ts_end` is NULL for a single sample. Timestamps are naive UTC.
+    """
+    __tablename__ = 'health_result'
+
+    id = db.Column(db.Integer, primary_key=True)
+    check_id = db.Column(
+        db.Integer,
+        db.ForeignKey('health_check.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    ts = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    ts_end = db.Column(db.DateTime, nullable=True)
+    samples = db.Column(db.Integer, nullable=False, default=1, server_default='1')
+    ok = db.Column(db.Boolean, nullable=False)
+    latency_ms = db.Column(db.Float, nullable=True)
+    latency_max_ms = db.Column(db.Integer, nullable=True)
+    status_code = db.Column(db.Integer, nullable=True)
+    message = db.Column(db.String(255), nullable=True)
+
+    # The composite index also serves the check_id FK.
+    __table_args__ = (
+        db.Index('ix_health_result_check_id_ts', 'check_id', 'ts'),
+    )
+
+    def __repr__(self):
+        return f'<HealthResult check={self.check_id} ts={self.ts} ok={self.ok}>'
 
 
 class Widget(db.Model):

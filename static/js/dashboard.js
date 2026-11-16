@@ -26,6 +26,7 @@ window.stdPost = function (url, options) {
 
   function isInteracting() {
     if (currentOpenDrawer) return true;
+    if (document.querySelector('.health-expand-row:not([hidden])')) return true;
     const changelogModal = document.getElementById('changelog-modal');
     const deletePopover  = document.getElementById('delete-popover');
     if (changelogModal && !changelogModal.classList.contains('hidden')) return true;
@@ -103,7 +104,7 @@ window.stdPost = function (url, options) {
     document.querySelectorAll('[id^="toggle-icon-"]').forEach(iconEl => {
       const groupId = iconEl.id.replace('toggle-icon-', '');
       const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
-      const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
+      const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}'], tr.health-expand-row[data-group-id='${groupId}']`);
       entries.forEach(row => row.style.display = isCollapsed ? 'none' : '');
       iconEl.textContent = isCollapsed ? '▶' : '▼';
     });
@@ -126,6 +127,11 @@ window.stdPost = function (url, options) {
           const stack  = (row.dataset.stack  || '').toLowerCase();
           row.style.display =
             (group.includes(filter) || name.includes(filter) || stack.includes(filter)) ? '' : 'none';
+          // The health expand row under an entry follows its entry.
+          const detail = row.nextElementSibling;
+          if (detail && detail.classList.contains('health-expand-row')) {
+            detail.style.display = row.style.display;
+          }
         });
 
       } else if (view === 'compact') {
@@ -197,6 +203,7 @@ window.stdPost = function (url, options) {
     currentOpenDrawer = drawer;
     currentOpenTile   = tile;
     currentDrawerMode = mode;
+    if (window.stdHealthDetail) window.stdHealthDetail.open(drawer);
   }
 
   function initDrawers() {
@@ -395,7 +402,7 @@ window.stdPost = function (url, options) {
 
   /* ── Dashboard: toggleGroup ──────────────────────────── */
   window.toggleGroup = function (groupId) {
-    const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}']`);
+    const entries = document.querySelectorAll(`tr.group-entry[data-group-id='${groupId}'], tr.health-expand-row[data-group-id='${groupId}']`);
     const icon    = document.getElementById(`toggle-icon-${groupId}`);
     const isCollapsed = localStorage.getItem(`group-collapsed-${groupId}`) === 'true';
     const newState = !isCollapsed;

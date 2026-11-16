@@ -1,0 +1,123 @@
+{# "Health checks" form section, shared by Add and Edit (PRD 13.5).
+   Context: url_rows, svc_rows (dicts from check_form), check_targets
+   (dict of current URLs, or none on the Add page), field_cls (input class). #}
+{% macro num_field(name, id, value, low, high, label) %}
+  <div>
+    <label for="{{ id }}" class="block text-xs font-medium text-dashboard-secondary mb-1">{{ label }}</label>
+    <input type="number" name="{{ name }}" id="{{ id }}" class="{{ field_cls }}" min="{{ low }}" max="{{ high }}" step="1" placeholder="Default" value="{{ value }}">
+  </div>
+{% endmacro %}
+
+{% macro mode_field(name, id, value) %}
+  <div>
+    <label for="{{ id }}" class="block text-xs font-medium text-dashboard-secondary mb-1">Mode</label>
+    <select name="{{ name }}" id="{{ id }}" class="{{ field_cls }}">
+      <option value="status" {% if value != 'body' %}selected{% endif %}>Status code</option>
+      <option value="body" {% if value == 'body' %}selected{% endif %}>Response body</option>
+    </select>
+  </div>
+{% endmacro %}
+
+{% macro check_box(name, id, checked, label) %}
+  <div class="flex items-center">
+    <input type="checkbox" name="{{ name }}" id="{{ id }}" class="form-checkbox h-4 w-4" {% if checked %}checked{% endif %}>
+    <label for="{{ id }}" class="ml-2 text-sm text-dashboard-secondary">{{ label }}</label>
+  </div>
+{% endmacro %}
+
+{% macro svc_row(r, key) %}
+  <div class="check-row rounded-lg border border-dashboard-accent p-3 space-y-3" data-check-row>
+    <input type="hidden" name="svc_row" value="{{ key }}">
+    <input type="hidden" name="svc_{{ key }}_id" value="{{ r.id if r.id is not none else '' }}">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div class="sm:col-span-2">
+        <label for="svc_{{ key }}_name" class="block text-xs font-medium text-dashboard-secondary mb-1">Name</label>
+        <input type="text" name="svc_{{ key }}_name" id="svc_{{ key }}_name" maxlength="100" class="{{ field_cls }}" placeholder="e.g., Web UI (defaults to the target)" value="{{ r.name }}">
+      </div>
+      <div>
+        <label for="svc_{{ key }}_type" class="block text-xs font-medium text-dashboard-secondary mb-1">Type</label>
+        <select name="svc_{{ key }}_type" id="svc_{{ key }}_type" class="{{ field_cls }}" data-check-type>
+          <option value="http" {% if r.check_type == 'http' %}selected{% endif %}>HTTP/HTTPS</option>
+          <option value="tcp" {% if r.check_type == 'tcp' %}selected{% endif %}>TCP</option>
+          <option value="ping" {% if r.check_type == 'ping' %}selected{% endif %}>Ping</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label for="svc_{{ key }}_target" class="block text-xs font-medium text-dashboard-secondary mb-1">Target</label>
+      <input type="text" name="svc_{{ key }}_target" id="svc_{{ key }}_target" maxlength="255" class="{{ field_cls }} font-mono" placeholder="https://host/health, host:port or host" value="{{ r.target }}" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <p class="edit-helper">HTTP: a full URL. TCP: <code>host:port</code>. Ping: a hostname or IP.</p>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+      <div data-http-only>{{ mode_field('svc_' ~ key ~ '_mode', 'svc_' ~ key ~ '_mode', r.mode) }}</div>
+      {{ num_field('svc_' ~ key ~ '_interval', 'svc_' ~ key ~ '_interval', r.interval, 30, 86400, 'Interval (s)') }}
+      {{ num_field('svc_' ~ key ~ '_timeout', 'svc_' ~ key ~ '_timeout', r.timeout, 1, 60, 'Timeout (s)') }}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {{ check_box('svc_' ~ key ~ '_enabled', 'svc_' ~ key ~ '_enabled', r.enabled, 'Enabled') }}
+      <div data-http-only>{{ check_box('svc_' ~ key ~ '_verify', 'svc_' ~ key ~ '_verify', r.verify, 'Verify TLS certificate') }}</div>
+      <button type="button" class="ml-auto text-sm text-red-400 hover:text-red-300" data-remove-check>
+        <i class="ti ti-trash" aria-hidden="true"></i> Remove
+      </button>
+    </div>
+  </div>
+{% endmacro %}
+
+<h3 class="edit-section-heading">Health checks</h3>
+<input type="hidden" name="checks_form" value="1">
+<div class="edit-section-fields">
+  {% for r in url_rows %}
+  {% set p = 'uc_' ~ r.key ~ '_' %}
+  <div class="rounded-lg border border-dashboard-accent p-3 space-y-3">
+    <div>
+      <div class="text-sm font-medium text-dashboard-primary">{{ r.label }} check</div>
+      <div class="text-xs text-dashboard-secondary break-all">
+        {% if check_targets is none %}
+          Checks the {{ r.label }} entered above.
+        {% elif check_targets[r.key] %}
+          Target: <span class="font-mono">{{ check_targets[r.key] }}</span>
+        {% else %}
+          No {{ r.label }} set, so there is nothing to check yet.
+        {% endif %}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+      {{ mode_field(p ~ 'mode', p ~ 'mode', r.mode) }}
+      {{ num_field(p ~ 'interval', p ~ 'interval', r.interval, 30, 86400, 'Interval (s)') }}
+      {{ num_field(p ~ 'timeout', p ~ 'timeout', r.timeout, 1, 60, 'Timeout (s)') }}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {{ check_box(p ~ 'enabled', p ~ 'enabled', r.enabled, 'Enabled') }}
+      {{ check_box(p ~ 'verify', p ~ 'verify', r.verify, 'Verify TLS certificate') }}
+    </div>
+  </div>
+  {% endfor %}
+  {% if container_row %}
+  <div class="rounded-lg border border-dashboard-accent p-3 space-y-3">
+    <input type="hidden" name="cc_row" value="1">
+    <div>
+      <div class="text-sm font-medium text-dashboard-primary">Container (Docker state)</div>
+      <div class="text-xs text-dashboard-secondary">Healthy while the notifier reports the container running and keeps reporting in. Not checked while the entry is locked.</div>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+      {{ num_field('cc_interval', 'cc_interval', container_row.interval, 30, 86400, 'Interval (s)') }}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {{ check_box('cc_enabled', 'cc_enabled', container_row.enabled, 'Enabled') }}
+    </div>
+  </div>
+  {% endif %}
+  <p class="edit-helper">Blank interval or timeout uses the global setting. Interval 30&ndash;86400 seconds, timeout 1&ndash;60. Untick Verify TLS for self-signed certificates. Response body mode expects the page to answer <code>OK</code>.</p>
+
+  <div class="flex items-center justify-between pt-2">
+    <div class="text-sm font-medium text-dashboard-primary">Service checks</div>
+    <button type="button" class="btn-secondary px-3 py-1.5 rounded-lg text-sm" id="add-service-check">
+      <i class="ti ti-plus" aria-hidden="true"></i> Add service check
+    </button>
+  </div>
+  <div id="service-checks" class="space-y-3">
+    {% for r in svc_rows %}{{ svc_row(r, r.key) }}{% endfor %}
+  </div>
+  <p id="service-checks-empty" class="edit-helper {% if svc_rows %}hidden{% endif %}">No service checks. Add one to watch a port, a ping or a separate health URL. Removed checks are deleted when you save.</p>
+  <template id="service-check-template">{{ svc_row({'id': none, 'name': '', 'check_type': 'http', 'target': '', 'mode': 'status', 'interval': '', 'timeout': '', 'verify': true, 'enabled': true}, '__KEY__') }}</template>
+</div>

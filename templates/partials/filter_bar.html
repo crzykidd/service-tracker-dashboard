@@ -31,6 +31,20 @@
         <option value="priority" {% if sort_in_group == 'priority' %}selected{% endif %}>Priority</option>
       </select>
 
+      <label for="statusSelect" class="text-sm text-gray-300">Status:</label>
+      <select id="statusSelect" data-param="status" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+        {% for val, lbl in [('all', 'All'), ('failing', 'Failing'), ('healthy', 'Healthy'), ('unknown', 'Unknown'), ('stale', 'Stale')] %}
+        <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="sourceSelect" class="text-sm text-gray-300">Source:</label>
+      <select id="sourceSelect" data-param="source" class="view-control bg-gray-800 border border-gray-600 px-3 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+        {% for val, lbl in [('all', 'All'), ('notifier', 'Notifier'), ('manual', 'Manual')] %}
+        <option value="{{ val }}" {% if source_filter == val %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+
       <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
         <input type="checkbox" id="showUrllessToggle" data-param="show_urlless"
                class="view-control h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
@@ -40,7 +54,7 @@
 
       <span class="text-sm text-gray-400">
         Total Services:
-        {{ total_entries if total_entries is defined else 'N/A' }}
+        {% if total_entries is not defined %}N/A{% elif all_entries_count is defined and all_entries_count != total_entries %}<span id="totalServices">{{ total_entries }} / {{ all_entries_count }}</span>{% else %}<span id="totalServices">{{ total_entries }}</span>{% endif %}
       </span>
     </div>
 

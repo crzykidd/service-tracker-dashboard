@@ -12,3 +12,4 @@ pydantic>=2,<3
 markdown
 Flask-WTF
 gunicorn
+icmplib

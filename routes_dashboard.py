@@ -34,17 +34,40 @@ from flask import (
     request,
     send_file,
     send_from_directory,
+    session,
     url_for,
 )
 from flask_login import login_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
+import check_form
+import health_history
+import jobs
 import settings_store
 import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
-from models import Group, ServiceEntry, User, Widget, WidgetValue, hard_delete_entry
+from models import (
+    CHECK_KIND_CONTAINER,
+    CHECK_KIND_SERVICE,
+    CHECK_MODES,
+    CHECK_TYPES,
+    SOURCE_MANUAL,
+    SOURCE_NOTIFIER,
+    URL_CHECK_KINDS,
+    VALID_SOURCES,
+    Group,
+    HealthCheck,
+    ServiceEntry,
+    User,
+    Widget,
+    WidgetValue,
+    check_counts,
+    ensure_container_check,
+    ensure_url_checks,
+    hard_delete_entry,
+)
 from routes_auth import is_admin_required
 from settings_loader import CONFIG_DIR
 from view_helpers import (
@@ -52,6 +75,8 @@ from view_helpers import (
     group_and_sort_services,
     normalize_axis,
     normalize_show_urlless,
+    normalize_source_filter,
+    normalize_status_filter,
     safe_redirect_target,
 )
 
@@ -183,24 +208,42 @@ def _read_view_controls(default_sort_in_group=DEFAULT_SORT_IN_GROUP):
     return axis, show_urlless, sort_in_group
 
 
+def _read_filters():
+    """The status/source filters (PRD 13.6), normalized to known values."""
+    return (
+        normalize_status_filter(request.args.get("status")),
+        normalize_source_filter(request.args.get("source")),
+    )
+
+
+def _load_view_entries():
+    """Active entries for a dashboard view, with everything the templates
+    touch eager-loaded so the page costs a fixed number of queries."""
+    return (
+        ServiceEntry.active()
+        .options(joinedload(ServiceEntry.group))
+        .options(selectinload(ServiceEntry.exposures))
+        .options(selectinload(ServiceEntry.checks))
+        .all()
+    )
+
+
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
     axis, show_urlless, sort_in_group = _read_view_controls()
     msg = request.args.get('msg')
 
-    entries = (
-        ServiceEntry.active()
-        .options(joinedload(ServiceEntry.group))
-        .options(selectinload(ServiceEntry.exposures))
-        .all()
-    )
+    entries = _load_view_entries()
+    status, source = _read_filters()
 
     grouped_entries = group_and_sort_services(
         entries,
         axis=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
+        status=status,
+        source=source,
     )
 
     visible_total = sum(len(es) for _, es in grouped_entries)
@@ -210,6 +253,9 @@ def dashboard():
         "dashboard.html",
         grouped_entries=grouped_entries,
         total_entries=visible_total,
+        all_entries_count=len(entries),
+        status_filter=status,
+        source_filter=source,
         group_by=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
@@ -227,18 +273,16 @@ def dashboard():
 def tiled_dashboard():
     axis, show_urlless, sort_in_group = _read_view_controls()
 
-    entries = (
-        ServiceEntry.active()
-        .options(joinedload(ServiceEntry.group))
-        .options(selectinload(ServiceEntry.exposures))
-        .all()
-    )
+    entries = _load_view_entries()
+    status, source = _read_filters()
 
     grouped_entries = group_and_sort_services(
         entries,
         axis=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
+        status=status,
+        source=source,
     )
 
     visible_total = sum(len(es) for _, es in grouped_entries)
@@ -252,6 +296,9 @@ def tiled_dashboard():
         sort_in_group=sort_in_group,
         STD_DOZZLE_URL=current_app.config['std_dozzle_url'],
         total_entries=visible_total,
+        all_entries_count=len(entries),
+        status_filter=status,
+        source_filter=source,
         widget_values=widget_values,
         widget_fields=widget_fields,
     )
@@ -264,18 +311,16 @@ def compact_dash():
         default_sort_in_group="alphabetical"
     )
 
-    entries = (
-        ServiceEntry.active()
-        .options(joinedload(ServiceEntry.group))
-        .options(selectinload(ServiceEntry.exposures))
-        .all()
-    )
+    entries = _load_view_entries()
+    status, source = _read_filters()
 
     grouped_entries = group_and_sort_services(
         entries,
         axis=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
+        status=status,
+        source=source,
     )
 
     flattened_entries = []
@@ -293,6 +338,9 @@ def compact_dash():
         "compact_dash.html",
         flattened_entries=flattened_entries,
         total_entries=visible_total,
+        all_entries_count=len(entries),
+        status_filter=status,
+        source_filter=source,
         show_host=show_host,
         group_by=axis,
         show_urlless=show_urlless,
@@ -429,7 +477,15 @@ def settings():
                 skipped_count = 0
 
                 for item in records:
-                    if not item.get('host') or not item.get('container_name'):
+                    # Source: backups from before v0.7.0 have none; use the
+                    # migration's backfill rule (never registered -> manual).
+                    item_source = item.get('source')
+                    if item_source not in VALID_SOURCES:
+                        item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
+                    item_host = (item.get('host') or '').strip() or None
+
+                    # Host is optional for manual entries only.
+                    if not item.get('container_name') or (item_host is None and item_source != SOURCE_MANUAL):
                         logger.warning(f"⛔ Skipping entry with missing host/container_name: {item}")
                         skipped_count +=1
                         continue
@@ -470,7 +526,7 @@ def settings():
 
                     entry = ServiceEntry.query.filter_by(
                         container_name=item['container_name'],
-                        host=item['host']
+                        host=item_host
                     ).first()
 
                     group_name = item.get('group_name')
@@ -486,11 +542,11 @@ def settings():
                     # Fetch or create entry
                     entry = ServiceEntry.query.filter_by(
                         container_name=item['container_name'],
-                        host=item['host']
+                        host=item_host
                     ).first()
 
                     if not entry:
-                        entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
+                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
                         db.session.add(entry)
 
                     # Assign group_id only now (after entry exists)
@@ -507,7 +563,7 @@ def settings():
                             continue
                         # Otherwise (entry is not static, or item from backup is static, or scope is 'static'), proceed to update.
                     else: # New entry, create it
-                        entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
+                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
                         db.session.add(entry)
                     if widget_obj:
                         entry.widget_id = widget_obj.id
@@ -518,19 +574,18 @@ def settings():
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
                                 entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls']:
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls', 'host', 'source', 'checks', 'internal_health_check_enabled', 'external_health_check_enabled']:
                             setattr(entry, field, value)
+
+                    entry.source = item_source
+                    entry.host = item_host
 
                     # deleted_at round-trips; absent (v0.6.8 backups) means active.
                     entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
 
-                    # Health-check options round-trip; absent (older backups)
-                    # means the defaults: global timeout, verify TLS on.
-                    backup_timeout = item.get('health_check_timeout')
-                    entry.health_check_timeout = backup_timeout if isinstance(backup_timeout, int) and backup_timeout > 0 else None
-                    backup_verify = item.get('health_check_verify_tls')
-                    entry.health_check_verify_tls = True if backup_verify is None else bool(backup_verify)
-
+                    # Health checks (v0.7.0): a new-format backup carries `checks`;
+                    # an older one is mapped from the legacy fields.
+                    _restore_checks(entry, item)
 
                     # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
                     # (especially if item_is_static_from_backup was derived from .get with a default)
@@ -737,17 +792,40 @@ def serve_image(filename):
     return response
 
 
+def _drop_stale_success_flashes():
+    """Forget non-error flashes queued by earlier redirects.
+
+    The Dashboard views don't render flashes, so "Logged in" or "Entry
+    updated" messages wait in the session until a page that does. Showing
+    them on a fresh Add/Edit page would be noise; warnings and errors (for
+    example the failed delete confirmation redirected to Edit) are kept.
+    """
+    kept = [(cat, msg) for cat, msg in session.get('_flashes', []) if cat in ('warning', 'danger')]
+    if kept:
+        session['_flashes'] = kept
+    else:
+        session.pop('_flashes', None)
+
+
 @dashboard_bp.route('/add', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
 def add_entry():
+    _drop_stale_success_flashes()
     image_dir = current_app.config['IMAGE_DIR']
 
     if request.method == 'POST':
         # Needed by every error re-render of the add form below.
         groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-        host = request.form.get('host')
-        container_name = request.form.get('application')
+        url_rows, svc_rows, check_errors = check_form.parse_form(request.form)
+
+        def render_error(msg='error'):
+            return render_template("add_entry.html", msg=msg, entry=request.form, groups=groups,
+                                   url_rows=url_rows, svc_rows=svc_rows)
+
+        host = (request.form.get('host') or '').strip() or None
+        container_name = (request.form.get('container_name') or '').strip()
+        description = (request.form.get('description') or '').strip() or None
         internalurl = request.form.get('internal_url')
         externalurl = request.form.get('external_url')
         group_mode = request.form.get('group_mode')  # 'existing' or 'new'
@@ -766,28 +844,36 @@ def add_entry():
         image_icon = safe_icon_filename(image_icon_raw) if image_icon_raw else ''
         if image_icon_raw and not image_icon:
             flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+            return render_error()
 
-        if not host or not container_name:
-            flash('Host and Application (Container Name) are required.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+        if not container_name:
+            flash('Name is required.', 'danger')
+            return render_error()
+        if len(container_name) > 100 or (host and len(host) > 100) or (description and len(description) > 255):
+            flash('Name and Host are limited to 100 characters, Description to 255.', 'danger')
+            return render_error()
 
-        # Check for duplicates
-        existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
+        # Check for duplicates. An empty host is its own value: the key is
+        # (host or NULL, name). NULL never equals NULL in SQL, so match with IS NULL.
+        host_filter = ServiceEntry.host.is_(None) if host is None else ServiceEntry.host == host
+        where = f"on host '{host}'" if host else "with no host"
+        existing = (
+            ServiceEntry.query.filter(host_filter, ServiceEntry.container_name == container_name)
+            .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
+            .first()
+        )
         if existing and existing.deleted_at is not None:
             flash(
-                f"An entry for '{container_name}' on host '{host}' was deleted. "
+                f"An entry for '{container_name}' {where} was deleted. "
                 f"Restore it from Settings → Deleted instead of adding a new one.",
                 'danger',
             )
-            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
+            return render_error('duplicate')
         if existing:
-            flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
-            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
+            flash(f"An entry for '{container_name}' {where} already exists.", 'danger')
+            return render_error('duplicate')
 
         # Booleans
-        internal_health_check_enabled = request.form.get('internal_health_check') == 'on'
-        external_health_check_enabled = request.form.get('external_health_check') == 'on'
         is_static = request.form.get('locked') == 'on'
 
         # === ICON RESOLUTION LOGIC ===
@@ -821,13 +907,12 @@ def add_entry():
                 sort_priority = int(sort_priority_raw)
             except ValueError:
                 flash("Sort priority must be a number.", 'danger')
-                return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+                return render_error()
 
-        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
-        if health_error:
-            flash(health_error, 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
-        verify_tls = request.form.get('health_check_verify_tls') == 'on'
+        if check_errors:
+            for message in check_errors:
+                flash(message, 'danger')
+            return render_error()
 
         # === CREATE ENTRY ===
         # Look up or create group
@@ -843,20 +928,19 @@ def add_entry():
         entry = ServiceEntry(
             host=host,
             container_name=container_name,
+            description=description,
+            source=SOURCE_MANUAL,
             internalurl=internalurl or None,
             externalurl=externalurl or None,
             internalurl_source=synthesizer.SOURCE_UI_EDIT if internalurl else None,
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(),
             group_id=group_obj.id if group_obj else None,
-            internal_health_check_enabled=internal_health_check_enabled,
-            external_health_check_enabled=external_health_check_enabled,
             image_icon=image_icon,
             sort_priority=sort_priority,
             is_static=is_static,
-            health_check_timeout=health_timeout,
-            health_check_verify_tls=verify_tls,
         )
+        check_form.apply_rows(entry, url_rows, svc_rows)
 
         db.session.add(entry)
         db.session.commit()
@@ -865,34 +949,75 @@ def add_entry():
         return redirect(url_for('dashboard.tiled_dashboard'))
 
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-    return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups)
+    url_rows, svc_rows = check_form.default_rows()
+    return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups,
+                           url_rows=url_rows, svc_rows=svc_rows)
 
 
-MAX_HEALTH_CHECK_TIMEOUT = 60
+def _positive_int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
-def _parse_health_timeout(raw):
-    """Parse the per-service timeout form field.
+def _restore_checks(entry, item):
+    """Apply a backup record's health-check configuration to `entry`.
 
-    Returns (value, error). Blank -> (None, None), meaning "use the global
-    default". Otherwise a positive int up to MAX_HEALTH_CHECK_TIMEOUT.
+    New format: `item['checks']` is a list of check configs. URL-kind rows
+    are matched by kind; service rows are replaced wholesale. Old format (no
+    `checks`): the legacy `*_health_check_enabled`, `health_check_timeout`
+    and `health_check_verify_tls` fields are mapped onto the two URL rows,
+    absent meaning disabled / global timeout / verify TLS on.
     """
-    raw = (raw or '').strip()
-    if not raw:
-        return None, None
-    try:
-        value = int(raw)
-    except ValueError:
-        value = 0
-    if not 1 <= value <= MAX_HEALTH_CHECK_TIMEOUT:
-        return None, f"Health check timeout must be a whole number of seconds from 1 to {MAX_HEALTH_CHECK_TIMEOUT} (or blank for the default)."
-    return value, None
+    ensure_url_checks(entry)
+    ensure_container_check(entry)
+    checks = item.get('checks')
+    if isinstance(checks, list):
+        # Service rows are replaced wholesale by what the backup carries.
+        for old in entry.service_checks:
+            entry.checks.remove(old)
+        for cfg in checks:
+            if not isinstance(cfg, dict):
+                continue
+            kind = cfg.get('kind')
+            if kind == CHECK_KIND_CONTAINER:
+                # Notifier entries only; just enabled + interval round-trip.
+                check = entry.container_check
+                if check is not None:
+                    check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
+                    check.enabled = bool(cfg.get('enabled'))
+                continue
+            if kind in URL_CHECK_KINDS:
+                check = entry.url_check(kind)
+            elif kind == CHECK_KIND_SERVICE:
+                check = HealthCheck(kind=CHECK_KIND_SERVICE, consecutive_failures=0)
+                entry.checks.append(check)
+            else:
+                continue
+            check.name = cfg.get('name')
+            if cfg.get('check_type') in CHECK_TYPES:
+                check.check_type = cfg['check_type']
+            check.target = cfg.get('target') if kind == CHECK_KIND_SERVICE else None
+            if cfg.get('mode') in CHECK_MODES:
+                check.mode = cfg['mode']
+            check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
+            check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
+            check.verify_tls = cfg.get('verify_tls') is not False
+            check.enabled = bool(cfg.get('enabled'))
+        return
+
+    timeout = _positive_int(item.get('health_check_timeout'))
+    verify = item.get('health_check_verify_tls') is not False
+    for which in ('internal', 'external'):
+        check = entry.url_check(which)
+        check.enabled = bool(item.get(f'{which}_health_check_enabled'))
+        check.timeout_seconds = timeout
+        check.verify_tls = verify
 
 
 @dashboard_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
 def edit_entry(id):
+    _drop_stale_success_flashes()
     image_dir = current_app.config['IMAGE_DIR']
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
@@ -920,6 +1045,23 @@ def edit_entry(id):
         else:
             logger.warning(f"Widget ID {entry.widget_id} not found")
 
+    def render_edit(form=None, url_rows=None, svc_rows=None, container_row=None):
+        groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+        if url_rows is None:
+            url_rows, svc_rows = check_form.rows_from_entry(entry)
+        if container_row is None:
+            container_row = check_form.container_row_from_entry(entry)
+        return render_template("edit_entry.html",
+                               entry=entry,
+                               ref=referrer,
+                               groups=groups,
+                               available_widgets=available_widgets,
+                               selected_widget=selected_widget,
+                               form=form,
+                               url_rows=url_rows,
+                               svc_rows=svc_rows,
+                               container_row=container_row)
+
     # Handle form submission
     if request.method == 'POST':
         # === DELETE ACTION ===
@@ -941,8 +1083,29 @@ def edit_entry(id):
                 flash("Confirmation name does not match. Entry not deleted.", "warning")
                 return redirect(url_for('dashboard.edit_entry', id=id, ref=referrer))
 
+        # === HEALTH CHECKS: validate first, change nothing on error ===
+        checks_submitted = 'checks_form' in request.form
+        if checks_submitted:
+            url_rows, svc_rows, check_errors = check_form.parse_form(
+                request.form, {c.id for c in entry.service_checks})
+            container_row = None
+            if entry.container_check is not None:
+                container_row, container_errors = check_form.parse_container(request.form)
+                check_errors += container_errors
+            if check_errors:
+                for message in check_errors:
+                    flash(message, 'danger')
+                return render_edit(form=request.form, url_rows=url_rows, svc_rows=svc_rows,
+                                   container_row=container_row)
+
         # === BASIC FIELDS ===
-        entry.host = request.form.get('host', '').strip()
+        new_host = request.form.get('host', '').strip()
+        if entry.is_manual:
+            # Host is optional for manual entries.
+            entry.host = new_host or None
+            entry.description = request.form.get('description', '').strip()[:255] or None
+        else:
+            entry.host = new_host
         entry.container_name = request.form.get('container_name', '').strip()
 
         # URL provenance: setting a URL via UI marks it ui_edit (highest
@@ -951,6 +1114,8 @@ def edit_entry(id):
         # register. See synthesizer.py for the ordering rules.
         new_internalurl = request.form.get('internalurl', '').strip() or None
         new_externalurl = request.form.get('externalurl', '').strip() or None
+        url_changed = {'internal': new_internalurl != entry.internalurl,
+                       'external': new_externalurl != entry.externalurl}
         if new_internalurl != entry.internalurl:
             entry.internalurl = new_internalurl
             entry.internalurl_source = synthesizer.SOURCE_UI_EDIT if new_internalurl else None
@@ -958,16 +1123,19 @@ def edit_entry(id):
             entry.externalurl = new_externalurl
             entry.externalurl_source = synthesizer.SOURCE_UI_EDIT if new_externalurl else None
 
-        entry.internal_health_check_enabled = 'internal_health_check_enabled' in request.form
-        entry.external_health_check_enabled = 'external_health_check_enabled' in request.form
+        ensure_url_checks(entry)
+        if checks_submitted:
+            check_form.apply_rows(entry, url_rows, svc_rows)
+            check_form.apply_container(entry, container_row)
+        # A changed URL is a new target: re-check it at the next tick.
+        for which, changed in (('internal', url_changed['internal']), ('external', url_changed['external'])):
+            if changed:
+                entry.url_check(which).last_checked_at = None
+        was_locked = entry.is_static
         entry.is_static = 'is_static' in request.form
-
-        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
-        if health_error:
-            flash(health_error, "warning")
-        else:
-            entry.health_check_timeout = health_timeout
-        entry.health_check_verify_tls = 'health_check_verify_tls' in request.form
+        if was_locked and not entry.is_static and entry.container_check is not None:
+            # Unlocked: the container state was frozen, so re-evaluate it now.
+            entry.container_check.last_checked_at = None
 
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:
@@ -1091,13 +1259,40 @@ def edit_entry(id):
 
         return redirect(safe_redirect_target(referrer))
 
-    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-    return render_template("edit_entry.html",
-                           entry=entry,
-                           ref=referrer,
-                           groups=groups,
-                           available_widgets=available_widgets,
-                           selected_widget=selected_widget)
+    return render_edit()
+
+
+@dashboard_bp.route('/service/<int:id>/checks/run', methods=['POST'])
+@login_required
+def run_checks_now(id):
+    """Check now: run every enabled check of this entry at the next scheduler
+    tick (within about 5 seconds). The last result stays in place until the
+    new one is written; `requested_at` lets the panel poll for it."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    ids = [check.id for check in entry.checks if check_counts(entry, check)]
+    jobs.request_run(ids)
+    return jsonify({
+        'ok': True,
+        'queued': len(ids),
+        'requested_at': health_history.iso_z(datetime.utcnow()),
+    })
+
+
+@dashboard_bp.route('/service/<int:id>/health')
+@login_required
+def entry_health_detail(id):
+    """Detail panel data: per-check state, uptime, recent failures and the
+    24h / 7d bar series (PRD 13.7). `range` is `24h` (default) or `7d`."""
+    entry = (
+        ServiceEntry.active()
+        .options(selectinload(ServiceEntry.checks))
+        .filter(ServiceEntry.id == id)
+        .first_or_404()
+    )
+    range_name = request.args.get('range', '24h')
+    if range_name not in health_history.RANGES:
+        range_name = '24h'
+    return jsonify(health_history.entry_payload(entry, range_name))
 
 
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
@@ -1126,14 +1321,14 @@ def restore_deleted_entry(id):
     ).first()
     if clash:
         flash(
-            f"Cannot restore '{entry.container_name}' on '{entry.host}': an active "
+            f"Cannot restore '{entry.container_name}' on '{entry.host or 'no host'}': an active "
             f"entry with that name already exists.",
             "danger",
         )
     else:
         entry.deleted_at = None
         db.session.commit()
-        logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host}'.")
+        logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host or 'no host'}'.")
         flash(f"✅ Restored '{entry.container_name}'.", "success")
     return redirect(url_for('dashboard.settings', section='deleted'))
 

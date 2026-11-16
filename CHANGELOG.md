@@ -7,6 +7,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-15
+
+### Added
+
+- **Docker container state is now an automatic health check.** Every
+  notifier (Docker) entry has a **Container** check that passes while the
+  notifier reports the container `running` and keeps reporting in, and fails
+  with `Container exited` (or the reported state) or `No update from notifier
+  for N min` otherwise. A Docker service with no URL or service checks now
+  shows Up or Down instead of "Not monitored", and a running container with a
+  failing URL check shows Degraded. It appears in the health detail panel with
+  history and uptime like any other check, updates within a few seconds when
+  the notifier reports a state change, and can be switched off or given its own
+  interval in the Health checks section of the Edit page. Locked entries and
+  manual entries do not have one. The Docker status pill and stale icon stay.
+- **Health detail panel with a 24-hour history strip.** Each service has a
+  detail view of its enabled checks: current state, target, last checked,
+  response time, last message, uptime for 24 hours and 7 days, and the 20
+  most recent failures. A Gatus-style strip of bars shows the history, green
+  when every check in that slot passed, red when any failed and grey with no
+  data; hover or tap a bar for the time range, pass/fail counts and failure
+  messages. A 24h / 7d toggle switches between 48 half-hour bars and 168
+  hourly bars, and **Check now** runs the service's checks immediately. It
+  opens in the Tiled drawer, in a new expand row on the Dashboard (chevron
+  at the start of each row) and on the Edit page under "Health history".
+  Compact keeps its badge link to the Edit page.
+- **One health badge per service on every view.** Each service shows a single
+  rolled-up state from its enabled checks: Up (all passing), Degraded (some
+  failing), Down (all failing), Unknown (enabled, not run yet) or Not
+  monitored. The Dashboard has a new Health column, Tiled has a state icon in
+  the tile, and Compact has a dot that opens the Edit page's health section.
+  Hovering shows each failing check and its message.
+- **Status and Source filters** next to "Group by" on all three views. Status:
+  All, Failing (degraded or down), Healthy (up), Unknown (unknown or not
+  monitored), Stale (notifier entries gone quiet). Source: All, Notifier,
+  Manual. Both live in the URL, so they survive auto-refresh and bookmarks.
+  "Total Services" shows `shown / total` when a filter hides entries.
+
+- **Manual entries are now first-class.** Every entry has a source:
+  `notifier` (kept current by the notifier) or `manual` (added on the Add
+  page). Manual entries are for sites and services that are not Docker
+  containers: they show a link icon (Tiled) or a "Manual" pill (Dashboard)
+  instead of a Docker status, are never flagged stale, and hide the
+  "Reported by notifier" block on the Edit page.
+- **Description field** on manual entries (Add and Edit pages, shown in the
+  Tiled drawer and as a tooltip).
+- **Backups carry `source` and `description`.** Restoring an older backup
+  without them works: an entry the notifier never reported becomes manual.
+
+- **Service checks.** An entry can carry any number of its own checks, added
+  and removed on the Edit or Add page: HTTP/HTTPS (a full URL; status code or
+  response-body mode), TCP (`host:port`) and Ping (hostname or IP), each with
+  a name, interval (30-86400 s), timeout (1-60 s) and enabled switch. A form
+  error shows every problem at once and keeps everything you typed. The
+  notifier never changes these checks.
+
+- **Health-check results are now stored.** Every check run records its
+  status, response time and message in a new history table, and each check
+  keeps its latest state (ok or failing, status code, response time,
+  consecutive failures). The badges, filters and detail panel read from it.
+- **Backups carry each entry's health-check configuration** (enabled,
+  timeout, verify-TLS and so on, no results). Restoring an older backup
+  still works: its health-check settings are applied to the entry's two URL
+  checks.
+
+- **Faster, concurrent health checks.** A scheduler now checks every 5
+  seconds for due checks and runs them in parallel (`health_check_workers`,
+  default 8), so one slow service no longer holds up the rest. A new check
+  runs at the next tick instead of after a full interval. Checks can be
+  HTTP status, HTTP body (`OK` passes, `Error: <message>` fails with that
+  message), TCP connect or ping.
+- **Health history is kept for a week.** Every check sample is stored for 24
+  hours (`health_raw_hours`), then successes are merged into one row per
+  hour and run while failures are kept as they happened;
+  everything older than `health_history_days` (7) is deleted. Hourly
+  background jobs do the compaction and cleanup.
+- **Check now** button in the health detail panel (backed by
+  `POST /service/<id>/checks/run`) runs an entry's enabled checks at the next
+  scheduler tick, a few seconds later.
+- **Ping needs `NET_RAW`.** Ping checks use the container's raw-socket
+  permission, which Docker grants by default. Without it a ping check fails
+  with "ICMP not permitted".
+
+### Changed
+
+- **The INT / EXT links no longer carry a health colour.** Dashboard pills and
+  Tiled icons are plain links (tooltip shows the URL and its last result);
+  health is the new badge. The Tiled drawer shows each URL's last result from
+  the stored check data.
+
+- **Health checks are configured in one "Health checks" section** on the Edit
+  and Add pages, replacing the two toggles and "Advanced health check". The
+  Internal URL and External URL checks each have their own enabled switch,
+  mode (status code or response body), interval, timeout and Verify TLS; the
+  checked URL is shown read-only. Changing a check (or its URL) makes it run
+  again within a few seconds.
+- **Add and Edit now show their messages.** Validation errors and warnings
+  appear at the top of the page (red or amber) and your input is kept;
+  previously they only surfaced later on Settings. Stale "logged in" or
+  "updated" notices no longer pile up there.
+- **Add page creates manual entries only.** It asks for a Name (formerly
+  "Application (Container Name)") and an optional Host, so a host is no
+  longer required. Duplicates are matched on host and name, with a blank
+  host counting as its own value.
+- **A notifier report adopts a matching manual entry.** If you pre-stage an
+  entry on the Add page and a container with the same host and name later
+  registers, the entry becomes a notifier entry and is updated as usual
+  (nothing is duplicated). A locked entry is still left alone.
+- **"Locked (Static Entry)" is now "Lock (ignore notifier updates)".** The
+  lock only stops notifier updates; it no longer means "not a Docker
+  container" and no longer hides the Docker status on its own.
+- Entries with no host group under "Unknown host" in the Host view.
+- Health-check settings (the two URL toggles, timeout, verify-TLS) now live
+  in their own tables instead of on the service entry. The Add and Edit
+  pages work the same; the notifier's `internal_health_check_enabled` /
+  `external_health_check_enabled` keys set the matching check, and an
+  absent key still means no change. A second migration creates the checks
+  for every existing entry, copying the enabled flags, timeout, verify-TLS
+  and last status, so nothing needs to be re-entered.
+- Database migration adds `source` and `description` and lets `host` be empty.
+  Existing entries the notifier never reported (no update time) become
+  manual; all others stay notifier entries.
+
 ## [0.6.9] — 2026-11-15
 
 ### Added
@@ -650,7 +773,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...v0.7.0
 [0.6.9]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.8...v0.6.9
 [0.6.8]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.6...v0.6.7

@@ -1,0 +1,21 @@
+{# Rolled-up health badge (PRD 13.6). Expects `entry`; optional `variant`:
+   'pill' (Dashboard, default), 'icon' (Tiled status row), 'compact'
+   (Compact tile; links to the Edit page's health section). #}
+{% set _h = entry_health(entry) %}
+{% set _variant = variant | default('pill') %}
+{% set _icons = {'up': 'ti-circle-check', 'degraded': 'ti-alert-triangle', 'down': 'ti-circle-x', 'unknown': 'ti-help-circle', 'none': 'ti-circle-dashed'} %}
+{% set _icon = _icons[_h.state] %}
+{% if _variant == 'icon' %}
+  <span class="status-icon health-icon health-{{ _h.state }}" data-health="{{ _h.state }}" title="{{ _h.tooltip }}">
+    <i class="ti {{ _icon }}" aria-hidden="true"></i>
+  </span>
+{% elif _variant == 'compact' %}
+  <a href="{{ url_for('dashboard.edit_entry', id=entry.id) }}#health"
+     class="health-dot health-{{ _h.state }}" data-health="{{ _h.state }}"
+     title="{{ _h.tooltip }}" aria-label="Health: {{ _h.label }}"
+     onclick="event.stopPropagation()"></a>
+{% else %}
+  <span class="health-pill health-{{ _h.state }}" data-health="{{ _h.state }}" title="{{ _h.tooltip }}">
+    <i class="ti {{ _icon }}" aria-hidden="true"></i>{{ _h.label }}{% if _h.state == 'degraded' %} {{ _h.failing }}/{{ _h.total }}{% endif %}
+  </span>
+{% endif %}

@@ -31,14 +31,17 @@
         <div style="overflow:hidden;">
           <div class="container-name" title="{{ item.entry.container_name }}">{{ item.entry.container_name }}</div>
           {% if show_host %}
-          <div class="host-name" title="{{ item.entry.host }}">{{ item.entry.host }}</div>
+          <div class="host-name" title="{{ item.entry.host or "" }}">{{ item.entry.host or "" }}</div>
           {% endif %}
         </div>
-        {% if item.entry.last_api_update and item.entry.is_docker_status_stale %}
-          <span class="status-icon status-icon-warn compact-stale" title="Stale — updated {{ item.entry.last_api_update | time_since }}">
-            <i class="ti ti-clock-exclamation" aria-hidden="true"></i>
-          </span>
-        {% endif %}
+        <span class="compact-end">
+          {% with entry=item.entry, variant='compact' %}{% include "partials/health_badge.html" %}{% endwith %}
+          {% if item.entry.last_api_update and item.entry.is_docker_status_stale %}
+            <span class="status-icon status-icon-warn compact-stale" title="Stale — updated {{ item.entry.last_api_update | time_since }}">
+              <i class="ti ti-clock-exclamation" aria-hidden="true"></i>
+            </span>
+          {% endif %}
+        </span>
       </div>
     {% endif %}
   {% endfor %}

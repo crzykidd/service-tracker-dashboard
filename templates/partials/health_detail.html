@@ -1,0 +1,21 @@
+{# Health detail panel shell (PRD 13.7). Context: `entry`; optional `autoload`
+   (load on page load instead of when opened). The body is filled by
+   static/js/health_detail.js from GET /service/<id>/health. #}
+<div class="health-detail" data-health-detail
+     data-entry-id="{{ entry.id }}"
+     data-url="{{ url_for('dashboard.entry_health_detail', id=entry.id) }}"
+     data-check-url="{{ url_for('dashboard.run_checks_now', id=entry.id) }}"
+     {% if autoload %}data-autoload="1"{% endif %}>
+  <div class="health-detail-head">
+    <div class="health-range-toggle" role="group" aria-label="History range">
+      <button type="button" class="health-range-btn active" data-range="24h">24h</button>
+      <button type="button" class="health-range-btn" data-range="7d">7d</button>
+    </div>
+    <button type="button" class="health-checknow-btn" data-check-now title="Run every enabled check of this service now">
+      <i class="ti ti-refresh" aria-hidden="true"></i> Check now
+    </button>
+  </div>
+  <div class="health-detail-body" data-health-body aria-live="polite">
+    <div class="health-detail-note">Loading…</div>
+  </div>
+</div>

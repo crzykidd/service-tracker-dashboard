@@ -21,57 +21,23 @@
                     {# ── Pre-compute status classes and tooltips ────────── #}
                     {% set _is_headless = (not entry.internalurl) and (not entry.externalurl) and (not entry.exposures) and (not entry.widget_id) %}
 
-                    {# Internal URL status #}
+                    {# URL link icons: the colour only says "has a URL"; health is the rollup badge #}
                     {% if not entry.internalurl %}
                       {% set _int_class   = 'status-icon-muted' %}
                       {% set _int_tooltip = 'Internal URL not configured' %}
                       {% set _int_href    = '' %}
-                    {% elif not entry.internal_health_check_enabled %}
-                      {% set _int_class   = 'status-icon-muted' %}
-                      {% set _int_tooltip = 'Internal: monitoring disabled' %}
-                      {% set _int_href    = entry.internalurl %}
-                    {% elif entry.internal_health_check_status == 'Error: SSLError' %}
-                      {% set _int_class   = 'status-icon-warn' %}
-                      {% set _int_tooltip = 'Internal: SSL error (' ~ (entry.internal_health_check_update | time_since) ~ ')' %}
-                      {% set _int_href    = entry.internalurl %}
-                    {% elif entry.internal_health_check_status and entry.internal_health_check_status.isdigit() and entry.internal_health_check_status|int < 400 %}
-                      {% set _int_class   = 'status-icon-ok' %}
-                      {% set _int_tooltip = 'Internal: ' ~ entry.internal_health_check_status ~ ' (' ~ (entry.internal_health_check_update | time_since) ~ ')' %}
-                      {% set _int_href    = entry.internalurl %}
-                    {% elif entry.internal_health_check_status %}
-                      {% set _int_class   = 'status-icon-bad' %}
-                      {% set _int_tooltip = 'Internal: ' ~ entry.internal_health_check_status ~ ' (' ~ (entry.internal_health_check_update | time_since) ~ ')' %}
-                      {% set _int_href    = entry.internalurl %}
                     {% else %}
-                      {% set _int_class   = 'status-icon-muted' %}
-                      {% set _int_tooltip = 'Internal: no data yet' %}
+                      {% set _int_class   = 'status-icon-blue' %}
+                      {% set _int_tooltip = 'Internal: ' ~ entry.internalurl %}
                       {% set _int_href    = entry.internalurl %}
                     {% endif %}
-
-                    {# External URL status #}
                     {% if not entry.externalurl %}
                       {% set _ext_class   = 'status-icon-muted' %}
                       {% set _ext_tooltip = 'External URL not configured' %}
                       {% set _ext_href    = '' %}
-                    {% elif not entry.external_health_check_enabled %}
-                      {% set _ext_class   = 'status-icon-muted' %}
-                      {% set _ext_tooltip = 'External: monitoring disabled' %}
-                      {% set _ext_href    = entry.externalurl %}
-                    {% elif entry.external_health_check_status == 'Error: SSLError' %}
-                      {% set _ext_class   = 'status-icon-warn' %}
-                      {% set _ext_tooltip = 'External: SSL error (' ~ (entry.external_health_check_update | time_since) ~ ')' %}
-                      {% set _ext_href    = entry.externalurl %}
-                    {% elif entry.external_health_check_status and entry.external_health_check_status.isdigit() and entry.external_health_check_status|int < 400 %}
-                      {% set _ext_class   = 'status-icon-ok' %}
-                      {% set _ext_tooltip = 'External: ' ~ entry.external_health_check_status ~ ' (' ~ (entry.external_health_check_update | time_since) ~ ')' %}
-                      {% set _ext_href    = entry.externalurl %}
-                    {% elif entry.external_health_check_status %}
-                      {% set _ext_class   = 'status-icon-bad' %}
-                      {% set _ext_tooltip = 'External: ' ~ entry.external_health_check_status ~ ' (' ~ (entry.external_health_check_update | time_since) ~ ')' %}
-                      {% set _ext_href    = entry.externalurl %}
                     {% else %}
-                      {% set _ext_class   = 'status-icon-muted' %}
-                      {% set _ext_tooltip = 'External: no data yet' %}
+                      {% set _ext_class   = 'status-icon-blue' %}
+                      {% set _ext_tooltip = 'External: ' ~ entry.externalurl %}
                       {% set _ext_href    = entry.externalurl %}
                     {% endif %}
 
@@ -80,9 +46,9 @@
                     {% set _is_good_docker = ('running' in _docker_status_lower and 'unhealthy' not in _docker_status_lower) or 'healthy' in _docker_status_lower %}
                     {% set _is_bad_docker  = 'exited' in _docker_status_lower or 'dead' in _docker_status_lower or 'unhealthy' in _docker_status_lower or 'restarting' in _docker_status_lower or 'removing' in _docker_status_lower or 'paused' in _docker_status_lower %}
 
-                    {% if entry.is_static %}
+                    {% if entry.is_manual %}
                       {% set _docker_class   = 'status-icon-muted' %}
-                      {% set _docker_tooltip = 'Static entry' %}
+                      {% set _docker_tooltip = 'Manual entry' %}
                     {% elif not entry.last_api_update %}
                       {% set _docker_class   = 'status-icon-bad' %}
                       {% set _docker_tooltip = 'Docker: no update received' %}
@@ -134,6 +100,9 @@
                             <div class="tile-status-row">
 
                                 <div class="tile-icon-row tile-icon-row-status">
+                                    {# Rolled-up health #}
+                                    {% with variant='icon' %}{% include "partials/health_badge.html" %}{% endwith %}
+
                                     {# Internal URL icon #}
                                     {% if _int_href %}
                                         <a href="{{ _int_href }}" target="_blank"
@@ -162,14 +131,14 @@
                                         </span>
                                     {% endif %}
 
-                                    {# Docker status icon (dynamic entries only) #}
-                                    {% if not entry.is_static %}
+                                    {# Source icon: Docker status for notifier entries, a link icon for manual ones #}
+                                    {% if not entry.is_manual %}
                                         <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
                                             <i class="ti ti-brand-docker" aria-hidden="true"></i>
                                         </span>
                                     {% else %}
-                                        <span class="status-icon status-icon-muted" title="Static entry">
-                                            <i class="ti ti-brand-docker" aria-hidden="true"></i>
+                                        <span class="status-icon status-icon-muted" title="{{ _docker_tooltip }}{% if entry.description %} — {{ entry.description }}{% endif %}">
+                                            <i class="ti ti-link" aria-hidden="true"></i>
                                         </span>
                                     {% endif %}
 
@@ -241,8 +210,15 @@
                             {# Host #}
                             <div class="drawer-row">
                                 <span class="drawer-label">Host</span>
-                                <span class="drawer-value">{{ entry.host }}</span>
+                                <span class="drawer-value">{{ entry.host or "" }}</span>
                             </div>
+
+                            {% if entry.description %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">About</span>
+                                <span class="drawer-value">{{ entry.description }}</span>
+                            </div>
+                            {% endif %}
 
                             {# Stack #}
                             {% if entry.stack_name %}
@@ -259,14 +235,8 @@
                                 <span class="drawer-value">
                                     <a href="{{ entry.internalurl }}" target="_blank"
                                        class="text-blue-400 hover:underline break-all">{{ entry.internalurl }}</a>
-                                    {% if entry.internal_health_check_enabled and entry.internal_health_check_status %}
-                                      <span class="ml-1 text-gray-400 text-xs">
-                                        — {{ entry.internal_health_check_status }}
-                                        {% if entry.internal_health_check_update %}
-                                          ({{ entry.internal_health_check_update | time_since }})
-                                        {% endif %}
-                                      </span>
-                                    {% endif %}
+                                    {% with check=entry.url_check('internal') %}{% set _txt %}{% include "partials/check_result_text.html" %}{% endset %}
+                                    {% if _txt|trim %}<span class="ml-1 text-gray-400 text-xs">— {{ _txt|trim }}</span>{% endif %}{% endwith %}
                                 </span>
                             </div>
                             {% endif %}
@@ -278,20 +248,14 @@
                                 <span class="drawer-value">
                                     <a href="{{ entry.externalurl }}" target="_blank"
                                        class="text-blue-400 hover:underline break-all">{{ entry.externalurl }}</a>
-                                    {% if entry.external_health_check_enabled and entry.external_health_check_status %}
-                                      <span class="ml-1 text-gray-400 text-xs">
-                                        — {{ entry.external_health_check_status }}
-                                        {% if entry.external_health_check_update %}
-                                          ({{ entry.external_health_check_update | time_since }})
-                                        {% endif %}
-                                      </span>
-                                    {% endif %}
+                                    {% with check=entry.url_check('external') %}{% set _txt %}{% include "partials/check_result_text.html" %}{% endset %}
+                                    {% if _txt|trim %}<span class="ml-1 text-gray-400 text-xs">— {{ _txt|trim }}</span>{% endif %}{% endwith %}
                                 </span>
                             </div>
                             {% endif %}
 
-                            {# Docker status (dynamic entries only) #}
-                            {% if not entry.is_static %}
+                            {# Docker status (notifier entries only) #}
+                            {% if not entry.is_manual %}
                             <div class="drawer-row">
                                 <span class="drawer-label">Docker</span>
                                 <span class="drawer-value">
@@ -401,6 +365,12 @@
                                 </span>
                             </div>
                             {% endif %}
+
+                            {# Health detail (loaded when the drawer opens) #}
+                            <div class="drawer-row drawer-row-health">
+                                <span class="drawer-label">Health</span>
+                                <span class="drawer-value">{% include "partials/health_detail.html" %}</span>
+                            </div>
 
                             <hr class="drawer-divider">
 

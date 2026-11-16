@@ -1,0 +1,12 @@
+{# One-line last result of a check row (`check`), e.g. "200 (3 minutes ago)" or
+   "OSError: boom (3 minutes ago)". Empty text when the check is off or has not
+   run. Used for link tooltips and the Tiled drawer. #}
+{%- if check and check.enabled -%}
+  {%- if check.last_ok is none -%}
+    no result yet
+  {%- elif check.last_ok -%}
+    {{ check.last_status_code or 'OK' }} ({{ check.last_checked_at | time_since_utc }})
+  {%- else -%}
+    {{ check.last_message or check.last_status_code or 'failed' }} ({{ check.last_checked_at | time_since_utc }})
+  {%- endif -%}
+{%- endif -%}

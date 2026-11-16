@@ -1,50 +1,49 @@
 {% extends "base.html" %}
 
 {% block head %}
-<title>Add New Service Entry</title>
+<title>Add Entry</title>
 {% endblock %}
 
 {% block content %}
+{% macro fv(name, default) %}{{ entry[name] if name in entry else default }}{% endmacro %}
 <div class="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
   <div class="bg-gray-800 shadow-2xl rounded-xl p-6 sm:p-8 md:p-10">
-    <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
+    <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add Entry</h1>
+    <p class="text-sm text-gray-400 text-center -mt-4 mb-6">For sites and services that are not Docker containers. Containers appear here on their own when the notifier reports them.</p>
+
+    {% include "partials/flash_messages.html" %}
 
     <form action="{{ url_for('dashboard.add_entry') }}" method="POST">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <!-- Host -->
+      <!-- Name -->
+      <div class="mb-5">
+        <label for="container_name" class="block text-sm font-medium text-gray-400 mb-1">Name</label>
+        <input type="text" name="container_name" id="container_name" required maxlength="100" class="input-clean" placeholder="e.g., Proxmox" value="{{ fv('container_name', '') }}">
+      </div>
+
+      <!-- Host (optional) -->
       <div class="mb-5">
         <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Host</label>
-        <input type="text" name="host" id="host" required class="input-clean" placeholder="e.g., server01.example.com">
+        <input type="text" name="host" id="host" maxlength="100" class="input-clean" placeholder="Optional, e.g., server01.example.com" value="{{ entry.get('host', '') }}">
+        <p class="mt-1 text-xs text-gray-500">Leave blank if the entry is not tied to a host. If the notifier later reports a container with the same name and host, it takes over this entry.</p>
       </div>
 
-      <!-- Application -->
+      <!-- Description -->
       <div class="mb-5">
-        <label for="application" class="block text-sm font-medium text-gray-400 mb-1">Application (Container Name)</label>
-        <input type="text" name="application" id="application" required class="input-clean" placeholder="e.g., proxmox">
+        <label for="description" class="block text-sm font-medium text-gray-400 mb-1">Description</label>
+        <input type="text" name="description" id="description" maxlength="255" class="input-clean" placeholder="Optional" value="{{ entry.get('description', '') }}">
       </div>
 
-      <!-- Internal URL + Health Check -->
+      <!-- Internal URL -->
       <div class="mb-5">
         <label for="internal_url" class="block text-sm font-medium text-gray-400 mb-1">Internal URL</label>
-        <div class="flex items-center space-x-3">
-          <input type="url" name="internal_url" id="internal_url" class="input-clean" placeholder="http://localhost:8080">
-          <div class="flex items-center">
-            <input type="checkbox" name="internal_health_check" id="internal_health_check" class="form-checkbox h-5 w-5 rounded border-gray-600">
-            <label for="internal_health_check" class="ml-2 text-sm text-gray-400">Health Check</label>
-          </div>
-        </div>
+        <input type="url" name="internal_url" id="internal_url" class="input-clean" placeholder="http://localhost:8080" value="{{ fv('internal_url', '') }}">
       </div>
 
-      <!-- External URL + Health Check -->
+      <!-- External URL -->
       <div class="mb-5">
         <label for="external_url" class="block text-sm font-medium text-gray-400 mb-1">External URL</label>
-        <div class="flex items-center space-x-3">
-          <input type="url" name="external_url" id="external_url" class="input-clean" placeholder="https://example.com">
-          <div class="flex items-center">
-            <input type="checkbox" name="external_health_check" id="external_health_check" class="form-checkbox h-5 w-5 rounded border-gray-600">
-            <label for="external_health_check" class="ml-2 text-sm text-gray-400">Health Check</label>
-          </div>
-        </div>
+        <input type="url" name="external_url" id="external_url" class="input-clean" placeholder="https://example.com" value="{{ fv('external_url', '') }}">
       </div>
 
       <!-- Group Selection -->
@@ -53,10 +52,10 @@
         
         <!-- Toggle selection mode -->
         <div class="flex items-center space-x-3 mb-2">
-          <input type="radio" id="select_existing" name="group_mode" value="existing" checked onclick="toggleGroupMode()" class="form-radio text-blue-600">
+          <input type="radio" id="select_existing" name="group_mode" value="existing" {% if entry.get('group_mode') != 'new' %}checked{% endif %} onclick="toggleGroupMode()" class="form-radio text-blue-600">
           <label for="select_existing" class="text-sm text-gray-300">Select Existing</label>
           
-          <input type="radio" id="add_new" name="group_mode" value="new" onclick="toggleGroupMode()" class="form-radio text-blue-600 ml-4">
+          <input type="radio" id="add_new" name="group_mode" value="new" {% if entry.get('group_mode') == 'new' %}checked{% endif %} onclick="toggleGroupMode()" class="form-radio text-blue-600 ml-4">
           <label for="add_new" class="text-sm text-gray-300">Add New</label>
         </div>
 
@@ -64,46 +63,42 @@
         <select name="group_name_existing" id="group_name_existing" class="input-clean">
           <option value="">-- Select Group --</option>
           {% for group in groups %}
-          <option value="{{ group.group_name }}">{{ group.group_name }}</option>
+          <option value="{{ group.group_name }}" {% if entry.get('group_name_existing') == group.group_name %}selected{% endif %}>{{ group.group_name }}</option>
           {% endfor %}
         </select>
 
         <!-- New group input -->
-        <input type="text" name="group_name_new" id="group_name_new" class="input-clean mt-2 hidden" placeholder="e.g., New Group Name">
+        <input type="text" name="group_name_new" id="group_name_new" class="input-clean mt-2 hidden" placeholder="e.g., New Group Name" value="{{ fv('group_name_new', '') }}">
       </div>
 
-      <!-- Advanced health check -->
+      <!-- Health checks -->
       <div class="mb-5">
-        <label for="health_check_timeout" class="block text-sm font-medium text-gray-400 mb-1">Health check timeout (seconds)</label>
-        <input type="number" name="health_check_timeout" id="health_check_timeout" class="input-clean" min="1" max="60" step="1" placeholder="Optional — blank uses the default" value="{{ entry.get('health_check_timeout', '') }}">
-        <div class="flex items-center mt-2">
-          <input type="checkbox" name="health_check_verify_tls" id="health_check_verify_tls" class="form-checkbox h-5 w-5 rounded border-gray-600" {% if not entry or entry.get('health_check_verify_tls') %}checked{% endif %}>
-          <label for="health_check_verify_tls" class="ml-2 text-sm text-gray-400">Verify TLS certificate</label>
-        </div>
-        <p class="mt-1 text-xs text-gray-500">Untick for self-signed internal URLs.</p>
+        {% set check_targets = none %}
+        {% set field_cls = 'input-clean' %}
+        {% include "partials/health_checks_form.html" %}
       </div>
 
       <!-- Sort Priority -->
       <div class="mb-5">
         <label for="sort_priority" class="block text-sm font-medium text-gray-400 mb-1">Sort Priority</label>
-        <input type="number" name="sort_priority" id="sort_priority" class="input-clean" placeholder="Optional — lower = higher priority">
+        <input type="number" name="sort_priority" id="sort_priority" class="input-clean" placeholder="Optional — lower = higher priority" value="{{ fv('sort_priority', '') }}">
         <p class="mt-1 text-xs text-gray-500">Entries are sorted by this within groups. Leave blank to auto-sort by name.</p>
       </div>
 
       <!-- Icon Image -->
       <div class="mb-5">
         <label for="icon_image" class="block text-sm font-medium text-gray-400 mb-1">Icon Image</label>
-        <input type="text" name="icon_image" id="icon_image" class="input-clean" placeholder="e.g., app.svg">
+        <input type="text" name="icon_image" id="icon_image" class="input-clean" placeholder="e.g., app.svg" value="{{ fv('icon_image', '') }}">
         <p class="mt-1 text-xs text-gray-500">Will attempt auto-match if left blank.</p>
       </div>
 
       <!-- Locked Checkbox -->
       <div class="mb-6">
         <div class="flex items-center">
-          <input type="checkbox" name="locked" id="locked" class="form-checkbox h-5 w-5 rounded border-gray-600">
-          <label for="locked" class="ml-2 text-sm font-medium text-gray-400">Locked (Static Entry)</label>
+          <input type="checkbox" name="locked" id="locked" class="form-checkbox h-5 w-5 rounded border-gray-600" {% if 'locked' in entry %}checked{% endif %}>
+          <label for="locked" class="ml-2 text-sm font-medium text-gray-400">Lock (ignore notifier updates)</label>
         </div>
-        <p class="mt-1 text-xs text-gray-500">If checked, this entry will not be updated by the API.</p>
+        <p class="mt-1 text-xs text-gray-500">If checked, a notifier report for the same name and host is ignored instead of taking over this entry.</p>
       </div>
 
       <!-- Buttons -->
@@ -116,6 +111,7 @@
 </div>
 {% endblock %}
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/health_checks_form.js') }}"></script>
 <script>
   function toggleGroupMode() {
     const useExisting = document.getElementById('select_existing').checked;

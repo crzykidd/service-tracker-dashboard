@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% macro fv(name, default) %}{{ form[name] if form is not none and name in form else default }}{% endmacro %}
 <div class="flex justify-center px-4 py-8">
   <div class="w-full max-w-3xl">
     <h1 class="text-3xl font-bold text-center mb-8">Edit Service Entry</h1>
+    {% include "partials/flash_messages.html" %}
     <form action="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}" method="POST">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="force_update_icon" value="true">
@@ -13,13 +15,20 @@
       <div class="edit-section-fields">
         <div>
           <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
-          <input type="text" name="host" id="host" class="form-input" value="{{ entry.host }}">
+          <input type="text" name="host" id="host" class="form-input" value="{{ fv('host', entry.host or '') }}">
         </div>
 
         <div>
-          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
-          <input type="text" name="container_name" id="application" class="form-input" value="{{ entry.container_name }}">
+          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">{% if entry.is_manual %}Name{% else %}Application (Container Name){% endif %}</label>
+          <input type="text" name="container_name" id="application" class="form-input" value="{{ fv('container_name', entry.container_name) }}">
         </div>
+
+        {% if entry.is_manual %}
+        <div>
+          <label for="description" class="block text-sm font-medium text-dashboard-secondary mb-1">Description</label>
+          <input type="text" name="description" id="description" maxlength="255" class="form-input" value="{{ fv('description', entry.description or '') }}">
+        </div>
+        {% endif %}
       </div>
 
       {# URL source provenance badge macro #}
@@ -34,18 +43,14 @@
       {% endmacro %}
 
       {# ── URLs & Health ────────────────────────────────────── #}
-      <h3 class="edit-section-heading">URLs &amp; Health</h3>
+      <h3 class="edit-section-heading">URLs</h3>
       <div class="edit-section-fields">
         <div>
           <label for="internal_url" class="block text-sm font-medium text-dashboard-secondary mb-1">
             Internal URL
             {{ url_source_badge(entry.internalurl_source) }}
           </label>
-          <input type="url" name="internalurl" id="internal_url" class="form-input" value="{{ entry.internalurl or '' }}">
-          <div class="flex items-center mt-1.5">
-            <input type="checkbox" name="internal_health_check_enabled" id="internal_health_check" class="form-checkbox h-4 w-4" {% if entry.internal_health_check_enabled %}checked{% endif %}>
-            <label for="internal_health_check" class="ml-2 text-sm text-dashboard-secondary">Health check enabled</label>
-          </div>
+          <input type="url" name="internalurl" id="internal_url" class="form-input" value="{{ fv('internalurl', entry.internalurl or '') }}">
           <p class="edit-helper">Clearing this field resets provenance and re-allows synthesis from exposure observations.</p>
         </div>
 
@@ -54,30 +59,14 @@
             External URL
             {{ url_source_badge(entry.externalurl_source) }}
           </label>
-          <input type="url" name="externalurl" id="external_url" class="form-input" value="{{ entry.externalurl or '' }}">
-          <div class="flex items-center mt-1.5">
-            <input type="checkbox" name="external_health_check_enabled" id="external_health_check" class="form-checkbox h-4 w-4" {% if entry.external_health_check_enabled %}checked{% endif %}>
-            <label for="external_health_check" class="ml-2 text-sm text-dashboard-secondary">Health check enabled</label>
-          </div>
+          <input type="url" name="externalurl" id="external_url" class="form-input" value="{{ fv('externalurl', entry.externalurl or '') }}">
         </div>
       </div>
 
-      {# ── Advanced health check ────────────────────────────── #}
-      <h3 class="edit-section-heading">Advanced health check</h3>
-      <div class="edit-section-fields">
-        <div>
-          <label for="health_check_timeout" class="block text-sm font-medium text-dashboard-secondary mb-1">Timeout (seconds)</label>
-          <input type="number" name="health_check_timeout" id="health_check_timeout" class="form-input" min="1" max="60" step="1" placeholder="Default" value="{{ entry.health_check_timeout if entry.health_check_timeout else '' }}">
-          <p class="edit-helper">Blank uses the global <code>health_check_timeout</code> setting. 1&ndash;60.</p>
-        </div>
-        <div>
-          <div class="flex items-center">
-            <input type="checkbox" name="health_check_verify_tls" id="health_check_verify_tls" class="form-checkbox h-4 w-4" {% if entry.health_check_verify_tls %}checked{% endif %}>
-            <label for="health_check_verify_tls" class="ml-2 text-sm text-dashboard-secondary">Verify TLS certificate</label>
-          </div>
-          <p class="edit-helper">Untick for self-signed internal URLs that otherwise report <code>Error: SSLError</code>.</p>
-        </div>
-      </div>
+      {# ── Health checks ────────────────────────────────────── #}
+      {% set check_targets = {'internal': entry.internalurl, 'external': entry.externalurl} %}
+      {% set field_cls = 'form-input' %}
+      <div id="health">{% include "partials/health_checks_form.html" %}</div>
 
       {# ── Grouping & Display ───────────────────────────────── #}
       <h3 class="edit-section-heading">Grouping &amp; Display</h3>
@@ -86,40 +75,41 @@
           <label class="block text-sm font-medium text-dashboard-secondary mb-1.5">Group</label>
 
           <div class="group-mode-tabs mb-2">
-            <input type="radio" id="select_existing" name="group_mode" value="existing" checked onclick="toggleGroupMode()" class="sr-only">
+            <input type="radio" id="select_existing" name="group_mode" value="existing" {% if form is none or form.get('group_mode') != 'new' %}checked{% endif %} onclick="toggleGroupMode()" class="sr-only">
             <label for="select_existing" class="group-tab">Select Existing</label>
-            <input type="radio" id="add_new" name="group_mode" value="new" onclick="toggleGroupMode()" class="sr-only">
+            <input type="radio" id="add_new" name="group_mode" value="new" {% if form is not none and form.get('group_mode') == 'new' %}checked{% endif %} onclick="toggleGroupMode()" class="sr-only">
             <label for="add_new" class="group-tab">Add New</label>
           </div>
 
           <select name="group_id_existing" id="group_id_existing" class="form-input">
             <option value="">-- Select Group --</option>
             {% for group in groups %}
-            <option value="{{ group.id }}" {% if entry.group_id == group.id %}selected{% endif %}>
+            <option value="{{ group.id }}" {% if (form is not none and form.get('group_id_existing') == group.id|string) or (form is none and entry.group_id == group.id) %}selected{% endif %}>
               {{ group.group_name }}
             </option>
             {% endfor %}
           </select>
 
-          <input type="text" name="group_name_new" id="group_name_new" class="form-input mt-2 hidden" placeholder="e.g., New Group Name">
+          <input type="text" name="group_name_new" id="group_name_new" class="form-input mt-2 hidden" placeholder="e.g., New Group Name" value="{{ fv('group_name_new', '') }}">
         </div>
 
         <div>
           <label for="sort_priority" class="block text-sm font-medium text-dashboard-secondary mb-1">Sort Priority</label>
-          <input type="number" name="sort_priority" id="sort_priority" class="form-input" value="{{ entry.sort_priority if entry.sort_priority is not none else '' }}">
+          <input type="number" name="sort_priority" id="sort_priority" class="form-input" value="{{ fv('sort_priority', entry.sort_priority if entry.sort_priority is not none else '') }}">
           <p class="edit-helper">Optional. Lower numbers show up higher in group listings.</p>
         </div>
 
         <div>
           <label for="icon_image" class="block text-sm font-medium text-dashboard-secondary mb-1">Icon Image</label>
-          <input type="text" name="image_icon" id="icon_image" class="form-input" value="{{ entry.image_icon or '' }}">
+          <input type="text" name="image_icon" id="icon_image" class="form-input" value="{{ fv('image_icon', entry.image_icon or '') }}">
           <p class="edit-helper">Filename of the SVG icon (e.g., service.svg). Will try to match automatically from the application name above.</p>
         </div>
 
         <div class="flex items-center">
-          <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-4 w-4" {% if entry.is_static %}checked{% endif %}>
-          <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Locked (Static Entry)</label>
+          <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-4 w-4" {% if (form is not none and 'is_static' in form) or (form is none and entry.is_static) %}checked{% endif %}>
+          <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Lock (ignore notifier updates)</label>
         </div>
+        <p class="edit-helper">When ticked, register calls from the notifier for this entry are ignored.</p>
       </div>
 
       {# ── Widget ───────────────────────────────────────────── #}
@@ -128,21 +118,21 @@
         <div>
           <label for="widget_name" class="block text-sm font-medium text-dashboard-secondary mb-1">Select Widget</label>
           <select name="widget_name" id="widget_name" class="form-input">
-            <option value="none" {% if not selected_widget %}selected{% endif %}>None</option>
+            <option value="none" {% if (form is not none and form.get('widget_name', 'none') == 'none') or (form is none and not selected_widget) %}selected{% endif %}>None</option>
             {% for name in available_widgets %}
-            <option value="{{ name }}" {% if selected_widget and selected_widget.widget_name == name %}selected{% endif %}>{{ name|capitalize }}</option>
+            <option value="{{ name }}" {% if (form is not none and form.get('widget_name') == name) or (form is none and selected_widget and selected_widget.widget_name == name) %}selected{% endif %}>{{ name|capitalize }}</option>
             {% endfor %}
           </select>
         </div>
 
         <div>
           <label for="widget_url" class="block text-sm font-medium text-dashboard-secondary mb-1">API URL</label>
-          <input type="text" name="widget_url" id="widget_url" class="form-input" value="{{ selected_widget.widget_url if selected_widget else '' }}">
+          <input type="text" name="widget_url" id="widget_url" class="form-input" value="{{ fv('widget_url', selected_widget.widget_url if selected_widget else '') }}">
         </div>
 
         <div>
           <label for="widget_api_key" class="block text-sm font-medium text-dashboard-secondary mb-1">API Key</label>
-          <input type="text" name="widget_api_key" id="widget_api_key" class="form-input" value="{{ selected_widget.widget_api_key if selected_widget else '' }}">
+          <input type="text" name="widget_api_key" id="widget_api_key" class="form-input" value="{{ fv('widget_api_key', selected_widget.widget_api_key if selected_widget else '') }}">
         </div>
 
         <div id="widget_fields_container"></div>
@@ -162,6 +152,17 @@
       </div>
     </form>
 
+    {# ── Health history (PRD 13.7) ─────────────────────────── #}
+    <hr class="my-10 border-dashboard-accent">
+    <div id="health-history" class="bg-dashboard-info-box rounded-lg p-6">
+      <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Health history</h2>
+      <p class="text-xs text-dashboard-secondary mb-4">
+        State, uptime and recent failures of this service's enabled checks.
+      </p>
+      {% with autoload=true %}{% include "partials/health_detail.html" %}{% endwith %}
+    </div>
+
+    {% if not entry.is_manual %}
     <hr class="my-10 border-dashboard-accent">
 
     {# ── Reported by notifier (read-only) ─────────────────── #}
@@ -243,10 +244,12 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/health_checks_form.js') }}"></script>
 <script>
   function toggleGroupMode() {
     const useExisting = document.getElementById('select_existing').checked;

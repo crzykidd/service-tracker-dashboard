@@ -4,7 +4,7 @@ argument-hint: <version>   (e.g. 0.3.6)
 ---
 
 <!--
-Template from standards/release-prep-and-cut @ v1.0.0
+Template from standards/release-prep-and-cut @ v1.1.0
 (crzynet/homelab-configs/standards/release-prep-and-cut/README.md).
 
 Before using this command, replace every <PLACEHOLDER> below with your

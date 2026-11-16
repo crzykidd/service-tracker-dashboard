@@ -58,3 +58,16 @@ stale_after_minutes: 5
 # Seconds to wait for a URL health check before giving up. A service can
 # override this on its edit page. Can be set as HEALTH_CHECK_TIMEOUT in ENV.
 health_check_timeout: 5
+
+# Health checks run concurrently on a worker pool this big. Can be set as
+# HEALTH_CHECK_WORKERS in ENV.
+health_check_workers: 8
+
+# Every health-check sample is kept individually for this many hours; older
+# successes are merged into one row per unbroken run per hour (failures are
+# always kept). Can be set as HEALTH_RAW_HOURS in ENV.
+health_raw_hours: 24
+
+# Days of health-check history to keep before it is deleted. Can be set as
+# HEALTH_HISTORY_DAYS in ENV.
+health_history_days: 7

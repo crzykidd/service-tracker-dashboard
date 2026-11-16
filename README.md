@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.6.9-blue)
+![Version](https://img.shields.io/badge/version-0.7.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -42,6 +42,35 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.7.0 (2026-11-15)
+
+Dashboard and monitoring. STD is now a dashboard for Docker containers **and**
+anything else you run, with simple Gatus-style health monitoring. No notifier
+upgrade is needed. Four database migrations run on startup; back up
+`/config/services.db` first.
+
+- **Manual entries are first-class.** Non-Docker sites (router, NAS, SaaS)
+  are added on the Add page with a Name, optional Host and a Description,
+  shown as "Manual" and never flagged stale. A container that later registers
+  with the same host and name adopts the entry. "Locked" is now just "Lock
+  (ignore notifier updates)".
+- **Health checks.** Each entry has an Internal URL check, an External URL
+  check, an automatic **Container** check (Docker entries: passes while the
+  notifier reports it running) and any number of service checks: HTTP/HTTPS
+  (status code, or body mode where `OK` passes and `Error: <message>` fails
+  with that message), TCP (`host:port`) and Ping. Each has its own interval
+  and timeout, set in one "Health checks" section on Add and Edit.
+- **Concurrent checker with a week of history.** Checks run in parallel
+  (`health_check_workers`, default 8). Every sample is kept for 24 hours, then
+  successes are merged hourly while failures are kept; history is kept for 7
+  days (`health_raw_hours`, `health_history_days`).
+- **One health badge per service** (Up, Degraded, Down, Unknown, Not
+  monitored) on every view, and **Status / Source filters** in the filter bar.
+- **Health detail panel** in the Tiled drawer, a Dashboard expand row and the
+  Edit page: per-check state, uptime for 24h and 7d, recent failures, a
+  24h / 7d bar strip with tooltips, and **Check now**.
+- **Add and Edit show their messages** inline.
 
 ### v0.6.9 (2026-11-15)
 
@@ -102,18 +131,24 @@ compose file; your config, database, and settings carry over unchanged. See
 ## What It Does
 
 - Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens the drawer in widget-only mode (showing just the metric cards); the chevron opens the full drawer. The two modes switch in-place without closing and reopening.
-- **Stale indicator.** A dynamic service whose last notifier update is older than `stale_after_minutes` (default 5) shows an amber warning icon with a "Stale — updated <time>" tooltip on all three views. Static entries are never flagged.
+- **Stale indicator.** A dynamic service whose last notifier update is older than `stale_after_minutes` (default 5) shows an amber warning icon with a "Stale — updated <time>" tooltip on all three views. Manual and locked entries are never flagged.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so
   dashboards stay bookmarkable.
 - Internal + external URL health checks on a configurable interval.
+- **Health badge and filters.** One rolled-up health state per entry (up,
+  degraded, down, unknown, not monitored) on all three views, and `Status`
+  (`all` / `failing` / `healthy` / `unknown` / `stale`) and `Source`
+  (`all` / `notifier` / `manual`) filters next to `Group by`, kept in the URL
+  (`?status=failing&source=manual`). "Total Services" reads `shown / total`
+  when a filter hides entries.
 - Auto-downloads container icons from
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
 - Daily YAML backups with retention.
-- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
+- Manual entries: the Add page creates non-Docker entries (Name, optional Host, Description, URLs, group, icon). They show a link icon (Tiled) or "Manual" pill (Dashboard) instead of Docker status and are never stale. If the notifier later registers the same host and name, it takes the entry over. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Locked entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
 - Per-entry sort priority within groups; grouping and group sort.
@@ -161,10 +196,13 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
+| `health_check_workers`     | int    | `HEALTH_CHECK_WORKERS`       | `8`                | How many health checks run at the same time. |
+| `health_raw_hours`         | int    | `HEALTH_RAW_HOURS`           | `24`               | Hours every health-check sample is kept individually. Older successes are merged into one row per unbroken run per clock hour (failures are always kept); an hourly job at :05 does this. |
+| `health_history_days`      | int    | `HEALTH_HISTORY_DAYS`        | `7`                | Days of health-check history kept; an hourly job at :03 deletes older rows. |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
-| `stale_after_minutes`      | int    | `STALE_AFTER_MINUTES`        | `5`                | Minutes without a notifier update before a dynamic service is flagged stale (warning icon on the Dashboard, Tiled, and Compact views). Static entries are never stale; the notifier re-scans every 60 s by default. |
+| `stale_after_minutes`      | int    | `STALE_AFTER_MINUTES`        | `5`                | Minutes without a notifier update before a dynamic service is flagged stale (warning icon on the Dashboard, Tiled, and Compact views). Manual and locked entries are never stale; the notifier re-scans every 60 s by default. |
 | `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
 | `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. If unset, a built-in default is used and Settings shows a warning (as it does while `admin` still has the default password). |
@@ -178,6 +216,9 @@ backup_path: /config/backups
 backup_days_to_keep: 7
 url_healthcheck_interval: 300
 health_check_timeout: 5
+health_check_workers: 8
+health_raw_hours: 24
+health_history_days: 7
 widget_background_reload: 900
 widget_value_retention_days: 30
 register_field_ownership: user_wins
@@ -356,8 +397,8 @@ and just leave the columns NULL.
 
 The read-only "Reported by notifier" block at the bottom of
 `/edit/<id>` surfaces this data. Empty / NULL columns render as "Not
-reported." Static entries (created manually via the UI) won't have
-this data either, and that's expected.
+reported." Manual entries (added through the UI) have no such block and won't
+have this data, and that's expected.
 
 ### Exposure observations + URL synthesis (v0.6.0+)
 
@@ -465,16 +506,71 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 
 ## Health Checks
 
-- Run on the `url_healthcheck_interval` (default 300 seconds).
+- A scheduler wakes every 5 seconds and runs whichever checks are due, up to
+  `health_check_workers` (default 8) at a time, so one slow service no longer
+  delays the rest. A check is due once its interval (the
+  `url_healthcheck_interval` default of 300 seconds, or its own interval of
+  30 seconds or more) has passed since it last ran; a new check runs at the
+  next tick.
+- Check types: HTTP/HTTPS (status code, or in *body* mode a reply of `OK`;
+  an `Error: ...` reply shows the text as the failure message), TCP connect
+  to `host:port`, and ping (ICMP echo, 3 packets). Ping needs the `NET_RAW`
+  capability, which Docker grants by default; without it the check fails with
+  "ICMP not permitted".
+- Every run is stored. Samples are kept individually for `health_raw_hours`
+  (24 h), then successes are merged into hourly ranges, and everything older
+  than `health_history_days` (7) is deleted.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
-- Status code, response time, and timestamp are recorded per check.
+- Status code, response time, and timestamp are recorded per check, as a
+  result row in the database. An entry's badge rolls its enabled checks up:
+  **Up** (every check that has run passed), **Degraded** (some pass, some
+  fail), **Down** (every check that has run fails), **Unknown** (checks are
+  enabled but none has run yet), **Not monitored** (no enabled checks). A URL
+  check whose URL is empty does not count.
+- Each entry has an internal-URL and an external-URL check; the notifier's
+  `*_health_check_enabled` flags turn them on, and each has its own timeout
+  and verify-TLS options on the Edit page.
 - Each check waits up to `health_check_timeout` seconds (default 5). A
   service can override this, and turn off TLS certificate verification
   (for self-signed internal URLs that otherwise show `Error: SSLError`),
-  under **Advanced health check** on its edit page (also on the Add page).
+  in the **Health checks** section of its Edit page (also on the Add page).
+- Each URL check also has its own enabled switch, mode (status code or
+  response body), interval (30-86400 s) and timeout (1-60 s).
+- **Service checks** are extra checks you add per entry on the Edit or Add
+  page: HTTP/HTTPS (full URL), TCP (`host:port`) and Ping (hostname or IP).
+  The notifier never touches them. Removing one deletes it and its results
+  when you save.
+- **Container check.** Every notifier (Docker) entry has an automatic
+  *Container* check: it passes while the notifier reports the container
+  `running` and has reported within `stale_after_minutes`, and fails with
+  `Container <state>` or `No update from notifier ...` otherwise. It is
+  evaluated by the scheduler (no network), shows up within about 5 seconds of
+  a state change, and has only an enabled switch and an interval on the Edit
+  page. Manual entries have none, and a locked entry's container check is not
+  run or counted until you unlock it.
 - A failed check logs and moves on; it does not crash the loop.
-- UI shows color-coded status (green / yellow / red) with last-checked time.
+
+### Health checks and monitoring
+
+- **Kinds.** Each entry has an *Internal URL* and an *External URL* check
+  (they follow the entry's URLs) plus any *service checks* you add, and
+  notifier entries also have a *Container* check (Docker state). Types:
+  HTTP/HTTPS, TCP and Ping.
+- **Body mode.** An HTTP check in *response body* mode passes when the reply
+  is `OK`; a reply of `Error: <message>` fails and shows `<message>`.
+- **Retention.** `health_raw_hours` (24) keeps every sample; older successes
+  are merged into one row per hour and run, failures are kept as they
+  happened; `health_history_days` (7) bounds everything.
+- **Badge and filters.** One rolled-up badge per entry on every view, and
+  Status / Source filters beside "Group by" (see above).
+- **Detail view.** Open the Tiled drawer, the Dashboard row chevron or the
+  Edit page's "Health history" section to see each check's state, uptime
+  (24 h and 7 d), recent failures and a bar strip: green is all passes, red
+  is any failure, grey is no data. Hover or tap a bar for its time range and
+  failure messages. The **24h / 7d** toggle switches between 48 half-hour and
+  168 hourly bars, and **Check now** runs the entry's checks within a few
+  seconds. Compact has no panel; its dot links to the Edit page.
 
 ---
 
@@ -485,8 +581,10 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/`                  | Main dashboard (table view).             |
 | `/tiled_dash`        | Grid-style dashboard.                    |
 | `/compact_dash`      | High-density compact view.               |
-| `/add`               | Manually add a new entry.                |
+| `/add`               | Add a manual (non-Docker) entry.         |
 | `/edit/<id>`         | Edit or delete (soft-delete) an existing entry. |
+| `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
+| `/service/<id>/checks/run` | Check now (POST, login). |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
@@ -530,7 +628,7 @@ restored.
   stops being health-checked, and can be restored from Settings → Deleted
   until `deleted_retention_days` passes. If its container registers again
   first, the entry is restored automatically with its edits intact.
-- Entries marked `static` are not overwritten by API register calls.
+- Entries with **Lock (ignore notifier updates)** ticked are not touched by API register calls. An unlocked manual entry that matches a register call (same host and name) is adopted by the notifier and becomes a notifier entry.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.
 - Nightly backups run shortly after midnight; old backups are pruned
