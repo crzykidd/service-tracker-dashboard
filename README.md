@@ -102,7 +102,7 @@ compose file; your config, database, and settings carry over unchanged. See
 ## What It Does
 
 - Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens the drawer in widget-only mode (showing just the metric cards); the chevron opens the full drawer. The two modes switch in-place without closing and reopening.
-- **Stale indicator.** A dynamic service whose last notifier update is older than `stale_after_minutes` (default 5) shows an amber warning icon with a "Stale — updated <time>" tooltip on all three views. Static entries are never flagged.
+- **Stale indicator.** A dynamic service whose last notifier update is older than `stale_after_minutes` (default 5) shows an amber warning icon with a "Stale — updated <time>" tooltip on all three views. Manual and locked entries are never flagged.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
   above the service grid on all three views. State is URL-driven, so
@@ -113,7 +113,7 @@ compose file; your config, database, and settings carry over unchanged. See
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
 - Daily YAML backups with retention.
-- Manual add / edit / delete through the web UI. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Static (Locked) entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
+- Manual entries: the Add page creates non-Docker entries (Name, optional Host, Description, URLs, group, icon). They show a link icon (Tiled) or "Manual" pill (Dashboard) instead of Docker status and are never stale. If the notifier later registers the same host and name, it takes the entry over. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Locked entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
 - Per-entry sort priority within groups; grouping and group sort.
@@ -164,7 +164,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
-| `stale_after_minutes`      | int    | `STALE_AFTER_MINUTES`        | `5`                | Minutes without a notifier update before a dynamic service is flagged stale (warning icon on the Dashboard, Tiled, and Compact views). Static entries are never stale; the notifier re-scans every 60 s by default. |
+| `stale_after_minutes`      | int    | `STALE_AFTER_MINUTES`        | `5`                | Minutes without a notifier update before a dynamic service is flagged stale (warning icon on the Dashboard, Tiled, and Compact views). Manual and locked entries are never stale; the notifier re-scans every 60 s by default. |
 | `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
 | `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. If unset, a built-in default is used and Settings shows a warning (as it does while `admin` still has the default password). |
@@ -356,8 +356,8 @@ and just leave the columns NULL.
 
 The read-only "Reported by notifier" block at the bottom of
 `/edit/<id>` surfaces this data. Empty / NULL columns render as "Not
-reported." Static entries (created manually via the UI) won't have
-this data either, and that's expected.
+reported." Manual entries (added through the UI) have no such block and won't
+have this data, and that's expected.
 
 ### Exposure observations + URL synthesis (v0.6.0+)
 
@@ -485,7 +485,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/`                  | Main dashboard (table view).             |
 | `/tiled_dash`        | Grid-style dashboard.                    |
 | `/compact_dash`      | High-density compact view.               |
-| `/add`               | Manually add a new entry.                |
+| `/add`               | Add a manual (non-Docker) entry.         |
 | `/edit/<id>`         | Edit or delete (soft-delete) an existing entry. |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
@@ -530,7 +530,7 @@ restored.
   stops being health-checked, and can be restored from Settings → Deleted
   until `deleted_retention_days` passes. If its container registers again
   first, the entry is restored automatically with its edits intact.
-- Entries marked `static` are not overwritten by API register calls.
+- Entries with **Lock (ignore notifier updates)** ticked are not touched by API register calls. An unlocked manual entry that matches a register call (same host and name) is adopted by the notifier and becomes a notifier entry.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.
 - Nightly backups run shortly after midnight; old backups are pruned

@@ -31,7 +31,7 @@ from pydantic import ValidationError
 import synthesizer
 from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
-from models import Group, ServiceEntry
+from models import SOURCE_NOTIFIER, Group, ServiceEntry
 from schemas import RegisterPayload
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,11 @@ def upsert_service(canonical, app):
     or "synthesized". It never touches ui_edit or explicit_label
     URLs.
 
-    is_static rows short-circuit with a 200 + skipped body — that
+    Entry source (v0.7.0): a matching `manual` row that is not locked is
+    adopted (source -> "notifier") and then updated as usual. New rows are
+    created as "notifier".
+
+    Locked (is_static) rows short-circuit with a 200 + skipped body — that
     behavior is unchanged from v0.4.x.
     """
     image_meta = resolve_image_metadata(
@@ -195,6 +199,14 @@ def upsert_service(canonical, app):
                     f"'{entry.host}' — static lock enabled."
                 )
                 return {"status": "skipped", "reason": "static lock"}, 200
+
+            if entry.is_manual:
+                # Pre-staged on the Add page; the notifier now owns it.
+                logger.info(
+                    f"Adopting manual entry '{entry.container_name}' on "
+                    f"'{entry.host}' - source is now 'notifier'."
+                )
+                entry.source = SOURCE_NOTIFIER
 
             if entry.deleted_at is not None:
                 logger.info(
@@ -278,6 +290,7 @@ def upsert_service(canonical, app):
             entry = ServiceEntry(
                 host=canonical['host'],
                 container_name=canonical['container_name'],
+                source=SOURCE_NOTIFIER,
                 container_id=canonical.get('container_id'),
                 internalurl=new_internalurl,
                 externalurl=new_externalurl,

@@ -5,6 +5,39 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-01 entry sources: implementation calls
+
+- **Adoption also applies to a soft-deleted manual match.** The register
+  path already resurrects a soft-deleted row it matches; adoption runs before
+  that, so a deleted manual entry that the notifier reports comes back as a
+  notifier entry. Rejected: skipping deleted manual rows (would create a
+  duplicate beside the deleted one, the thing resurrect-on-register avoids).
+- **Adoption keeps operator-owned fields.** `description`, group, sort priority
+  and UI-edited URLs are untouched; only `source` flips, and the usual register
+  merge then applies.
+- **Lock hides nothing by itself.** Templates used `is_static` for both "locked"
+  and "no Docker pill". The Docker pill/drawer row/stale icon now key off
+  `is_manual`; the lock icon and "no trash button" still key off `is_static`.
+  A locked notifier entry therefore shows its Docker status again (it is not
+  stale, by `is_docker_status_stale`).
+- **Add form field renamed `application` to `container_name`,** matching the
+  Edit form. Hand-written POSTs to `/add` using the old name will get "Name is
+  required".
+- **Edit page host rules.** Blank Host saves as NULL for manual entries only; a
+  notifier entry keeps the old behaviour (empty string) so its logical key
+  is not silently changed. Description is saved from the Edit form for manual
+  entries only.
+- **Restore skips hostless non-manual records** (the logical key needs a host)
+  and counts them as skipped. Restore ignores a backup's `source` value if it is
+  not `notifier` or `manual` and falls back to the backfill rule.
+- **Lock hint wording** is one line, "register calls from the notifier for this
+  entry are ignored", and the Add page checkbox uses the same label.
+- **Migration test runs alembic in a subprocess** against a temp copy of
+  `alembic.ini`, so `fileConfig()` cannot reconfigure logging in the pytest
+  process.
+
+---
+
 ## 2026-11-15 — v0.7.0 "Dashboard and Monitoring" design calls
 
 Scoped in a design session; plan in PRD §13, follow-ups in FUTURE.md.

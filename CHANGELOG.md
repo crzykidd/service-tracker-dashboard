@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Manual entries are now first-class.** Every entry has a source:
+  `notifier` (kept current by the notifier) or `manual` (added on the Add
+  page). Manual entries are for sites and services that are not Docker
+  containers: they show a link icon (Tiled) or a "Manual" pill (Dashboard)
+  instead of a Docker status, are never flagged stale, and hide the
+  "Reported by notifier" block on the Edit page.
+- **Description field** on manual entries (Add and Edit pages, shown in the
+  Tiled drawer and as a tooltip).
+- **Backups carry `source` and `description`.** Restoring an older backup
+  without them works: an entry the notifier never reported becomes manual.
+
+### Changed
+
+- **Add page creates manual entries only.** It asks for a Name (formerly
+  "Application (Container Name)") and an optional Host, so a host is no
+  longer required. Duplicates are matched on host and name, with a blank
+  host counting as its own value.
+- **A notifier report adopts a matching manual entry.** If you pre-stage an
+  entry on the Add page and a container with the same host and name later
+  registers, the entry becomes a notifier entry and is updated as usual
+  (nothing is duplicated). A locked entry is still left alone.
+- **"Locked (Static Entry)" is now "Lock (ignore notifier updates)".** The
+  lock only stops notifier updates; it no longer means "not a Docker
+  container" and no longer hides the Docker status on its own.
+- Entries with no host group under "Unknown host" in the Host view.
+- Database migration adds `source` and `description` and lets `host` be empty.
+  Existing entries the notifier never reported (no update time) become
+  manual; all others stay notifier entries.
+
 ## [0.6.9] — 2026-11-15
 
 ### Added

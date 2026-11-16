@@ -1,26 +1,34 @@
 {% extends "base.html" %}
 
 {% block head %}
-<title>Add New Service Entry</title>
+<title>Add Entry</title>
 {% endblock %}
 
 {% block content %}
 <div class="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
   <div class="bg-gray-800 shadow-2xl rounded-xl p-6 sm:p-8 md:p-10">
-    <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add New Service Entry</h1>
+    <h1 class="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8">Add Entry</h1>
+    <p class="text-sm text-gray-400 text-center -mt-4 mb-6">For sites and services that are not Docker containers. Containers appear here on their own when the notifier reports them.</p>
 
     <form action="{{ url_for('dashboard.add_entry') }}" method="POST">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <!-- Host -->
+      <!-- Name -->
       <div class="mb-5">
-        <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Host</label>
-        <input type="text" name="host" id="host" required class="input-clean" placeholder="e.g., server01.example.com">
+        <label for="container_name" class="block text-sm font-medium text-gray-400 mb-1">Name</label>
+        <input type="text" name="container_name" id="container_name" required maxlength="100" class="input-clean" placeholder="e.g., Proxmox" value="{{ entry.get('container_name', '') }}">
       </div>
 
-      <!-- Application -->
+      <!-- Host (optional) -->
       <div class="mb-5">
-        <label for="application" class="block text-sm font-medium text-gray-400 mb-1">Application (Container Name)</label>
-        <input type="text" name="application" id="application" required class="input-clean" placeholder="e.g., proxmox">
+        <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Host</label>
+        <input type="text" name="host" id="host" maxlength="100" class="input-clean" placeholder="Optional, e.g., server01.example.com" value="{{ entry.get('host', '') }}">
+        <p class="mt-1 text-xs text-gray-500">Leave blank if the entry is not tied to a host. If the notifier later reports a container with the same name and host, it takes over this entry.</p>
+      </div>
+
+      <!-- Description -->
+      <div class="mb-5">
+        <label for="description" class="block text-sm font-medium text-gray-400 mb-1">Description</label>
+        <input type="text" name="description" id="description" maxlength="255" class="input-clean" placeholder="Optional" value="{{ entry.get('description', '') }}">
       </div>
 
       <!-- Internal URL + Health Check -->
@@ -101,9 +109,9 @@
       <div class="mb-6">
         <div class="flex items-center">
           <input type="checkbox" name="locked" id="locked" class="form-checkbox h-5 w-5 rounded border-gray-600">
-          <label for="locked" class="ml-2 text-sm font-medium text-gray-400">Locked (Static Entry)</label>
+          <label for="locked" class="ml-2 text-sm font-medium text-gray-400">Lock (ignore notifier updates)</label>
         </div>
-        <p class="mt-1 text-xs text-gray-500">If checked, this entry will not be updated by the API.</p>
+        <p class="mt-1 text-xs text-gray-500">If checked, a notifier report for the same name and host is ignored instead of taking over this entry.</p>
       </div>
 
       <!-- Buttons -->

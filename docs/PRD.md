@@ -38,6 +38,7 @@
 | 0.28    | 2026-11-15 | v0.6.9 released. §12 retitled Delivered: pytest suite + required `Test` check, wider lint, settings and API-token fixes, CSRF protection, soft-delete with widget detach, unified staleness indicator, per-service health-check options, gunicorn + pinned dependencies. Schema: `deleted_at`, `health_check_timeout`, `health_check_verify_tls` (§5.5). No register-contract change. |
 | 0.29    | 2026-11-15 | §12.11 added (delivered in v0.6.9, folded into the prepared release): icon names, server-side restore filenames and `/widget_config` widget names confined to their folders; edit/CSRF redirects limited to same-site paths (`image_utils.safe_icon_filename`, `view_helpers.safe_redirect_target`). Closes 13 CodeQL alerts. No schema, contract, or job changes. |
 | 0.30    | 2026-11-15 | Added §13 (v0.7.0 — Dashboard and Monitoring, planned): entry sources (notifier vs manual), health checks as their own tables with service checks (HTTP/HTTPS status or body mode, TCP, ping), concurrent checker, 7-day history with 24h raw + hourly-compacted successes, health rollup and status/source filters, Gatus-style 24h history in the detail surface. Planned schema in §5.6. Later sections renumbered (§13→§14, §14→§15, §15→§16). No register-contract change. No code changes yet. |
+| 0.31    | 2026-11-15 | §13.2 delivered (unreleased): `service_entry.source` / `description` / nullable `host` (migration `a7c3e9f15d28`, §5.6), register adoption of unlocked manual entries, manual-only Add page, source icon on Dashboard and Tiled, backups carry `source`/`description`. Lock relabelled "Lock (ignore notifier updates)". Register wire contract unchanged. |
 
 ---
 
@@ -254,7 +255,7 @@ they lived in `app.py` through v0.4.14):
 
 | Model            | Table              | Purpose                                                   |
 |------------------|--------------------|-----------------------------------------------------------|
-| `ServiceEntry`   | `service_entry`    | One row per registered service. PK on `id`; logical key on `(host, container_name)` — indexed from v0.5.0. Holds URLs, health flags, group_id (FK), sort_priority, status, last-checked timestamps, image metadata, icon, the `is_static` flag, the v0.5.0 `notifier_reported_*` capture columns, the v0.6.0 `networks` / `exposed_ports` / `published_ports` capture columns, and the v0.6.0 `internalurl_source` / `externalurl_source` URL provenance columns. |
+| `ServiceEntry`   | `service_entry`    | One row per registered service. PK on `id`; logical key on `(host, container_name)` — indexed from v0.5.0. Holds URLs, health flags, group_id (FK), sort_priority, status, last-checked timestamps, image metadata, icon, the `is_static` flag (the lock), the v0.7.0 `source` / `description` columns, the v0.5.0 `notifier_reported_*` capture columns, the v0.6.0 `networks` / `exposed_ports` / `published_ports` capture columns, and the v0.6.0 `internalurl_source` / `externalurl_source` URL provenance columns. |
 | `ServiceExposure`| `service_exposure` | New in v0.6.0. One row per (service, interpreter layer) observation — many rows per service possible. Wholesale-replaced per register when the payload carries `exposure_observations`. FK to `service_entry.id` (ON DELETE CASCADE), indexed. |
 | `Group`          | `group`            | Optional grouping. Unique `group_name`, optional `group_sort_priority` and `group_icon`. Referenced by `ServiceEntry.group_id`. |
 | `Widget`         | `widget`           | Widget configuration (name, URL, API key, JSON-encoded field list). Referenced by `ServiceEntry.widget_id`. |
@@ -334,7 +335,7 @@ exposure data arrives.
 Restoring a v0.6.8 backup leaves `deleted_at` NULL and the health-check
 options at their defaults.
 
-### 5.6 v0.7.0 schema changes (planned)
+### 5.6 v0.7.0 schema changes (planned; `source`, nullable `host` and `description` delivered, unreleased)
 
 Planned for v0.7.0 (§13). One Alembic migration per chunk; each FK gets
 its index in the same migration.
@@ -1314,7 +1315,24 @@ accepts the field and ships first.
   is **not** a check (decision 2026-11-15; folding it in is parked in
   FUTURE.md).
 
-### 13.2 Entry sources and manual entries [`v070-01-entry-sources`]
+### 13.2 Entry sources and manual entries [`v070-01-entry-sources`] — Delivered (unreleased)
+
+**As built:** migration `a7c3e9f15d28` adds `service_entry.source` (backfilled
+by the rule below), `description`, and makes `host` nullable.
+`ServiceEntry.is_manual` is true for `source == 'manual'`;
+`is_docker_status_stale` is false for manual or locked entries.
+`upsert_service` adopts an unlocked manual match (INFO log, `source` becomes
+`notifier`); a soft-deleted manual match is adopted and resurrected by the same
+path. New register rows are `notifier`; `schemas.py` is untouched. The Add
+page (`name`/`container_name`, optional host, description) creates manual
+entries; the duplicate check matches `host IS NULL` explicitly and prefers an
+active row over a soft-deleted one. Edit hides the "Reported by notifier"
+block for manual entries and shows Description; blank Host saves as NULL for
+manual entries only. Dashboard shows a "Manual" pill and Tiled a `ti-link`
+icon where the Docker pill sits; Compact is unchanged apart from the stale
+icon no longer appearing for manual entries. Backups export `source` and
+`description`; restore without `source` applies the backfill rule, and a
+record without a host is skipped unless it is manual.
 
 - **Schema** (§5.6): `service_entry.source`, nullable `host`,
   `description`.

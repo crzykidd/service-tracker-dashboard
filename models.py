@@ -17,10 +17,15 @@ from extensions import db
 
 DEFAULT_STALE_AFTER_MINUTES = 5
 
+SOURCE_NOTIFIER = 'notifier'
+SOURCE_MANUAL = 'manual'
+VALID_SOURCES = (SOURCE_NOTIFIER, SOURCE_MANUAL)
+
 
 class ServiceEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    host = db.Column(db.String(100), nullable=False)
+    # NULL host is allowed for manual entries (v0.7.0).
+    host = db.Column(db.String(100), nullable=True)
     container_name = db.Column(db.String(100), nullable=False)
     container_id = db.Column(db.String(100), nullable=True)
     internalurl = db.Column(db.String(255), nullable=True)
@@ -95,6 +100,15 @@ class ServiceEntry(db.Model):
         db.Boolean, nullable=False, default=True, server_default=db.true()
     )
 
+    # Entry source (v0.7.0): 'notifier' (created/kept current by
+    # /api/v1/register) or 'manual' (created on the Add page). A register
+    # that matches an unlocked manual entry adopts it (-> 'notifier').
+    # `is_static` is only the lock; it no longer means "manual".
+    source = db.Column(
+        db.String(16), nullable=False, default=SOURCE_NOTIFIER, server_default=SOURCE_NOTIFIER
+    )
+    description = db.Column(db.String(255), nullable=True)
+
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
     )
@@ -134,6 +148,8 @@ class ServiceEntry(db.Model):
             'started_at': self.started_at,
             'image_icon': self.image_icon,
             'is_static': self.is_static,
+            'source': self.source,
+            'description': self.description,
             'sort_priority': self.sort_priority,
             'networks': self.networks,
             'exposed_ports': self.exposed_ports,
@@ -157,14 +173,19 @@ class ServiceEntry(db.Model):
         return data
 
     @property
+    def is_manual(self):
+        """True for entries created on the Add page (no notifier behind them)."""
+        return self.source == SOURCE_MANUAL
+
+    @property
     def is_docker_status_stale(self):
         """True when the notifier hasn't reported in within `stale_after_minutes`.
 
-        Static entries are never stale. A dynamic entry with no
+        Manual and locked entries are never stale. A dynamic entry with no
         `last_api_update` (never registered) counts as stale; the Tiled view
         shows that case separately as "no update received".
         """
-        if self.is_static:
+        if self.is_manual or self.is_static:
             return False
         if self.last_api_update:
             return (datetime.now() - self.last_api_update) > timedelta(minutes=_stale_after_minutes())

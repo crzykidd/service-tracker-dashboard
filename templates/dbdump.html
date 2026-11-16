@@ -43,7 +43,7 @@
       {% for entry in entries %}
       <tr{% if entry.deleted_at %} class="table-danger text-decoration-line-through" title="Soft-deleted"{% endif %}>
         <td>{{ entry.id }}</td>
-        <td>{{ entry.host }}</td>
+        <td>{{ entry.host or "" }}</td>
         <td>{{ entry.container_name }}</td>
         <td>{{ entry.container_id }}</td>
         <td>{{ entry.group_id or '' }}</td>

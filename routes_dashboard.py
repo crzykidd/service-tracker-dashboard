@@ -44,7 +44,17 @@ import settings_store
 import synthesizer
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
-from models import Group, ServiceEntry, User, Widget, WidgetValue, hard_delete_entry
+from models import (
+    SOURCE_MANUAL,
+    SOURCE_NOTIFIER,
+    VALID_SOURCES,
+    Group,
+    ServiceEntry,
+    User,
+    Widget,
+    WidgetValue,
+    hard_delete_entry,
+)
 from routes_auth import is_admin_required
 from settings_loader import CONFIG_DIR
 from view_helpers import (
@@ -429,7 +439,15 @@ def settings():
                 skipped_count = 0
 
                 for item in records:
-                    if not item.get('host') or not item.get('container_name'):
+                    # Source: backups from before v0.7.0 have none; use the
+                    # migration's backfill rule (never registered -> manual).
+                    item_source = item.get('source')
+                    if item_source not in VALID_SOURCES:
+                        item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
+                    item_host = (item.get('host') or '').strip() or None
+
+                    # Host is optional for manual entries only.
+                    if not item.get('container_name') or (item_host is None and item_source != SOURCE_MANUAL):
                         logger.warning(f"⛔ Skipping entry with missing host/container_name: {item}")
                         skipped_count +=1
                         continue
@@ -470,7 +488,7 @@ def settings():
 
                     entry = ServiceEntry.query.filter_by(
                         container_name=item['container_name'],
-                        host=item['host']
+                        host=item_host
                     ).first()
 
                     group_name = item.get('group_name')
@@ -486,11 +504,11 @@ def settings():
                     # Fetch or create entry
                     entry = ServiceEntry.query.filter_by(
                         container_name=item['container_name'],
-                        host=item['host']
+                        host=item_host
                     ).first()
 
                     if not entry:
-                        entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
+                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
                         db.session.add(entry)
 
                     # Assign group_id only now (after entry exists)
@@ -507,7 +525,7 @@ def settings():
                             continue
                         # Otherwise (entry is not static, or item from backup is static, or scope is 'static'), proceed to update.
                     else: # New entry, create it
-                        entry = ServiceEntry(host=item['host'], container_name=item['container_name'])
+                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
                         db.session.add(entry)
                     if widget_obj:
                         entry.widget_id = widget_obj.id
@@ -518,8 +536,11 @@ def settings():
                         if field == 'is_static':
                             if hasattr(entry, 'is_static'):
                                 entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls']:
+                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls', 'host', 'source']:
                             setattr(entry, field, value)
+
+                    entry.source = item_source
+                    entry.host = item_host
 
                     # deleted_at round-trips; absent (v0.6.8 backups) means active.
                     entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
@@ -746,8 +767,9 @@ def add_entry():
     if request.method == 'POST':
         # Needed by every error re-render of the add form below.
         groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-        host = request.form.get('host')
-        container_name = request.form.get('application')
+        host = (request.form.get('host') or '').strip() or None
+        container_name = (request.form.get('container_name') or '').strip()
+        description = (request.form.get('description') or '').strip() or None
         internalurl = request.form.get('internal_url')
         externalurl = request.form.get('external_url')
         group_mode = request.form.get('group_mode')  # 'existing' or 'new'
@@ -768,21 +790,31 @@ def add_entry():
             flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
             return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
-        if not host or not container_name:
-            flash('Host and Application (Container Name) are required.', 'danger')
+        if not container_name:
+            flash('Name is required.', 'danger')
+            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+        if len(container_name) > 100 or (host and len(host) > 100) or (description and len(description) > 255):
+            flash('Name and Host are limited to 100 characters, Description to 255.', 'danger')
             return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
 
-        # Check for duplicates
-        existing = ServiceEntry.query.filter_by(host=host, container_name=container_name).first()
+        # Check for duplicates. An empty host is its own value: the key is
+        # (host or NULL, name). NULL never equals NULL in SQL, so match with IS NULL.
+        host_filter = ServiceEntry.host.is_(None) if host is None else ServiceEntry.host == host
+        where = f"on host '{host}'" if host else "with no host"
+        existing = (
+            ServiceEntry.query.filter(host_filter, ServiceEntry.container_name == container_name)
+            .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
+            .first()
+        )
         if existing and existing.deleted_at is not None:
             flash(
-                f"An entry for '{container_name}' on host '{host}' was deleted. "
+                f"An entry for '{container_name}' {where} was deleted. "
                 f"Restore it from Settings → Deleted instead of adding a new one.",
                 'danger',
             )
             return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
         if existing:
-            flash(f"An entry for '{container_name}' on host '{host}' already exists.", 'danger')
+            flash(f"An entry for '{container_name}' {where} already exists.", 'danger')
             return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
 
         # Booleans
@@ -843,6 +875,8 @@ def add_entry():
         entry = ServiceEntry(
             host=host,
             container_name=container_name,
+            description=description,
+            source=SOURCE_MANUAL,
             internalurl=internalurl or None,
             externalurl=externalurl or None,
             internalurl_source=synthesizer.SOURCE_UI_EDIT if internalurl else None,
@@ -942,7 +976,13 @@ def edit_entry(id):
                 return redirect(url_for('dashboard.edit_entry', id=id, ref=referrer))
 
         # === BASIC FIELDS ===
-        entry.host = request.form.get('host', '').strip()
+        new_host = request.form.get('host', '').strip()
+        if entry.is_manual:
+            # Host is optional for manual entries.
+            entry.host = new_host or None
+            entry.description = request.form.get('description', '').strip()[:255] or None
+        else:
+            entry.host = new_host
         entry.container_name = request.form.get('container_name', '').strip()
 
         # URL provenance: setting a URL via UI marks it ui_edit (highest
@@ -1126,14 +1166,14 @@ def restore_deleted_entry(id):
     ).first()
     if clash:
         flash(
-            f"Cannot restore '{entry.container_name}' on '{entry.host}': an active "
+            f"Cannot restore '{entry.container_name}' on '{entry.host or 'no host'}': an active "
             f"entry with that name already exists.",
             "danger",
         )
     else:
         entry.deleted_at = None
         db.session.commit()
-        logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host}'.")
+        logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host or 'no host'}'.")
         flash(f"✅ Restored '{entry.container_name}'.", "success")
     return redirect(url_for('dashboard.settings', section='deleted'))
 

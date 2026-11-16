@@ -97,7 +97,7 @@
               {% endwith %}
             </td>
             <td class="px-3 py-2">{{ entry.stack_name or '' }}</td>
-            <td class="px-3 py-2">{{ entry.host }}</td>
+            <td class="px-3 py-2">{{ entry.host or "" }}</td>
             <td class="px-3 py-2 align-top">
               {% if entry.widget_id %}
                 {% set widget_data = widget_values.get(entry.widget_id) %}
@@ -188,7 +188,11 @@
 
             {# Status column — Docker pill with icon + label #}
             <td class="px-3 py-2">
-              {% if not entry.is_static %}
+              {% if entry.is_manual %}
+                <span class="status-pill status-pill-gray" title="Manual entry{% if entry.description %} — {{ entry.description }}{% endif %}">
+                  <i class="ti ti-link" aria-hidden="true"></i>Manual
+                </span>
+              {% else %}
                 {% set _d_tooltip = (entry.last_api_update | time_since) if entry.last_api_update else 'No update timestamp' %}
 
                 {% if not entry.last_api_update %}
@@ -216,8 +220,6 @@
                 {% if entry.image_tag %}
                   <div class="text-xs text-gray-400 mt-1">Tag: <code>{{ entry.image_tag }}</code></div>
                 {% endif %}
-              {% else %}
-                <span class="text-xs text-gray-400 italic">Static</span>
               {% endif %}
             </td>
 

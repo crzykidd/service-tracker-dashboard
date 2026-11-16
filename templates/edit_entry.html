@@ -13,13 +13,20 @@
       <div class="edit-section-fields">
         <div>
           <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
-          <input type="text" name="host" id="host" class="form-input" value="{{ entry.host }}">
+          <input type="text" name="host" id="host" class="form-input" value="{{ entry.host or "" }}">
         </div>
 
         <div>
-          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">Application (Container Name)</label>
+          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">{% if entry.is_manual %}Name{% else %}Application (Container Name){% endif %}</label>
           <input type="text" name="container_name" id="application" class="form-input" value="{{ entry.container_name }}">
         </div>
+
+        {% if entry.is_manual %}
+        <div>
+          <label for="description" class="block text-sm font-medium text-dashboard-secondary mb-1">Description</label>
+          <input type="text" name="description" id="description" maxlength="255" class="form-input" value="{{ entry.description or '' }}">
+        </div>
+        {% endif %}
       </div>
 
       {# URL source provenance badge macro #}
@@ -118,8 +125,9 @@
 
         <div class="flex items-center">
           <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-4 w-4" {% if entry.is_static %}checked{% endif %}>
-          <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Locked (Static Entry)</label>
+          <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Lock (ignore notifier updates)</label>
         </div>
+        <p class="edit-helper">When ticked, register calls from the notifier for this entry are ignored.</p>
       </div>
 
       {# ── Widget ───────────────────────────────────────────── #}
@@ -162,6 +170,7 @@
       </div>
     </form>
 
+    {% if not entry.is_manual %}
     <hr class="my-10 border-dashboard-accent">
 
     {# ── Reported by notifier (read-only) ─────────────────── #}
@@ -243,6 +252,7 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
