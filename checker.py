@@ -125,7 +125,7 @@ def probe_http(target, mode="status", timeout=5, verify=True):
         return _failure(started, e)
 
 
-def _split_host_port(target):
+def split_host_port(target):
     """`host:port` (or `[v6]:port`) -> (host, int port). Raises ValueError."""
     target = (target or "").strip()
     host, sep, port = target.rpartition(":")
@@ -142,7 +142,7 @@ def probe_tcp(target, timeout=5):
     """Connect to `host:port`; latency is the connect time."""
     started = time.monotonic()
     try:
-        host, port = _split_host_port(target)
+        host, port = split_host_port(target)
         with socket.create_connection((host, port), timeout=timeout):
             pass
         return ProbeResult(True, _elapsed_ms(started))

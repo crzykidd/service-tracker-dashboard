@@ -34,12 +34,14 @@ from flask import (
     request,
     send_file,
     send_from_directory,
+    session,
     url_for,
 )
 from flask_login import login_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
+import check_form
 import settings_store
 import synthesizer
 from extensions import db
@@ -760,15 +762,37 @@ def serve_image(filename):
     return response
 
 
+def _drop_stale_success_flashes():
+    """Forget non-error flashes queued by earlier redirects.
+
+    The Dashboard views don't render flashes, so "Logged in" or "Entry
+    updated" messages wait in the session until a page that does. Showing
+    them on a fresh Add/Edit page would be noise; warnings and errors (for
+    example the failed delete confirmation redirected to Edit) are kept.
+    """
+    kept = [(cat, msg) for cat, msg in session.get('_flashes', []) if cat in ('warning', 'danger')]
+    if kept:
+        session['_flashes'] = kept
+    else:
+        session.pop('_flashes', None)
+
+
 @dashboard_bp.route('/add', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
 def add_entry():
+    _drop_stale_success_flashes()
     image_dir = current_app.config['IMAGE_DIR']
 
     if request.method == 'POST':
         # Needed by every error re-render of the add form below.
         groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+        url_rows, svc_rows, check_errors = check_form.parse_form(request.form)
+
+        def render_error(msg='error'):
+            return render_template("add_entry.html", msg=msg, entry=request.form, groups=groups,
+                                   url_rows=url_rows, svc_rows=svc_rows)
+
         host = (request.form.get('host') or '').strip() or None
         container_name = (request.form.get('container_name') or '').strip()
         description = (request.form.get('description') or '').strip() or None
@@ -790,14 +814,14 @@ def add_entry():
         image_icon = safe_icon_filename(image_icon_raw) if image_icon_raw else ''
         if image_icon_raw and not image_icon:
             flash('Invalid icon name: use letters, numbers, dots, dashes and underscores only.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+            return render_error()
 
         if not container_name:
             flash('Name is required.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+            return render_error()
         if len(container_name) > 100 or (host and len(host) > 100) or (description and len(description) > 255):
             flash('Name and Host are limited to 100 characters, Description to 255.', 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+            return render_error()
 
         # Check for duplicates. An empty host is its own value: the key is
         # (host or NULL, name). NULL never equals NULL in SQL, so match with IS NULL.
@@ -814,14 +838,12 @@ def add_entry():
                 f"Restore it from Settings → Deleted instead of adding a new one.",
                 'danger',
             )
-            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
+            return render_error('duplicate')
         if existing:
             flash(f"An entry for '{container_name}' {where} already exists.", 'danger')
-            return render_template("add_entry.html", msg='duplicate', entry=request.form, groups=groups)
+            return render_error('duplicate')
 
         # Booleans
-        internal_health_check_enabled = request.form.get('internal_health_check') == 'on'
-        external_health_check_enabled = request.form.get('external_health_check') == 'on'
         is_static = request.form.get('locked') == 'on'
 
         # === ICON RESOLUTION LOGIC ===
@@ -855,13 +877,12 @@ def add_entry():
                 sort_priority = int(sort_priority_raw)
             except ValueError:
                 flash("Sort priority must be a number.", 'danger')
-                return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
+                return render_error()
 
-        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
-        if health_error:
-            flash(health_error, 'danger')
-            return render_template("add_entry.html", msg='error', entry=request.form, groups=groups)
-        verify_tls = request.form.get('health_check_verify_tls') == 'on'
+        if check_errors:
+            for message in check_errors:
+                flash(message, 'danger')
+            return render_error()
 
         # === CREATE ENTRY ===
         # Look up or create group
@@ -889,13 +910,7 @@ def add_entry():
             sort_priority=sort_priority,
             is_static=is_static,
         )
-        ensure_url_checks(entry)
-        for which, enabled in (('internal', internal_health_check_enabled),
-                               ('external', external_health_check_enabled)):
-            check = entry.url_check(which)
-            check.enabled = enabled
-            check.timeout_seconds = health_timeout
-            check.verify_tls = verify_tls
+        check_form.apply_rows(entry, url_rows, svc_rows)
 
         db.session.add(entry)
         db.session.commit()
@@ -904,10 +919,9 @@ def add_entry():
         return redirect(url_for('dashboard.tiled_dashboard'))
 
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-    return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups)
-
-
-MAX_HEALTH_CHECK_TIMEOUT = 60
+    url_rows, svc_rows = check_form.default_rows()
+    return render_template("add_entry.html", msg='', entry={}, active_tab="add", groups=groups,
+                           url_rows=url_rows, svc_rows=svc_rows)
 
 
 def _positive_int(value):
@@ -961,28 +975,11 @@ def _restore_checks(entry, item):
         check.verify_tls = verify
 
 
-def _parse_health_timeout(raw):
-    """Parse the per-service timeout form field.
-
-    Returns (value, error). Blank -> (None, None), meaning "use the global
-    default". Otherwise a positive int up to MAX_HEALTH_CHECK_TIMEOUT.
-    """
-    raw = (raw or '').strip()
-    if not raw:
-        return None, None
-    try:
-        value = int(raw)
-    except ValueError:
-        value = 0
-    if not 1 <= value <= MAX_HEALTH_CHECK_TIMEOUT:
-        return None, f"Health check timeout must be a whole number of seconds from 1 to {MAX_HEALTH_CHECK_TIMEOUT} (or blank for the default)."
-    return value, None
-
-
 @dashboard_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
 def edit_entry(id):
+    _drop_stale_success_flashes()
     image_dir = current_app.config['IMAGE_DIR']
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
@@ -1010,6 +1007,20 @@ def edit_entry(id):
         else:
             logger.warning(f"Widget ID {entry.widget_id} not found")
 
+    def render_edit(form=None, url_rows=None, svc_rows=None):
+        groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+        if url_rows is None:
+            url_rows, svc_rows = check_form.rows_from_entry(entry)
+        return render_template("edit_entry.html",
+                               entry=entry,
+                               ref=referrer,
+                               groups=groups,
+                               available_widgets=available_widgets,
+                               selected_widget=selected_widget,
+                               form=form,
+                               url_rows=url_rows,
+                               svc_rows=svc_rows)
+
     # Handle form submission
     if request.method == 'POST':
         # === DELETE ACTION ===
@@ -1031,6 +1042,16 @@ def edit_entry(id):
                 flash("Confirmation name does not match. Entry not deleted.", "warning")
                 return redirect(url_for('dashboard.edit_entry', id=id, ref=referrer))
 
+        # === HEALTH CHECKS: validate first, change nothing on error ===
+        checks_submitted = 'checks_form' in request.form
+        if checks_submitted:
+            url_rows, svc_rows, check_errors = check_form.parse_form(
+                request.form, {c.id for c in entry.service_checks})
+            if check_errors:
+                for message in check_errors:
+                    flash(message, 'danger')
+                return render_edit(form=request.form, url_rows=url_rows, svc_rows=svc_rows)
+
         # === BASIC FIELDS ===
         new_host = request.form.get('host', '').strip()
         if entry.is_manual:
@@ -1047,6 +1068,8 @@ def edit_entry(id):
         # register. See synthesizer.py for the ordering rules.
         new_internalurl = request.form.get('internalurl', '').strip() or None
         new_externalurl = request.form.get('externalurl', '').strip() or None
+        url_changed = {'internal': new_internalurl != entry.internalurl,
+                       'external': new_externalurl != entry.externalurl}
         if new_internalurl != entry.internalurl:
             entry.internalurl = new_internalurl
             entry.internalurl_source = synthesizer.SOURCE_UI_EDIT if new_internalurl else None
@@ -1055,19 +1078,13 @@ def edit_entry(id):
             entry.externalurl_source = synthesizer.SOURCE_UI_EDIT if new_externalurl else None
 
         ensure_url_checks(entry)
-        entry.url_check('internal').enabled = 'internal_health_check_enabled' in request.form
-        entry.url_check('external').enabled = 'external_health_check_enabled' in request.form
+        if checks_submitted:
+            check_form.apply_rows(entry, url_rows, svc_rows)
+        # A changed URL is a new target: re-check it at the next tick.
+        for which, changed in (('internal', url_changed['internal']), ('external', url_changed['external'])):
+            if changed:
+                entry.url_check(which).last_checked_at = None
         entry.is_static = 'is_static' in request.form
-
-        health_timeout, health_error = _parse_health_timeout(request.form.get('health_check_timeout'))
-        if health_error:
-            flash(health_error, "warning")
-        else:
-            # Timeout and verify-TLS apply to both URL checks.
-            for which in ('internal', 'external'):
-                entry.url_check(which).timeout_seconds = health_timeout
-        for which in ('internal', 'external'):
-            entry.url_check(which).verify_tls = 'health_check_verify_tls' in request.form
 
         sort_priority_raw = request.form.get('sort_priority', '').strip()
         try:
@@ -1191,13 +1208,7 @@ def edit_entry(id):
 
         return redirect(safe_redirect_target(referrer))
 
-    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-    return render_template("edit_entry.html",
-                           entry=entry,
-                           ref=referrer,
-                           groups=groups,
-                           available_widgets=available_widgets,
-                           selected_widget=selected_widget)
+    return render_edit()
 
 
 @dashboard_bp.route('/service/<int:id>/checks/run', methods=['POST'])

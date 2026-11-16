@@ -1,10 +1,10 @@
 ---
 name: v070-04-check-config-ui
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15
+result: Health checks section on Add and Edit with per-URL-check fields and service checks, validation with input kept, flash display; tests added
 ---
 
 # Task: Health-check configuration UI on Add and Edit

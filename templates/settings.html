@@ -21,18 +21,7 @@
 
   <!-- Main Content Area -->
   <div class="flex-1 space-y-10">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div id="flash-container" class="space-y-2">
-          {% for category, message in messages %}
-            <div class="flash-alert flex items-center justify-between text-sm px-4 py-2 rounded shadow bg-green-600 text-white">
-              <span>{{ message }}</span>
-              <button class="text-white hover:text-gray-300" onclick="this.parentElement.remove()">×</button>
-            </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+    {% include "partials/flash_messages.html" %}
     
     <!-- === Info Section === -->
     <section id="section-info" class="section">

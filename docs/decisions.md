@@ -5,6 +5,44 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v070-04 check configuration UI: implementation calls
+
+- **Supersedes the v0.6.9 note that Add/Edit don't render flashes.** They do
+  now (`partials/flash_messages.html`, shared with Settings, colour by
+  category: `danger` red, `warning` amber, else green). Validation errors on
+  Add/Edit flash and re-render with the operator's input kept.
+- **Stale flashes.** The Dashboard views still render no flashes, so
+  "Logged in" / "Entry updated" notices queue until a page that does. Add and
+  Edit drop queued non-warning/non-danger flashes on entry
+  (`_drop_stale_success_flashes`) so they do not surface as noise; warnings
+  and errors are kept (the failed delete confirmation redirects to Edit).
+  Rejected: rendering flashes in `base.html` (touches every page, out of
+  scope). Existing tests that read flashes from the session after an Add
+  error now assert on the rendered page.
+- **`checks_form` marker.** Edit only touches checks when the hidden marker is
+  posted, so scripted or older POSTs that do not know the section leave
+  checks alone (the old toggles meant "absent = off").
+- **Whole form rejected on any check error;** all errors are listed at once.
+  Rejected: saving the valid parts (partial saves are confusing).
+- **Blank service-check name defaults to the target** (clipped to 100)
+  instead of erroring; a name is not needed to run a check.
+- **Service-check ids that do not belong to the entry are an error,** not
+  silently recreated, so a stale form (check deleted in another tab) cannot
+  resurrect or cross-edit checks. Cap of 20 service checks per entry.
+- **Non-HTTP checks store mode `status` and verify on,** whatever the hidden
+  HTTP-only fields posted.
+- **Ping target accepts hostname or IP only** (no port, no path); IPv6 with
+  or without brackets for TCP, bare for ping. `checker._split_host_port` is
+  now public `split_host_port`.
+- **Add page URL fields** keep their old names (`internal_url`,
+  `external_url`); the Add page now keeps the typed URLs, group, sort
+  priority, icon and lock on an error re-render.
+- **Mobile.** Verified at 390 px with headless Chromium: the form fits. The
+  existing top nav overflows horizontally at that width on every page
+  (pre-existing, not touched).
+
+---
+
 ## 2026-11-15 — v070-03 checker engine: implementation calls
 
 - **Compaction works on whole clock hours only.** The cutoff is

@@ -104,7 +104,7 @@ def test_add_bad_icon_flashes_and_writes_nothing(app, admin_client, fetched):
         "host": "h", "container_name": "newapp", "icon_image": "../../evil",
     })
     assert resp.status_code == 200
-    assert any("Invalid icon name" in m for m in _flashes(admin_client))
+    assert "Invalid icon name" in resp.get_data(as_text=True)
     assert fetched == []
     assert _outside_files(app.config["IMAGE_DIR"]) == []
     with app.app_context():

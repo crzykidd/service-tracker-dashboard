@@ -491,13 +491,19 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   `*_health_check_enabled` flags are set.
 - Status code, response time, and timestamp are recorded per check, as a
   result row in the database (the badges still show the latest status).
-- Each entry has an internal-URL and an external-URL check; the
-  `*_health_check_enabled` flags turn them on, and the timeout and
-  verify-TLS options apply to both.
+- Each entry has an internal-URL and an external-URL check; the notifier's
+  `*_health_check_enabled` flags turn them on, and each has its own timeout
+  and verify-TLS options on the Edit page.
 - Each check waits up to `health_check_timeout` seconds (default 5). A
   service can override this, and turn off TLS certificate verification
   (for self-signed internal URLs that otherwise show `Error: SSLError`),
-  under **Advanced health check** on its edit page (also on the Add page).
+  in the **Health checks** section of its Edit page (also on the Add page).
+- Each URL check also has its own enabled switch, mode (status code or
+  response body), interval (30-86400 s) and timeout (1-60 s).
+- **Service checks** are extra checks you add per entry on the Edit or Add
+  page: HTTP/HTTPS (full URL), TCP (`host:port`) and Ping (hostname or IP).
+  The notifier never touches them. Removing one deletes it and its results
+  when you save.
 - A failed check logs and moves on; it does not crash the loop.
 - UI shows color-coded status (green / yellow / red) with last-checked time.
 

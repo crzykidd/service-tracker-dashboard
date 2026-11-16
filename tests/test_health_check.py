@@ -91,23 +91,28 @@ def test_edit_form_saves_and_validates(app, admin_client):
         eid = e.id
     base = {"host": "h", "container_name": "c", "is_static": "on", "widget_name": "none"}
 
-    admin_client.post(f"/edit/{eid}", data={**base, "health_check_timeout": "15"})
+    chk = {**base, "checks_form": "1"}
+
+    admin_client.post(f"/edit/{eid}", data={**chk, "uc_internal_timeout": "15", "uc_external_timeout": "20"})
     with app.app_context():
         e = db.session.get(ServiceEntry, eid)
         assert e.url_check("internal").timeout_seconds == 15
-        assert e.url_check("external").timeout_seconds == 15
+        assert e.url_check("external").timeout_seconds == 20
         assert e.url_check("internal").verify_tls is False  # checkbox absent
 
-    admin_client.post(f"/edit/{eid}", data={**base, "health_check_timeout": "999",
-                                            "health_check_verify_tls": "on"})
+    resp = admin_client.post(f"/edit/{eid}", data={**chk, "uc_internal_timeout": "999",
+                                                   "uc_external_verify": "on"})
+    assert resp.status_code == 200  # re-rendered with the error
     with app.app_context():
         e = db.session.get(ServiceEntry, eid)
-        assert e.url_check_timeout == 15  # invalid value rejected
-        assert e.url_check("external").verify_tls is True
+        assert e.url_check("internal").timeout_seconds == 15  # invalid value rejected
+        assert e.url_check("external").verify_tls is False  # nothing saved
 
-    admin_client.post(f"/edit/{eid}", data={**base, "health_check_timeout": ""})
+    admin_client.post(f"/edit/{eid}", data={**chk, "uc_external_verify": "on"})
     with app.app_context():
-        assert db.session.get(ServiceEntry, eid).url_check_timeout is None
+        e = db.session.get(ServiceEntry, eid)
+        assert e.url_check("internal").timeout_seconds is None
+        assert e.url_check("external").verify_tls is True
 
 
 def test_to_dict_round_trips_fields(app):

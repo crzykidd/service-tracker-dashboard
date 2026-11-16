@@ -218,8 +218,8 @@ def test_register_on_entry_without_rows_creates_them(app, register):
 
 def test_add_page_creates_rows_with_form_values(app, admin_client):
     admin_client.post("/add", data={
-        "container_name": "added", "icon_image": "a.svg", "internal_health_check": "on",
-        "health_check_timeout": "9",
+        "container_name": "added", "icon_image": "a.svg", "checks_form": "1",
+        "uc_internal_enabled": "on", "uc_internal_timeout": "9", "uc_external_timeout": "9",
     })
     with app.app_context():
         e = _get("added")
@@ -234,15 +234,15 @@ def test_edit_toggles_write_rows_and_form_reads_them(app, admin_client):
         eid = _make("ed", source="manual").id
     admin_client.post(f"/edit/{eid}", data={
         "host": "", "container_name": "ed", "widget_name": "none",
-        "external_health_check_enabled": "on", "health_check_verify_tls": "on",
+        "checks_form": "1", "uc_external_enabled": "on", "uc_external_verify": "on",
     })
     with app.app_context():
         e = db.session.get(ServiceEntry, eid)
         assert e.url_check("internal").enabled is False and e.url_check("external").enabled is True
         assert e.internal_health_check_enabled is None and e.external_health_check_enabled is None
     page = admin_client.get(f"/edit/{eid}").get_data(as_text=True)
-    assert re.search(r'name="external_health_check_enabled"[^>]*checked', page)
-    assert not re.search(r'name="internal_health_check_enabled"[^>]*checked', page)
+    assert re.search(r'name="uc_external_enabled"[^>]*checked', page)
+    assert not re.search(r'name="uc_internal_enabled"[^>]*checked', page)
 
 
 # --- checker loop writes (engine details live in test_checker.py) ----------------

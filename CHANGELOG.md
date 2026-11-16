@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backups carry `source` and `description`.** Restoring an older backup
   without them works: an entry the notifier never reported becomes manual.
 
+- **Service checks.** An entry can carry any number of its own checks, added
+  and removed on the Edit or Add page: HTTP/HTTPS (a full URL; status code or
+  response-body mode), TCP (`host:port`) and Ping (hostname or IP), each with
+  a name, interval (30-86400 s), timeout (1-60 s) and enabled switch. A form
+  error shows every problem at once and keeps everything you typed. The
+  notifier never changes these checks.
+
 - **Health-check results are now stored.** Each URL check records its
   status, response time and message in a new history table, and each check
   keeps its latest state (ok or failing, status code, response time,
@@ -49,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Health checks are configured in one "Health checks" section** on the Edit
+  and Add pages, replacing the two toggles and "Advanced health check". The
+  Internal URL and External URL checks each have their own enabled switch,
+  mode (status code or response body), interval, timeout and Verify TLS; the
+  checked URL is shown read-only. Changing a check (or its URL) makes it run
+  again within a few seconds.
+- **Add and Edit now show their messages.** Validation errors and warnings
+  appear at the top of the page (red or amber) and your input is kept;
+  previously they only surfaced later on Settings. Stale "logged in" or
+  "updated" notices no longer pile up there.
 - **Add page creates manual entries only.** It asks for a Name (formerly
   "Application (Container Name)") and an optional Host, so a host is no
   longer required. Duplicates are matched on host and name, with a blank

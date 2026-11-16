@@ -197,7 +197,7 @@ def test_add_creates_manual_entry_without_host(app, admin_client):
 def test_add_requires_a_name_not_a_host(admin_client):
     resp = admin_client.post("/add", data={"container_name": "", "host": "lab", "icon_image": "x.svg"})
     assert resp.status_code == 200
-    assert any("Name is required" in m for m in _flashes(admin_client))
+    assert "Name is required" in resp.get_data(as_text=True)  # rendered on the page
 
 
 def test_add_duplicate_check_handles_null_host(app, admin_client):
@@ -205,7 +205,7 @@ def test_add_duplicate_check_handles_null_host(app, admin_client):
     assert admin_client.post("/add", data=data).status_code == 302
     resp = admin_client.post("/add", data=data)
     assert resp.status_code == 200
-    assert any("already exists" in m for m in _flashes(admin_client))
+    assert "already exists" in resp.get_data(as_text=True)  # rendered on the page
     # A different host is a different entry; so is the same name with no host vs. a host.
     assert admin_client.post("/add", data={**data, "host": "lab"}).status_code == 302
     with app.app_context():
@@ -217,7 +217,7 @@ def test_add_duplicate_of_soft_deleted_keeps_restore_message(app, admin_client):
         _make("Gone", host=None, source="manual", deleted_at=datetime.now())
     resp = admin_client.post("/add", data={"container_name": "Gone", "icon_image": "g.svg"})
     assert resp.status_code == 200
-    assert any("was deleted" in m for m in _flashes(admin_client))
+    assert "was deleted" in resp.get_data(as_text=True)  # rendered on the page
 
 
 def test_edit_manual_hides_docker_block_and_saves_description(app, admin_client):

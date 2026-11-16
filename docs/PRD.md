@@ -41,6 +41,7 @@
 | 0.31    | 2026-11-15 | §13.2 delivered (unreleased): `service_entry.source` / `description` / nullable `host` (migration `a7c3e9f15d28`, §5.6), register adoption of unlocked manual entries, manual-only Add page, source icon on Dashboard and Tiled, backups carry `source`/`description`. Lock relabelled "Lock (ignore notifier updates)". Register wire contract unchanged. |
 | 0.32    | 2026-11-15 | §13.3 delivered (unreleased): `health_check` / `health_result` tables and models (migration `b8e4d6a2c1f9`, §5.6) with the two URL-kind rows per entry copied from the legacy columns; register toggles, Add/Edit and backup/restore read and write the rows; the interim sequential checker records results and mirrors into the legacy status columns until §13.5. Register wire contract unchanged. |
 | 0.33    | 2026-11-15 | §13.4 delivered (unreleased): concurrent checker (`checker.py` probes for HTTP status/body, TCP and ping via pinned `icmplib`; `jobs.HealthScheduler`), settings `health_check_workers` / `health_raw_hours` / `health_history_days`, hourly compaction and purge jobs for `health_result`, `POST /service/<id>/checks/run`. No schema change. Register wire contract unchanged. |
+| 0.34    | 2026-11-15 | §13.5 delivered (unreleased): "Health checks" section on Add and Edit (per-URL-check enabled/mode/interval/timeout/verify, repeatable service checks of type HTTP, TCP, Ping), server-side validation with input kept, flash messages on Add/Edit. No schema change. Register wire contract unchanged. |
 
 ---
 
@@ -1486,7 +1487,7 @@ hour), a lone sample becomes a range of one (`ts_end = ts`), and purge
 treats a range as old once its `ts_end` is. `icmplib==3.0.4` is pinned. No
 schema change.
 
-### 13.5 Check configuration UI [`v070-04-check-config-ui`]
+### 13.5 Check configuration UI [`v070-04-check-config-ui`] — Delivered (unreleased)
 
 - **Edit page "Health checks" section** replaces the two toggles and the
   v0.6.9 "Advanced health check" block:
@@ -1508,6 +1509,20 @@ schema change.
   v0.6.9 QoL item).
 - Notifier entries can carry service checks too. They are operator
   data; register never touches `service` rows.
+- **As built:** `check_form.py` parses, validates and applies the section
+  (shared by Add and Edit); `partials/health_checks_form.html` renders it
+  and `static/js/health_checks_form.js` clones a `<template>` row. Fields:
+  `uc_<internal|external>_<enabled|mode|interval|timeout|verify>` and, per
+  service row, `svc_row` plus `svc_<key>_<id|name|type|target|mode|interval|timeout|verify|enabled>`;
+  a hidden `checks_form` marker means "section submitted" (absent leaves
+  checks untouched). Every error is flashed (`danger`) and the page
+  re-renders with all input kept; nothing is saved. Rows are matched by id;
+  saved service checks missing from the post are deleted, results cascade;
+  an id belonging to another entry is rejected. A blank service-check name
+  defaults to its target; at most 20 service checks per entry. Non-HTTP
+  checks store mode `status` and verify on. A changed check or URL clears
+  `last_checked_at`. `partials/flash_messages.html` is shared by Settings,
+  Add and Edit. The old single timeout / verify-TLS fields are gone.
 
 ### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`]
 
