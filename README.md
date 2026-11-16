@@ -141,8 +141,9 @@ compose file; your config, database, and settings carry over unchanged. See
   degraded, down, unknown, not monitored) on all three views, and `Status`
   (`all` / `failing` / `healthy` / `unknown` / `stale`) and `Source`
   (`all` / `notifier` / `manual`) filters next to `Group by`, kept in the URL
-  (`?status=failing&source=manual`). "Total Services" reads `shown / total`
-  when a filter hides entries.
+  (`?status=failing&source=manual`). The filter bar shows clickable
+  **Total**, **Passing** and **Failing** counts that apply the matching
+  Status filter (they follow Source and Show URL-less, not Status).
 - Auto-downloads container icons from
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
 - Register endpoint for pushing container metadata from external tools.

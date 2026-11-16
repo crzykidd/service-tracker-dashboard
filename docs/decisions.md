@@ -5,6 +5,18 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — Count chips ignore the Status filter; Stale has no chip
+
+The Total / Passing / Failing chips count entries after Source and Show
+URL-less but ignoring Status, so each number equals what its link shows and
+the chips stay stable while you switch between them. Unknown / Not monitored
+are in Total only and the `stale` status keeps only the Status select, as the
+design specified. The chip links are built server-side from `request.args`
+(not JS) and keep every other param. The Status select's `Healthy` option and
+the `Passing` chip label are the same filter (`status=healthy`).
+
+---
+
 ## 2026-11-15 — `/widget_config` path built from the listdir name (CodeQL)
 
 CodeQL kept two `py/path-injection` alerts open on `routes_widgets.py`

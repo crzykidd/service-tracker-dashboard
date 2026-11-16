@@ -987,3 +987,16 @@
 }
 /* The Dashboard table scrolls sideways on narrow screens; keep the panel in view. */
 .health-expand-inner { position: sticky; left: 0; width: min(720px, calc(100vw - 64px)); }
+
+/* Filter-bar health count chips (Total / Passing / Failing) */
+.hc-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; }
+.hc-chip {
+  display: inline-flex; gap: 0.3rem; align-items: baseline;
+  padding: 0.125rem 0.625rem; border-radius: 9999px;
+  border: 1px solid #4b5563; background: #1f2937; color: #d1d5db;
+  font-size: 0.875rem; text-decoration: none;
+}
+.hc-chip:hover { background: #374151; }
+.hc-chip.hc-passing strong { color: var(--color-status-ok); }
+.hc-chip.hc-alert strong { color: var(--color-status-bad); }
+.hc-chip.hc-active { border-color: #60a5fa; box-shadow: 0 0 0 1px #60a5fa; color: #fff; }

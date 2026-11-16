@@ -149,16 +149,14 @@ def test_invalid_filter_values_fall_back_to_all(app, admin_client):
     assert "up-svc" in body and "man-up" in body and "<x>" not in body
 
 
-def test_selects_reflect_params_and_total(app, admin_client):
+def test_selects_reflect_params(app, admin_client):
     with app.app_context():
         _seed()
     body = admin_client.get("/tiled_dash?status=failing&source=notifier").get_data(as_text=True)
     assert '<option value="failing" selected>' in body
     assert '<option value="notifier" selected>' in body
     assert 'id="statusSelect"' in body and 'class="view-control' in body
-    assert '<span id="totalServices">2 / 8</span>' in body
-    plain = admin_client.get("/").get_data(as_text=True)
-    assert '<span id="totalServices">8</span>' in plain
+    assert "totalServices" not in body and "Total Services" not in body
 
 
 @pytest.mark.parametrize("view,marker", [
@@ -220,3 +218,86 @@ def test_query_count_flat(app, admin_client, view):
     add(30, 100)
     many = _count_queries(app, admin_client, view)
     assert many == few, (few, many)
+
+
+import re  # noqa: E402
+
+
+def _chips(body):
+    """{key: (href, count, active)} from the filter bar's health chips."""
+    out = {}
+    for m in re.finditer(r'<a href="([^"]*)" id="hc-(\w+)"\s+class="([^"]*)"\s+(aria-current="true")?[^>]*>'
+                         r'\w+ <strong>(\d+)</strong>', body):
+        out[m.group(2)] = (m.group(1).replace("&amp;", "&"), int(m.group(5)), bool(m.group(4)))
+    return out
+
+
+def _counts(body):
+    return {k: v[1] for k, v in _chips(body).items()}
+
+
+@pytest.mark.parametrize("view", VIEWS)
+def test_health_counts_on_each_view(app, admin_client, view):
+    with app.app_context():
+        _seed()
+    body = admin_client.get(view).get_data(as_text=True)
+    # passing: up-svc, man-up, stale-svc; failing: deg-svc, down-svc
+    assert _counts(body) == {"total": 8, "passing": 3, "failing": 2}
+
+
+@pytest.mark.parametrize("status", ["all", "failing", "healthy", "unknown", "stale"])
+def test_health_counts_ignore_status_filter(app, admin_client, status):
+    with app.app_context():
+        _seed()
+    body = admin_client.get(f"/?status={status}").get_data(as_text=True)
+    assert _counts(body) == {"total": 8, "passing": 3, "failing": 2}
+
+
+def test_health_counts_respect_source_and_urlless(app, admin_client):
+    with app.app_context():
+        _seed()
+        _entry("man-nourl", source="manual", internalurl=None)
+        db.session.commit()
+    notifier = admin_client.get("/?source=notifier").get_data(as_text=True)
+    assert _counts(notifier) == {"total": 6, "passing": 2, "failing": 2}
+    manual = admin_client.get("/?source=manual&status=failing").get_data(as_text=True)
+    assert _counts(manual) == {"total": 3, "passing": 1, "failing": 0}
+    hidden = admin_client.get("/?source=manual&show_urlless=false").get_data(as_text=True)
+    assert _counts(hidden) == {"total": 2, "passing": 1, "failing": 0}
+
+
+def test_health_chip_links_keep_other_params(app, admin_client):
+    with app.app_context():
+        _seed()
+    body = admin_client.get(
+        "/tiled_dash?group_by=host&sort_in_group=alphabetical&show_urlless=false&source=notifier&status=failing"
+    ).get_data(as_text=True)
+    chips = _chips(body)
+    from urllib.parse import parse_qs, urlparse
+    for key, status in (("total", "all"), ("passing", "healthy"), ("failing", "failing")):
+        href = chips[key][0]
+        u = urlparse(href)
+        assert u.path == "/tiled_dash"
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        assert q == {"group_by": "host", "sort_in_group": "alphabetical",
+                     "show_urlless": "false", "source": "notifier", "status": status}
+
+
+@pytest.mark.parametrize("status,active", [
+    (None, "total"), ("all", "total"), ("healthy", "passing"), ("failing", "failing"),
+    ("unknown", None), ("stale", None),
+])
+def test_health_chip_active_marker(app, admin_client, status, active):
+    with app.app_context():
+        _seed()
+    path = "/compact_dash" + (f"?status={status}" if status else "")
+    chips = _chips(admin_client.get(path).get_data(as_text=True))
+    assert {k for k, v in chips.items() if v[2]} == ({active} if active else set())
+
+
+def test_failing_chip_neutral_when_zero(app, admin_client):
+    with app.app_context():
+        _entry("only-up")
+        db.session.commit()
+    body = admin_client.get("/").get_data(as_text=True)
+    assert "hc-alert" not in body

@@ -46,6 +46,7 @@
 | 0.36    | 2026-11-15 | §13.7 delivered (unreleased), completing §13: `health_history.py`, `GET /service/<id>/health`, `partials/health_detail.html` + `static/js/health_detail.js`, panel in the Tiled drawer, a Dashboard expand row and the Edit page ("Health history"). §13 retitled Delivered (unreleased); §5.6 retitled. No schema change. Register wire contract unchanged. |
 | 0.37    | 2026-11-15 | §13.8 added, delivered (unreleased): Container check, Docker state as an automatic health check on every notifier entry (migration `c1d7a3e5f2b8`, kind `container`, evaluated by the scheduler). §13.1 state note and §5.6 `kind` list updated; former §13.8 (out of scope) is now §13.9 and no longer lists Docker state. Register contract unchanged. |
 | 0.38    | 2026-11-15 | v0.7.0 released. §13 retitled Delivered: entry sources (notifier vs manual), health checks as their own tables with URL, service (HTTP/HTTPS status or body, TCP, ping) and automatic Container checks, concurrent checker with 24h raw + hourly-compacted 7-day history, health rollup badge and Status/Source filters, health detail panel with 24h/7d history. Schema in §5.6. Register wire contract unchanged; no notifier change needed. |
+| 0.39    | 2026-11-15 | §13.6 filter bar (unreleased, post-v0.7.0): "Total Services" replaced by clickable Total / Passing / Failing count chips that set the `status` filter; counts follow `source` / `show_urlless` but ignore `status`. No schema or register-contract change. |
 
 ---
 
@@ -1556,7 +1557,10 @@ schema change.
     `healthy` (up) / `unknown` (unknown or none) / `stale` (notifier
     entries that are stale).
   - `source` = `all` / `notifier` / `manual`.
-- "Total Services" shows the filtered count over the total.
+- The filter bar shows **Total / Passing / Failing** count chips, each a link
+  that sets `status` to `all` / `healthy` / `failing`. They count entries
+  after `source` and `show_urlless` but ignoring `status`, so each number
+  equals what its link shows.
 
 **As built:** `health_state.entry_health(entry)` returns a frozen
 `EntryHealth(state, total, failing, failures)` (plus `label` / `tooltip`).
@@ -1574,7 +1578,11 @@ plain links. `view_helpers` adds `normalize_status_filter` /
 `normalize_source_filter` (unknown values fall back to `all`) and applies both
 before grouping. `stale` is `source == notifier and is_docker_status_stale`.
 The filter selects use `view-control`, so the existing JS keeps them in the
-URL. "Total Services" shows `shown / total` only when they differ. The legacy
+URL. The count chips come from `view_helpers.health_counts` (one rollup per
+entry, no extra queries; Unknown and Not monitored count in Total only) and
+`routes_dashboard._health_count_context`, which builds each link server-side
+from `request.args` so all other params persist and marks the active chip with
+`aria-current="true"`. The old `shown / total` text is gone. The legacy
 mirror and `checker.legacy_status` are gone: nothing reads the deprecated
 `*_health_check_status` / `_update` columns except `dbdump.html` and restore;
 backups still emit those keys, derived from the check rows. New filter

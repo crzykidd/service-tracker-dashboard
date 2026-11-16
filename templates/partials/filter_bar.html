@@ -52,10 +52,15 @@
         Show URL-less
       </label>
 
-      <span class="text-sm text-gray-400">
-        Total Services:
-        {% if total_entries is not defined %}N/A{% elif all_entries_count is defined and all_entries_count != total_entries %}<span id="totalServices">{{ total_entries }} / {{ all_entries_count }}</span>{% else %}<span id="totalServices">{{ total_entries }}</span>{% endif %}
-      </span>
+      {% if health_counts is defined %}
+      <nav class="hc-chips" id="healthCounts" aria-label="Health counts">
+        {% for key, label in [('total', 'Total'), ('passing', 'Passing'), ('failing', 'Failing')] %}
+        <a href="{{ health_links[key] }}" id="hc-{{ key }}"
+           class="hc-chip hc-{{ key }}{% if key == 'failing' and health_counts.failing > 0 %} hc-alert{% endif %}{% if health_active == key %} hc-active{% endif %}"
+           {% if health_active == key %}aria-current="true"{% endif %}>{{ label }} <strong>{{ health_counts[key] }}</strong></a>
+        {% endfor %}
+      </nav>
+      {% endif %}
     </div>
 
     <div class="flex gap-2 items-center">

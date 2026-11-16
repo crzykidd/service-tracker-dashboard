@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The filter bar now shows clickable Total, Passing and Failing counts**
+  in place of "Total Services". Passing counts healthy (up) services and
+  Failing counts degraded or down ones; click a count to apply the matching
+  Status filter, and the active one is highlighted. The counts follow the
+  Source and Show URL-less filters but not the Status filter, so each number
+  matches the list you get when you click it. Unknown and Not monitored
+  services appear in Total only. The old `shown / total` text is gone.
+
 ## [0.7.0] — 2026-11-15
 
 ### Added

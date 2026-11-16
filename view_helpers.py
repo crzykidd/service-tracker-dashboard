@@ -88,6 +88,30 @@ def matches_source(entry, source):
     return entry.source == (SOURCE_MANUAL if source == "manual" else SOURCE_NOTIFIER)
 
 
+def health_counts(services, show_urlless=True, source="all"):
+    """Total / Passing / Failing for the filter-bar chips.
+
+    Covers the entries left after the Source and Show URL-less filters,
+    ignoring the Status filter, so each number equals what its chip shows
+    when clicked. One rollup per entry. Unknown and Not monitored entries
+    count toward Total only.
+    """
+    source = normalize_source_filter(source)
+    total = passing = failing = 0
+    for e in services:
+        if not show_urlless and not entry_has_url(e):
+            continue
+        if not matches_source(e, source):
+            continue
+        total += 1
+        state = entry_health(e).state
+        if state in _STATUS_STATES["healthy"]:
+            passing += 1
+        elif state in _STATUS_STATES["failing"]:
+            failing += 1
+    return {"total": total, "passing": passing, "failing": failing}
+
+
 def entry_has_url(entry):
     return bool((entry.internalurl or "").strip()) or bool((entry.externalurl or "").strip())
 
