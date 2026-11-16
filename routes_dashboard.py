@@ -43,6 +43,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 import check_form
 import health_history
+import jobs
 import settings_store
 import synthesizer
 from extensions import db
@@ -1240,16 +1241,17 @@ def edit_entry(id):
 @dashboard_bp.route('/service/<int:id>/checks/run', methods=['POST'])
 @login_required
 def run_checks_now(id):
-    """Check now: make every enabled check of this entry due at the next
-    scheduler tick (within about 5 seconds) by clearing `last_checked_at`."""
+    """Check now: run every enabled check of this entry at the next scheduler
+    tick (within about 5 seconds). The last result stays in place until the
+    new one is written; `requested_at` lets the panel poll for it."""
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
-    queued = 0
-    for check in entry.checks:
-        if check.enabled:
-            check.last_checked_at = None
-            queued += 1
-    db.session.commit()
-    return jsonify({'ok': True, 'queued': queued})
+    ids = [check.id for check in entry.checks if check.enabled]
+    jobs.request_run(ids)
+    return jsonify({
+        'ok': True,
+        'queued': len(ids),
+        'requested_at': health_history.iso_z(datetime.utcnow()),
+    })
 
 
 @dashboard_bp.route('/service/<int:id>/health')

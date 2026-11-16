@@ -9,7 +9,8 @@
 
   const TYPE_LABELS = { http: 'HTTP', tcp: 'TCP', ping: 'Ping' };
   const STATE_LABELS = { up: 'Up', down: 'Down', unknown: 'Not run yet' };
-  const CHECK_NOW_DELAY_MS = 7000; // scheduler tick (5 s) + probe time
+  const CHECK_NOW_POLL_MS = 2000;      // re-fetch interval while a Check now is pending
+  const CHECK_NOW_MAX_WAIT_MS = 75000; // scheduler tick (5 s) + up to a 60 s probe timeout
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -168,6 +169,7 @@
       return r.json();
     }).then(function (data) {
       render(root, data);
+      return data;
     }).catch(function (err) {
       root.dataset.loaded = '';
       const body = root.querySelector('[data-health-body]');
@@ -203,10 +205,26 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       }).then(function (res) {
-        now.textContent = res.queued ? 'Checking…' : 'Nothing to check';
-        setTimeout(function () {
-          load(root).then(function () { now.disabled = false; now.innerHTML = label; });
-        }, res.queued ? CHECK_NOW_DELAY_MS : 0);
+        const done = function () { now.disabled = false; now.innerHTML = label; };
+        if (!res.queued) {
+          now.textContent = 'Nothing to check';
+          setTimeout(done, 1500);
+          return;
+        }
+        now.textContent = 'Checking…';
+        // Poll until every shown check has a result newer than the request
+        // (the last result stays visible meanwhile), or give up after a while.
+        const deadline = Date.now() + CHECK_NOW_MAX_WAIT_MS;
+        const poll = function () {
+          load(root).then(function (data) {
+            const fresh = data && data.checks.every(function (c) {
+              return c.last_checked_at && c.last_checked_at >= res.requested_at;
+            });
+            if (fresh || Date.now() >= deadline) { done(); return; }
+            setTimeout(poll, CHECK_NOW_POLL_MS);
+          });
+        };
+        setTimeout(poll, CHECK_NOW_POLL_MS);
       }).catch(function () {
         now.textContent = 'Failed';
         setTimeout(function () { now.disabled = false; now.innerHTML = label; }, 2000);

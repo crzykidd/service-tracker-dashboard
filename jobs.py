@@ -163,6 +163,30 @@ def _check_interval(check, global_interval):
     return global_interval
 
 
+# Check now: ids asked to run at the next tick regardless of their interval.
+# In-process only, which is fine: gunicorn runs exactly one worker and the
+# scheduler lives in it. Using a set (not clearing last_checked_at) keeps the
+# last result visible while the requested run is pending.
+_run_requests = set()
+_run_requests_lock = threading.Lock()
+
+
+def request_run(check_ids):
+    """Mark checks to run at the next scheduler tick (Check now)."""
+    with _run_requests_lock:
+        _run_requests.update(check_ids)
+
+
+def _pending_run_requests():
+    with _run_requests_lock:
+        return set(_run_requests)
+
+
+def _clear_run_requests(check_ids):
+    with _run_requests_lock:
+        _run_requests.difference_update(check_ids)
+
+
 def select_due_jobs(app, now_utc=None, skip_ids=()):
     """Plain-dict descriptions of the checks that are due, for the pool.
 
@@ -176,6 +200,7 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
     global_interval = _int_setting(app, "url_healthcheck_interval", DEFAULT_URL_INTERVAL)
     default_timeout = _global_health_timeout(app)
     jobs_due = []
+    requested = _pending_run_requests()
     added = False
     for entry in ServiceEntry.active().all():
         before = len(entry.checks)
@@ -203,7 +228,11 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
         if not target:
             continue
         interval = _check_interval(check, global_interval)
-        if check.last_checked_at is not None and check.last_checked_at + timedelta(seconds=interval) > now_utc:
+        if (
+            check.id not in requested
+            and check.last_checked_at is not None
+            and check.last_checked_at + timedelta(seconds=interval) > now_utc
+        ):
             continue
         jobs_due.append({
             "check_id": check.id,
@@ -265,6 +294,7 @@ class HealthScheduler:
         due = select_due_jobs(self.app, now_utc, skip_ids=set(self.in_flight))
         for job in due:
             self.in_flight[job["check_id"]] = self.executor.submit(_run_job, job)
+        _clear_run_requests(job["check_id"] for job in due)
         return len(due)
 
     def tick(self, now_utc=None):

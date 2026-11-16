@@ -1477,6 +1477,9 @@ both URL rows. The migration test and the interim loop are in
   - **Uptime %** = Σ `samples` where ok ÷ Σ `samples`, over 24 h or 7 d.
 - **Check now**: `POST /service/<id>/checks/run` (login and CSRF)
   queues all of that entry's enabled checks for the next scheduler tick.
+  The request is held in memory (`jobs.request_run`), not by clearing
+  `last_checked_at`, so the last result stays visible until the new one
+  lands.
 
 **As built:** probes live in `checker.py` (`probe_http`, `probe_tcp`,
 `probe_ping`, `run_probe`; each returns a `ProbeResult(ok, latency_ms,
@@ -1619,7 +1622,7 @@ returns every *enabled check with a target*: config summary, state
 `partials/health_detail.html`; `static/js/health_detail.js` fetches lazily
 (Tiled drawer open, Dashboard row expand; autoloaded on Edit), re-fetches
 on the 24h/7d toggle, renders with DOM calls (no innerHTML of server text),
-and drives the tooltip and Check now (`stdPost`, re-fetch after 7 s).
+and drives the tooltip and Check now (`stdPost`, then re-fetch every 2 s until every shown check has a result newer than the request's `requested_at`, up to 75 s).
 Dashboard gets a leading chevron column and an expand row (group-header
 `colspan` is now 13); an open row pauses auto-refresh like an open drawer.
 The Edit page panel is a "Health history" block after the form, above

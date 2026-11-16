@@ -490,11 +490,21 @@ def test_check_now_clears_enabled_checks(app, admin_client):
         db.session.commit()
         eid = e.id
     resp = admin_client.post(f"/service/{eid}/checks/run")
-    assert resp.status_code == 200 and resp.get_json() == {"ok": True, "queued": 1}
+    body = resp.get_json()
+    assert resp.status_code == 200 and body["ok"] is True and body["queued"] == 1
+    assert body["requested_at"].endswith("Z")
     with app.app_context():
         e = db.session.get(ServiceEntry, eid)
-        assert e.url_check("internal").last_checked_at is None
-        assert e.url_check("external").last_checked_at is not None
+        internal_id = e.url_check("internal").id
+        # The last result stays visible while the run is pending.
+        assert e.url_check("internal").last_checked_at == stamp
+        assert internal_id in jobs._pending_run_requests()
+        assert e.url_check("external").id not in jobs._pending_run_requests()
+        # The requested check is due now despite a fresh last_checked_at,
+        # and submitting it clears the request.
+        due = {j["check_id"] for j in jobs.select_due_jobs(app)}
+        assert internal_id in due
+    jobs._clear_run_requests([internal_id])
 
 
 def test_check_now_404_for_unknown_or_deleted(app, admin_client):
@@ -523,3 +533,20 @@ def test_check_now_requires_csrf(app, admin_client):
         assert ok.status_code == 200
     finally:
         app.config["WTF_CSRF_ENABLED"] = False
+
+
+def test_check_now_request_cleared_once_submitted(app):
+    from tests.test_health_schema import _SyncExecutor
+
+    with app.app_context():
+        e = _entry("req", internalurl="http://i")
+        check = e.url_check("internal")
+        check.enabled = True
+        check.last_checked_at = datetime.utcnow()
+        db.session.commit()
+        cid = check.id
+    jobs.request_run([cid])
+    sched = jobs.HealthScheduler(app, executor=_SyncExecutor())
+    with patch("checker.run_probe", return_value=checker.ProbeResult(True, 1, 200, "200")):
+        sched.tick()
+    assert cid not in jobs._pending_run_requests()
