@@ -9,7 +9,7 @@ reference here.
 Public entry points:
 - `start_background_workers(app)` — registers the APScheduler jobs
   (widget refresh, daily backup, widget_value retention prune, soft-delete
-  purge, hourly health-history purge and compaction) and starts the
+  purge, daily API audit purge, hourly health-history purge and compaction) and starts the
   concurrent health-check scheduler thread (probes live in checker.py). Called once, via app.run_startup_tasks(),
   after migrations.
 - `verify_and_fetch_missing_icons(app)` — one-shot icon sweep run
@@ -39,6 +39,7 @@ from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_EXTERNAL,
     CHECK_KIND_INTERNAL,
+    ApiAudit,
     HealthCheck,
     HealthResult,
     ServiceEntry,
@@ -121,6 +122,7 @@ DEFAULT_HEALTH_CHECK_TIMEOUT = 5
 DEFAULT_HEALTH_WORKERS = 8
 DEFAULT_HEALTH_RAW_HOURS = 24
 DEFAULT_HEALTH_HISTORY_DAYS = 7
+DEFAULT_API_AUDIT_RETENTION_DAYS = 90
 DEFAULT_URL_INTERVAL = 300
 MIN_CHECK_INTERVAL = 30
 TICK_SECONDS = 5
@@ -488,6 +490,33 @@ def purge_health_results(app, now_utc=None):
     return deleted
 
 
+def purge_api_audit(app, now_utc=None):
+    """Delete management-API audit rows older than `api_audit_retention_days`
+    (default 90), in batches. Returns rows deleted."""
+    now_utc = now_utc or datetime.utcnow()
+    days = _int_setting(app, "api_audit_retention_days", DEFAULT_API_AUDIT_RETENTION_DAYS)
+    cutoff = now_utc - timedelta(days=days)
+    deleted = 0
+    with app.app_context():
+        try:
+            while True:
+                ids = [
+                    row[0] for row in db.session.query(ApiAudit.id)
+                    .filter(ApiAudit.ts < cutoff).limit(PURGE_BATCH).all()
+                ]
+                if not ids:
+                    break
+                ApiAudit.query.filter(ApiAudit.id.in_(ids)).delete(synchronize_session=False)
+                db.session.commit()
+                deleted += len(ids)
+        except Exception:
+            logger.exception("API audit purge failed; rolling back.")
+            db.session.rollback()
+    if deleted:
+        logger.info("Purged %d API audit rows older than %d days", deleted, days)
+    return deleted
+
+
 def run_scheduled_backup(app):
     with app.app_context():
         backup_dir = app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
@@ -646,6 +675,13 @@ def start_background_workers(app):
         CronTrigger(hour=0, minute=25),
         id='deleted_entry_purge_job',
         name='Purge soft-deleted entries past retention window',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        partial(purge_api_audit, app),
+        CronTrigger(hour=0, minute=35),
+        id='api_audit_purge_job',
+        name='Purge API audit rows past the retention window',
         replace_existing=True
     )
     scheduler.add_job(

@@ -1,10 +1,10 @@
 ---
 name: v080-01-api-keys-and-audit
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-15
 model: sonnet            # opus = research/planning, sonnet = coding
-completed:               # filled when the work is done
-result:                  # one-line summary of the outcome
+completed: 2026-11-15
+result: ApiKey + ApiAudit models and migration d4a9e2c6b715, api_keys.py, routes_mgmt_api.py (require_api_key, audit, JSON errors, whoami), Settings API tab, audit retention job; tests added
 ---
 
 # Task: Admin API keys, management blueprint, and write audit log

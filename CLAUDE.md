@@ -353,14 +353,17 @@ A newer STD with an older notifier must keep working:
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints, jobs
 extensions.py       ← SQLAlchemy, login manager, scheduler instances
-models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ...)
+models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ApiKey, ApiAudit, ...)
 schemas.py          ← pydantic request/response schemas
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
                       /settings, /settings/exposure
 routes_api.py       ← /api/v1/register
+routes_mgmt_api.py  ← management API blueprint (/api/v1, admin API key only, CSRF-exempt):
+                      require_api_key(scope), audit() + after_request audit hook, JSON errors
+api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
-jobs.py             ← concurrent health scheduler, widget refresh, backup, retention/compaction
+jobs.py             ← concurrent health scheduler, widget refresh, backup, retention/compaction, API audit purge
 checker.py          ← health-check probes (http/tcp/ping); pure network, no DB
 health.py           ← /healthz (liveness; /readyz not implemented)
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) for the badges + status filter

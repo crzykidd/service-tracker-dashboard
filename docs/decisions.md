@@ -5,6 +5,39 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-15 — v080-01 implementation calls (API keys and audit)
+
+- **Prefix is 8 hex chars, not a slice of the urlsafe secret.** `token_urlsafe`
+  can contain `_`, which would break `std_<prefix>_<secret>` parsing. A hex
+  prefix has no `_`, and the key is split with `split("_", 2)` so a secret
+  containing `_` still parses.
+- **A scope mismatch (403) counts as an authenticated request.** The key was
+  valid, so `last_used_at` is touched and a write attempt is audited. This
+  keeps a read key probing write endpoints visible. Unauthenticated (401)
+  requests are only logged.
+- **Admin UI routes live in `routes_dashboard.py`, not the management
+  blueprint.** `/settings/api-keys` is a browser form route (session + CSRF
+  + admin), so it belongs with the other `/settings/*` routes; the
+  CSRF-exempt, key-only blueprint stays pure API.
+- **The create response is a dedicated page, not the Settings page.**
+  Re-rendering Settings would need its large context rebuilt; a small
+  `api_key_created.html` (no-store) shows the key once and links back.
+- **Key names are unique including revoked keys** (DB unique constraint per
+  the PRD), so a revoked name cannot be reused. The error message says so.
+- **Audit masking is by field name** (the known secret names plus any name
+  containing `secret`, `password` or `token`) and replaces both old and new
+  values, so an audit row never reveals a secret or whether it changed.
+  Conservative over precise.
+- **No `/api/v1` routing-level JSON 404/405 yet.** Flask blueprints do not
+  handle unmatched URLs, and `/api/v1/*` already holds browser JSON routes, so
+  a blanket app-level handler would change their behaviour. Raised views get
+  JSON errors; revisit in v080-04 with the OpenAPI work if wanted.
+- **Existing migration test adjusted.** `test_container_check.py` upgraded to
+  `head` and downgraded `-1`, which now removes this migration instead of the
+  container one; it now pins the container revision explicitly.
+
+---
+
 ## 2026-11-15 — v0.8.0 Management API design calls
 
 Scoped with the operator; plan in PRD §14.

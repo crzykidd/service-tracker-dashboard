@@ -32,6 +32,7 @@ VALID_KEYS = {
     "health_check_workers": int,
     "health_raw_hours": int,
     "health_history_days": int,
+    "api_audit_retention_days": int,
 }
 
 # Keys whose values must never be written to logs in clear text.
@@ -58,6 +59,7 @@ DEFAULT_VALUES = {
     "health_check_workers": 8,
     "health_raw_hours": 24,
     "health_history_days": 7,
+    "api_audit_retention_days": 90,
 }
 def load_settings():
     file_config = {}

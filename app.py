@@ -28,6 +28,7 @@ from models import User
 from routes_api import api_bp
 from routes_auth import auth_bp, refresh_default_password_flag
 from routes_dashboard import dashboard_bp
+from routes_mgmt_api import mgmt_bp
 from routes_widgets import widgets_bp
 from settings_loader import CONFIG_DIR, load_settings, mask_value
 from view_helpers import safe_redirect_target
@@ -102,6 +103,7 @@ def create_app():
     app.register_blueprint(widgets_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(mgmt_bp)
 
     app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", settings.get("STD_DOZZLE_URL", ""))
 

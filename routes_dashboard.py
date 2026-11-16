@@ -37,10 +37,11 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
+import api_keys
 import check_form
 import health_history
 import jobs
@@ -57,6 +58,7 @@ from models import (
     SOURCE_NOTIFIER,
     URL_CHECK_KINDS,
     VALID_SOURCES,
+    ApiKey,
     Group,
     HealthCheck,
     ServiceEntry,
@@ -679,6 +681,7 @@ def settings():
          api_token_missing=not current_app.config.get('api_token'),
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
          default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
+         api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
@@ -1349,6 +1352,41 @@ def delete_entry_json(id):
     entry.deleted_at = datetime.now()
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@dashboard_bp.route('/settings/api-keys', methods=['POST'])
+@login_required
+@is_admin_required
+def create_api_key():
+    """Create an admin API key and show the full key once, on this response.
+
+    The key is deliberately not flashed or put in the session; it exists only
+    in the rendered page and is never retrievable again.
+    """
+    name = (request.form.get('name') or '').strip()
+    scope = request.form.get('scope') or ''
+    error = api_keys.validate_name(name)
+    if not error and scope not in api_keys.SCOPES:
+        error = "Choose a scope: read or write."
+    if error:
+        flash(error, "danger")
+        return redirect(url_for('dashboard.settings', section='api'))
+    key, full_key = api_keys.create_key(name, scope, created_by=current_user.id)
+    logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
+    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@dashboard_bp.route('/settings/api-keys/<int:id>/revoke', methods=['POST'])
+@login_required
+@is_admin_required
+def revoke_api_key(id):
+    key = db.get_or_404(ApiKey, id)
+    api_keys.revoke_key(key)
+    logger.info(f"Revoked API key '{key.name}' ({key.prefix}) by {current_user.username}.")
+    flash(f"Revoked API key '{key.name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='api'))
 
 
 @dashboard_bp.route('/settings/deleted/<int:id>/restore', methods=['POST'])

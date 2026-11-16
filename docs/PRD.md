@@ -50,6 +50,7 @@
 | 0.40    | 2026-11-15 | §13.7: inline 24h uptime strips (unreleased, post-v0.7.0): "Show uptime" filter-bar checkbox kept in the `std_show_uptime` cookie, `GET /health/strips`, `health_history.strips()`, `static/js/uptime_strip.js`. No schema change. Register wire contract unchanged. |
 | 0.41    | 2026-11-15 | v0.7.1 released: clickable Total / Passing / Failing count chips in the filter bar (§13.6) and the "Show uptime" toggle with inline 24h uptime strips (§13.7). No schema or register-contract change. |
 | 0.42    | 2026-11-15 | Added §14 (v0.8.0 — Management API, planned): admin API keys with read/write scopes, `/api/v1` REST for entries, checks, health, groups, widgets and runtime settings, OpenAPI spec, write audit log, stdio MCP server. Planned schema §5.7. Later sections renumbered (§14→§15, §15→§16, §16→§17). Register contract unchanged. No code changes yet. |
+| 0.43    | 2026-11-15 | §14.2 and §14.6 delivered (unreleased, v080-01): admin API keys (`api_key`, Settings → API tab, show-once), management blueprint skeleton (`require_api_key`, JSON errors, `GET /api/v1/whoami`), write audit log (`api_audit`, `audit()` helper, `after_request` hook, `api_audit_retention_days` + daily purge). Migration `d4a9e2c6b715`; §5.7 updated. Register wire contract unchanged. |
 
 ---
 
@@ -369,9 +370,9 @@ its index in the same migration.
 | Deprecated | `service_entry.internal_/external_health_check_enabled/_status/_update`, `health_check_timeout`, `health_check_verify_tls`: no longer read after v0.7.0; kept for rollback, dropped in a later release (FUTURE.md). |
 
 
-### 5.7 v0.8.0 schema changes (planned)
+### 5.7 v0.8.0 schema changes (planned; `api_key` and `api_audit` delivered, unreleased)
 
-Planned for v0.8.0 (§14). FKs get their index in the same migration.
+Planned for v0.8.0 (§14). FKs get their index in the same migration. `api_key` and `api_audit` shipped in migration `d4a9e2c6b715` (v080-01); column types: `object_type` `String(32)`, `object_id` `String(64)` (ids are stored as text), `path` `String(255)`, `method` `String(8)`; indexes `ix_api_key_prefix`, `ix_api_key_created_by`, `ix_api_audit_ts`, `ix_api_audit_api_key_id`.
 
 | Change | Detail |
 |--------|--------|
@@ -1772,7 +1773,7 @@ token and needs no update.
   `"widget_api_key_set": true|false`.
 - **Every write is audited** (§14.6).
 
-### 14.2 API keys [`v080-01-api-keys-and-audit`]
+### 14.2 API keys [`v080-01-api-keys-and-audit`] — Delivered (unreleased)
 
 - **Model `ApiKey`** (table `api_key`): `id`, `name` (unique, ≤64),
   `prefix` (first 8 chars, for display and lookup), `key_hash`
@@ -1798,6 +1799,25 @@ token and needs no update.
 - **Blueprint `routes_mgmt_api.py`** (`/api/v1/...`, CSRF-exempt), with JSON
   error handlers for 400, 401, 403, 404, 405, 409 and 422:
   `{"error": "...", "details": ...}`.
+
+**As built (v080-01):** `api_keys.py` (`generate_key`, `verify`,
+`scope_allows`, `create_key`, `revoke_key`), `routes_mgmt_api.py` (blueprint
+`mgmt_api`, `require_api_key(scope)`, `audit()`, `json_error()`,
+`GET /api/v1/whoami`) and models `ApiKey` / `ApiAudit`.
+- The prefix is 8 hex characters (`secrets.token_hex(4)`), so it never
+  contains `_`; the secret is `token_urlsafe(32)` and may. A key is parsed
+  with `split("_", 2)`.
+- A 403 (read key on a write endpoint) still counts as an authenticated
+  request: `last_used_at` is touched and a write is audited.
+- Blueprint handlers return the JSON error shape for 400, 401, 403, 404, 405,
+  409 and 422 raised inside the blueprint, plus pydantic `ValidationError`
+  (400, field-level `details`) and unhandled exceptions (500). Routing-level
+  404/405 (no matching URL) are not handled by a blueprint and keep Flask's
+  default response.
+- Settings → API (admin, CSRF): create shows the key on the POST response page
+  (`api_key_created.html`, `Cache-Control: no-store`), never via flash or
+  session; revoke keeps the row greyed out. Key names are unique including
+  revoked keys. The audit list on this tab arrives with v080-04.
 
 ### 14.3 Entries, checks and health [`v080-02-entries-checks-health`]
 
@@ -1856,7 +1876,7 @@ Users and passwords are **not** exposed through the API (out of scope).
   HTTP body check, disable a check), and a "Managing STD with Claude"
   section.
 
-### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`]
+### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`] — Delivered (unreleased; model, hook, retention)
 
 - **Model `ApiAudit`** (table `api_audit`): `id`, `ts` (UTC), `api_key_id`
   (FK, indexed, `ON DELETE SET NULL`), `key_name` (a snapshot), `method`,
@@ -1867,6 +1887,17 @@ Users and passwords are **not** exposed through the API (out of scope).
 - **Retention:** new setting `api_audit_retention_days` (default 90), with a
   daily purge job.
 - **Settings → API** shows the most recent 200 rows, filterable by key.
+
+**As built (v080-01):** model, retention and the hook are in. The hook is
+`routes_mgmt_api.audit_response`, registered with `mgmt_bp.after_request`; it
+writes one row for each POST/PATCH/PUT/DELETE that carried a valid key
+(including 4xx and 403). Endpoints describe the change with
+`audit(object_type, object_id, {field: [old, new]})`, which masks secret
+fields (`widget_api_key`, `api_token`, `secret_key`, `key_hash`, `api_key`,
+or any name containing `secret`, `password` or `token`) as `"***"` for both
+old and new values before they reach the database. Unauthenticated requests
+are only logged. `jobs.purge_api_audit` runs daily at 00:35. The Settings
+view of the log is not built yet.
 
 ### 14.7 MCP server [`v080-05-mcp-server`]
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Admin API keys (Settings → API).** Create named keys with a **read** or
+  **write** scope for the upcoming management API. The full key is shown once
+  with a Copy button (only a hash is stored); the list shows each key's
+  prefix, scope, creation time, last use (time and IP) and status, and a
+  Revoke button. Revoked keys stay listed, greyed out. These keys are
+  separate from the notifier's `api_token`: the notifier token cannot use the
+  management API, and a management key cannot register services. Your
+  notifier setup is unchanged.
+- **`GET /api/v1/whoami`**, the first management-API endpoint, returns the
+  calling key's name, prefix and scope. The management API accepts only
+  `Authorization: Bearer <key>` (a logged-in browser session alone gets 401)
+  and answers errors as JSON (`{"error", "details"}`).
+- **Write audit log.** Every write made through the management API is
+  recorded (key name, method, path, result and the fields changed, with
+  secret values masked). New setting `api_audit_retention_days` (default 90)
+  controls how long rows are kept; a daily job removes older ones. The
+  Settings view of the log comes in a later v0.8.0 step.
+- Database migration `d4a9e2c6b715` adds the `api_key` and `api_audit`
+  tables.
+
 ## [0.7.1] — 2026-11-15
 
 ### Added

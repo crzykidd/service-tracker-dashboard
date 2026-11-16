@@ -71,3 +71,7 @@ health_raw_hours: 24
 # Days of health-check history to keep before it is deleted. Can be set as
 # HEALTH_HISTORY_DAYS in ENV.
 health_history_days: 7
+
+# Days of management-API write audit log to keep before it is deleted. A daily
+# job removes older rows. Can be set as API_AUDIT_RETENTION_DAYS in ENV.
+api_audit_retention_days: 90

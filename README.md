@@ -219,6 +219,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `health_check_workers`     | int    | `HEALTH_CHECK_WORKERS`       | `8`                | How many health checks run at the same time. |
 | `health_raw_hours`         | int    | `HEALTH_RAW_HOURS`           | `24`               | Hours every health-check sample is kept individually. Older successes are merged into one row per unbroken run per clock hour (failures are always kept); an hourly job at :05 does this. |
 | `health_history_days`      | int    | `HEALTH_HISTORY_DAYS`        | `7`                | Days of health-check history kept; an hourly job at :03 deletes older rows. |
+| `api_audit_retention_days` | int    | `API_AUDIT_RETENTION_DAYS`   | `90`               | Days the management-API write audit log is kept; a daily 00:35 job deletes older rows. |
 | `widget_background_reload` | int    | `WIDGET_BACKGROUND_RELOAD`   | `900`              | Seconds between widget data refreshes. |
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
@@ -239,6 +240,7 @@ health_check_timeout: 5
 health_check_workers: 8
 health_raw_hours: 24
 health_history_days: 7
+api_audit_retention_days: 90
 widget_background_reload: 900
 widget_value_retention_days: 30
 register_field_ownership: user_wins
@@ -609,11 +611,33 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
+| `/settings/api-keys` `/settings/api-keys/<id>/revoke` | Create (shown once) and revoke admin API keys (admin POST). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
-| `/api/v1/register`   | Register/update entry (canonical keys).  |
+| `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
+| `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope (admin API key). |
 | `/login` `/logout`   | Local user auth.                         |
+
+### Admin API keys (management API)
+
+Settings → **API** creates admin API keys for the management API under
+`/api/v1` (v0.8.0, in progress: so far only `GET /api/v1/whoami`; the entry,
+check and settings endpoints follow). Keys are separate from the notifier's
+`api_token`, which can only register services and is rejected here, and a
+management key is rejected by `/api/v1/register`.
+
+- Pick a name (unique, up to 64 characters) and a scope: **read** or **write**
+  (write includes read). The full key (`std_<prefix>_<secret>`) is shown
+  **once** with a Copy button; only a hash is stored, so a lost key means
+  revoking it and creating another.
+- Send it as `Authorization: Bearer <key>`. Browser sessions do not
+  authenticate the management API.
+- The key list shows prefix, scope, created, last used (time and IP) and
+  status. Revoked keys stay listed, greyed out.
+- Every write made with a key (POST, PATCH, PUT, DELETE, including rejected
+  ones) is recorded in an audit log, with secret values masked. Rows are kept
+  for `api_audit_retention_days` (90).
 
 ---
 
