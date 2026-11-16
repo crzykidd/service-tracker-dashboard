@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.7.1-blue)
+![Version](https://img.shields.io/badge/version-0.8.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -45,6 +45,29 @@ through the web UI or directly via API.
 
 ## What's New
 
+### v0.8.0 (2026-11-15)
+
+A management API so scripts and agents such as Claude can maintain STD. One
+database migration runs on startup (API key and audit tables); no notifier
+change is needed. **Not fully tested yet:** the API and MCP server pass the
+automated suite but haven't been fully tested against real instances, so start
+with a read key and keep a recent backup.
+
+- **Admin API keys** in Settings → API: named, **read** or **write**, shown
+  once, revocable, with last-used time and IP. They are separate from the
+  notifier's `api_token`, which stays register-only.
+- **REST API under `/api/v1`** for everything the UI does: entries (list with
+  filters, create manual sites with checks, edit, delete, restore), checks
+  (add, edit, delete, run now), health history and a one-call
+  `/health/summary` of everything failing, groups, widgets (keys never
+  returned), exposure settings and a read-only, secret-masked config view.
+- **OpenAPI spec** at `/api/v1/openapi.json` and a **write audit log** in
+  Settings → API (every change, by key, secrets masked).
+- **MCP server** (`mcp/`, runs on your machine, not in the image) so Claude
+  Code or Claude Desktop can manage STD as tools.
+- **Fixed:** leaving the group blank on the Add page no longer creates a group
+  named "None".
+
 ### v0.7.1 (2026-11-15)
 
 Two dashboard conveniences on top of 0.7.0. No migrations, no configuration
@@ -86,7 +109,7 @@ upgrade is needed. Four database migrations run on startup; back up
   Edit page: per-check state, uptime for 24h and 7d, recent failures, a
   24h / 7d bar strip with tooltips, and **Check now**.
 - **Add and Edit show their messages** inline.
-- **Show uptime** (unreleased): a filter-bar checkbox, remembered in a cookie,
+- **Show uptime** (added in v0.7.1): a filter-bar checkbox, remembered in a cookie,
   that adds a 24-hour uptime strip (48 half-hour bars and the uptime %) to
   every service on Dashboard, Tiled and Compact.
 

@@ -55,6 +55,7 @@
 | 0.45    | 2026-11-15 | §14.4 delivered (unreleased, v080-03): management endpoints for groups, widget types and instances (attach, detach, delete), exposure direction settings and a read-only masked `GET /config`; `widget_rules.py`. No schema change. Register wire contract unchanged. |
 | 0.46    | 2026-11-15 | §14.5 and the §14.6 Settings view delivered (unreleased, v080-04): `GET /api/v1/openapi.json` generated from a route registry (`mgmt_openapi.py`) plus the pydantic/TypedDict models, with completeness tests against `app.url_map`; Settings → API audit log view; README Management API and Managing STD with Claude sections; JSON 404/405 for unmatched `/api/v1/*` API-client requests. No schema change. Register wire contract unchanged. |
 | 0.47    | 2026-11-15 | §14.7 delivered (unreleased, v080-05), the last v0.8.0 chunk; §14 status line now "all chunks delivered": stdio MCP server `mcp/std_mcp.py` (read key = read tools only, write key = all), outside the Docker image (`.dockerignore`), tested in CI. No STD server change, no schema change. Register wire contract unchanged. |
+| 0.48    | 2026-11-15 | v0.8.0 released. §14 retitled Delivered: admin API keys (read/write scopes) and write audit log, `/api/v1` management API for entries, checks, health, groups, widgets, exposure settings and config, generated OpenAPI spec, stdio MCP server in `mcp/`. Schema §5.7 (`api_key`, `api_audit`). Add-page "None" group fix. Register contract unchanged; no notifier change. |
 
 ---
 
@@ -73,7 +74,7 @@
 11. [v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)](#11-v067v068--registry-move-and-engineering-standards-delivered)
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
-14. [v0.8.0 — Management API (Planned)](#14-v080--management-api-planned)
+14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
 15. [Versioning, Branches, and Releases](#15-versioning-branches-and-releases)
 16. [Cross-Repo Coordination](#16-cross-repo-coordination)
 17. [Open Questions](#17-open-questions)
@@ -374,7 +375,7 @@ its index in the same migration.
 | Deprecated | `service_entry.internal_/external_health_check_enabled/_status/_update`, `health_check_timeout`, `health_check_verify_tls`: no longer read after v0.7.0; kept for rollback, dropped in a later release (FUTURE.md). |
 
 
-### 5.7 v0.8.0 schema changes (planned; `api_key` and `api_audit` delivered, unreleased)
+### 5.7 v0.8.0 schema changes
 
 Planned for v0.8.0 (§14). FKs get their index in the same migration. `api_key` and `api_audit` shipped in migration `d4a9e2c6b715` (v080-01); column types: `object_type` `String(32)`, `object_id` `String(64)` (ids are stored as text), `path` `String(255)`, `method` `String(8)`; indexes `ix_api_key_prefix`, `ix_api_key_created_by`, `ix_api_audit_ts`, `ix_api_audit_api_key_id`.
 
@@ -1728,9 +1729,10 @@ health columns.
 
 ---
 
-## 14. v0.8.0 — Management API (Planned)
+## 14. v0.8.0 — Management API (Delivered)
 
-> **Status:** all chunks delivered (unreleased), awaiting `/release-prep 0.8.0`.
+> **Status:** shipped in v0.8.0 (2026-11-15). The management API and MCP server
+> have not yet been fully tested against real instances (README note).
 > Scoped 2026-11-15. Each subsection is one handoff
 > prompt (named in brackets, in `prompts/`), run in the order listed.
 > Each chunk leaves the app working and the test suite green.
@@ -1778,7 +1780,7 @@ token and needs no update.
   `"widget_api_key_set": true|false`.
 - **Every write is audited** (§14.6).
 
-### 14.2 API keys [`v080-01-api-keys-and-audit`] — Delivered (unreleased)
+### 14.2 API keys [`v080-01-api-keys-and-audit`] — Delivered in v0.8.0
 
 - **Model `ApiKey`** (table `api_key`): `id`, `name` (unique, ≤64),
   `prefix` (first 8 chars, for display and lookup), `key_hash`
@@ -1824,7 +1826,7 @@ token and needs no update.
   session; revoke keeps the row greyed out. Key names are unique including
   revoked keys. The audit list on this tab arrives with v080-04.
 
-### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered (unreleased)
+### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered in v0.8.0
 
 All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 200, maximum 1000) and `offset`, and returns `{items, total, limit, offset}`.
@@ -1885,7 +1887,7 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
   same rule as the filter-bar chips); `since` is the earliest failed sample
   after the latest passing one, falling back to the last check time.
 
-### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`] — Delivered (unreleased)
+### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`] — Delivered in v0.8.0
 
 | Method + path | Scope | Purpose |
 |---|---|---|
@@ -1931,7 +1933,7 @@ Users and passwords are **not** exposed through the API (out of scope).
   env/file/default. Names that are secrets (`api_token`, anything ending
   `_key`, `_token`, `_password`, `_secret`) show `"***"` (null if unset).
 
-### 14.5 OpenAPI spec and docs [`v080-04-openapi-and-docs`] — Delivered (unreleased)
+### 14.5 OpenAPI spec and docs [`v080-04-openapi-and-docs`] — Delivered in v0.8.0
 
 - `GET /api/v1/openapi.json` (no auth; it describes shapes, not data) is an
   OpenAPI 3.1 document. It is generated from the pydantic request and
@@ -1957,7 +1959,7 @@ routes under `/api/v1` are never listed. Unmatched `/api/v1/*` URLs answer
 with the JSON error shape when the caller sends a Bearer header or
 `Accept: application/json`.
 
-### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`] — Delivered (unreleased)
+### 14.6 Write audit log [in `v080-01`; Settings view in `v080-04`] — Delivered in v0.8.0
 
 - **Model `ApiAudit`** (table `api_audit`): `id`, `ts` (UTC), `api_key_id`
   (FK, indexed, `ON DELETE SET NULL`), `key_name` (a snapshot), `method`,
@@ -1982,7 +1984,7 @@ view of the log is not built yet.
 
 **As built (v080-04):** Settings → API lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
 
-### 14.7 MCP server [`v080-05-mcp-server`] — Delivered (unreleased)
+### 14.7 MCP server [`v080-05-mcp-server`] — Delivered in v0.8.0
 
 - A small **stdio MCP server** at `mcp/std_mcp.py` (its own
   `mcp/requirements.txt`, using the official `mcp` Python SDK). It is **not
