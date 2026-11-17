@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own; changing a channel reconnects it without a restart. The password is
   write-only: never shown, returned, logged or audited. Check and state
   publishing, and Home Assistant discovery, follow in later releases.
+- **Notifications: check and entry state on MQTT.** With an MQTT channel
+  enabled, STD publishes retained state under the base topic:
+  `<base>/entry/<entry id>/state` (up, degraded, down, unknown or none, with
+  name, host, group, source, since and check counts),
+  `<base>/entry/<entry id>/check/<check id>` (result, latency, message,
+  last change) and `<base>/summary` (counts over active entries). Only
+  changes are sent, and everything is republished on every (re)connect and
+  every 10 minutes. Entries and checks that are deleted, soft-deleted or
+  disabled have their topics cleared. Topics use ids, so renaming an entry
+  never moves them. Try `mosquitto_sub -t 'std/#' -v`.
 - **Notification channels in the management API and MCP.** `GET`/`POST
   /api/v1/notifications/channels`, `GET`/`PATCH`/`DELETE
   /api/v1/notifications/channels/{id}` and `POST .../{id}/test`, plus the

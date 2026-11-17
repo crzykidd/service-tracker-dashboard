@@ -5,6 +5,47 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — notif-02 state publishing
+
+- **A commit listener, not a call in every mutation path.** The prompt asked
+  mutation paths to call `notify.request_sync()`. Entries and checks change
+  in a dozen places (UI add/edit/delete/restore/purge, the management API,
+  register adoption and restore, backup restore, the purge job). Instead
+  `notify_state.install_listeners()` flags a session in `before_flush` when a
+  watched object changes (new or deleted ServiceEntry, HealthCheck or Group, or
+  a changed name/host/group/source/URL/soft delete/check config) and calls
+  `request_sync()` in `after_commit`. The cached `last_*` result columns are
+  deliberately not watched, or every health tick would trigger a sync.
+- **`full_sync` runs on the publisher thread and dispatches directly**, not
+  through the 1000-slot queue: a sync of a large install would overflow it and
+  drop its own events. Change events from the scheduler do use the queue.
+- **Sync is debounced (2 s) and diffed.** A sync only republishes topics
+  whose payload changed (an in-memory map in the publisher); connect and the
+  safety net force a full republish. The safety net is a 10-minute APScheduler
+  job (forced, so it also repairs a broker that lost its retained messages).
+  The "after channel config changes" trigger is covered by the connect: any
+  config change restarts the session, which reconnects and forces a sync.
+- **No sync while no channel has a session**, and nothing is remembered then.
+  Otherwise a delete while the broker is down would drop the topic from the
+  persisted set without clearing it on the broker. The next connect forces.
+- **The published set is global, not per channel.** One JSON value in the
+  `setting` store (`notify_publish_state`; no table, no migration) holds the
+  topics, each entry's last roll-up with `since`, and each check's `ok` with
+  its change time. Known limits: a topic cleared while one broker was
+  unreachable stays retained there, and changing a channel's base topic leaves
+  the old retained topics behind.
+- **Only counted checks get a topic** (`check_counts`: enabled, able to run);
+  the roll-up counts and the topics then agree, and a disabled check is
+  cleared like a deleted one.
+- **Entry events also fire when the per-state check counts change**, not only
+  when the roll-up does (e.g. an extra check's first pass leaves the entry
+  `up`), so the retained payload never lags. The summary fires only on a
+  roll-up change.
+- **`dashboard_url` is the path `/edit/<id>`.** STD has no configured public
+  base URL, and the scheduler thread has no request to derive one from.
+
+---
+
 ## 2026-11-16 — notif-01 channel framework and MQTT
 
 - **`paho-mqtt` 2.x, not `aiomqtt`.** STD is threaded (gunicorn threads,

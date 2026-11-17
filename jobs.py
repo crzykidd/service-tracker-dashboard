@@ -145,8 +145,13 @@ def _global_health_timeout(app):
 
 def record_check_result(check, result, now_utc=None):
     """Store `result` (a checker.ProbeResult) as a HealthResult and update
-    the check's cached `last_*` state. Scheduler thread only. Caller commits."""
+    the check's cached `last_*` state. Scheduler thread only. Caller commits.
+
+    Returns True when this is the check's first result or `ok` changed: the
+    caller collects those check ids and hands them to `notify.publish_changes`
+    after the commit (PRD 17.3)."""
     now_utc = now_utc or datetime.utcnow()
+    previous_ok = check.last_ok
     db.session.add(HealthResult(
         check_id=check.id,
         ts=now_utc,
@@ -165,6 +170,7 @@ def record_check_result(check, result, now_utc=None):
     # http, or the certificate could not be read, so a stale date never shows.
     check.last_cert_expires_at = getattr(result, "cert_expires_at", None)
     check.consecutive_failures = 0 if result.ok else (check.consecutive_failures or 0) + 1
+    return previous_ok is None or previous_ok != result.ok
 
 
 def _check_interval(check, global_interval):
@@ -263,14 +269,15 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
     return jobs_due
 
 
-def run_container_checks(app, now_utc=None, now_local=None):
+def run_container_checks(app, now_utc=None, now_local=None, changed=None):
     """Evaluate every due Container check and record the results.
 
     Runs on the scheduler thread, inline: the evaluation is a read of the
     entry's docker_status / last_api_update, so there is no network and no
     pool submission. Due like any check (interval, or a pending run request
     from a register that changed the status). Locked, manual and soft-deleted
-    entries are skipped. Returns the number of results written.
+    entries are skipped. Returns the number of results written; ids of checks
+    whose `ok` changed are appended to `changed` when given.
     """
     now_utc = now_utc or datetime.utcnow()
     global_interval = _int_setting(app, "url_healthcheck_interval", DEFAULT_URL_INTERVAL)
@@ -298,7 +305,9 @@ def run_container_checks(app, now_utc=None, now_local=None):
         ):
             continue
         ok, message = evaluate_container(entry, now_local)
-        record_check_result(check, checker.ProbeResult(ok=ok, latency_ms=None, message=message), now_utc)
+        if record_check_result(check, checker.ProbeResult(ok=ok, latency_ms=None, message=message), now_utc) \
+                and changed is not None:
+            changed.append(check.id)
         ran.append(check.id)
         written += 1
     if written:
@@ -328,8 +337,9 @@ class HealthScheduler:
         self.executor = executor or ThreadPoolExecutor(max_workers=workers, thread_name_prefix="health-check")
         self.in_flight = {}  # check_id -> Future
 
-    def collect(self):
-        """Write the results of every finished future. Returns the count."""
+    def collect(self, changed=None):
+        """Write the results of every finished future. Returns the count; ids of
+        checks whose `ok` changed are appended to `changed` when given."""
         written = 0
         for check_id, future in list(self.in_flight.items()):
             if not future.done():
@@ -343,7 +353,8 @@ class HealthScheduler:
             check = db.session.get(HealthCheck, check_id)
             if check is None:  # deleted while in flight
                 continue
-            record_check_result(check, result)
+            if record_check_result(check, result) and changed is not None:
+                changed.append(check_id)
             entry = check.service_entry
             logger.info("%s - %s: %s", entry.container_name if entry else "?", check.kind,
                         "ok" if result.ok else f"failing ({result.message})")
@@ -363,13 +374,17 @@ class HealthScheduler:
         """One scheduler pass inside its own app context. Returns
         (results_written, checks_submitted)."""
         with self.app.app_context():
+            changed = []
             try:
-                written = self.collect()
+                written = self.collect(changed)
                 submitted = self.submit_due(now_utc)
-                written += run_container_checks(self.app, now_utc)
+                written += run_container_checks(self.app, now_utc, changed=changed)
             except Exception:
                 db.session.rollback()
                 raise
+            if changed:
+                # After the commits; builds dicts here, enqueues, never blocks.
+                notify.publish_changes(changed)
             return written, submitted
 
     def shutdown(self):
@@ -705,6 +720,13 @@ def start_background_workers(app):
         CronTrigger(minute=5),
         id='health_result_compaction_job',
         name='Compact old raw health successes into hourly ranges',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        partial(notify.request_sync, True),
+        IntervalTrigger(minutes=notify.SYNC_SAFETY_NET_MINUTES),
+        id='notify_state_sync_job',
+        name='Republish retained notification state (safety net)',
         replace_existing=True
     )
     scheduler.start()

@@ -255,6 +255,10 @@ history and filters.
   exists for this), with de-duplication and quiet hours. State
   publishing to MQTT and Home Assistant is scoped in PRD §17 and builds
   the channel framework these would plug into.
+- **Publish every check result to MQTT.** Operator decision (PRD 17.1):
+  state publishing sends changes only, retained. An option to publish every
+  result (latency graphs from the broker) was left out of notif-02; if
+  wanted, add it as a per-channel setting on top of `notify_state`.
 - **Notifier-defined service checks.** A container label (e.g.
   `dockernotifier.std.check.type=tcp`, `...check.target=...`) that the
   notifier forwards so service checks come from compose, not the UI.

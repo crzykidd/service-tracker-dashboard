@@ -72,6 +72,7 @@
 | 0.62    | 2026-11-16 | Added §16 (Next release — Version in the UI, delivered on `dev`): `BUILD_CHANNEL` build arg and `channel` in `version.txt`, header version with What's New link and dev-build SHA link, GitHub update check (page-load driven, cached, backoff, DB settings `update_check_enabled` / `update_check_interval_hours`), `whoami`/`config` build and update fields, `/api/v1/settings/update-check`. §3.1 module layout updated. No schema or register-contract change. |
 | 0.63    | 2026-11-16 | Added the §16 body (the 0.62 row described it, but the section text was missing) and §17 (Next release — Notifications: MQTT and Home Assistant, planned: channel framework, retained state publishing, HA discovery; operator decisions in §17.1). Former §16–§18 renumbered §18–§20 and cross-references updated. FUTURE.md alerting item split: state publishing moved here; alert rules and push channels stay parked. |
 | 0.64    | 2026-11-16 | §17.2 delivered on `dev` (notif-01): `notification_channel` table (migration `a2f4c6e8b031`, new §5.8), `notify.py` / `notify_mqtt.py` (channel registry, bounded-queue publisher thread, MQTT via `paho-mqtt` 2.x, availability + LWT, reload on config change), instance id in the `setting` store, Settings → Notifications tab with **Send test message**, management API `/api/v1/notifications/channels` (+ `/test`) and MCP tools; §3.1 and §3.2 updated. §17.3 and §17.4 remain planned. No register-contract change. |
+| 0.65    | 2026-11-16 | §17.3 delivered on `dev` (notif-02): retained state publishing. The topic and payload contract (`<base>/entry/<entry_id>/state`, `.../check/<check_id>`, `<base>/summary`) is public and documented in §17.3; change detection at `jobs.record_check_result()`, the `full_sync()` reconcile in new `notify_state.py` (connect, debounced mutation requests via a commit listener, a 10-minute forced safety net), published set persisted in the `setting` key `notify_publish_state` (§5.8); §3.1 and §3.2 updated. §17.4 remains planned. No register-contract change. |
 
 ---
 
@@ -203,6 +204,8 @@ schemas.py          ← pydantic request/response schemas
 version_check.py    ← build channel/display strings + cached GitHub update check
 notify.py           ← notification channel registry + CRUD helpers, the
                       bounded-queue publisher thread, `enqueue()`
+notify_state.py     ← retained state publishing: topic/payload builders,
+                      change events, `full_sync()` reconcile (§17.3)
 notify_mqtt.py      ← MQTT channel type: pydantic config, paho session
                       (LWT/availability), test message
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
@@ -425,6 +428,7 @@ Migration `a2f4c6e8b031` (§17.2). No foreign keys.
 |--------|--------|
 | Table | `notification_channel`: `id`, `type` (`String(32)`, indexed `ix_notification_channel_type`), `name` (`String(64)`, unique index `ux_notification_channel_name`), `enabled` (bool, default false), `config` (JSON, non-secret settings), `secret` (`String(512)`, nullable, the MQTT password; write-only in the UI, API, logs and audit), `created_at`, `updated_at`. |
 | Setting key | `instance_id` in `setting`: a UUID created on first use and never changed (MQTT client ids; Home Assistant unique ids in §17.4). |
+| Setting key | `notify_publish_state` in `setting` (§17.3): JSON `{topics, entries, checks}`: every retained topic believed to be on the broker, each entry's last published roll-up (`state`, `since`, `checks`) and each check's last `ok` with the time it changed. Lets the reconcile clear deleted topics after a restart. |
 
 ---
 
@@ -2491,20 +2495,45 @@ No register-contract change: the notifier is not involved.
   carry the live `status`. MCP: `list_notification_channels`,
   `get_notification_channel`, `test_notification_channel`.
 
-### 17.3 State publishing [`notif-02-state-publishing`] — Planned
+### 17.3 State publishing [`notif-02-state-publishing`] — Delivered on `dev`
 
-- Retained topics: `<base>/entry/<entry_id>/state` (roll-up from
-  `health_state.entry_health`), `<base>/entry/<entry_id>/check/<check_id>`,
-  `<base>/summary`. JSON payloads carry name, host, group, source, check
-  type, target, latency, message and timestamps.
-- Change detection at `jobs.record_check_result()` (an `ok` change or first
-  result) and on roll-up change; events are plain dicts built on the
-  scheduler thread.
-- **Reconcile, don't chase deletes:** `full_sync()` publishes the desired
-  set and an empty retained payload to every previously published topic that
-  is no longer desired. It runs on connect, on config change, on a debounced
-  request from mutation paths, and on a periodic safety net. The published
-  set persists across restarts.
+Retained messages only (except `<base>/test`), QoS from the channel config.
+`<base>` is the channel's base topic (default `std`). Topics use database ids,
+so a rename never moves a topic. Payloads are compact JSON; timestamps are
+UTC ISO 8601 (`2026-11-16T21:25:12Z`).
+
+| Topic | Payload |
+|-------|---------|
+| `<base>/status` | `online` / `offline` (§17.2). |
+| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). |
+| `<base>/entry/<entry_id>/check/<check_id>` | One check: `ok` (true / false / null before its first run), `state` (`up` / `down` / `unknown`), `entry_id`, `check_id`, `name`, `kind` (`container`, `internal_url`, `external_url`, `service`), `check_type` (`http`, `tcp`, `ping`, `dns`, or `container`), `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` (when `ok` last changed). |
+| `<base>/summary` | `{up, degraded, down, unknown, none, total}` over active (not soft-deleted) entries. |
+
+- Only checks that take part in the roll-up (`check_counts`: enabled and able
+  to run) have a topic. `dashboard_url` is the path `/edit/<entry_id>`: STD has
+  no configured public base URL, so it is never absolute.
+- Change detection at `jobs.record_check_result()`, which returns True for the
+  first result or an `ok` change. The scheduler thread, after the tick's writes
+  commit, builds plain dicts and enqueues them (no ORM objects cross threads,
+  no network I/O): a check event per changed check; an entry event when the
+  roll-up or the per-state counts differ from what was last published; a
+  summary event when any roll-up changed. Unchanged results publish nothing.
+- **Reconcile, don't chase deletes:** `notify_state.full_sync()` runs on the
+  publisher thread. It publishes the desired set (active entries, counted
+  checks, summary) and an empty retained payload to every previously
+  published topic that is no longer desired (soft delete, purge, a disabled
+  or removed check). It runs, forced (every topic republished), on every MQTT
+  (re)connect and every 10 minutes (an APScheduler job, the safety net); and,
+  not forced (only topics whose payload changed), 2 seconds after any commit
+  that changed what a topic carries (entry name, host, group, URLs, source,
+  soft delete, a check's enabled/kind/name/type/target, a group's name), via
+  `notify.request_sync()`. Nothing is published, and nothing remembered, while
+  no channel has a live session; the connect that follows forces a sync.
+- The published topic set persists in the `setting` key
+  `notify_publish_state` (§5.8), so cleanup survives a restart. It is shared
+  across channels: a topic cleared while a channel was unreachable stays
+  retained on that broker.
+- Out of scope: publishing every result (parked in FUTURE.md).
 
 ### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Planned
 

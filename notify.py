@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
+import notify_state
 import settings_store
 from extensions import db
 from models import NotificationChannel
@@ -39,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 QUEUE_MAX = 1000
 DROP_WARN_EVERY_SECONDS = 60
+SYNC_DEBOUNCE_SECONDS = 2
+SYNC_SAFETY_NET_MINUTES = 10
 NAME_MAX = 64
 SECRET_MAX = 256
 
@@ -80,6 +83,9 @@ def client_factory():
 
 
 def _on_connected(session):
+    # Runs on the paho network thread: only ask the publisher thread for a full
+    # republish (state publishing, PRD 17.3); it does the database work.
+    request_sync(force=True)
     for hook in list(on_connect_hooks):
         try:
             hook(session)
@@ -101,6 +107,10 @@ class Publisher:
         self._stop = threading.Event()
         self._thread = None
         self._app = None
+        self.state = notify_state.PublishState()
+        self._sync_lock = threading.Lock()
+        self._sync_due = None            # monotonic time the pending sync may run
+        self._sync_force = False
 
     # producers ----------------------------------------------------------------
 
@@ -160,6 +170,48 @@ class Publisher:
         if self.running:
             self._reload.set()
 
+    def request_sync(self, force=False):
+        """Ask for a reconcile of the retained state topics (PRD 17.3). Cheap and
+        non-blocking; requests inside the debounce window collapse into one run.
+        `force` republishes every topic instead of only what changed."""
+        with self._sync_lock:
+            self._sync_force = self._sync_force or force
+            if self._sync_due is None:
+                self._sync_due = time.monotonic() + SYNC_DEBOUNCE_SECONDS
+
+    def sync_pending(self) -> bool:
+        return self._sync_due is not None
+
+    def run_sync_now(self, app=None):
+        """Run the pending sync (if any) now, ignoring the debounce. Publisher
+        thread; tests call it directly. Returns `(published, cleared)` or None."""
+        with self._sync_lock:
+            if self._sync_due is None:
+                return None
+            force = self._sync_force
+            self._sync_due, self._sync_force = None, False
+        app = app or self._app
+        with app.app_context():
+            try:
+                return notify_state.full_sync(self, force=force)
+            except Exception:
+                db.session.rollback()
+                logger.exception("Notification state sync failed")
+                return None
+
+    def has_sessions(self) -> bool:
+        with self._lock:
+            return bool(self._sessions)
+
+    def drain(self):
+        """Dispatch every queued event now (tests; the thread does this itself)."""
+        while True:
+            try:
+                event = self.queue.get_nowait()
+            except queue.Empty:
+                return
+            self.dispatch(event)
+
     # internals ----------------------------------------------------------------
 
     def _run(self):
@@ -170,14 +222,18 @@ class Publisher:
                     self.reload_now(self._app)
                 except Exception:
                     logger.exception("Notification channel reload failed")
+            due = self._sync_due
+            if due is not None and time.monotonic() >= due:
+                self.run_sync_now(self._app)
             try:
                 event = self.queue.get(timeout=0.5)
             except queue.Empty:
                 continue
-            self._dispatch(event)
+            self.dispatch(event)
         self._close_all()
 
-    def _dispatch(self, event):
+    def dispatch(self, event):
+        """Hand one event to every live session (publisher thread)."""
         with self._lock:
             sessions = [s for _, s in self._sessions.values()]
         for session in sessions:
@@ -185,6 +241,8 @@ class Publisher:
                 CHANNEL_TYPES[session.type].publish(session, event)
             except Exception:
                 logger.exception("Publishing to channel '%s' failed", session.name)
+
+    _dispatch = dispatch
 
     def reload_now(self, app=None):
         """Read the enabled channels from the database and apply them."""
@@ -260,6 +318,22 @@ def stop():
 
 def request_reload():
     _publisher.request_reload()
+
+
+def request_sync(force=False):
+    """Mutation paths and the periodic safety net call this; see Publisher.request_sync."""
+    _publisher.request_sync(force)
+
+
+def publish_changes(check_ids):
+    """Scheduler thread, after a tick commits: enqueue the state changes for the
+    checks whose result changed. Never raises."""
+    try:
+        return notify_state.publish_changes(_publisher, check_ids)
+    except Exception:
+        db.session.rollback()
+        logger.exception("Publishing state changes failed")
+        return 0
 
 
 def reset():
@@ -381,3 +455,6 @@ def test_channel(type_name, config, secret):
         return False, "; ".join(f"{e['field']}: {e['message']}" for e in errors)
     instance_id = settings_store.get_instance_id()
     return CHANNEL_TYPES[type_name].test(clean, secret, instance_id, _client_factory)
+
+
+notify_state.install_listeners()

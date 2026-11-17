@@ -794,11 +794,35 @@ releases). Configure it under **Settings → Notifications** (admins only).
    error (with the last error) or disabled, and refreshes while the tab is
    open.
 
-What STD publishes in this release is its own availability on
-`<base topic>/status`: `online` (retained) when it connects, and `offline`
-(retained) as the broker's last will if STD disappears, or when it shuts
-down cleanly. STD reconnects by itself, and editing, disabling or deleting a
-channel takes effect at once, without a restart.
+STD announces itself on `<base topic>/status`: `online` (retained) when it
+connects, and `offline` (retained) as the broker's last will if STD
+disappears, or when it shuts down cleanly. STD reconnects by itself, and
+editing, disabling or deleting a channel takes effect at once, without a
+restart.
+
+### Published state
+
+Everything below is retained, and topics use database ids so a rename never
+moves them (`<base>` is the channel's base topic, `std` by default):
+
+| Topic | What it carries |
+|-------|-----------------|
+| `<base>/status` | `online` / `offline` |
+| `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`) |
+| `<base>/entry/<entry id>/check/<check id>` | JSON: `ok`, `state`, `check_type`, `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` |
+| `<base>/summary` | JSON: `{up, degraded, down, unknown, none, total}` over active entries |
+
+```sh
+mosquitto_sub -t 'std/#' -v
+```
+
+STD publishes when a check's result flips between ok and failing (and for its
+first result) or an entry's roll-up changes, not on every result. The full set
+is republished whenever STD (re)connects to the broker and every 10 minutes,
+and a subscriber that joins late gets the current state at once because it is
+retained. Deleted, soft-deleted or disabled entries and checks have their
+topics cleared (an empty retained message). Checks that are disabled or
+cannot run (for example no URL) have no topic.
 
 The password is write-only: the form shows only that one is set, a blank
 field keeps it and a checkbox removes it; it is never returned by the API,

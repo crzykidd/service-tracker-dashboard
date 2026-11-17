@@ -372,6 +372,8 @@ mcp/                ← stdio MCP server (std_mcp.py), HTTP client of the manage
                       no __init__.py (a package named `mcp` would shadow the SDK)
 notify.py           ← notification channels: registry, CRUD helpers, bounded-queue publisher
                       thread, non-blocking `enqueue(event)`; never block producers on the broker
+notify_state.py     ← retained state publishing (PRD 17.3): topic/payload builders, change events,
+                      `full_sync()` reconcile, commit listener that requests a sync
 notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, test message);
                       the password (`NotificationChannel.secret`) is write-only everywhere
 widget_rules.py     ← widget plugin discovery + validation for the management API
