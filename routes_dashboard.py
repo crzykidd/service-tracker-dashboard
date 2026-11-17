@@ -299,6 +299,17 @@ def dashboard():
 @dashboard_bp.route('/tiled_dash')
 @login_required
 def tiled_dashboard():
+    return _render_tiled()
+
+
+@dashboard_bp.route('/tiled_preview')
+@login_required
+def tiled_preview():
+    """Unlinked preview of the v2 tile layout (see docs/decisions.md)."""
+    return _render_tiled(tile_layout='v2')
+
+
+def _render_tiled(**extra):
     axis, show_urlless, sort_in_group = _read_view_controls()
 
     entries = _load_view_entries()
@@ -331,6 +342,7 @@ def tiled_dashboard():
         host_label_ids=_host_label_ids(entries),
         widget_values=widget_values,
         widget_fields=widget_fields,
+        **extra,
     )
 
 

@@ -5,6 +5,28 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-06 temporary Tiled layout preview (`/tiled_preview`)
+
+- **Why it exists:** to compare a proposed Tiled tile layout (name across the
+  full width, host tight under it, one status/action icon row along the tile
+  bottom) against the current one with real data. It is unlinked (no nav
+  entry) and not a shipped feature; no CHANGELOG entry.
+- **Decision required before `/release-prep 0.9.0`:** either *adopt* v2 (it
+  becomes the Tiled layout; remove the `/tiled_preview` route, the
+  `tile_layout` plumbing, the notice, the `.tile-layout-v2` scoping and the old
+  tile CSS; add a CHANGELOG entry) or *delete* the preview (route, template
+  branches, `.tile-layout-v2` / `.tile-preview-notice` CSS, the three
+  `test_preview_*` tests).
+- **CSS-only, scoped:** all new rules sit under `.tile-layout-v2`; the template
+  changes are only `{% if tile_layout == 'v2' %}` wrappers (notice + one
+  `<div>`), so `/tiled_dash` renders byte-identical (checked against HEAD,
+  modulo the per-request CSRF token). The handler body was factored into
+  `_render_tiled(**extra)`.
+- **No JS change needed:** the controls use `window.location.search` and the
+  edit link uses `request.full_path`, so the operator stays on the preview.
+
+---
+
 ## 2026-11-16 — v090-05 implementation calls (host on tiles)
 
 - **Compact's `always` is not identical to the old rule.** The old rule showed

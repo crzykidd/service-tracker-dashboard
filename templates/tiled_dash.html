@@ -8,6 +8,13 @@
 {% endblock %}
 
 {% block content %}
+    {% if tile_layout == 'v2' %}
+    <div class="tile-preview-notice">
+        Layout preview — the normal Tiled view is unchanged.
+        <a href="{{ url_for('dashboard.tiled_dashboard') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}">Back to the normal Tiled view</a>
+    </div>
+    <div class="tile-layout-v2">
+    {% endif -%}
     {% if grouped_entries %}
         {% for group_name, entries_in_group in grouped_entries %}
             <h2 class="group-title flex items-center gap-2 cursor-pointer group-header" data-group="{{ group_name }}">
@@ -416,5 +423,6 @@
         {% endfor %}
     {% else %}
         <p style="text-align: center; margin-top: 30px;">No service entries found or no groups to display based on current selection.</p>
-    {% endif %}
+    {% endif %}{% if tile_layout == 'v2' %}
+    </div>{# /tile-layout-v2 #}{% endif %}
 {% endblock %}

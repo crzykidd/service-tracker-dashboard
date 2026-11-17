@@ -306,6 +306,48 @@
 .tile-chevron:hover { color: var(--color-text-secondary); }
 .tile-open .tile-chevron { color: var(--color-accent); }
 
+/* ── Tile layout preview v2 (/tiled_preview; temporary, see docs/decisions.md) ──
+   Icon + full-width name block on top, one status/action icon row along the
+   bottom. Scoped so nothing outside the preview changes. */
+.tile-preview-notice {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-tile);
+  padding: 6px 12px;
+  margin: 8px 0;
+}
+.tile-preview-notice a { color: var(--color-accent); margin-left: 8px; }
+.tile-layout-v2 .tile {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-areas: "icon details" "bar bar";
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: center;
+}
+.tile-layout-v2 .tile-icon { grid-area: icon; margin-right: 0; }
+.tile-layout-v2 .tile-details {
+  grid-area: details;
+  margin-right: 0;
+  min-width: 0;
+  line-height: 1.15;
+}
+.tile-layout-v2 .tile-host { line-height: 1.1; margin-top: 0; }
+.tile-layout-v2 .tile-status-row {
+  grid-area: bar;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+  border-top: 1px solid var(--color-border);
+  padding-top: 4px;
+}
+.tile-layout-v2 .tile-icon-row-status { justify-content: flex-start; }
+.tile-layout-v2 .tile-icon-row-actions { justify-content: flex-end; }
+
 /* ── Tile drawer ──────────────────────────────────────────── */
 .tile-drawer {
   display: none;
@@ -1021,6 +1063,7 @@ body.show-uptime .uptime-strip { display: flex; align-items: center; gap: 6px; }
 .uptime-strip-tile { position: absolute; left: 10px; right: 10px; bottom: 5px; }
 .uptime-strip-tile .health-bars { height: 10px; }
 body.show-uptime .tile { padding-bottom: 24px; }
+body.show-uptime .tile-layout-v2 .tile { padding-bottom: 24px; }
 /* Compact: a very thin strip at the bottom of the tile, no % text. */
 .compact-tile { position: relative; }
 .uptime-strip-compact { position: absolute; left: 0.75rem; right: 0.75rem; bottom: 3px; }
