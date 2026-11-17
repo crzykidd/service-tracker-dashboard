@@ -259,6 +259,15 @@ history and filters.
   state publishing sends changes only, retained. An option to publish every
   result (latency graphs from the broker) was left out of notif-02; if
   wanted, add it as a per-channel setting on top of `notify_state`.
+- **Home Assistant "Check now" button.** A `button` entity per entry that
+  makes STD run its checks at once (the management API already has
+  `POST /entries/{id}/checks/run`). Needs a command subscription, which
+  makes STD act on unauthenticated broker messages, so it needs a security
+  review (who may publish, rate limits) first. Operator decision (PRD 17.1):
+  no command entities in the first version.
+- **Per-result latency sensors for Home Assistant.** Requires publishing every
+  check result (see above), then a latency `sensor` per check. Left out of
+  notif-03.
 - **Notifier-defined service checks.** A container label (e.g.
   `dockernotifier.std.check.type=tcp`, `...check.target=...`) that the
   notifier forwards so service checks come from compose, not the UI.

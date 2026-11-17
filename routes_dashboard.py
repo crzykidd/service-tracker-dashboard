@@ -804,6 +804,9 @@ def _notification_form_data(form):
         'base_topic': text('base_topic') or 'std',
         'qos': number('qos') if text('qos') else 1,
         'keepalive': number('keepalive') if text('keepalive') else 60,
+        'ha_discovery': form.get('ha_discovery') == '1',
+        'ha_prefix': text('ha_prefix') or 'homeassistant',
+        'ha_device_prefix': text('ha_device_prefix') or 'STD',
     }
     password = form.get('password') or ''
     if form.get('clear_password') == '1':
@@ -1403,6 +1406,8 @@ def edit_entry(id):
                 entry.url_check(which).last_checked_at = None
         was_locked = entry.is_static
         entry.is_static = 'is_static' in request.form
+        if 'ha_form' in request.form:
+            entry.ha_exclude = 'ha_exclude' in request.form
         if was_locked and not entry.is_static and entry.container_check is not None:
             # Unlocked: the container state was frozen, so re-evaluate it now.
             entry.container_check.last_checked_at = None

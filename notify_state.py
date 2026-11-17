@@ -52,8 +52,8 @@ SUMMARY_TOPIC = "summary"
 # What changes a topic's payload. Cached `last_*` result columns are left out
 # on purpose: every health tick writes those, and a sync per tick is wasteful.
 _ENTRY_ATTRS = ("container_name", "host", "group_id", "source", "deleted_at",
-                "internalurl", "externalurl", "is_static")
-_CHECK_ATTRS = ("enabled", "kind", "name", "check_type", "target")
+                "internalurl", "externalurl", "is_static", "image_tag", "ha_exclude")
+_CHECK_ATTRS = ("enabled", "kind", "name", "check_type", "target", "ha_exclude")
 _GROUP_ATTRS = ("group_name",)
 
 
@@ -109,6 +109,12 @@ def check_payload(entry, check, last_change):
         "ok": check.last_ok,
         "state": check_state(check),
         "entry_id": entry.id,
+        "std_entry_id": entry.id,
+        "entry_name": entry.container_name,
+        "host": entry.host,
+        "group": entry.group.group_name if entry.group is not None else None,
+        "source": entry.source,
+        "dashboard_url": dashboard_url(entry.id),
         "check_id": check.id,
         "name": check.name or check.kind,
         "kind": check.kind,
@@ -127,6 +133,7 @@ def entry_payload(entry, health, since):
     return {
         "state": health.state,
         "entry_id": entry.id,
+        "std_entry_id": entry.id,
         "name": entry.container_name,
         "host": entry.host,
         "group": entry.group.group_name if entry.group is not None else None,
@@ -181,6 +188,11 @@ class PublishState:
         self.checks: dict = {}
         self.payloads: dict = {}
         self.summary = None
+        # Home Assistant discovery (PRD 17.4), per channel id (as text): the
+        # absolute config topics believed to be on that broker (persisted) and
+        # the last text sent for each (in memory).
+        self.ha_topics: dict = {}
+        self.ha_payloads: dict = {}
 
     def load(self):
         """Read the persisted part once (needs an app context)."""
@@ -191,6 +203,7 @@ class PublishState:
             self.topics = set(raw.get("topics") or [])
             self.entries = {int(k): v for k, v in (raw.get("entries") or {}).items()}
             self.checks = {int(k): v for k, v in (raw.get("checks") or {}).items()}
+            self.ha_topics = {str(k): set(v) for k, v in (raw.get("ha") or {}).items()}
             self.loaded = True
 
     def save(self):
@@ -199,6 +212,7 @@ class PublishState:
                 "topics": sorted(self.topics),
                 "entries": {str(k): v for k, v in self.entries.items()},
                 "checks": {str(k): v for k, v in self.checks.items()},
+                "ha": {k: sorted(v) for k, v in self.ha_topics.items() if v},
             })
             db.session.commit()
 
@@ -312,6 +326,59 @@ def desired_state(state, now=None):
     return desired
 
 
+def _clear_absolute(topic):
+    return {"topic": topic, "payload": "", "retain": True, "absolute": True}
+
+
+def sync_discovery(publisher, state, force):
+    """Home Assistant discovery (PRD 17.4), per live session: publish the
+    desired retained configs and clear every previously published config that
+    is no longer desired (opt-outs, deletes, removed checks, discovery turned
+    off). A session whose channel has `ha_discovery` off has an empty desired
+    set, so its old configs are cleared. Channels with no live session keep
+    their remembered topics until they reconnect. Returns `(published, cleared)`."""
+    from flask import current_app
+
+    import notify_ha
+    from models import NotificationChannel
+
+    sessions = publisher.sessions()
+    published = cleared = 0
+    if sessions or state.ha_topics:
+        known = {str(c.id) for c in NotificationChannel.query.all()}
+        for key in [k for k in state.ha_topics if k not in known]:
+            state.ha_topics.pop(key)        # channel deleted: nothing left to reach
+            for pk in [p for p in state.ha_payloads if p[0] == key]:
+                state.ha_payloads.pop(pk)
+    if not sessions:
+        return 0, 0
+    entries = _active_entries()
+    instance_id = settings_store.get_instance_id()
+    version = current_app.config.get("VERSION_INFO", {}).get("version", "unknown")
+    for channel_id, session in sessions:
+        key = str(channel_id)
+        config = session.config
+        desired = (notify_ha.desired_configs(entries, config, instance_id, version)
+                   if config.get("ha_discovery") else {})
+        for topic in sorted(desired):
+            text = _text(desired[topic])
+            if not force and state.ha_payloads.get((key, topic)) == text:
+                continue
+            publisher.dispatch_to(session, {"topic": topic, "payload": desired[topic],
+                                            "retain": True, "absolute": True})
+            state.ha_payloads[(key, topic)] = text
+            published += 1
+        for topic in sorted(state.ha_topics.get(key, set()) - set(desired)):
+            publisher.dispatch_to(session, _clear_absolute(topic))
+            state.ha_payloads.pop((key, topic), None)
+            cleared += 1
+        if desired:
+            state.ha_topics[key] = set(desired)
+        else:
+            state.ha_topics.pop(key, None)
+    return published, cleared
+
+
 def full_sync(publisher, force=False):
     """Publish the desired retained set and clear what is no longer desired.
     Runs on the publisher thread, inside an app context. `force` republishes
@@ -323,6 +390,8 @@ def full_sync(publisher, force=False):
     state = publisher.state
     state.load()
     with state.lock:
+        # Discovery configs go out before the states they describe.
+        ha_published, ha_cleared = sync_discovery(publisher, state, force)
         desired = desired_state(state)
         published = cleared = 0
         for topic in sorted(desired):
@@ -339,7 +408,7 @@ def full_sync(publisher, force=False):
         state.topics = set(desired)
         state.summary = _text(desired[SUMMARY_TOPIC])
         state.save()
-    return published, cleared
+    return published + ha_published, cleared + ha_cleared
 
 
 # --- commit listener -----------------------------------------------------------------

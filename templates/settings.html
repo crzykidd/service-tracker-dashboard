@@ -759,6 +759,22 @@
             <input type="number" name="keepalive" id="nf-keepalive" min="5" max="3600" value="{{ nf.get('keepalive', 60) }}" class="form-input block mt-1 w-full">
           </label>
         </div>
+        <fieldset class="border border-gray-700 rounded p-3 space-y-3">
+          <legend class="text-sm font-semibold px-1">Home Assistant</legend>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" name="ha_discovery" id="nf-ha-discovery" value="1" {% if nf.get('ha_discovery') %}checked{% endif %}>
+            Add to Home Assistant
+          </label>
+          <p class="text-xs text-gray-400">Publishes MQTT discovery so Home Assistant creates one device per entry (a roll-up state sensor plus a problem sensor per check) under an STD hub device. New entries and checks appear automatically; opt out per entry or per check on the entry's edit page.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label>Discovery prefix
+              <input type="text" name="ha_prefix" id="nf-ha-prefix" maxlength="64" value="{{ nf.get('ha_prefix', 'homeassistant') }}" class="form-input block mt-1 w-full">
+            </label>
+            <label>Device name prefix
+              <input type="text" name="ha_device_prefix" id="nf-ha-device-prefix" maxlength="32" value="{{ nf.get('ha_device_prefix', 'STD') }}" class="form-input block mt-1 w-full">
+            </label>
+          </div>
+        </fieldset>
         <div class="flex flex-wrap items-center gap-3">
           <button type="submit" data-unsaved-save class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold py-2 px-6 rounded shadow">Save channel</button>
           <button type="button" id="nf-test" class="bg-gray-600 hover:bg-gray-500 text-white text-sm font-semibold py-2 px-6 rounded shadow">Send test message</button>
@@ -990,6 +1006,9 @@
       $('nf-base-topic').value = c.base_topic || 'std';
       $('nf-qos').value = String(c.qos === undefined ? 1 : c.qos);
       $('nf-keepalive').value = c.keepalive || 60;
+      $('nf-ha-discovery').checked = !!c.ha_discovery;
+      $('nf-ha-prefix').value = c.ha_prefix || 'homeassistant';
+      $('nf-ha-device-prefix').value = c.ha_device_prefix || 'STD';
       const set = ch && ch.secret_set;
       $('nf-password-state').textContent = set ? '(set; leave blank to keep)' : '';
       $('nf-clear-row').hidden = !set;

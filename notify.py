@@ -93,6 +93,12 @@ def _on_connected(session):
             logger.exception("Notification on-connect hook failed")
 
 
+def _on_ha_online(session):
+    # Home Assistant restarted and lost its entity registry view of us: send
+    # every discovery config again, then every state (PRD 17.4).
+    request_sync(force=True)
+
+
 # --- the publisher ------------------------------------------------------------
 
 
@@ -232,6 +238,18 @@ class Publisher:
             self.dispatch(event)
         self._close_all()
 
+    def sessions(self):
+        """`[(channel_id, session)]` for every live session."""
+        with self._lock:
+            return [(cid, s) for cid, (_, s) in self._sessions.items()]
+
+    def dispatch_to(self, session, event):
+        """Hand one event to a single session (per-channel discovery configs)."""
+        try:
+            CHANNEL_TYPES[session.type].publish(session, event)
+        except Exception:
+            logger.exception("Publishing to channel '%s' failed", session.name)
+
     def dispatch(self, event):
         """Hand one event to every live session (publisher thread)."""
         with self._lock:
@@ -275,7 +293,7 @@ class Publisher:
         for spec in to_start:
             session = CHANNEL_TYPES[spec.type].open_session(
                 spec.id, spec.name, spec.config, spec.secret, instance_id,
-                _client_factory, _on_connected)
+                _client_factory, _on_connected, _on_ha_online)
             with self._lock:
                 self._sessions[spec.id] = (spec.fingerprint(instance_id), session)
             session.start()

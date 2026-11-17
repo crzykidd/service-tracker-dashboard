@@ -253,9 +253,10 @@ def test_rename_keeps_the_topic(app, factory):
         db.session.get(ServiceEntry, eid).container_name = "after"
         db.session.commit()
         assert pub.sync_pending()                        # the name is in the payload
-        assert pub.run_sync_now(app) == (1, 0)
-    assert [t for t, *_x in client.published] == [f"std/entry/{eid}/state"]
-    assert json.loads(client.published[0][1])["name"] == "after"
+        assert pub.run_sync_now(app) == (2, 0)      # the entry topic and its check (entry_name)
+    assert sorted(t for t, *_x in client.published) == sorted(
+        [f"std/entry/{eid}/state", f"std/entry/{eid}/check/{cid}"])
+    assert json.loads(dict((t, p) for t, p, *_x in client.published)[f"std/entry/{eid}/state"])["name"] == "after"
 
 
 def test_last_result_columns_do_not_request_a_sync(app, factory):

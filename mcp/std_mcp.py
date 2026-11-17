@@ -50,13 +50,13 @@ DEFAULT_TIMEOUT = 15.0
 # readable error, not a round trip. The server stays the authority.
 ENTRY_PATCH_FIELDS = {
     "name", "host", "description", "group", "internalurl", "externalurl",
-    "icon", "sort_priority", "locked",
+    "icon", "sort_priority", "locked", "ha_exclude",
 }
 CHECK_PATCH_FIELDS = {
     "enabled", "name", "check_type", "target", "mode", "interval_seconds",
     "timeout_seconds", "verify_tls",
     "dns_name", "dns_record_type", "dns_expected_rcode", "dns_expected_answer",
-    "cert_min_days",
+    "cert_min_days", "ha_exclude",
 }
 
 
@@ -304,7 +304,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @read_tool
     def get_notification_channel(channel_id: int) -> dict:
-        """Get one notification channel: type, name, enabled, config (host, port, tls, base_topic, qos, ...), `secret_set` and its live connection `status`. Use it to check whether the MQTT broker is connected and why not (status.last_error)."""
+        """Get one notification channel: type, name, enabled, config (host, port, tls, base_topic, qos, ha_discovery, ha_prefix, ha_device_prefix, ...), `secret_set` and its live connection `status`. Use it to check whether the MQTT broker is connected and why not (status.last_error)."""
         return client.request("GET", f"/notifications/channels/{channel_id}")
 
     @read_tool
@@ -342,7 +342,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def update_entry(entry_id: int, fields: dict) -> dict:
         """Edit an entry. `fields` names only what changes; a field left out is untouched and a field set to null clears it.
 
-        Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, sort_priority, locked.
+        Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, sort_priority, locked, ha_exclude (true removes the entry's device from Home Assistant; only matters when a notification channel has Add to Home Assistant on).
         Docker-owned fields of notifier entries are rejected. A URL you edit here is protected from being overwritten by the notifier.
         Example fields: {"description": "Media server", "group": "Media", "externalurl": null}
         """
@@ -392,10 +392,10 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def update_check(check_id: int, fields: dict) -> dict:
         """Edit or enable/disable a check. `fields` names only what changes (null clears where that makes sense).
 
-        Allowed: enabled, name, check_type, target, mode, interval_seconds, timeout_seconds, verify_tls, dns_name, dns_record_type, dns_expected_rcode, dns_expected_answer, cert_min_days.
+        Allowed: enabled, name, check_type, target, mode, interval_seconds, timeout_seconds, verify_tls, dns_name, dns_record_type, dns_expected_rcode, dns_expected_answer, cert_min_days, ha_exclude (true removes this check's entity from Home Assistant; allowed on every kind of check).
         cert_min_days (URL checks and http service checks, 1..365; null clears it) fails the check when the https certificate has fewer days left, e.g. a URL check on https://em-pve01.crzynet.me:8006/ with {"cert_min_days": 7}; Proxmox's self-signed certificate with verify_tls false still reports its expiry. It is a 400 on tcp, ping and dns checks.
         The dns_* fields apply to service checks of type dns (target is then the DNS server), e.g. {"check_type": "dns", "target": "10.100.16.16", "dns_name": "em-pve01.crzynet.me", "dns_record_type": "A", "dns_expected_answer": "10.100.17.10"}; dns_expected_answer null clears it (rcode only).
-        URL checks (internal/external) accept enabled, mode, interval_seconds, timeout_seconds, verify_tls and cert_min_days; container checks accept enabled and interval_seconds; service checks accept everything.
+        URL checks (internal/external) accept enabled, mode, interval_seconds, timeout_seconds, verify_tls, cert_min_days and ha_exclude; container checks accept enabled, interval_seconds and ha_exclude; service checks accept everything.
         Example fields: {"enabled": false}  or  {"mode": "body", "interval_seconds": 60}
         """
         return client.request("PATCH", f"/checks/{check_id}",

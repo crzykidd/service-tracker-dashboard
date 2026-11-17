@@ -11,6 +11,9 @@ Form field names:
                                     timeout, verify, cert_min_days)
   cc_row, cc_enabled, cc_interval   Container check (notifier entries on Edit)
   svc_row                           one per service-check row (the row key)
+  <prefix>ha_seen / <prefix>ha_publish   "Publish to Home Assistant" toggle on every
+                                    check row (cc_ for the container check); the marker
+                                    says the toggle was on the page
   svc_<key>_<field>                 id, name, type, target, mode, interval,
                                     timeout, verify, enabled, cert_min_days
                                     (http only), and for DNS checks dns_name, dns_type, dns_rcode,
@@ -79,6 +82,7 @@ def _row_from_check(check, key=None, label=None):
         "dns_rcode": check.dns_expected_rcode or DNS_DEFAULT_RCODE,
         "dns_answer": check.dns_expected_answer or "",
         "cert_days": "" if check.cert_min_days is None else str(check.cert_min_days),
+        "ha_publish": not check.ha_exclude,
     }
 
 
@@ -88,7 +92,7 @@ def _blank_url_row(which, label):
         "target": "", "mode": CHECK_MODE_STATUS, "interval": "", "timeout": "",
         "verify": True, "enabled": False,
         "dns_name": "", "dns_type": DNS_DEFAULT_RECORD_TYPE, "dns_rcode": DNS_DEFAULT_RCODE,
-        "dns_answer": "", "cert_days": "",
+        "dns_answer": "", "cert_days": "", "ha_publish": True,
     }
 
 
@@ -117,6 +121,7 @@ def container_row_from_entry(entry):
         "id": check.id,
         "enabled": bool(check.enabled),
         "interval": "" if check.interval_seconds is None else str(check.interval_seconds),
+        "ha_publish": not check.ha_exclude,
     }
 
 
@@ -386,6 +391,18 @@ def _parse_common(form, prefix, row, errors, who, cert=True):
     row["timeout_value"] = values["timeout_value"]
     row["cert_days"] = raw["cert_min_days"]
     row["cert_days_value"] = values["cert_days_value"]
+    _parse_ha(form, prefix, row)
+
+
+def _parse_ha(form, prefix, row):
+    """The "Publish to Home Assistant" toggle. `ha_exclude` is None (leave the
+    stored value) unless the page carried the `<prefix>ha_seen` marker, so a
+    form from before the toggle existed never flips it."""
+    if form.get(f"{prefix}ha_seen") is None:
+        row["ha_exclude"] = None
+        return
+    row["ha_publish"] = form.get(f"{prefix}ha_publish") is not None
+    row["ha_exclude"] = not row["ha_publish"]
 
 
 def parse_form(form, existing_service_ids=()):
@@ -455,6 +472,7 @@ def parse_container(form):
     values, problems = validate_container_check(raw)
     row = {"id": None, "enabled": raw["enabled"], "interval": raw["interval"],
            "interval_value": values["interval_value"]}
+    _parse_ha(form, "cc_", row)
     return row, _with_who(problems, "Container check")
 
 
@@ -466,6 +484,8 @@ def apply_container(entry, row):
     before = (check.interval_seconds, check.enabled)
     check.interval_seconds = row["interval_value"]
     check.enabled = row["enabled"]
+    if row.get("ha_exclude") is not None:
+        check.ha_exclude = row["ha_exclude"]
     if (check.interval_seconds, check.enabled) != before:
         check.last_checked_at = None
 
@@ -489,6 +509,8 @@ def _assign(check, row):
     check.timeout_seconds = row["timeout_value"]
     check.verify_tls = row["verify"] if is_http else True
     check.enabled = row["enabled"]
+    if row.get("ha_exclude") is not None:
+        check.ha_exclude = row["ha_exclude"]
     # The certificate-expiry minimum belongs to http checks. The cached expiry
     # goes with it, so a removed condition never leaves a stale date.
     check.cert_min_days = row.get("cert_days_value") if is_http else None
@@ -550,6 +572,8 @@ def apply_check_values(check, values):
     (only `enabled` and `interval_value`).
     """
     before = _signature(check)
+    if values.get("ha_exclude") is not None:
+        check.ha_exclude = values["ha_exclude"]
     if check.kind == CHECK_KIND_CONTAINER:
         check.interval_seconds = values["interval_value"]
         check.enabled = values["enabled"]
@@ -568,4 +592,5 @@ def new_service_check(values):
     check.name = values["name"] or values["target"][:NAME_MAX]
     check.target = values["target"]
     _assign(check, values)
+    check.ha_exclude = bool(values.get("ha_exclude"))
     return check

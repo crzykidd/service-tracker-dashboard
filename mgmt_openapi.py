@@ -91,7 +91,8 @@ OPERATIONS: tuple = (
        description="Adds notifier-reported data (networks, ports, exposures) and the widget."),
     Op("PATCH", "/entries/{id}", "write", "Edit an entry", S.EntryDetailOut, request=S.EntryPatch,
        errors=(404, 409), description=_PATCH_NOTE + " Notifier-owned fields are rejected by name; "
-       "`name` and `host` can be changed on manual entries only."),
+       "`name` and `host` can be changed on manual entries only. `ha_exclude` true removes the "
+       "entry's device from Home Assistant discovery."),
     Op("DELETE", "/entries/{id}", "write", "Delete an entry (soft) or remove it for good",
        S.EntryOut | S.PermanentDeleteOut,
        params=(Param("permanent", _BOOL, "Permanently remove an entry that is already deleted."),),
@@ -115,7 +116,8 @@ OPERATIONS: tuple = (
        description=_PATCH_NOTE + " Which fields are allowed depends on the check: URL checks take "
        "enabled, mode, interval, timeout, verify and cert_min_days (null clears it); container checks take enabled and interval; "
        "service checks take everything (the dns_* fields only make sense on a dns check; "
-       "cert_min_days only on an http check)."),
+       "cert_min_days only on an http check). `ha_exclude` (true removes the check's Home "
+       "Assistant entity) is allowed on every kind of check."),
     Op("DELETE", "/checks/{id}", "write", "Delete a service check", S.CheckDeleteOut,
        errors=(404, 409), description="Only service checks can be deleted; disable the others."),
     Op("POST", "/entries/{id}/checks/run", "write", "Check now", S.RunRequestedOut,
@@ -167,7 +169,9 @@ OPERATIONS: tuple = (
        S.NotificationChannelOut, request=S.NotificationChannelCreate, status=201, errors=(409,),
        description="`type` is `mqtt`. `config` takes host (required), port (default 1883, or 8883 "
                    "with tls), tls, tls_insecure, username, client_id, base_topic (default `std`), "
-                   "qos (0 or 1, default 1) and keepalive (default 60); unknown keys are a 400. "
+                   "qos (0 or 1, default 1), keepalive (default 60) and the Home Assistant settings "
+                   "ha_discovery (default false), ha_prefix (default `homeassistant`) and "
+                   "ha_device_prefix (default `STD`); unknown keys are a 400. "
                    "`secret` is the MQTT password. A channel is created disabled unless "
                    "`enabled` is true."),
     Op("GET", "/notifications/channels/{id}", "read", "Get a notification channel",

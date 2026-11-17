@@ -374,6 +374,8 @@ notify.py           ← notification channels: registry, CRUD helpers, bounded-q
                       thread, non-blocking `enqueue(event)`; never block producers on the broker
 notify_state.py     ← retained state publishing (PRD 17.3): topic/payload builders, change events,
                       `full_sync()` reconcile, commit listener that requests a sync
+notify_ha.py        ← Home Assistant discovery config builders (PRD 17.4); reconciled by
+                      `notify_state.full_sync()`, never published from anywhere else
 notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, test message);
                       the password (`NotificationChannel.secret`) is write-only everywhere
 widget_rules.py     ← widget plugin discovery + validation for the management API

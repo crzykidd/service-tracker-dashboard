@@ -146,6 +146,9 @@ class ServiceEntry(db.Model):
         db.String(16), nullable=False, default=SOURCE_NOTIFIER, server_default=SOURCE_NOTIFIER
     )
     description = db.Column(db.String(255), nullable=True)
+    # Home Assistant opt-out (PRD 17.4). Operator-owned: register never writes
+    # it. True removes this entry's device from Home Assistant discovery.
+    ha_exclude = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
 
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
@@ -422,6 +425,9 @@ class HealthCheck(db.Model):
     # cleared when the check has no condition or the target is plain http.
     cert_min_days = db.Column(db.Integer, nullable=True)
     last_cert_expires_at = db.Column(db.DateTime, nullable=True)
+    # Home Assistant opt-out (PRD 17.4): True removes this check's entity from
+    # discovery. Operator-owned; not part of the check's probe configuration.
+    ha_exclude = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     # Cached latest state (naive UTC timestamp).
     last_ok = db.Column(db.Boolean, nullable=True)
     last_checked_at = db.Column(db.DateTime, nullable=True)

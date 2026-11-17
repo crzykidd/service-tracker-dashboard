@@ -67,6 +67,20 @@ class FakeClient:
         self.loop_stopped = False
         self.disconnected = False
         self.on_connect = self.on_disconnect = self.on_connect_fail = None
+        self.on_message = None
+        self.subscriptions = []
+
+    def subscribe(self, topic, qos=0):
+        self.subscriptions.append((topic, qos))
+        return (0, 1)
+
+    def deliver(self, topic, payload):
+        """Simulate an incoming message (the Home Assistant birth message)."""
+        class Message:
+            pass
+        message = Message()
+        message.topic, message.payload = topic, payload.encode() if isinstance(payload, str) else payload
+        self.on_message(self, None, message)
 
     def username_pw_set(self, username, password=None):
         self.auth = (username, password)

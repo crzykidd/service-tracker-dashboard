@@ -348,9 +348,10 @@ _CHECK_FIELD_TO_VALIDATOR = {
     "cert_min_days": "cert_min_days",
 }
 _URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls",
-                        "cert_min_days"}
-_CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds"}
-_NOT_NULL = {"enabled", "verify_tls", "mode", "check_type", "target"}
+                        "cert_min_days", "ha_exclude"}
+_CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds", "ha_exclude"}
+# `ha_exclude` is not a probe setting: it has no validator, the routes write it directly.
+_NOT_NULL = {"enabled", "verify_tls", "mode", "check_type", "target", "ha_exclude"}
 
 
 def _prefixed(problems, prefix):
@@ -443,12 +444,14 @@ def _entry_snapshot(entry):
         "icon": entry.image_icon or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
+        "ha_exclude": bool(entry.ha_exclude),
     }
 
 
 def _check_snapshot(check):
     cfg = check.to_config()
     cfg.pop("kind", None)
+    cfg["ha_exclude"] = bool(check.ha_exclude)
     return cfg
 
 
@@ -565,6 +568,8 @@ def create_entry():
         d = _settings_dict(settings, {k: v for k, v in _CHECK_FIELD_TO_VALIDATOR.items()
                                       if k in _URL_CHECK_PATCHABLE})
         values, problems = check_form.validate_url_check_settings(d)
+        if settings.ha_exclude is not None:
+            values["ha_exclude"] = settings.ha_exclude
         url_values[which] = values
         errors += _prefixed(problems, f"url_checks.{which}.")
     service_values = []
@@ -573,6 +578,7 @@ def create_entry():
                        f"a service can have at most {check_form.MAX_SERVICE_CHECKS} service checks"})
     for i, c in enumerate(data.checks[:check_form.MAX_SERVICE_CHECKS]):
         values, problems = check_form.validate_service_check(_service_check_input(c))
+        values["ha_exclude"] = c.ha_exclude
         service_values.append(values)
         errors += _prefixed(problems, f"checks.{i}.")
     if errors:
@@ -598,6 +604,7 @@ def create_entry():
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(), group_id=group.id if group else None,
             image_icon=icon, sort_priority=data.sort_priority, is_static=data.locked,
+            ha_exclude=data.ha_exclude,
         )
         ensure_url_checks(entry)
         for which, values in url_values.items():
@@ -663,6 +670,8 @@ def patch_entry(id):
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
     if "locked" in sent and data.locked is None:
         errors.append({"field": "locked", "message": "locked must be true or false"})
+    if "ha_exclude" in sent and data.ha_exclude is None:
+        errors.append({"field": "ha_exclude", "message": "ha_exclude must be true or false"})
     if errors:
         return _fail(errors)
 
@@ -694,6 +703,8 @@ def patch_entry(id):
             entry.image_icon = icon or ""
         if "sort_priority" in sent:
             entry.sort_priority = data.sort_priority
+        if "ha_exclude" in sent and data.ha_exclude is not None:
+            entry.ha_exclude = data.ha_exclude
         if "locked" in sent and data.locked is not None:
             was_locked = entry.is_static
             entry.is_static = data.locked
@@ -816,7 +827,7 @@ def patch_check(id):
     elif check.kind == CHECK_KIND_CONTAINER:
         allowed, label = _CONTAINER_CHECK_PATCHABLE, "the container check"
     else:
-        allowed, label = set(_CHECK_FIELD_TO_VALIDATOR), "a service check"
+        allowed, label = set(_CHECK_FIELD_TO_VALIDATOR) | {"ha_exclude"}, "a service check"
     blocked = sorted(sent - allowed)
     if blocked:
         return json_error(
@@ -852,6 +863,8 @@ def patch_check(id):
     with routes_api._UPSERT_LOCK:
         before = _check_snapshot(check)
         check_form.apply_check_values(check, values)
+        if "ha_exclude" in sent:
+            check.ha_exclude = data.ha_exclude
         changes = _diff(before, _check_snapshot(check))
         db.session.commit()
     audit("check", id, changes)

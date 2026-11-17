@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `offline` last will, also sent on a clean shutdown) and reconnects on its
   own; changing a channel reconnects it without a restart. The password is
   write-only: never shown, returned, logged or audited. Check and state
-  publishing, and Home Assistant discovery, follow in later releases.
+  publishing and Home Assistant discovery build on it (below).
 - **Notifications: check and entry state on MQTT.** With an MQTT channel
   enabled, STD publishes retained state under the base topic:
   `<base>/entry/<entry id>/state` (up, degraded, down, unknown or none, with
@@ -34,6 +34,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   /api/v1/notifications/channels/{id}` and `POST .../{id}/test`, plus the
   MCP tools `list_notification_channels`, `get_notification_channel` and
   `test_notification_channel`.
+- **Notifications: Home Assistant discovery.** Tick **Add to Home Assistant**
+  on an MQTT channel (with an optional discovery prefix, default
+  `homeassistant`, and device name prefix, default `STD`) and Home Assistant
+  creates one device per STD entry, named `STD <entry name>`: a State sensor
+  (up, degraded, down, unknown, none) and a problem sensor per check, all under
+  an STD hub device with a connectivity sensor and up/degraded/down/unknown
+  counts. New entries and checks appear on their own. Entity ids start `std_`,
+  so an auto-entities card can match `binary_sensor.std_*`; the group, host,
+  source, check type and target are attributes. **Exclude from Home Assistant**
+  on an entry's edit page and **Publish to Home Assistant** on each check
+  remove them again (also `ha_exclude` in the management API and MCP). Deleted,
+  excluded or disabled entries and checks are cleared from Home Assistant, and
+  everything is republished when Home Assistant restarts.
+- **More attributes on published state.** The entry state topic adds
+  `std_entry_id`; the check topic adds `std_entry_id`, `entry_name`, `host`,
+  `group`, `source` and `dashboard_url`.
+- Database migration adds `ha_exclude` to entries and checks (runs
+  automatically on start).
 - New dependency `paho-mqtt` 2.x, and a database migration that adds the
   `notification_channel` table (runs automatically on start).
 - **Version in the header.** The running version shows next to the page title;

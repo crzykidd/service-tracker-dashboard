@@ -57,6 +57,7 @@ def check_out(entry: ServiceEntry, check: HealthCheck) -> CheckOut:
         "dns_expected_answer": check.dns_expected_answer,
         "cert_min_days": check.cert_min_days,
         "cert_expires_at": iso_z(check.last_cert_expires_at),
+        "ha_exclude": bool(check.ha_exclude),
         "consecutive_failures": check.consecutive_failures or 0,
         "last": last,
     }
@@ -89,6 +90,7 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "icon": entry.image_icon or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
+        "ha_exclude": bool(entry.ha_exclude),
         "stale": entry.source == SOURCE_NOTIFIER and entry.is_docker_status_stale,
         "last_updated": _local_iso(entry.last_updated),
         "deleted_at": _local_iso(entry.deleted_at),

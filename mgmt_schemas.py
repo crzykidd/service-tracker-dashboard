@@ -36,6 +36,7 @@ class UrlCheckSettings(_Request):
     timeout_seconds: int | None = None   # 1..60; null = global default
     verify_tls: bool | None = None
     cert_min_days: int | None = None     # 1..365; https only (ignored at runtime on http); null = off
+    ha_exclude: bool | None = None       # true removes the check's Home Assistant entity
 
 
 class UrlChecksIn(_Request):
@@ -58,6 +59,7 @@ class ServiceCheckCreate(_Request):
     dns_expected_rcode: str | None = None    # NOERROR (default), NXDOMAIN, ...
     dns_expected_answer: str | None = None   # empty/null = judge by rcode only
     cert_min_days: int | None = None         # http checks only; 1..365, fails when the cert has fewer days left
+    ha_exclude: bool = False                 # true: no Home Assistant entity for this check
 
 
 class EntryCreate(_Request):
@@ -70,6 +72,7 @@ class EntryCreate(_Request):
     icon: str | None = None              # icon file name; fetched if missing
     sort_priority: int | None = None
     locked: bool = False
+    ha_exclude: bool = False             # true: no Home Assistant device for this entry
     url_checks: UrlChecksIn | None = None
     checks: list[ServiceCheckCreate] = []
 
@@ -88,6 +91,7 @@ class EntryPatch(_Request):
     icon: str | None = None
     sort_priority: int | None = None
     locked: bool | None = None
+    ha_exclude: bool | None = None       # true removes the entry's Home Assistant device
 
 
 class CheckPatch(_Request):
@@ -108,6 +112,7 @@ class CheckPatch(_Request):
     dns_expected_rcode: str | None = None
     dns_expected_answer: str | None = None   # null clears it (rcode only)
     cert_min_days: int | None = None         # URL and http service checks; null clears it
+    ha_exclude: bool | None = None           # any check; true removes its Home Assistant entity
 
 
 # Notifier-owned entry fields. A PATCH naming any of them is a 400.
@@ -154,7 +159,7 @@ class UpdateCheckSettingsPut(_Request):
 class NotificationChannelCreate(_Request):
     """Add a notification channel. `config` holds the non-secret settings of the
     channel type (for `mqtt`: host, port, tls, tls_insecure, username, client_id,
-    base_topic, qos, keepalive; unknown keys are rejected). `secret` is the MQTT
+    base_topic, qos, keepalive, ha_discovery, ha_prefix, ha_device_prefix; unknown keys are rejected). `secret` is the MQTT
     password, write-only."""
 
     name: str
@@ -249,6 +254,7 @@ class CheckOut(TypedDict):
     dns_expected_answer: str | None
     cert_min_days: int | None        # certificate-expiry minimum (https checks); null = off
     cert_expires_at: str | None      # leaf cert notAfter last seen, ISO 8601 UTC Z; null if unknown
+    ha_exclude: bool                 # true: not published to Home Assistant
     consecutive_failures: int
     last: CheckLastOut
 
@@ -319,6 +325,7 @@ class EntryOut(TypedDict):
     icon: str | None
     sort_priority: int | None
     locked: bool
+    ha_exclude: bool                 # true: not published to Home Assistant
     stale: bool
     last_updated: str | None
     deleted_at: str | None

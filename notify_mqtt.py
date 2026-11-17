@@ -45,9 +45,10 @@ class MqttConfig(BaseModel):
 
     `port` None resolves to 1883 (8883 with TLS) at validation, so the stored
     config always carries the port. `client_id` None means `std-<instance>`
-    at connect time. The `ha_*` fields belong to Home Assistant discovery
-    (notif-03); they are accepted and stored now so that step needs no config
-    reshuffle, and nothing reads them yet.
+    at connect time. The `ha_*` fields drive Home Assistant discovery
+    (PRD 17.4, `notify_ha.py`): `ha_discovery` turns it on for this channel,
+    `ha_prefix` is the discovery topic prefix and `ha_device_prefix` the word
+    put in front of every device name.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -61,7 +62,6 @@ class MqttConfig(BaseModel):
     base_topic: str = DEFAULT_BASE_TOPIC
     qos: int = Field(default=1, ge=0, le=1)
     keepalive: int = Field(default=60, ge=5, le=3600)
-    # Reserved for notif-03 (Home Assistant discovery); unused in this step.
     ha_discovery: bool = False
     ha_prefix: str = Field(default="homeassistant", min_length=1, max_length=64)
     ha_device_prefix: str = Field(default="STD", min_length=1, max_length=32)
@@ -169,7 +169,8 @@ class MqttSession:
     """A live connection for one channel. `status()` -> {state, last_error, since}
     with state one of connecting | connected | error | stopped."""
 
-    def __init__(self, channel_id, name, config, secret, instance_id, factory=None, on_connected=None):
+    def __init__(self, channel_id, name, config, secret, instance_id, factory=None, on_connected=None,
+                 on_ha_online=None):
         self.channel_id = channel_id
         self.name = name
         self.type = TYPE
@@ -178,6 +179,7 @@ class MqttSession:
         self._instance_id = instance_id
         self._factory = factory or default_client_factory
         self._on_connected = on_connected
+        self._on_ha_online = on_ha_online
         self._client = None
         self._lock = threading.Lock()
         self._state = "connecting"
@@ -218,6 +220,7 @@ class MqttSession:
         client.on_connect = self._handle_connect
         client.on_disconnect = self._handle_disconnect
         client.on_connect_fail = self._handle_connect_fail
+        client.on_message = self._handle_message
         self._client = client
         try:
             client.connect_async(cfg["host"], cfg["port"], cfg["keepalive"])
@@ -257,11 +260,34 @@ class MqttSession:
             client.publish(self._topic("status"), "online", qos=self.config["qos"], retain=True)
         except Exception as exc:
             logger.warning("MQTT channel '%s': could not publish online: %s", self.name, exc)
+        if self.config.get("ha_discovery"):
+            # Home Assistant's birth message: the only subscription STD makes.
+            try:
+                client.subscribe(self.ha_status_topic(), qos=self.config["qos"])
+            except Exception as exc:
+                logger.warning("MQTT channel '%s': could not subscribe to %s: %s",
+                               self.name, self.ha_status_topic(), exc)
         if self._on_connected:
             try:
                 self._on_connected(self)
             except Exception:
                 logger.exception("MQTT on-connect hook failed for channel '%s'", self.name)
+
+    def ha_status_topic(self):
+        return f"{self.config['ha_prefix']}/status"
+
+    def _handle_message(self, client, userdata, message):
+        """Home Assistant restarted (`<ha_prefix>/status` = `online`): ask for a
+        full republish of configs, then states."""
+        try:
+            if message.topic != self.ha_status_topic():
+                return
+            payload = message.payload
+            text = payload.decode("utf-8", "replace") if isinstance(payload, bytes) else str(payload)
+            if text.strip().lower() == "online" and self._on_ha_online:
+                self._on_ha_online(self)
+        except Exception:
+            logger.exception("MQTT message handler failed for channel '%s'", self.name)
 
     def _handle_disconnect(self, client, userdata, disconnect_flags, reason_code=None, properties=None):
         if self._stopping:
@@ -280,12 +306,15 @@ class MqttSession:
 
     def publish(self, event: dict):
         """Publish one event `{"topic": <suffix under base>, "payload": str|dict|list,
-        "retain": bool (default False)}`. Anything else is ignored. Never raises."""
+        "retain": bool (default False), "absolute": bool (default False)}`. With
+        `absolute` the topic is used as is (Home Assistant discovery lives under
+        its own prefix, not under the base topic). Never raises."""
         try:
             suffix = event.get("topic")
             if not isinstance(suffix, str) or not suffix.strip("/"):
                 return
-            self._client.publish(self._topic(suffix.strip("/")), _payload(event.get("payload", "")),
+            topic = suffix.strip("/") if event.get("absolute") else self._topic(suffix.strip("/"))
+            self._client.publish(topic, _payload(event.get("payload", "")),
                                  qos=self.config["qos"], retain=bool(event.get("retain", False)))
         except Exception as exc:
             logger.debug("MQTT channel '%s': publish failed: %s", self.name, exc)
@@ -367,8 +396,9 @@ class MqttChannelType:
         return error_list(exc)
 
     @staticmethod
-    def open_session(channel_id, name, config, secret, instance_id, factory, on_connected):
-        return MqttSession(channel_id, name, config, secret, instance_id, factory, on_connected)
+    def open_session(channel_id, name, config, secret, instance_id, factory, on_connected, on_ha_online=None):
+        return MqttSession(channel_id, name, config, secret, instance_id, factory, on_connected,
+                           on_ha_online)
 
     @staticmethod
     def test(config, secret, instance_id, factory=None):

@@ -776,9 +776,8 @@ changes is recorded in the audit log under the key's name. Details, settings
 
 ## Notifications
 
-STD can publish to an MQTT broker (the first notification channel; Home
-Assistant discovery and check/state publishing build on it in later
-releases). Configure it under **Settings → Notifications** (admins only).
+STD can publish to an MQTT broker (the first notification channel; state
+publishing and Home Assistant discovery build on it). Configure it under **Settings → Notifications** (admins only).
 
 1. **Add the broker.** Name, host, port (1883, or 8883 with TLS), optional
    username and password, and a **base topic** (default `std`; a trailing `/`
@@ -808,8 +807,8 @@ moves them (`<base>` is the channel's base topic, `std` by default):
 | Topic | What it carries |
 |-------|-----------------|
 | `<base>/status` | `online` / `offline` |
-| `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`) |
-| `<base>/entry/<entry id>/check/<check id>` | JSON: `ok`, `state`, `check_type`, `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` |
+| `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `std_entry_id`, `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`) |
+| `<base>/entry/<entry id>/check/<check id>` | JSON: `ok`, `state`, `std_entry_id`, `entry_name`, `host`, `group`, `source`, `dashboard_url`, `check_type`, `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` |
 | `<base>/summary` | JSON: `{up, degraded, down, unknown, none, total}` over active entries |
 
 ```sh
@@ -823,6 +822,70 @@ and a subscriber that joins late gets the current state at once because it is
 retained. Deleted, soft-deleted or disabled entries and checks have their
 topics cleared (an empty retained message). Checks that are disabled or
 cannot run (for example no URL) have no topic.
+
+### Home Assistant
+
+Tick **Add to Home Assistant** on the channel (Home Assistant's MQTT
+integration must use the same broker) and STD publishes retained MQTT
+discovery. Optional: **Discovery prefix** (default `homeassistant`, Home
+Assistant's default) and **Device name prefix** (default `STD`).
+
+What gets created:
+
+- An **STD hub device** with a connectivity sensor (STD online or not) and
+  sensors for the number of entries that are up, degraded, down and unknown.
+- One **device per entry**, named `<prefix> <entry name>` (for example
+  `STD Plex`), linked to the hub, with a **State** sensor (`up`, `degraded`,
+  `down`, `unknown`, `none`) and one **problem** binary sensor per check named
+  after the check (`HTTP`, `TCP 443`, `Container`, ...). The sensor is on when
+  the check is failing. Docker entries show the image tag as the software
+  version.
+- Entity ids start with `std_` (for example `binary_sensor.std_plex_http`), so
+  they are easy to find. The entry's group, host, source, check type, target,
+  latency, message and last change are **attributes**, not areas.
+
+New entries and checks appear automatically. To keep one out, tick **Exclude
+from Home Assistant** on the entry's edit page, or untick **Publish to Home
+Assistant** on a single check (also `ha_exclude` in the management API and
+MCP). Deleted, excluded or disabled entries and checks are removed from Home
+Assistant, as is everything when you untick **Add to Home Assistant**. Delete
+a channel only after unticking it, or its devices stay behind. When Home
+Assistant restarts, STD republishes everything.
+
+Example [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
+cards:
+
+```yaml
+# Every failing check
+type: custom:auto-entities
+card: {type: entities, title: STD failing checks}
+filter:
+  include:
+    - entity_id: "binary_sensor.std_*"
+      state: "on"
+```
+
+```yaml
+# Every check in one STD group
+type: custom:auto-entities
+card: {type: entities, title: Media}
+filter:
+  include:
+    - entity_id: "binary_sensor.std_*"
+      attributes: {group: Media}
+```
+
+```yaml
+# Everything STD created, by device manufacturer
+type: custom:auto-entities
+card: {type: entities, title: Service Tracker Dashboard}
+filter:
+  include:
+    - device_manufacturer: Service Tracker Dashboard
+```
+
+Not included: a "Check now" button and per-result latency sensors (see
+`docs/FUTURE.md`).
 
 The password is write-only: the form shows only that one is set, a blank
 field keeps it and a checkbox removes it; it is never returned by the API,

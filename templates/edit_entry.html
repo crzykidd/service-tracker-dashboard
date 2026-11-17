@@ -110,6 +110,13 @@
           <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Lock (ignore notifier updates)</label>
         </div>
         <p class="edit-helper">When ticked, register calls from the notifier for this entry are ignored.</p>
+
+        <div class="flex items-center">
+          <input type="hidden" name="ha_form" value="1">
+          <input type="checkbox" name="ha_exclude" id="ha_exclude" class="form-checkbox h-4 w-4" {% if (form is not none and 'ha_exclude' in form) or (form is none and entry.ha_exclude) %}checked{% endif %}>
+          <label for="ha_exclude" class="ml-2 text-sm text-dashboard-secondary">Exclude from Home Assistant</label>
+        </div>
+        <p class="edit-helper">Only matters when a notification channel has Add to Home Assistant on. Removes this entry's device and all its entities from Home Assistant.</p>
       </div>
 
       {# ── Widget ───────────────────────────────────────────── #}

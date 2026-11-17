@@ -5,6 +5,54 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — notif-03 Home Assistant discovery
+
+- **`default_entity_id`, not `object_id`.** The HA MQTT docs (fetched
+  2026-11-16, home-assistant.io/integrations/mqtt) say the `<object_id>` in the
+  discovery topic does not influence the entity id and that
+  `default_entity_id` (a full `sensor.xyz`) controls it. They do not state a
+  release or an explicit deprecation of the payload key `object_id`, so that is
+  unverified; I used `default_entity_id` only and never `object_id`. If an old
+  HA ignores `default_entity_id`, entity ids simply come from device name +
+  entity name, which also start `std_` with the default prefix.
+- **Per-channel discovery inside the existing reconcile.** Discovery configs
+  contain the channel's own base topic and are published under that channel's
+  `ha_prefix`, so they cannot go through the shared "dispatch to every
+  session" path. `full_sync()` now calls `sync_discovery()` first, which
+  builds the set per live session and uses `Publisher.dispatch_to`; events
+  carry `absolute: true` (topic not prefixed with the base). The published set
+  is `ha_topics[channel id]`, persisted in `notify_publish_state.ha`. No
+  second reconcile.
+- **Channel delete/disable leaves its configs on that broker.** There is no
+  session left to clear them with. The remembered set for a deleted channel is
+  dropped. The operator turns `ha_discovery` off first to clear.
+- **Hub connectivity sensor has no availability topic.** The prompt says all
+  entities use `<base>/status` for availability, but this sensor's state *is*
+  that topic; with availability it would read "unavailable" instead of "off"
+  when STD is down.
+- **No `configuration_url`.** STD has no configured public base URL
+  (`dashboard_url` is a path, PRD 17.3), so a valid absolute URL cannot be
+  built on the publisher thread. Add one with a base-URL setting later.
+- **Check state mapping.** The problem sensor is ON only when `state ==
+  down`; a check that has never run (`unknown`) is OFF rather than a false alarm.
+- **Check payload gained entry attributes** (`entry_name`, `host`, `group`,
+  `source`, `dashboard_url`, `std_entry_id`) so `group`/`host` filters work on
+  `binary_sensor`s. Side effect: renaming an entry or changing its group now
+  republishes its check topics too (test updated).
+- **Per-check toggle uses a hidden `ha_seen` marker.** The form field is a
+  checkbox "Publish" (unticked = excluded). Without a marker, a form missing
+  the field (older page) would exclude every check; the server leaves the
+  stored value alone unless the marker is present. Same for the entry box
+  (`ha_form`).
+- **Controls always visible** rather than hidden when no HA channel exists:
+  a hidden control would also be absent from the submit.
+- **Birth message forces a full sync for all channels**, not just the one that
+  sent it. Simpler and harmless (payloads are identical retained messages).
+- **Migration table name.** The prompt says `service_entries`; the table is
+  `service_entry`.
+
+---
+
 ## 2026-11-16 — notif-02 state publishing
 
 - **A commit listener, not a call in every mutation path.** The prompt asked

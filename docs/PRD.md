@@ -73,6 +73,7 @@
 | 0.63    | 2026-11-16 | Added the §16 body (the 0.62 row described it, but the section text was missing) and §17 (Next release — Notifications: MQTT and Home Assistant, planned: channel framework, retained state publishing, HA discovery; operator decisions in §17.1). Former §16–§18 renumbered §18–§20 and cross-references updated. FUTURE.md alerting item split: state publishing moved here; alert rules and push channels stay parked. |
 | 0.64    | 2026-11-16 | §17.2 delivered on `dev` (notif-01): `notification_channel` table (migration `a2f4c6e8b031`, new §5.8), `notify.py` / `notify_mqtt.py` (channel registry, bounded-queue publisher thread, MQTT via `paho-mqtt` 2.x, availability + LWT, reload on config change), instance id in the `setting` store, Settings → Notifications tab with **Send test message**, management API `/api/v1/notifications/channels` (+ `/test`) and MCP tools; §3.1 and §3.2 updated. §17.3 and §17.4 remain planned. No register-contract change. |
 | 0.65    | 2026-11-16 | §17.3 delivered on `dev` (notif-02): retained state publishing. The topic and payload contract (`<base>/entry/<entry_id>/state`, `.../check/<check_id>`, `<base>/summary`) is public and documented in §17.3; change detection at `jobs.record_check_result()`, the `full_sync()` reconcile in new `notify_state.py` (connect, debounced mutation requests via a commit listener, a 10-minute forced safety net), published set persisted in the `setting` key `notify_publish_state` (§5.8); §3.1 and §3.2 updated. §17.4 remains planned. No register-contract change. |
+| 0.66    | 2026-11-16 | §17.4 delivered on `dev` (notif-03): Home Assistant MQTT discovery. New `notify_ha.py`; discovery configs reconcile through `notify_state.full_sync()` (configs before states, per-channel published set in `notify_publish_state.ha`, cleared on opt-out/delete/purge/discovery off), birth-message subscription `<ha_prefix>/status` in `MqttSession`, additive state-payload attributes (`std_entry_id`, and `entry_name`/`host`/`group`/`source`/`dashboard_url` on checks), `ha_exclude` on `service_entry` and `health_check` (migration `d8e2a6f4b915`, new §5.9), Settings/edit-page controls, management API and MCP fields. §17 marked Delivered on `dev`. No register-contract change. |
 
 ---
 
@@ -94,7 +95,7 @@
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
 15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
 16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
-17. [Next release — Notifications: MQTT and Home Assistant (Planned)](#17-next-release--notifications-mqtt-and-home-assistant-planned)
+17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
 18. [Versioning, Branches, and Releases](#18-versioning-branches-and-releases)
 19. [Cross-Repo Coordination](#19-cross-repo-coordination)
 20. [Open Questions](#20-open-questions)
@@ -207,7 +208,8 @@ notify.py           ← notification channel registry + CRUD helpers, the
 notify_state.py     ← retained state publishing: topic/payload builders,
                       change events, `full_sync()` reconcile (§17.3)
 notify_mqtt.py      ← MQTT channel type: pydantic config, paho session
-                      (LWT/availability), test message
+                      (LWT/availability, HA birth subscription), test message
+notify_ha.py        ← Home Assistant discovery config builders (§17.4)
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
                       /settings/exposure, /add, /edit/<id>, group CRUD,
                       /images/<filename>
@@ -429,6 +431,16 @@ Migration `a2f4c6e8b031` (§17.2). No foreign keys.
 | Table | `notification_channel`: `id`, `type` (`String(32)`, indexed `ix_notification_channel_type`), `name` (`String(64)`, unique index `ux_notification_channel_name`), `enabled` (bool, default false), `config` (JSON, non-secret settings), `secret` (`String(512)`, nullable, the MQTT password; write-only in the UI, API, logs and audit), `created_at`, `updated_at`. |
 | Setting key | `instance_id` in `setting`: a UUID created on first use and never changed (MQTT client ids; Home Assistant unique ids in §17.4). |
 | Setting key | `notify_publish_state` in `setting` (§17.3): JSON `{topics, entries, checks}`: every retained topic believed to be on the broker, each entry's last published roll-up (`state`, `since`, `checks`) and each check's last `ok` with the time it changed. Lets the reconcile clear deleted topics after a restart. |
+
+### 5.9 Home Assistant schema changes
+
+Migration `d8e2a6f4b915` (§17.4). No foreign keys, no new index (flags, not lookup columns).
+
+| Change | Detail |
+|--------|--------|
+| Column | `service_entry.ha_exclude` (Boolean, NOT NULL, default false). Opt-out from Home Assistant discovery. Operator-owned: register never writes it. |
+| Column | `health_check.ha_exclude` (Boolean, NOT NULL, default false). Per-check opt-out. Not part of `to_config()` (backups). |
+| Setting key | `notify_publish_state` gains `ha`: `{channel id: [discovery config topics]}` (§17.4). |
 
 ---
 
@@ -2429,7 +2441,7 @@ register-contract change.
 
 ---
 
-## 17. Next release — Notifications: MQTT and Home Assistant (Planned)
+## 17. Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)
 
 The FUTURE.md item "Alerting / notifications on failure", scoped down to
 **state publishing**: STD publishes check and roll-up state to an external
@@ -2468,8 +2480,8 @@ No register-contract change: the notifier is not involved.
   instance id>`), `base_topic` (default `std`, trailing `/` stripped),
   `qos` (0 or 1, default 1), `keepalive` (default 60). The Home Assistant
   fields `ha_discovery`, `ha_prefix` (`homeassistant`) and `ha_device_prefix`
-  (`STD`) are accepted and stored but unused until §17.4. The instance id is
-  a UUID in the `setting` table.
+  (`STD`) drive Home Assistant discovery (§17.4). The instance id is a UUID in
+  the `setting` table.
 - One publisher thread with a bounded queue (1000). Producers call the
   non-blocking `notify.enqueue(event_dict)`, which never raises or blocks;
   when full the oldest event is dropped with a rate-limited warning. An MQTT
@@ -2535,24 +2547,76 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
   retained on that broker.
 - Out of scope: publishing every result (parked in FUTURE.md).
 
-### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Planned
+### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Delivered on `dev`
 
-- Discovery prefix default `homeassistant`; node id `std_<instance>`.
-- Hub device: connectivity `binary_sensor` and up/degraded/down/unknown
-  count sensors.
-- Entry device: `manufacturer: Service Tracker Dashboard`, `model` = entry
-  source, `sw_version` = image tag if known, `configuration_url` = the STD
-  entry page, `via_device` = hub. Entities: an enum `sensor` for the roll-up
-  state and a `problem` `binary_sensor` per check, with JSON attributes for
-  auto-entities filters. Unique ids come from the instance id and database
-  ids.
-- Every entity uses `<base>/status` for availability. Configs are retained
-  and published before states. STD republishes on HA's
-  `homeassistant/status` = `online`.
-- Schema: `service_entries.ha_exclude` and `health_check.ha_exclude`
-  (opt-out, default false), operator-owned and never touched by register.
-- Opt-outs, deletes and turning discovery off clear configs with an empty
-  retained payload (through the §17.3 reconcile).
+Per channel, **Add to Home Assistant** (`ha_discovery`, default off) publishes
+MQTT discovery so Home Assistant creates one device per STD entry. Every active
+entry and every check that has a state topic is published, including ones added
+later; per-entry and per-check opt-outs remove them. Implemented in
+`notify_ha.py` (pure config builders) and reconciled by `notify_state.full_sync()`
+(§17.3), not by a second mechanism.
+
+**Topics and ids.** Discovery topic
+`<ha_prefix>/<component>/<node>/<object_id>/config` (`ha_prefix` default
+`homeassistant`), retained. `<node>` is `std_<first 8 hex of the instance id>`,
+so two STD installs never collide. The discovery topic is not under the base
+topic; the events carry `absolute: true`, and discovery is sent per channel
+(each carries that channel's base topic and prefixes).
+
+| Device | Identifiers / fields |
+|--------|----------------------|
+| Hub | `identifiers: [<node>]`, `name` = `ha_device_prefix` (`STD`), `manufacturer: Service Tracker Dashboard`, `model: STD`, `sw_version` = the STD version. No `configuration_url`: STD has no configured public base URL. |
+| Entry | `identifiers: [<node>_entry_<entry_id>]`, `name` = `<ha_device_prefix> <entry name>`, same `manufacturer`, `model` = `Docker container` or `Manual`, `sw_version` = the image tag when the entry has one, `via_device: <node>`. No `suggested_area` (the group is an attribute). |
+
+| Entity | Config |
+|--------|--------|
+| Hub `binary_sensor` connectivity | object id `hub_connectivity`, unique id `<node>_hub_connectivity`; state topic `<base>/status`, on `online` / off `offline`. No separate availability topic (it would turn "off" into "unavailable"). |
+| Hub `sensor`s `up`, `degraded`, `down`, `unknown` | object ids `hub_<state>`, unique ids `<node>_hub_<state>`; state topic `<base>/summary`, `value_template` `{{ value_json.<state> }}`. |
+| Entry `sensor` "State" | object id `entry_<id>_state`, unique id `<node>_entry_<id>_state`, `device_class: enum`, `options: [up, degraded, down, unknown, none]`; state and `json_attributes_topic` = `<base>/entry/<id>/state`. |
+| Check `binary_sensor` | object id `check_<check_id>`, unique id `<node>_check_<check_id>`, `device_class: problem`, ON when the check's `state` is `down`; state and `json_attributes_topic` = `<base>/entry/<id>/check/<check_id>`. Name is the check's label (`HTTP`, `TCP 443`, `Container`, ...). |
+
+Every entity except the connectivity sensor uses `availability_topic`
+`<base>/status` (`online` / `offline`). Entity ids are suggested with
+`default_entity_id` (`<component>.<slug of "<prefix> <entry name>">_<slug of
+entity name>`, so they start `std_` by default) for auto-entities globs; Home
+Assistant keeps an id once registered. A rename republishes the config with the
+same unique ids, so Home Assistant updates the device in place.
+
+**Attributes.** The state payloads of §17.3 carry what auto-entities filters
+need: both add `std_entry_id`; the check payload also carries `entry_name`,
+`host`, `group`, `source` and `dashboard_url` (additive; no field was removed).
+
+**Lifecycle.** The desired discovery set is: channel enabled with
+`ha_discovery` on, times active entries without `ha_exclude`, times their
+counted checks without `ha_exclude`, plus the hub. Everything previously
+published for that channel and no longer desired (opt-outs, removed or disabled
+checks, soft delete, purge, `ha_discovery` turned off or the prefix changed)
+gets an empty retained payload on its config topic. Configs are published
+before states on every sync. The published config topics are remembered per
+channel id in the `setting` key `notify_publish_state` (`ha`). With
+`ha_discovery` on the session subscribes to `<ha_prefix>/status` (the only
+subscription, read-only); `online` (Home Assistant restarted) requests a forced
+sync, republishing every config and then every state. A channel that is
+deleted or disabled while discovery is on leaves its configs on that broker
+(STD no longer has a session to clear them).
+
+**Schema** (§5.9): `service_entry.ha_exclude` and `health_check.ha_exclude`
+(NOT NULL, default false): opt-out flags, operator-owned, never written by
+register (tested). The state topics are still published for an excluded entry;
+only discovery is withheld.
+
+**UI, API and MCP.** Settings → Notifications has the **Add to Home Assistant**
+checkbox, **Discovery prefix** and **Device name prefix**. The entry edit page
+has **Exclude from Home Assistant**; every check row (URL, container, service)
+has **Publish to Home Assistant** (default on; stored inverted as `ha_exclude`;
+a form that lacks the toggle's hidden marker leaves the stored value alone). The
+controls are always visible and say they only matter with a Home Assistant
+channel. The management API carries `ha_exclude` on entries and checks (read and
+write; PATCH accepts it on every kind of check) and the three `ha_*` channel
+config keys; the MCP `update_entry` / `update_check` accept it.
+
+Out of scope, parked in FUTURE.md: a "Check now" button entity (needs a
+security review) and per-result latency sensors.
 
 ---
 
