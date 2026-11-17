@@ -79,10 +79,10 @@ def test_one_logo_on_tiled_and_dashboard(app, admin_client):
     assert _tile(html, "four").count("exposure-icon-layer") == 3
 
 
-def test_preview_badges_in_bottom_row_not_details(app, admin_client):
+def test_tiled_badges_in_bottom_row_not_details(app, admin_client):
     with app.app_context():
         _seed()
-    html = admin_client.get("/tiled_preview").get_data(as_text=True)
+    html = admin_client.get("/tiled_dash").get_data(as_text=True)
     tile = _tile(html, "twotraefik")
     details = tile[:tile.index('class="tile-status-row"')]
     assert "exposure-icons" not in details
@@ -90,7 +90,6 @@ def test_preview_badges_in_bottom_row_not_details(app, admin_client):
     assert "exposure-icons-inline" in row
     assert row.index("tile-icon-row-status") < row.index("exposure-icons-inline") < row.index("tile-icon-row-actions")
     assert len(re.findall(r"exposure/traefik\.svg", row)) == 1
-    dash = admin_client.get("/tiled_dash").get_data(as_text=True)
-    d = _tile(dash, "twotraefik")
-    assert "exposure-icons-inline" not in d
-    assert "exposure-icons" in d[:d.index('class="tile-status-row"')]
+    # The Dashboard view keeps its own (non-inline) badges.
+    dash = admin_client.get("/").get_data(as_text=True)
+    assert "exposure-icons" in dash

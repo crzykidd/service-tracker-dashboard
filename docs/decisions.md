@@ -5,6 +5,32 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-10 (B) v2 tile layout adopted as the Tiled view
+
+- The operator chose the preview layout. `tile_layout` plumbing, the notice,
+  `.tile-layout-v2` scoping, the old two-row `.tile-status-row` column layout
+  and `/tiled_preview` were removed; v2 is the only markup/CSS path (the
+  `exposure_inline` flag stays: the Dashboard view includes the same partial
+  non-inline). `_render_tiled` folded back into `tiled_dashboard`.
+
+---
+
+## 2026-11-16 — v090-10 (A) detail panel "503" vs the API's full message: Body-mode gap
+
+- Root cause (confirmed by the operator: Status mode showed the full text,
+  Body mode only `503`): `probe_http`'s body branch returned
+  `error_text or str(code)` for status >= 400, never extracting the JSON
+  reason added to Status mode in v090-08. The panel and API were fine. Fix:
+  body mode reuses `_code_with_reason` (an `Error:` prefix still wins; 2xx
+  handling unchanged). Tests use the operator's exact `/healthz` body in
+  both modes, plus probe -> rows -> panel JSON and Check now.
+- Hardening: a down check always renders its message line, falling back to
+  `status N (empty reply)` / `no reply`; static CSS/JS get `?v=<file mtime>`
+  via a `static_v()` template helper (mtime, not app version, so dev edits
+  bust the cache too).
+
+---
+
 ## 2026-11-16 — v090-09 MCP: PEP 723 install, version check, `MCP_VERSION` test
 
 - Install is `uv run` with the dependencies in a PEP 723 header, duplicated
@@ -40,7 +66,7 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
-## 2026-11-16 — v090-06 temporary Tiled layout preview (`/tiled_preview`)
+## 2026-11-16 — v090-06 temporary Tiled layout preview (`/tiled_preview`) — ADOPTED in v090-10
 
 - **Why it exists:** to compare a proposed Tiled tile layout (name across the
   full width, host tight under it, one status/action icon row along the tile

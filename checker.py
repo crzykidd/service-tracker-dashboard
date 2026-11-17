@@ -146,7 +146,12 @@ def _status_failure_message(code, response):
                 break
     except Exception:
         return str(code)
-    reason = _reply_reason(raw[:BODY_READ_LIMIT])
+    return _code_with_reason(code, raw[:BODY_READ_LIMIT])
+
+
+def _code_with_reason(code, raw):
+    """`<code>: <reason>` from the reply bytes `raw`, else `<code>`."""
+    reason = _reply_reason(raw)
     reason = " ".join(reason.split()) if reason else ""
     if not reason:
         return str(code)
@@ -249,7 +254,8 @@ def _probe_http_request(target, mode, timeout, verify):
     body: reads at most 4 KB. `OK` (case-insensitive) is ok; an `Error:`
     prefix gives that text as the message; anything else is
     `Unexpected response: <first 60 chars>`; a status of 400 or above is
-    failing, using the `Error:` text when present, else the status code.
+    failing, using the `Error:` text when present, else `<code>: <reason>` as in
+    status mode (just the code when the body gives nothing).
 
     The urllib3 InsecureRequestWarning is silenced for this call only, and
     only when `verify` is off.
@@ -275,7 +281,10 @@ def _probe_http_request(target, mode, timeout, verify):
         latency = _elapsed_ms(started)
         error_text = _error_text(body)
         if code >= 400:
-            return ProbeResult(False, latency, code, error_text or str(code))
+            # An `Error:` body keeps its text; otherwise the same JSON/text
+            # reason as Status mode (`503: <reason>`), else just the code.
+            return ProbeResult(False, latency, code,
+                               error_text or _code_with_reason(code, body.encode("utf-8")))
         if body.upper() == "OK":
             return ProbeResult(True, latency, code, None)
         if error_text is not None:

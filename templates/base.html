@@ -7,11 +7,11 @@
   <title>Service Tracker Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.34.0/tabler-icons.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ static_v('css/dashboard.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
-  <script src="{{ url_for('static', filename='js/health_detail.js') }}" defer></script>
-  <script src="{{ url_for('static', filename='js/uptime_strip.js') }}" defer></script>
+  <script src="{{ static_v('js/dashboard.js') }}" defer></script>
+  <script src="{{ static_v('js/health_detail.js') }}" defer></script>
+  <script src="{{ static_v('js/uptime_strip.js') }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 

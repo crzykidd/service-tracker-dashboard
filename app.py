@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import humanize
 from dateutil import parser
-from flask import Flask, flash, jsonify, redirect, render_template, request
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 from flask_wtf.csrf import CSRFError
 
 from extensions import csrf, db, login_manager
@@ -152,9 +152,19 @@ def create_app():
 
     os.makedirs(IMAGE_DIR, exist_ok=True)
 
+    def static_v(filename):
+        """Static file URL with `?v=<file mtime>` so browsers fetch changed
+        CSS/JS after an upgrade instead of reusing a cached copy."""
+        try:
+            version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            version = 0
+        return url_for('static', filename=filename, v=version)
+
     @app.context_processor
     def inject_globals():
         return {
+            'static_v': static_v,
             'now': datetime.now,
             'version_info': app.config['VERSION_INFO'],
             'entry_health': entry_health,

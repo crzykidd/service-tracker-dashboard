@@ -153,8 +153,14 @@
 }
 
 /* ── Tile ─────────────────────────────────────────────────── */
+/* Icon and full-width name block on top; one row along the bottom with the
+   status icons, then the exposure badges, then the actions (right-aligned). */
 .tile {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-areas: "icon details" "bar bar";
+  column-gap: 10px;
+  row-gap: 6px;
   align-items: center;
   background-color: var(--color-bg-surface);
   border: 1px solid var(--color-border);
@@ -188,8 +194,7 @@
 
 /* ── Tile icon (32px) ─────────────────────────────────────── */
 .tile-icon {
-  flex-shrink: 0;
-  margin-right: 10px;
+  grid-area: icon;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -227,9 +232,10 @@
 
 /* ── Tile details column ──────────────────────────────────── */
 .tile-details {
-  flex-grow: 1;
-  margin-right: 8px;
+  grid-area: details;
+  min-width: 0;
   overflow: hidden;
+  line-height: 1.15;
 }
 .container-name {
   font-weight: 600;
@@ -244,25 +250,30 @@
   display: block;
   font-size: 0.7rem;
   color: #aaaaaa;
+  line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ── Status icon block (two rows: status top, actions bottom) ─ */
+/* ── Bottom row: status icons, exposure badges, actions ───── */
 .tile-status-row {
+  grid-area: bar;
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  flex-shrink: 0;
-  align-items: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2px;
+  align-self: stretch;
+  border-top: 1px solid var(--color-border);
+  padding-top: 4px;
 }
 .tile-icon-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  justify-content: flex-end;
 }
+.tile-icon-row-status { justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
+.tile-icon-row-actions { justify-content: flex-end; flex: 0 0 auto; }
 .tile-status-row .status-icon {
   font-size: 16px;
   line-height: 1;
@@ -306,50 +317,9 @@
 .tile-chevron:hover { color: var(--color-text-secondary); }
 .tile-open .tile-chevron { color: var(--color-accent); }
 
-/* ── Tile layout preview v2 (/tiled_preview; temporary, see docs/decisions.md) ──
-   Icon + full-width name block on top, one status/action icon row along the
-   bottom. Scoped so nothing outside the preview changes. */
-.tile-preview-notice {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-  background-color: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-tile);
-  padding: 6px 12px;
-  margin: 8px 0;
-}
-.tile-preview-notice a { color: var(--color-accent); margin-left: 8px; }
-.tile-layout-v2 .tile {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  grid-template-areas: "icon details" "bar bar";
-  column-gap: 10px;
-  row-gap: 6px;
-  align-items: center;
-}
-.tile-layout-v2 .tile-icon { grid-area: icon; margin-right: 0; }
-.tile-layout-v2 .tile-details {
-  grid-area: details;
-  margin-right: 0;
-  min-width: 0;
-  line-height: 1.15;
-}
-.tile-layout-v2 .tile-host { line-height: 1.1; margin-top: 0; }
-.tile-layout-v2 .tile-status-row {
-  grid-area: bar;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: 2px;
-  align-self: stretch;
-  border-top: 1px solid var(--color-border);
-  padding-top: 4px;
-}
-.tile-layout-v2 .tile-icon-row-status { justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
-.tile-layout-v2 .tile-icon-row-actions { justify-content: flex-end; flex: 0 0 auto; }
 /* Exposure badges in the bottom row: after the status icons, thin separator,
    same 16px-icon baseline; shrinks (clips) rather than pushing actions off. */
-.tile-layout-v2 .exposure-icons-inline {
+.tile .exposure-icons-inline {
   flex: 0 1 auto;
   min-width: 0;
   flex-wrap: nowrap;
@@ -360,9 +330,9 @@
   padding-left: 5px;
   border-left: 1px solid var(--color-border);
 }
-.tile-layout-v2 .exposure-icons-inline .exposure-icon-img { width: 16px; height: 16px; }
-.tile-layout-v2 .exposure-icons-inline .exposure-icon-layer { flex-shrink: 0; gap: 1px; }
-.tile-layout-v2 .exposure-icons-inline .exposure-icon-overflow { flex-shrink: 0; line-height: 1; }
+.tile .exposure-icons-inline .exposure-icon-img { width: 16px; height: 16px; }
+.tile .exposure-icons-inline .exposure-icon-layer { flex-shrink: 0; gap: 1px; }
+.tile .exposure-icons-inline .exposure-icon-overflow { flex-shrink: 0; line-height: 1; }
 
 /* ── Tile drawer ──────────────────────────────────────────── */
 .tile-drawer {
@@ -1079,7 +1049,6 @@ body.show-uptime .uptime-strip { display: flex; align-items: center; gap: 6px; }
 .uptime-strip-tile { position: absolute; left: 10px; right: 10px; bottom: 5px; }
 .uptime-strip-tile .health-bars { height: 10px; }
 body.show-uptime .tile { padding-bottom: 24px; }
-body.show-uptime .tile-layout-v2 .tile { padding-bottom: 24px; }
 /* Compact: a very thin strip at the bottom of the tile, no % text. */
 .compact-tile { position: relative; }
 .uptime-strip-compact { position: absolute; left: 0.75rem; right: 0.75rem; bottom: 3px; }

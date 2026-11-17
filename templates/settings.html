@@ -735,7 +735,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/unsaved_guard.js') }}"></script>
+<script src="{{ static_v('js/unsaved_guard.js') }}"></script>
 <script>
   function toggleRestoreSource(value) {
     const serverSection = document.getElementById('server-file-selector-section');

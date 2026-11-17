@@ -65,6 +65,8 @@
 | 0.55    | 2026-11-16 | §8.9: exposure badges are the brand logo only; TLS and hostname overlays removed, details moved to the hover text. |
 | 0.56    | 2026-11-16 | §15.6 delivered on `dev` (v090-08): roll-up no longer lets a passing Container check soften failing URL/service checks (all failing = down); status-mode HTTP failures carry the reply's reason (`503: ...`). §13.1, §13.4, §13.6 updated. No schema or register-contract change. |
 | 0.57    | 2026-11-16 | §15.7 delivered on `dev` (v090-09): the MCP server installs with `uv run` (PEP 723 inline dependencies), knows its own version (`MCP_VERSION`), compares it with the STD version now returned by `GET /api/v1/whoami`, and adds a `server_info` tool. §14.2 and §14.7 updated. No schema or register-contract change. |
+| 0.58    | 2026-11-16 | §15.8 delivered on `dev` (v090-10 B): the v2 layout is the Tiled tile layout; `/tiled_preview` removed; §8.9 and §9.4 updated. No schema or register-contract change. |
+| 0.59    | 2026-11-16 | §15.9 delivered on `dev` (v090-10 A): Body-mode HTTP checks use the same reply-reason extraction as Status mode on 4xx/5xx; health detail panel always shows a reason line for a down check; static CSS/JS carry `?v=<mtime>`. §15.6 note corrected. No schema or register-contract change. |
 
 ---
 
@@ -752,8 +754,9 @@ Badge content:
 - `🔒` prefix when `tls=true`.
 - `🔑` suffix when `auth` is present and not `"none"`.
 
-Tile-level visual budget: badges live in the tile-details block
-below the host name, ahead of any widget data. The tiled view and
+Tile-level visual budget: on the Tiled view the badges sit in the tile's
+bottom row, after the status icons (§15.8); on the table view they sit under
+the name. The tiled view and
 the table view both render them via `templates/partials/exposure_badges.html`.
 The compact view does not — its single-line tile shape has no room.
 
@@ -842,9 +845,10 @@ red `#ef4444` (bad), gray `#6b7280` (not configured / static).
 
 ### 9.4 Tiled redesign
 
-- Tile face: icon + container name + exposure badges + status icon row.
-  Host line removed from tile face; moved to drawer.
-- Status icon row (right-aligned): internal URL, external URL, Docker,
+- Tile face: icon + container name; the status/exposure/action row is along
+  the bottom (superseded by §15.8; the host shows under the name only when the
+  name isn't unique, §15.5).
+- Status icon row: internal URL, external URL, Docker,
   separator, widget indicator (if present), Dozzle (if configured),
   edit pencil, expand chevron.
 - Tile-headless treatment unchanged: no click affordance or hover border
@@ -2267,7 +2271,7 @@ expiry, even though the HTTP status is fine.
   `message`, `detail`, else the raw text; text: first non-empty line.
   Format `<code>: <text>`, whitespace collapsed, whole message at most 200
   characters (`…`); empty, whitespace-only or binary bodies give just the code.
-  Body mode and the cert condition are unchanged.
+  The cert condition is unchanged. (Body mode got the same extraction in §15.9.)
 - No schema, register-contract or job change.
 
 ---
@@ -2293,6 +2297,36 @@ expiry, even though the HTTP status is fine.
   `connected to STD <v> as key '<name>' (<scope>); std_mcp <v>`.
 - **`server_info`** read tool: `{mcp_version, std_version, status, advice}`
   from the startup result, no network call.
+- No schema, register-contract or job change.
+
+---
+
+### 15.8 Tiled tile layout [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered on `dev`
+
+- Each Tiled tile is a two-row grid: the icon on the left and the name across
+  the full remaining width (host in small text underneath when §15.5 shows
+  it); below, a divided bottom row with, left to right, the status icons
+  (health badge, internal/external URL, widget), the exposure badges (one logo
+  per proxy layer, §8.9), and right-aligned actions (Dozzle, edit, trash/lock,
+  chevron). The uptime strip (Show uptime) sits along the tile's bottom edge.
+- This replaces the earlier right-hand two-row icon block. The temporary
+  `/tiled_preview` route and its `tile_layout` plumbing were removed (unknown
+  URL = 404). Mobile touch targets (< 640 px) are unchanged.
+- No schema, register-contract or job change.
+
+---
+
+### 15.9 Body-mode failure reason and panel message [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered on `dev`
+
+- **Body mode, status >= 400.** An `Error:`-prefixed body still gives that
+  text; otherwise the message is `<code>: <reason>` using the §15.6
+  extraction (JSON `last_error` / `error` / `message` / `detail`, else first
+  line), else just the code. Body mode's 2xx outcomes (`OK`, `Error:`,
+  `Unexpected response`) are unchanged.
+- **Panel.** A down check always shows a message line in the health detail
+  panel: the stored message, else `status N (empty reply)`, else `no reply`.
+- **Cache busting.** `base.html` and the edit/add/settings templates request
+  shared static CSS/JS with `?v=<file mtime>` (`static_v()` template helper).
 - No schema, register-contract or job change.
 
 ---

@@ -77,7 +77,8 @@ def test_body_unexpected_response_truncated():
 def test_body_status_400_handling():
     assert _body(503, b"Error: maintenance").message == "maintenance"
     out = _body(500, b"some html")
-    assert out.ok is False and out.message == "500" and out.status_code == 500
+    assert out.ok is False and out.message == "500: some html" and out.status_code == 500
+    assert _body(500, b"").message == "500"
     # An OK body does not rescue a failing status.
     assert _body(500, b"OK").ok is False
 
@@ -618,3 +619,30 @@ def test_check_now_request_cleared_once_submitted(app):
     with patch("checker.run_probe", return_value=checker.ProbeResult(True, 1, 200, "200")):
         sched.tick()
     assert cid not in jobs._pending_run_requests()
+
+
+def test_body_mode_status_failure_uses_json_reason():
+    body = (b'{"status":"Error","last_error":"Mgmt1: Scope \'Mgmt1\' not found on destination ...",'
+            b'"failing_scopes":["Mgmt","Mgmt1"]}')
+    out = _body(503, body)
+    assert out.ok is False and out.status_code == 503
+    assert out.message == "503: Mgmt1: Scope 'Mgmt1' not found on destination ..."
+
+
+_HEALTHZ_503 = (
+    b'{"status": "Error", "last_sync": "2026-11-17T03:32:17+00:00", "last_error": "Mgmt1: Scope '
+    b"'Mgmt1' not found on destination 10.100.16.17.; Mgmt: Scope 'Mgmt' exists on destination "
+    b"10.100.16.17 but not on source 10.100.16.16.\", \"failing_scopes\": [\"Mgmt\", \"Mgmt1\"]}"
+)
+_HEALTHZ_MSG = (
+    "503: Mgmt1: Scope 'Mgmt1' not found on destination 10.100.16.17.; Mgmt: Scope 'Mgmt' "
+    "exists on destination 10.100.16.17 but not on source 10.100.16.16."
+)
+
+
+@pytest.mark.parametrize("mode", ["status", "body"])
+def test_operator_healthz_503_gives_last_error_in_both_modes(mode):
+    with patch("checker.requests.get", return_value=_resp(503, _HEALTHZ_503)):
+        out = checker.probe_http("http://x/healthz", mode, 5, True)
+    assert out.ok is False and out.status_code == 503
+    assert out.message == _HEALTHZ_MSG

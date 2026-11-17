@@ -131,30 +131,26 @@ def test_filter_does_not_hide_duplicate(app, admin_client, view, url):
     assert not _host_shown(html, "em-dns01", view)
 
 
-# --- /tiled_preview: temporary layout preview ------------------------------------
+# --- the v2 layout is the Tiled view; the old preview URL is gone ---------------------
 
 
-def test_preview_requires_login(client):
-    resp = client.get("/tiled_preview")
-    assert resp.status_code == 302 and "/login" in resp.headers["Location"]
+def test_tiled_preview_url_is_gone(admin_client):
+    assert admin_client.get("/tiled_preview").status_code == 404
 
 
-def test_preview_has_v2_class_and_notice_dash_does_not(app, admin_client):
+def test_tiled_has_no_preview_notice_or_layout_class(app, admin_client):
     with app.app_context():
         _seed()
-    prev = admin_client.get("/tiled_preview?status=unknown")
-    assert prev.status_code == 200
-    html = prev.get_data(as_text=True)
-    assert "tile-layout-v2" in html
-    assert "Layout preview — the normal Tiled view is unchanged." in html
-    assert 'href="/tiled_dash?status=unknown"' in html
-    dash = admin_client.get("/tiled_dash").get_data(as_text=True)
-    assert "tile-layout-v2" not in dash and "Layout preview" not in dash
+    html = admin_client.get("/tiled_dash").get_data(as_text=True)
+    assert "tile-layout-v2" not in html and "Layout preview" not in html
 
 
-def test_preview_host_label_rule_applies(app, admin_client):
+def test_tiled_host_label_sits_under_the_name(app, admin_client):
     with app.app_context():
         _seed()
-    html = _page(admin_client, "/tiled_preview", app, "duplicates")
+    html = _page(admin_client, "/tiled_dash", app, "duplicates")
     assert _host_shown(html, "em-dns01", "tiled") and _host_shown(html, "em-dns02", "tiled")
     assert not _host_shown(html, "em-solo", "tiled")
+    host = html.index('class="tile-host"')
+    assert html.rindex("container-name", 0, host) > html.rindex('class="tile-details"', 0, host)
+    assert html.index('class="tile-status-row"', host) > host

@@ -8,13 +8,6 @@
 {% endblock %}
 
 {% block content %}
-    {% if tile_layout == 'v2' %}
-    <div class="tile-preview-notice">
-        Layout preview — the normal Tiled view is unchanged.
-        <a href="{{ url_for('dashboard.tiled_dashboard') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}">Back to the normal Tiled view</a>
-    </div>
-    <div class="tile-layout-v2">
-    {% endif -%}
     {% if grouped_entries %}
         {% for group_name, entries_in_group in grouped_entries %}
             <h2 class="group-title flex items-center gap-2 cursor-pointer group-header" data-group="{{ group_name }}">
@@ -95,16 +88,13 @@
                                 {% endif %}
                             </div>
 
-                            {# Details column: name + exposure badges #}
+                            {# Name (full width) with the host underneath when shown #}
                             <div class="tile-details">
                                 <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
                                 {% if entry.id in host_label_ids %}<span class="tile-host" title="{{ entry.host }}">{{ entry.host }}</span>{% endif %}
-                                {% if tile_layout != 'v2' %}{% with exposures = entry.exposures %}
-                                  {% include "partials/exposure_badges.html" %}
-                                {% endwith %}{% endif %}
                             </div>
 
-                            {# Status icon block: two rows (status top, actions bottom) #}
+                            {# Bottom row: status icons, exposure badges, actions #}
                             <div class="tile-status-row">
 
                                 <div class="tile-icon-row tile-icon-row-status">
@@ -159,10 +149,10 @@
                                         </button>
                                     {% endif %}
 
-                                    {# v2 only: exposure badges live in the bottom row #}
-                                    {% if tile_layout == 'v2' %}{% with exposures = entry.exposures, exposure_inline = true %}
+                                    {# Exposure badges #}
+                                    {% with exposures = entry.exposures, exposure_inline = true %}
                                       {% include "partials/exposure_badges.html" %}
-                                    {% endwith %}{% endif %}
+                                    {% endwith %}
                                 </div>{# /tile-icon-row-status #}
 
                                 <div class="tile-icon-row tile-icon-row-actions">
@@ -428,6 +418,5 @@
         {% endfor %}
     {% else %}
         <p style="text-align: center; margin-top: 30px;">No service entries found or no groups to display based on current selection.</p>
-    {% endif %}{% if tile_layout == 'v2' %}
-    </div>{# /tile-layout-v2 #}{% endif %}
+    {% endif %}
 {% endblock %}

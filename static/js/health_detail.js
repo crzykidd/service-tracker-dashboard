@@ -136,7 +136,11 @@
       box.appendChild(el('div', 'health-check-meta health-cert' + (low ? ' health-cert-low' : ''),
         'Cert expires ' + fmtDate(c.cert_expires_at) + ' (' + left + (left === 1 ? ' day' : ' days') + ')'));
     }
-    if (c.state === 'down' && c.message) box.appendChild(el('div', 'health-check-msg', c.message));
+    if (c.state === 'down') {
+      // Always say why: the probe's text, else the status code, else "no reply".
+      box.appendChild(el('div', 'health-check-msg', c.message ||
+        (c.status_code ? 'status ' + c.status_code + ' (empty reply)' : 'no reply')));
+    }
 
     const strip = el('div', 'health-bars health-bars-' + range);
     c.bars.forEach(function (b) {
