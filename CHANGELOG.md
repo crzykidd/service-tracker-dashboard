@@ -40,8 +40,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   starts over. A new **Rotated** column shows when each key was last rotated.
   Update anything that used the old key (for example the MCP client config).
 
+### Changed
+
+- **Settings → Groups has one Save.** Edit any number of groups (name, icon,
+  priority), add a new one in the bottom row (left blank, it is ignored) and
+  press **Save changes** once. **Delete** now marks the row (struck through,
+  with **Undo**) and the delete happens on Save; a group that still has
+  entries has no Delete button. Nothing is saved if anything is wrong (empty
+  or duplicate name, a priority that is not a number, a group that gained
+  entries since the page loaded): the page comes back with what you typed and
+  a message on each bad row. Swapping two names, or giving a new group a
+  deleted group's name, works in one save. **Discard** reloads the table.
+- **Warning before leaving Settings → Groups with unsaved changes.** The
+  browser asks before you close the tab or follow a link, and the Save button
+  is highlighted with an "Unsaved changes" hint. Typing a change and putting it
+  back clears the warning. Switching Settings tabs does not lose your edits.
+- The Groups table is always shown, so the first group can be added from an
+  empty list.
+
 ### Fixed
 
+- **Saving a group on Settings → Groups no longer clears its priority.** The
+  per-row Save sent only the group's id, so the priority was reset to blank
+  (and the name and icon were not saved). A priority of 0 also showed as blank.
 - A revoked API key's name can be used again for a new key. Names only have to
   be unique among active keys; the audit-log key filter lists a reused name
   once per key, with the revoked one marked "(revoked)".

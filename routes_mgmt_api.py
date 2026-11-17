@@ -926,20 +926,8 @@ def health_summary():
 
 # --- groups --------------------------------------------------------------------
 
-GROUP_NAME_MAX = 100
-GROUP_ICON_MAX = 255
-
-
 def _group_problems(name, icon, name_sent=True, icon_sent=True):
-    errors = []
-    if name_sent:
-        if not (name or "").strip():
-            errors.append({"field": "name", "message": "name is required"})
-        elif len(name.strip()) > GROUP_NAME_MAX:
-            errors.append({"field": "name", "message": f"name is limited to {GROUP_NAME_MAX} characters"})
-    if icon_sent and icon and len(icon) > GROUP_ICON_MAX:
-        errors.append({"field": "icon", "message": f"icon is limited to {GROUP_ICON_MAX} characters"})
-    return errors
+    return entry_rules.validate_group(name, icon, name_sent, icon_sent)
 
 
 def _group_snapshot(group):

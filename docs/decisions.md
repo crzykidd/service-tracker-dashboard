@@ -5,6 +5,37 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-04 implementation calls (Groups: one Save, unsaved guard)
+
+- **Group name/icon rules live in `entry_rules.validate_group`.** The
+  management API had its own copy (`_group_problems`); it now delegates, so the
+  Settings form and the API share one rule set. Priority reuses
+  `entry_rules.parse_sort_priority` (negatives and 0 allowed; the dashboard
+  sorts on plain ints with NULL as 9999).
+- **Swap-safe apply.** `group_name` is UNIQUE and SQLite checks per statement,
+  so an A<->B swap would fail mid-flush. Renamed rows are first parked on a
+  placeholder name (flushed), then given final values. Rejected: dropping the
+  unique constraint (a migration for a UI nicety).
+- **Stale table is refused, not merged.** A submitted id that no longer exists,
+  or an existing group missing from the form (added elsewhere after load), is a
+  400 with nothing written; the operator reloads with Discard. Applying a
+  partial table could silently undo someone else's change.
+- **Re-render after a 400 starts dirty via `data-unsaved-start-dirty`**, not by
+  diffing against DB values: simpler, and the failed submission is by
+  definition unsaved. `_render_settings()` was split out of `settings()` so the
+  400 path renders the full page without a redirect.
+- **The guard's snapshot is order-independent** (sorted `name=value` pairs), so
+  `sortTable` re-ordering rows is not an edit. `sortTable` now skips the "new"
+  row (`data-no-sort`) and reads only text/number inputs (the hidden delete flag
+  sits in the Controls cell).
+- **The Groups table always renders**, even with no groups, because the new row
+  is now the only way to add the first group.
+- **JS verified with a throwaway headless Playwright script, not a committed
+  test**: the repo has no JS test setup and CI has no browser. Server behaviour
+  is covered by `tests/test_groups_save.py`.
+
+---
+
 ## 2026-11-16 — v090-03 implementation calls (API key rotation, name reuse)
 
 - **Key management stays out of the management API.** Rotate, like create and

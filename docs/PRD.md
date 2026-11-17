@@ -59,6 +59,7 @@
 | 0.49    | 2026-11-16 | Added §15 (v0.9.0 — DNS and certificate-expiry checks, in progress) and delivered §15.1 on `dev` (v090-01): new `dns` service check (server IP, query name, record type, expected rcode, optional expected answer; NODATA handling), migration `a1c5e8d2f093` (four nullable `health_check` columns), `dnspython`, Add/Edit/detail/API/MCP support; §15.2 certificate expiry stubbed as planned. Later sections renumbered (§15→§16, §16→§17, §17→§18) and cross-references fixed. §5.6 `check_type` list and §14.3 add-check row updated. Register wire contract unchanged. |
 | 0.50    | 2026-11-16 | §15.2 delivered on `dev` (v090-02): optional certificate-expiry condition (`cert_min_days`, 1-365) on URL checks and HTTP service checks, failing with `cert expires in N days (min M)`; separate unverified TLS handshake parsed with `cryptography`; migration `b7d3f1a94e26` (`cert_min_days`, `last_cert_expires_at`); "Min cert days" field shown only for https targets, detail-panel expiry line, API/OpenAPI/MCP support. §5.6 `health_check` columns updated. Register wire contract unchanged. |
 | 0.51    | 2026-11-16 | §15.3 delivered on `dev` (v090-03): rotate an API key from Settings → API (`api_key.rotated_at`, new key shown once, old key invalid at once), and API key names unique among active keys only (partial index `ux_api_key_name_active`, migration `c2e8a5b3d917`). §14.2 updated. |
+| 0.52    | 2026-11-16 | §15.4 delivered on `dev` (v090-04): Settings → Groups saves the whole table with one `POST /settings/groups/save` (all-or-nothing, per-row errors, delete applies on Save) and warns before leaving with unsaved changes (`static/js/unsaved_guard.js`); `/update_group`, `/add_group`, `/delete_group` removed; per-row Save priority-wipe bug fixed. Group name/icon rules moved to `entry_rules.validate_group`, shared with the management API. No schema or register-contract change. |
 
 ---
 
@@ -2186,6 +2187,33 @@ expiry, even though the HTTP status is fine.
   is shared by more than one row.
 - Migration `c2e8a5b3d917` (on top of `b7d3f1a94e26`) does both changes.
 - Not in the management API: users and keys stay UI-only (§14.8).
+### 15.4 Groups: one Save, unsaved-changes warning [`v090-04-groups-save-all`] — Delivered on `dev`
+
+- **One form, one route.** Settings → Groups is a single `<form>` posting to
+  `POST /settings/groups/save` (admin and CSRF). Rows post
+  `group-<id>-name|icon|priority|delete`; the optional new row posts
+  `new-name|icon|priority` and is ignored when the name is blank. The per-row
+  Save/Delete forms and `POST /update_group`, `/add_group`, `/delete_group` were
+  removed (the nested per-row forms were invalid HTML and the per-row Save
+  posted only `group_id`, which reset `group_sort_priority` to NULL).
+- **All or nothing.** The submission is validated first: names non-empty (<= 100
+  characters) and unique across the resulting set (so an A<->B swap, or a new
+  group taking a deleted row's name, is fine), icon <= 255 characters,
+  priority blank or an integer (negatives and 0 allowed), every submitted
+  group id still exists and no existing group is missing from the form, and a
+  delete-marked group has no active entries. The name, icon and priority rules
+  are `entry_rules.validate_group` / `parse_sort_priority`, shared with the
+  management API. Any failure writes nothing and re-renders Settings (HTTP 400)
+  on the Groups tab with the submitted values and per-row messages.
+- **Applying.** One transaction: deletes (soft-deleted entries detached), renamed
+  rows parked on a placeholder name so SQLite's per-statement UNIQUE check
+  allows swaps, then the final values and the new row. Flash: "Saved: N updated,
+  N added, N deleted." or "No changes."
+- **Unsaved-changes guard.** `static/js/unsaved_guard.js` (no dependencies,
+  `data-unsaved-guard` on a form) snapshots the form on load, is dirty while the
+  values differ from it, arms a `beforeunload` prompt, highlights Save and shows
+  an "Unsaved changes" hint. Submit and Discard disarm it. A failed save
+  re-renders with `data-unsaved-start-dirty`. Applied to the groups form only.
 
 ---
 
