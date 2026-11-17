@@ -510,10 +510,10 @@ indicating the current source.
 #### Badges and headless rendering
 
 Each tile (tiled view) and row (table view) renders up to three
-exposure badges showing the layer name, a lock icon (`ti-lock`) if
-TLS-terminated, and a key icon (`ti-key`) if auth is required. A `+N`
-overflow badge appears when a service is observed by more than three
-interpreters.
+exposure badges, one brand logo per proxy layer (Traefik, Cloudflare, …)
+however many routes it has. Hover a logo for the route count and each
+route's hostname, TLS and auth. A `+N` overflow badge appears when a
+service is observed by more than three layers.
 
 Services with no exposure observations **and** no URLs (manual,
 explicit, or synthesized) are considered "headless." Their tiles

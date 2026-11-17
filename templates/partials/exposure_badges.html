@@ -2,8 +2,8 @@
    Caller passes `exposures` (list of ServiceExposure rows); optional `exposure_inline`
    (v2 tile bottom row) adds a modifier class. Grouping is done by the
    `exposure_layers` filter (view_helpers.exposure_layers).
-   Badge: brand logo 18x18, ti-lock if any row TLS, ti-pencil if any explicit hostname,
-   a x<count> suffix when the layer has several routes; title lists every route.
+   Badge: the brand logo only (no TLS/hostname marks, no count); the title gives the
+   route count and lists each route with its TLS/auth.
 #}
 {% set _layers = exposures|exposure_layers %}
 {% if _layers %}
@@ -26,12 +26,6 @@
           <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/caddy.svg') }}" alt="Caddy">
         {% else %}
           <i class="ti ti-route exposure-icon-fallback" aria-hidden="true"></i>
-        {% endif %}
-        {% if ly.tls %}
-          <i class="ti ti-lock exposure-icon-tls" aria-hidden="true"></i>
-        {% endif %}
-        {% if ly.labeled %}
-          <i class="ti ti-pencil exposure-icon-label" aria-hidden="true"></i>
         {% endif %}
       </span>
     {% endfor %}
