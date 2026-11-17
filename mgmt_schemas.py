@@ -172,6 +172,7 @@ class WhoamiOut(TypedDict):
     name: str
     prefix: str
     scope: str                       # "read" | "write"
+    version: str                     # the STD version, e.g. "0.9.0" (older STDs omit it)
 
 
 class CheckDeleteOut(TypedDict):

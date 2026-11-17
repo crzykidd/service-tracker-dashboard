@@ -66,8 +66,9 @@ OPERATIONS: tuple = (
     Op("GET", "/openapi.json", None, "This OpenAPI document", dict,
        description="The machine-readable description of the management API (OpenAPI 3.1). "
                    "It describes shapes only, never data. `/api/v1/register` is not part of it."),
-    Op("GET", "/whoami", "read", "Name, prefix and scope of the calling key", S.WhoamiOut,
-       description="Handy to check that a key works and what it may do."),
+    Op("GET", "/whoami", "read", "Name, prefix and scope of the calling key, and the STD version", S.WhoamiOut,
+       description="Handy to check that a key works and what it may do. `version` is the STD "
+                   "version; the MCP server compares it with its own."),
 
     Op("GET", "/entries", "read", "List entries", S.Page[S.EntryOut], params=_PAGE + (
         Param("status", {"type": "string", "enum": list(VALID_STATUS_FILTERS), "default": "all"},

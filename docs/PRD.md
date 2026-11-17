@@ -64,6 +64,7 @@
 | 0.54    | 2026-11-16 | §8.9 updated (v090-07, `dev`): exposure badges render once per layer instead of once per `ServiceExposure` row. No schema or register-contract change. |
 | 0.55    | 2026-11-16 | §8.9: exposure badges are the brand logo only; TLS and hostname overlays removed, details moved to the hover text. |
 | 0.56    | 2026-11-16 | §15.6 delivered on `dev` (v090-08): roll-up no longer lets a passing Container check soften failing URL/service checks (all failing = down); status-mode HTTP failures carry the reply's reason (`503: ...`). §13.1, §13.4, §13.6 updated. No schema or register-contract change. |
+| 0.57    | 2026-11-16 | §15.7 delivered on `dev` (v090-09): the MCP server installs with `uv run` (PEP 723 inline dependencies), knows its own version (`MCP_VERSION`), compares it with the STD version now returned by `GET /api/v1/whoami`, and adds a `server_info` tool. §14.2 and §14.7 updated. No schema or register-contract change. |
 
 ---
 
@@ -1829,7 +1830,8 @@ token and needs no update.
 **As built (v080-01):** `api_keys.py` (`generate_key`, `verify`,
 `scope_allows`, `create_key`, `revoke_key`), `routes_mgmt_api.py` (blueprint
 `mgmt_api`, `require_api_key(scope)`, `audit()`, `json_error()`,
-`GET /api/v1/whoami`) and models `ApiKey` / `ApiAudit`.
+`GET /api/v1/whoami`) and models `ApiKey` / `ApiAudit`. From v0.9.0 whoami
+also returns `version` (the STD version, same source as `/config`); see §15.7.
 - The prefix is 8 hex characters (`secrets.token_hex(4)`), so it never
   contains `_`; the secret is `token_urlsafe(32)` and may. A key is parsed
   with `split("_", 2)`.
@@ -2023,6 +2025,8 @@ view of the log is not built yet.
 - **Tests:** each tool runs against a fake HTTP layer, with no network.
 
 **As built (v080-05):** `mcp/std_mcp.py` (FastMCP over stdio, `mcp==1.30.0`, `httpx` client) with its own `mcp/requirements.in` / `requirements.txt` and `mcp/README.md`. Env: `STD_URL`, `STD_API_KEY`, optional `STD_VERIFY_TLS` and `STD_TIMEOUT`. `main()` calls `GET /whoami` and exits with the reason on a bad key; a `read` key registers 9 read tools, a `write` key adds 12 write tools (21 in all). Beyond the §14.7 list: `list_widget_types` (so `set_widget` can be filled in) and `remove_widget`. `update_entry` / `update_check` take a `fields` object so that absent (untouched) and null (clear) stay distinct; `upsert_group` is client-side (list, then create or patch by exact name; optional `new_name`). Errors become tool errors as `HTTP <status> (<meaning>): <error>` plus the API's `details`. `.dockerignore` keeps `mcp/` out of the image; `requirements-dev.txt` includes `mcp/requirements.txt` so `tests/test_mcp_server.py` runs in the CI `Test` job (fake transport for every tool, scope gating, error mapping, every tool's method and path checked against `/api/v1/openapi.json`, and a flow against the real app via `httpx.WSGITransport`). No STD server change, no schema change.
+
+**v0.9.0 addition (§15.7):** one-command install with `uv run` (PEP 723 header in `std_mcp.py`), a startup version comparison against `whoami.version`, and a `server_info` tool.
 
 ### 14.8 Out of scope for v0.8.0
 
@@ -2264,6 +2268,31 @@ expiry, even though the HTTP status is fine.
   Format `<code>: <text>`, whitespace collapsed, whole message at most 200
   characters (`…`); empty, whitespace-only or binary bodies give just the code.
   Body mode and the cert condition are unchanged.
+- No schema, register-contract or job change.
+
+---
+
+### 15.7 MCP easy install and version check [`v090-09-mcp-easy-install-and-version`] — Delivered on `dev`
+
+- **uv install.** `mcp/std_mcp.py` starts with a PEP 723 block
+  (`requires-python >= 3.10`, `mcp==1.30.0`, `httpx==0.28.1`), so
+  `uv run std_mcp.py` (or `uv run <raw GitHub URL at a tag>`) needs no virtualenv.
+  `requirements.in` / `requirements.txt` stay for CI and the venv path; a test
+  asserts the header pins equal `requirements.in`.
+- **`whoami.version`.** `GET /api/v1/whoami` adds `version` (from
+  `VERSION_INFO`, as `/config` and `openapi.json` do). Additive; `WhoamiOut`
+  and the OpenAPI description updated.
+- **MCP version.** `MCP_VERSION` in `std_mcp.py` is set by `/release-prep`
+  alongside `VERSION`; a test fails if it is behind `VERSION`.
+- **Startup comparison** (`compare_versions`): `MAJOR.MINOR.PATCH` integers;
+  same major.minor = `match` (a patch difference is noted only on stderr);
+  `std_newer`; `std_older` (a missing `version` means STD older than 0.9.0);
+  `unknown` for anything not plain semver. A difference gives one stderr line
+  and one "Version notice" sentence in the FastMCP instructions. It never
+  refuses to start. The startup line is
+  `connected to STD <v> as key '<name>' (<scope>); std_mcp <v>`.
+- **`server_info`** read tool: `{mcp_version, std_version, status, advice}`
+  from the startup result, no network call.
 - No schema, register-contract or job change.
 
 ---

@@ -699,12 +699,19 @@ machine, not in the container. A **read** key gives it only the read tools; a
 **write** key gives it all of them.
 
 ```bash
-cd mcp && uv venv && uv pip install -r requirements.txt     # or python -m venv + pip
-claude mcp add std \
+claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- /path/to/service-tracker-dashboard/mcp/.venv/bin/python /path/to/service-tracker-dashboard/mcp/std_mcp.py
+  -- uv run /abs/path/to/service-tracker-dashboard/mcp/std_mcp.py
 ```
+
+[uv](https://docs.astral.sh/uv/) reads the dependencies from the script itself,
+so there is no virtualenv to set up. Without a checkout, point `uv run` at a
+release tag instead (updating means changing the tag):
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.9.0/mcp/std_mcp.py`.
+The server warns Claude when it is older or newer than your STD, and Claude can
+check with the `server_info` tool. A venv-based install and a Claude Desktop
+example are in [`mcp/README.md`](mcp/README.md).
 
 Then ask Claude in plain language, as in the examples above. Everything it
 changes is recorded in the audit log under the key's name. Details, settings

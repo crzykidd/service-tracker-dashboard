@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One-command MCP install, and a version check.** The MCP server installs
+  with one command via `uv run` (no virtualenv needed) and warns when it is
+  older or newer than your STD; new `server_info` tool.
+- `GET /api/v1/whoami` now includes the STD version.
 - **Host on Tiled tiles when a name isn't unique.** Entries with the same name
   on different hosts (for example `technitium` on two DNS servers) used to
   look identical on Tiled. The host now appears in small muted text under the

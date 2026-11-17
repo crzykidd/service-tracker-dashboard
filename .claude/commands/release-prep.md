@@ -139,6 +139,10 @@ truth — the Dockerfile writes `/app/version.txt` from it, the in-app version
 display reads that, and `publish.yml` fails a release whose tag does not
 equal it. Do not touch helper functions or surrounding code.
 
+Also set `MCP_VERSION = "$ARGUMENTS"` in `mcp/std_mcp.py` (the MCP server's
+own version; a test fails if it is behind `VERSION`). Change nothing else in
+that file.
+
 ## Step 2 — Roll the changelog
 
 In `CHANGELOG.md`:
@@ -299,7 +303,7 @@ editing.
 
 ## Step 7 — Commit
 
-Stage `VERSION`, `CHANGELOG.md`, `README.md`, `docs/PRD.md`, `CLAUDE.md`
+Stage `VERSION`, `mcp/std_mcp.py`, `CHANGELOG.md`, `README.md`, `docs/PRD.md`, `CLAUDE.md`
 (and any archive files) by explicit path — never `git add -A` — and make ONE
 commit. Use a conventional-commit subject and a
 body that lists what changed. Template:
@@ -307,7 +311,7 @@ body that lists what changed. Template:
 ```
 chore(release): prepare v$ARGUMENTS
 
-- VERSION bumped to $ARGUMENTS
+- VERSION and MCP_VERSION bumped to $ARGUMENTS
 - CHANGELOG: rolled [Unreleased] → [$ARGUMENTS] — <today>
 - README: version badge + What's New entry
 - PRD: revision-history row; CLAUDE.md: Build Status

@@ -310,7 +310,9 @@ def openapi_spec():
 @require_api_key("read")
 def whoami():
     key = g.api_key
-    return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope})
+    version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
+    return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope,
+                    "version": str(version)})
 
 
 # --- shared helpers --------------------------------------------------------------

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""MCP server for the Service Tracker Dashboard management API (v0.8.0, PRD 14.7).
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["mcp==1.30.0", "httpx==0.28.1"]
+# ///
+"""MCP server for the Service Tracker Dashboard management API (PRD 14.7, 15.7).
 
 A small stdio server that lets Claude Code (or any MCP client) look after an STD
 instance. It is a plain HTTP client of `/api/v1`: no database access, no imports
@@ -13,13 +17,18 @@ Environment:
     STD_TIMEOUT      request timeout in seconds (default 15)
 
 At startup it calls `GET /api/v1/whoami`. A `read` key registers only the read
-tools; a `write` key registers all of them.
+tools; a `write` key registers all of them. whoami also returns the STD version,
+which is compared with MCP_VERSION so Claude can say when this script needs updating.
+
+Run it with `uv run std_mcp.py`: the dependencies are declared in the PEP 723 block
+above (kept equal to mcp/requirements.in by a test), so no virtualenv is needed.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from typing import Any
 
@@ -29,6 +38,10 @@ from mcp.server.fastmcp.exceptions import ToolError
 
 # httpx logs every request URL at INFO; keep the stdio server quiet.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# The release this script belongs to. `/release-prep` sets it with VERSION; a test
+# keeps the two from drifting.
+MCP_VERSION = "0.9.0"
 
 API = "/api/v1"
 DEFAULT_TIMEOUT = 15.0
@@ -124,10 +137,85 @@ def _check_fields(fields: dict, allowed: set[str], what: str) -> dict:
     return fields
 
 
-def build_server(client: StdClient, scope: str) -> FastMCP:
-    """Create the FastMCP server. Write tools are registered only for a `write` key."""
+_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
+
+def _parse_semver(value: Any) -> tuple[int, int, int] | None:
+    m = _SEMVER.match(value.strip()) if isinstance(value, str) else None
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def compare_versions(mcp_version: str, std_version: Any) -> dict:
+    """Compare this script with the STD it talks to.
+
+    `std_version` is what whoami returned; None (the field is missing) means an STD
+    older than 0.9.0. Returns {mcp_version, std_version, status, advice} where status
+    is match | std_newer | std_older | unknown. A patch-only difference is still
+    `match`; its advice says so. Anything that is not plain MAJOR.MINOR.PATCH is unknown.
+    """
+    info = {"mcp_version": mcp_version, "std_version": std_version if isinstance(std_version, str) else None}
+    mine = _parse_semver(mcp_version)
+    if std_version is None:
+        info["status"] = "std_older"
+        info["advice"] = ("This STD does not report its version, so it is older than 0.9.0. "
+                          "Some tools may call endpoints it lacks and return 404; upgrade STD.")
+        return info
+    theirs = _parse_semver(std_version)
+    if mine is None or theirs is None:
+        info["status"] = "unknown"
+        info["advice"] = (f"The STD version ({std_version!r}) could not be compared with this script "
+                          f"({mcp_version}). Everything may work; if a tool is missing or returns 404, "
+                          "update std_mcp.py (see mcp/README.md).")
+    elif mine[:2] == theirs[:2]:
+        info["status"] = "match"
+        info["advice"] = ("Versions match." if mine == theirs else
+                          "Versions match (the patch level differs, which is fine).")
+    elif theirs[:2] > mine[:2]:
+        info["status"] = "std_newer"
+        info["advice"] = (f"STD {std_version} is newer than this script ({mcp_version}) and may have API "
+                          "features or tools this script lacks. Update std_mcp.py (see mcp/README.md).")
+    else:
+        info["status"] = "std_older"
+        info["advice"] = (f"STD {std_version} is older than this script ({mcp_version}). Some tools may "
+                          "call endpoints STD does not have yet and return 404. Upgrade STD, or use an "
+                          "older std_mcp.py.")
+    return info
+
+
+def version_notice(info: dict) -> str | None:
+    """The one stderr line for a version difference, or None when the versions are identical."""
+    mine, theirs = info["mcp_version"], info["std_version"]
+    if info["status"] == "match":
+        return None if mine == theirs else f"std_mcp {mine} talking to STD {theirs} (patch difference, fine)"
+    shown = theirs or "older than 0.9.0"
+    if info["status"] == "std_older":
+        return f"std_mcp {mine} talking to STD {shown}: some tools may return 404; upgrade STD (see mcp/README.md)"
+    if info["status"] == "unknown":
+        return f"std_mcp {mine} talking to STD {shown}: version could not be compared (see mcp/README.md)"
+    return f"std_mcp {mine} talking to STD {shown}: update std_mcp.py (see mcp/README.md)"
+
+
+def build_server(client: StdClient, scope: str, version_info: dict | None = None) -> FastMCP:
+    """Create the FastMCP server. Write tools are registered only for a `write` key.
+
+    `version_info` is the result of compare_versions from startup; `server_info` reports it
+    and the instructions mention a mismatch. Omitted, no version check is reported.
+    """
     if scope not in ("read", "write"):
         raise ValueError(f"unexpected key scope {scope!r}")
+    if version_info is None:
+        version_info = {"mcp_version": MCP_VERSION, "std_version": None, "status": "unknown",
+                        "advice": "The STD version was not checked."}
+        mismatch = ""
+    else:
+        status = version_info["status"]
+        mismatch = "" if status == "match" else (
+            " Version notice: " + version_info["advice"] + " If a tool seems missing or returns 404, "
+            "tell the operator to update the MCP server (std_mcp.py); server_info shows the versions."
+            if status != "unknown" else
+            " Version notice: the STD version could not be compared with this MCP server "
+            f"({version_info['mcp_version']}). If a tool seems missing or returns 404, tell the "
+            "operator to update the MCP server (std_mcp.py).")
     server = FastMCP(
         "std",
         instructions=(
@@ -137,6 +225,7 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
             "external URL, container, and any number of service checks) that roll up to a health "
             "state. Start with health_summary to see what is broken."
             + ("" if scope == "write" else " This key is read-only: no change tools are available.")
+            + mismatch
         ),
     )
 
@@ -147,6 +236,14 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
         return server.tool()(fn) if scope == "write" else fn
 
     # ---- read tools ---------------------------------------------------------
+
+    @read_tool
+    def server_info() -> dict:
+        """Versions of this MCP server and of the STD it talks to, and whether they match. Call it when a tool seems missing or returns 404, or when the operator asks about versions.
+
+        Returns {mcp_version, std_version, status: match | std_newer | std_older | unknown, advice}. Answered from what was checked at startup; no request is made.
+        """
+        return dict(version_info)
 
     @read_tool
     def list_entries(status: str = "all", source: str = "all", host: str | None = None,
@@ -384,8 +481,14 @@ def main() -> None:
         who = client.request("GET", "/whoami")
     except ToolError as exc:
         sys.exit(f"std-mcp: cannot use the API key at {url}: {exc}")
-    print(f"std-mcp: connected to {url} as key {who['name']!r} ({who['scope']})", file=sys.stderr)
-    build_server(client, who["scope"]).run(transport="stdio")
+    std_version = who.get("version")
+    info = compare_versions(MCP_VERSION, std_version)
+    print(f"std-mcp: connected to STD {std_version or 'unknown version'} as key {who['name']!r} "
+          f"({who['scope']}); std_mcp {MCP_VERSION}", file=sys.stderr)
+    notice = version_notice(info)
+    if notice:
+        print(f"std-mcp: {notice}", file=sys.stderr)
+    build_server(client, who["scope"], info).run(transport="stdio")
 
 
 if __name__ == "__main__":

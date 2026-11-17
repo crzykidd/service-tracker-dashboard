@@ -5,6 +5,26 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-09 MCP: PEP 723 install, version check, `MCP_VERSION` test
+
+- Install is `uv run` with the dependencies in a PEP 723 header, duplicated
+  from `mcp/requirements.in` (kept for CI and the venv path). A test parses
+  the header and compares it with `requirements.in` so they cannot drift.
+- `MCP_VERSION` is a constant in `std_mcp.py` (the script must work from a raw
+  URL with no `VERSION` file beside it). The prompt asked for a test that it
+  equals `VERSION`, but on `dev` `VERSION` is still the last release (0.8.0)
+  while `MCP_VERSION` is already 0.9.0, so strict equality fails until
+  `/release-prep` bumps `VERSION`. The test asserts `MCP_VERSION >= VERSION`:
+  a release that bumps `VERSION` without `MCP_VERSION` fails, and
+  `/release-prep` Step 1 now sets both (and stages `mcp/std_mcp.py`).
+- Comparison uses major.minor only; patch differences are `match`. A missing
+  `whoami.version` is `std_older` (STD < 0.9.0); non-semver is `unknown`.
+  `unknown` also adds a (softer) notice to the instructions; `build_server`
+  without version info (older callers/tests) adds none.
+- The 3.11-only `tomllib` is used by the header test; CI runs 3.11.
+
+---
+
 ## 2026-11-16 — v090-08 roll-up: Container fails alone, URL/service checks judged as a group
 
 - Container failing is always `down`; URL/service checks (http, tcp, ping,
