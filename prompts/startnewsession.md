@@ -1,120 +1,93 @@
-# Start a new session: plan the post-0.9.0 work
+# Start a new session: review the network-inventory design, then plan the next work
 
 Paste this into a fresh Claude Code session in this repo, or say "read
 prompts/startnewsession.md and start".
 
-## Where things stand
+## Where things stand (2026-11-17)
 
-- **Shipped:** v0.9.0 (check `git tag -l 'v0.9*'` and `CLAUDE.md` Build
-  Status to confirm it was cut).
-- **What 0.9.0 added:**
-  - DNS checks and a cert-expiry condition;
-  - API key rotation, and reuse of a revoked key's name;
-  - Settings → Groups saved with one Save, with an unsaved-changes guard;
-  - the host shown on tiles when a name is duplicated (`tile_show_host`);
-  - one exposure icon per proxy layer;
-  - roll-up: a passing Container check no longer softens a failing service;
-  - HTTP failures carry the reason from the reply body;
-  - MCP install via `uv run` plus a version check.
-- **Parked:** `docs/FUTURE.md`. In particular, "Register overwrites some
-  operator edits" (custom icon and URL-check toggles clobbered by register).
-- **Before starting:** read `CLAUDE.md`, `standards.md`, `docs/PRD.md` (§13
-  monitoring, §14 management API, §15 v0.9.0) and `docs/decisions.md`
-  (newest first).
+- **Shipped:** v0.9.0 is the latest tag on `main`.
+- **On `dev`, unreleased** (all under CHANGELOG `[Unreleased]`; release
+  number **not decided**, 0.10.0 is likely given the scope):
+  - Version in the UI (PRD §16): header version + What's New link,
+    dev-build SHA, GitHub update-available check, `BUILD_CHANNEL` build
+    arg.
+  - Notifications (PRD §17):
+    - MQTT channel framework and Settings → Notifications (§17.2);
+    - retained state publishing (§17.3);
+    - Home Assistant discovery, opt-in per entry with a bulk picker and
+      `STD <name> (<host>)` device names (§17.4);
+    - channel and entry purge (§17.5).
+  - Fix: auto-refresh only on the dashboard views.
+- **Handoff prompts:** all done (`prompts/done/2026-11-16-version-in-ui.md`,
+  `2026-11-16-notif-01..03`, `2026-11-17-notif-04..05`).
 
-## This session's job: plan, don't build
+## Not yet verified for real (do this before `/release-prep`)
 
-Scope the next release in the PRD and write handoff prompts, the same way
-v0.8.0 and v0.9.0 were done. Discuss the open questions below with the
-operator before writing prompts. Item 2 explicitly needs design thinking
-first.
+Every notification test used a fake paho client. Nothing has been checked
+against a real broker or Home Assistant, and no UI has been checked in a
+browser. Ask the operator what they have checked on the `:dev` image.
 
-### 1. Version in the UI, with update and dev-build awareness
+The checklist:
+- **Header:** the version label opens What's New; the hourly update poll
+  works.
+- **Settings → Notifications:**
+  - Send test message;
+  - live status;
+  - the HA entries bulk picker (filter, Select all/none, Save);
+  - the Purge dialog.
+- **Retained messages:** `mosquitto_sub -t 'std/#' -v` shows status, entry,
+  check and summary messages.
+- **HA:** devices appear only for opted-in entries, with good names and
+  `std_…` entity ids. Unticking an entry removes its device. A HA restart
+  triggers a republish.
+- **Purge timing:** the retained-collect timing (1 s settle, 0.6 s quiet,
+  6 s cap) is a guess. Check a channel purge on a broker with many topics.
 
-- Show the running version right after the "Service Tracker Dashboard"
-  header, e.g. `v0.9.0`.
-- **Update available:** check GitHub for a newer release
-  (`crzykidd/service-tracker-dashboard` releases) and show a subtle
-  "update available → vX.Y.Z" link to the release page.
-- **Dev build:** when running a dev image (`:dev` / `:sha-…`), show that it's
-  a dev build (e.g. `dev · 0.9.0+sha-abc1234`) and link to that commit or
-  the `dev` branch on GitHub.
+## Known gaps (decide: fix, park in FUTURE.md, or accept)
 
-Open questions:
-- How does the image know it's a dev build and which commit? Today
-  `publish.yml` writes `/app/version.txt` from `VERSION` only. It could add
-  the git SHA, the build channel (release/main/dev) and the build date as
-  build args or a JSON `version.txt`. Check what `VERSION_INFO` already
-  holds.
-- The GitHub check (**operator decision, 2026-11-16**):
-  - it is driven by page loads, not by a background scheduler job;
-  - when a page loads and the cached result is older than **6 hours**
-    (the default, changeable), STD fetches the latest release from GitHub
-    and caches it;
-  - if nobody loads a page for 3 days, no check runs;
-  - while a page stays open, it re-checks every 6 hours. Hook into the
-    existing auto-refresh, or use a small timer that calls an endpoint
-    which refreshes the cache only when it's stale;
-  - the fetch is server-side, so browsers never hit the GitHub API
-    directly;
-  - it is non-blocking: the page renders with the cached value, and the
-    refresh happens asynchronously or after the response;
-  - a setting turns it off for offline or air-gapped homelabs;
-  - no auth needed; respect rate limits;
-  - on a GitHub error, keep the last good value and back off.
-- Should a dev build compare against the latest `dev` commit, or only
-  against releases?
-- Expose it via `/api/v1/config` or `whoami` (the MCP already compares
-  versions).
-- The What's New popup already parses CHANGELOG. Should the version link
-  open it?
+- Deleting or disabling a channel while HA discovery is on leaves its configs
+  on that broker. Untick discovery or use Purge first.
+- Changing the base topic leaves the old retained topics behind. Purge covers
+  the new base only.
+- The test button can block up to about 13 s against a broker that doesn't
+  answer.
+- The "republish: false" purge hold is in memory only, so a restart ends it.
+- The published-state set is shared across channels (multi-broker edge
+  cases; see `docs/decisions.md`).
 
-### 2. Notification service (plan only; needs thinking)
+## This session's job
 
-Goal: an **external notification channel** framework, with **MQTT** as the
-first channel.
+1. **Review the operator's draft design**
+   `docs/design/2026-11-17-network-inventory-and-profiles.md`: network
+   inventory beyond containers, tags/views, monitor profiles and alert
+   policies, and an `STD Health` value in HA.
+   - Do what its §12 reviewer checklist asks: read it against the code and
+     list gotchas, wrong assumptions and cheaper alternatives.
+   - It was written against `8bd2233`. Since then, notif-04 changed HA to
+     opt-in per entry (`service_entry.ha_publish`) with host in device names,
+     and notif-05 added purge. Check the draft's HA assumptions against
+     that.
+2. Discuss the open questions with the operator, then scope the first slice
+   in the PRD and write handoff prompts (the same flow as v0.9.0 and the
+   notifications work).
+3. Separately, with the operator: pick the release number for what is on
+   `dev`, once the real-world checks above pass, and run `/release-prep`.
 
-- **Channels:** a generic notion of a notification channel (type, enabled,
-  settings) so later channels (ntfy, webhook, email, Gotify…) plug in. MQTT
-  is the first.
-- **MQTT settings:** broker host/port, TLS, username/password (secret:
-  write-only, masked, like `widget_api_key`), client id, and a **default
-  topic path that the operator can change** (e.g. `std/` as the base).
-- **What gets published:**
-  - check results and state changes per entry and per check;
-  - the roll-up state (up/degraded/down/unknown);
-  - possibly the summary counts.
-  - Decide between every result and state transitions only, and between
-    retained and non-retained messages.
-- **"Add to Home Assistant" checkbox:** when set, publish **MQTT discovery**
-  config (`homeassistant/<component>/<node>/<object>/config`) so HA
-  auto-creates a **device** per STD entry, with an entity per check result.
-  This needs thinking through:
-  - device granularity: one HA device per STD entry, or one STD device
-    with many entities;
-  - entity types: `binary_sensor` (problem) per check, a `sensor` for
-    state, latency or message attributes;
-  - unique ids, so renames don't duplicate entities;
-  - availability topic and LWT, so HA marks things unavailable when STD
-    stops;
-  - cleanup: removing an entry or check must remove its discovery config
-    (an empty retained payload);
-  - discovery prefix configurable (default `homeassistant`);
-  - opt-in globally or per entry?
-- **Where it hooks in:** `jobs.py` records check results on the scheduler
-  thread. Publishing must not slow the checker; use a queue plus a
-  publisher thread or the paho-mqtt loop. Reconnect handling.
-- **Dependency:** `paho-mqtt`, pinned. Possibly `aiomqtt`; check which fits
-  the threaded APScheduler model.
-- **UI:** Settings → Notifications tab, with a "send test message" button.
-- **API and MCP:** expose channel config through the management API (secrets
-  write-only), and maybe a "test channel" endpoint.
-- **Relation to FUTURE.md "Alerting / notifications on failure":** this is
-  that item; move it into the PRD when scoped.
+## Before starting
+
+- Read `CLAUDE.md`, `standards.md`, `docs/PRD.md` (§13 monitoring, §16, §17)
+  and `docs/decisions.md` (newest first).
 
 ## Housekeeping to remember
 
-- The CHANGELOG archive step is skipped at release-prep; the operator keeps
-  the full CHANGELOG (memory: no-changelog-archive).
-- Commit each chunk as it finishes. Push only when asked.
+- Lint with CI's pinned ruff: `uvx ruff@0.15.17 check .`. Other versions
+  disagree on import sorting.
+- A Docker container `std-mosq-test`, bound to `127.0.0.1:18830`, was stuck
+  on the dev host (docker exec, rm and kill all hung). Ask the operator
+  whether it has been cleared; don't rely on Docker for broker tests until it
+  is.
+- Check what subagents report about docs against `git diff`. One claimed PRD
+  edits it hadn't made.
+- The CHANGELOG archive step is skipped at release-prep (memory:
+  no-changelog-archive).
 - No `Co-authored-by:` trailers (CLAUDE.md wins over the harness reminder).
