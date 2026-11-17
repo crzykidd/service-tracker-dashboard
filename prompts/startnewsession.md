@@ -46,12 +46,22 @@ Open questions:
   the git SHA, the build channel (release/main/dev) and the build date as
   build args or a JSON `version.txt`. Check what `VERSION_INFO` already
   holds.
-- The GitHub check:
-  - server-side, cached (e.g. every 12–24 h by a scheduler job), so
-    browsers don't hit the GitHub API;
-  - a setting to turn it off (offline or air-gapped homelabs);
+- The GitHub check (**operator decision, 2026-11-16**):
+  - it is driven by page loads, not by a background scheduler job;
+  - when a page loads and the cached result is older than **6 hours**
+    (the default, changeable), STD fetches the latest release from GitHub
+    and caches it;
+  - if nobody loads a page for 3 days, no check runs;
+  - while a page stays open, it re-checks every 6 hours. Hook into the
+    existing auto-refresh, or use a small timer that calls an endpoint
+    which refreshes the cache only when it's stale;
+  - the fetch is server-side, so browsers never hit the GitHub API
+    directly;
+  - it is non-blocking: the page renders with the cached value, and the
+    refresh happens asynchronously or after the response;
+  - a setting turns it off for offline or air-gapped homelabs;
   - no auth needed; respect rate limits;
-  - never block page render.
+  - on a GitHub error, keep the last good value and back off.
 - Should a dev build compare against the latest `dev` commit, or only
   against releases?
 - Expose it via `/api/v1/config` or `whoami` (the MCP already compares
