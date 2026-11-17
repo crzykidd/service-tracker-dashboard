@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`rcode NXDOMAIN`, `answer 10.0.0.5, expected 10.100.17.10`, `timeout`).
   Available on Add and Edit, the health detail panel, the management API
   (`check_type: "dns"` and the `dns_*` fields) and the MCP tools.
+- **Certificate-expiry condition on HTTPS checks.** URL checks and HTTP
+  service checks have a new optional **Min cert days** (1-365). When it is set,
+  the check fails with `cert expires in 5 days (min 7)` once the server's
+  certificate is that close to expiring, even if the page itself answers fine
+  (an already-expired certificate reads `cert expired 3 days ago`, and a
+  certificate that cannot be read reads `cert check failed: ...`). It works with
+  Verify TLS turned off, so a self-signed certificate still reports its expiry.
+  The field only appears while the URL starts with `https://`; on an `http://`
+  URL a saved value is kept but ignored. The health detail panel shows
+  "Cert expires <date> (N days)", in red when it is below your minimum. Also
+  available in the management API (`cert_min_days`, with `cert_expires_at` on
+  checks) and the MCP tools. The certificate is read over its own connection,
+  so it does not go through an `HTTPS_PROXY`.
 
 ## [0.8.0] — 2026-11-15
 

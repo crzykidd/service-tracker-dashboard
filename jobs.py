@@ -160,6 +160,9 @@ def record_check_result(check, result, now_utc=None):
     check.last_status_code = result.status_code
     check.last_latency_ms = result.latency_ms
     check.last_message = result.message
+    # Always overwritten: None when there is no condition, the target is plain
+    # http, or the certificate could not be read, so a stale date never shows.
+    check.last_cert_expires_at = getattr(result, "cert_expires_at", None)
     check.consecutive_failures = 0 if result.ok else (check.consecutive_failures or 0) + 1
 
 
@@ -254,6 +257,7 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
             "dns_record_type": check.dns_record_type,
             "dns_expected_rcode": check.dns_expected_rcode,
             "dns_expected_answer": check.dns_expected_answer,
+            "cert_min_days": check.cert_min_days,
         })
     return jobs_due
 

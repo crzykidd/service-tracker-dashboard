@@ -57,6 +57,7 @@
 | 0.47    | 2026-11-15 | §14.7 delivered (unreleased, v080-05), the last v0.8.0 chunk; §14 status line now "all chunks delivered": stdio MCP server `mcp/std_mcp.py` (read key = read tools only, write key = all), outside the Docker image (`.dockerignore`), tested in CI. No STD server change, no schema change. Register wire contract unchanged. |
 | 0.48    | 2026-11-15 | v0.8.0 released. §14 retitled Delivered: admin API keys (read/write scopes) and write audit log, `/api/v1` management API for entries, checks, health, groups, widgets, exposure settings and config, generated OpenAPI spec, stdio MCP server in `mcp/`. Schema §5.7 (`api_key`, `api_audit`). Add-page "None" group fix. Register contract unchanged; no notifier change. |
 | 0.49    | 2026-11-16 | Added §15 (v0.9.0 — DNS and certificate-expiry checks, in progress) and delivered §15.1 on `dev` (v090-01): new `dns` service check (server IP, query name, record type, expected rcode, optional expected answer; NODATA handling), migration `a1c5e8d2f093` (four nullable `health_check` columns), `dnspython`, Add/Edit/detail/API/MCP support; §15.2 certificate expiry stubbed as planned. Later sections renumbered (§15→§16, §16→§17, §17→§18) and cross-references fixed. §5.6 `check_type` list and §14.3 add-check row updated. Register wire contract unchanged. |
+| 0.50    | 2026-11-16 | §15.2 delivered on `dev` (v090-02): optional certificate-expiry condition (`cert_min_days`, 1-365) on URL checks and HTTP service checks, failing with `cert expires in N days (min M)`; separate unverified TLS handshake parsed with `cryptography`; migration `b7d3f1a94e26` (`cert_min_days`, `last_cert_expires_at`); "Min cert days" field shown only for https targets, detail-panel expiry line, API/OpenAPI/MCP support. §5.6 `health_check` columns updated. Register wire contract unchanged. |
 
 ---
 
@@ -370,7 +371,7 @@ its index in the same migration.
 | Column | `service_entry.source` (`String(16)`, NOT NULL, server default `'notifier'`): `notifier` or `manual`. Backfill: `manual` where `last_api_update IS NULL`, else `notifier` (§13.2). |
 | Column | `service_entry.host` becomes nullable (manual entries may omit it). `(host, container_name)` index unchanged. |
 | Column | `service_entry.description` (`String(255)`, nullable). Operator text, mainly for manual entries. |
-| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `dns` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
+| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `dns` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, the DNS query columns (§15.1), `cert_min_days` and cached `last_cert_expires_at` (§15.2), cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
 | Table  | `health_result`: one row per check sample or compacted success range. `check_id` FK (ON DELETE CASCADE), `ts`, `ts_end` (NULL for a single sample), `samples` (default 1), `ok`, `latency_ms` (average for a range), `latency_max_ms`, `status_code`, `message`. Composite index `(check_id, ts)` (also serves the FK). Timestamps are naive UTC. |
 | Data   | Migration creates the two URL-kind `health_check` rows for every entry, copying `*_health_check_enabled`, `health_check_timeout`, `health_check_verify_tls` and the last status. |
 | Data   | Migration `c1d7a3e5f2b8` inserts one enabled `container` row for every `source='notifier'` entry (soft-deleted included). No new columns or indexes; the downgrade deletes the rows and their results. |
@@ -2019,9 +2020,8 @@ view of the log is not built yet.
 
 ## 15. v0.9.0 — DNS and certificate-expiry checks (In progress)
 
-Two new kinds of service check, so STD can take over what Gatus checks at the
-Emmett site: a DNS check (this chunk) and certificate expiry on HTTPS checks
-(planned). Chunks are tracked as handoff prompts `v090-NN-*`.
+Two new kinds of check, so STD can take over what Gatus checks at the Emmett
+site: a DNS check (§15.1) and certificate expiry on HTTPS checks (§15.2). Chunks are tracked as handoff prompts `v090-NN-*`.
 
 ### 15.1 DNS check [`v090-01-dns-check`] — Delivered on `dev`
 
@@ -2088,11 +2088,74 @@ the detail panel and rollup.
   `dns_name=em-pve01.crzynet.me`, `dns_record_type=A`,
   `dns_expected_answer=10.100.17.10`.
 
-### 15.2 Certificate expiry on HTTPS checks [`v090-02-cert-expiry`] — Planned
+### 15.2 Certificate expiry on HTTPS checks [`v090-02-cert-expiry`] — Delivered on `dev`
 
-A certificate-expiry condition on HTTPS service checks (fail when the served
-certificate expires within a configurable number of days). Not built yet;
-the details are filled in when the chunk ships.
+An optional **minimum days left** on HTTPS checks, for URL checks (internal
+and external) and HTTP service checks. When set, a check fails with
+`cert expires in N days (min M)` once the leaf certificate is that close to
+expiry, even though the HTTP status is fine.
+
+- **Schema** (migration `b7d3f1a94e26`, two nullable columns on
+  `health_check`, no indexes needed): `cert_min_days` (Integer; NULL = off) and
+  `last_cert_expires_at` (DateTime, naive UTC; the certificate's notAfter as
+  the checker last saw it). `cert_min_days` is in `to_config()` and backup
+  restore (older backups, and values outside 1-365 or on non-http checks,
+  restore as NULL); `last_cert_expires_at` is a cache and is never backed up.
+- **Probe** `checker.probe_http(..., cert_min_days=None)`. With a minimum set
+  and an `https://` target, the probe makes a separate TLS handshake to the
+  target URL's host and port (443 by default) with SNI set to the hostname,
+  through `_read_cert_expiry(host, port, timeout)`: an unverified context
+  (`check_hostname` off, `CERT_NONE`) so it also works with Verify TLS off,
+  `getpeercert(binary_form=True)` parsed with `cryptography.x509`
+  (`not_valid_after_utc`), the probe's timeout. The expiry comes back in the new
+  `ProbeResult.cert_expires_at` (naive UTC, like everything `jobs.py`
+  stores). Result rules, in order:
+  1. HTTP fails: today's HTTP failure message is kept, and the expiry is still
+     reported if the handshake got one.
+  2. HTTP ok but less than `cert_min_days` days left: failing,
+     `cert expires in N days (min M)` (N = whole days left, floored); an
+     already-expired certificate reads `cert expired N days ago`.
+  3. HTTP ok but the certificate could not be read: failing,
+     `cert check failed: <reason>`.
+  4. Otherwise ok; the status code is kept.
+
+  `http://` targets ignore the condition (no handshake, `cert_expires_at`
+  None). The handshake is its own connection, so it does not honour an
+  `HTTPS_PROXY` that `requests` would. The probe never raises.
+- **Jobs**: the due-job dict carries `cert_min_days`; `record_check_result`
+  always overwrites `last_cert_expires_at` from the result, so it is cleared
+  when the check has no condition, the target is plain http, or the
+  certificate could not be read. URL checks use the entry's current URL, so
+  a URL that turns into http ignores the stored condition.
+- **Validation** (`check_form.py`, one rule set for the form and the API):
+  optional; when set a whole number from 1 to 365. Allowed on URL checks and
+  http service checks; a 400 on tcp/ping/dns service checks in the API (the
+  form never submits it for them and ignores it if present). Saving an
+  `http://` URL with a value is allowed: it is stored and ignored at runtime,
+  because the URL can change underneath. In the change signature, so editing
+  it makes the check due at the next tick. Switching a check away from http
+  clears it.
+- **UI**: a "Min cert days" number input (placeholder "off") beside Verify
+  TLS on URL-check rows and HTTP service rows, shown only while the effective
+  URL starts with `https://` (the entry's internal/external URL input for URL
+  checks, the row's own target for service checks), updated live as you type.
+  Form fields `uc_<which>_cert_min_days` and `svc_<key>_cert_min_days`; a
+  failed submit re-renders the value.
+- **Detail panel**: `check_payload` carries `cert_min_days` and
+  `cert_expires_at` (ISO-Z); when an expiry is known the panel shows
+  "Cert expires <local date> (N days)", in the failing colour when below the
+  minimum.
+- **Management API and MCP**: `cert_min_days` (nullable; null clears it) on
+  `POST /entries/<id>/checks`, the inline `checks` and `url_checks` of
+  `POST /entries`, and `PATCH /checks/<id>` (URL checks and http service
+  checks; a 400 on other kinds and types). `CheckOut` carries `cert_min_days`
+  and `cert_expires_at`; the OpenAPI spec picks them up. MCP `add_check` takes
+  `cert_min_days` and `update_check` accepts it.
+- **Dependency**: `cryptography` (pinned in `requirements.txt`; manylinux
+  wheels, so `python:3.11-slim` needs no compiler).
+- **Example (Emmett)**: a URL check on `https://em-pve01.crzynet.me:8006/`
+  with `cert_min_days=7`; Proxmox's self-signed certificate with Verify TLS off
+  still reports its expiry.
 
 ---
 

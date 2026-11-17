@@ -416,6 +416,12 @@ class HealthCheck(db.Model):
     dns_record_type = db.Column(db.String(8), nullable=True)
     dns_expected_rcode = db.Column(db.String(16), nullable=True)
     dns_expected_answer = db.Column(db.String(255), nullable=True)
+    # Certificate-expiry condition (v0.9.0; HTTPS checks only). `cert_min_days`
+    # is the operator's minimum days left (NULL = off); `last_cert_expires_at`
+    # is the leaf certificate's notAfter as the checker last saw it (naive UTC),
+    # cleared when the check has no condition or the target is plain http.
+    cert_min_days = db.Column(db.Integer, nullable=True)
+    last_cert_expires_at = db.Column(db.DateTime, nullable=True)
     # Cached latest state (naive UTC timestamp).
     last_ok = db.Column(db.Boolean, nullable=True)
     last_checked_at = db.Column(db.DateTime, nullable=True)
@@ -451,6 +457,7 @@ class HealthCheck(db.Model):
             'dns_record_type': self.dns_record_type,
             'dns_expected_rcode': self.dns_expected_rcode,
             'dns_expected_answer': self.dns_expected_answer,
+            'cert_min_days': self.cert_min_days,
         }
 
     def __repr__(self):

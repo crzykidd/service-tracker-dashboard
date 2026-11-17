@@ -26,6 +26,10 @@
     });
   }
 
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
   function fmtClock(iso) {
     return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
@@ -125,6 +129,13 @@
     bits.push('Uptime 24h ' + fmtUptime(c.uptime_24h) + ' · 7d ' + fmtUptime(c.uptime_7d));
     meta.textContent = bits.join(' · ');
     box.appendChild(meta);
+    if (c.cert_expires_at) {
+      // "Cert expires <date> (N days)", red when below the check's minimum.
+      const left = Math.floor((new Date(c.cert_expires_at).getTime() - Date.now()) / 86400000);
+      const low = c.cert_min_days && left < c.cert_min_days;
+      box.appendChild(el('div', 'health-check-meta health-cert' + (low ? ' health-cert-low' : ''),
+        'Cert expires ' + fmtDate(c.cert_expires_at) + ' (' + left + (left === 1 ? ' day' : ' days') + ')'));
+    }
     if (c.state === 'down' && c.message) box.appendChild(el('div', 'health-check-msg', c.message));
 
     const strip = el('div', 'health-bars health-bars-' + range);

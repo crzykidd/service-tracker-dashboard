@@ -945,6 +945,7 @@
 .health-dotmark.health-down { background: var(--color-status-bad); }
 .health-check-target { font-family: ui-monospace, monospace; font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; }
 .health-check-meta { color: var(--color-text-muted); margin-top: 2px; }
+.health-cert-low { color: var(--color-status-bad); font-weight: 600; }
 .health-check-msg { color: var(--color-status-bad); margin-top: 2px; word-break: break-word; }
 
 .health-bars { display: flex; gap: 2px; height: 28px; margin-top: 8px; }

@@ -326,8 +326,10 @@ _CHECK_FIELD_TO_VALIDATOR = {
     "name": "name", "check_type": "check_type", "target": "target",
     "dns_name": "dns_name", "dns_record_type": "dns_record_type",
     "dns_expected_rcode": "dns_expected_rcode", "dns_expected_answer": "dns_expected_answer",
+    "cert_min_days": "cert_min_days",
 }
-_URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls"}
+_URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls",
+                        "cert_min_days"}
 _CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds"}
 _NOT_NULL = {"enabled", "verify_tls", "mode", "check_type", "target"}
 
@@ -449,6 +451,7 @@ def _service_check_input(c: ServiceCheckCreate):
         "interval": c.interval_seconds, "timeout": c.timeout_seconds,
         "dns_name": c.dns_name, "dns_record_type": c.dns_record_type,
         "dns_expected_rcode": c.dns_expected_rcode, "dns_expected_answer": c.dns_expected_answer,
+        "cert_min_days": c.cert_min_days,
     }
 
 
@@ -811,8 +814,13 @@ def patch_check(id):
         "dns_name": check.dns_name, "dns_record_type": check.dns_record_type,
         "dns_expected_rcode": check.dns_expected_rcode,
         "dns_expected_answer": check.dns_expected_answer,
+        "cert_min_days": check.cert_min_days,
     }
     merged = _settings_dict(data, _CHECK_FIELD_TO_VALIDATOR, current)
+    if (check.kind == CHECK_KIND_SERVICE and "cert_min_days" not in sent
+            and merged.get("check_type") != "http"):
+        # Switching a check away from HTTP drops its certificate condition.
+        merged["cert_min_days"] = None
     if check.kind == CHECK_KIND_CONTAINER:
         values, problems = check_form.validate_container_check(merged)
     elif check.kind == CHECK_KIND_SERVICE:

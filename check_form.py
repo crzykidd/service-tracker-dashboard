@@ -8,12 +8,12 @@ re-render with the input intact.
 Form field names:
   checks_form                       marker; absent means "section not submitted"
   uc_<internal|external>_<field>    URL-check fields (enabled, mode, interval,
-                                    timeout, verify)
+                                    timeout, verify, cert_min_days)
   cc_row, cc_enabled, cc_interval   Container check (notifier entries on Edit)
   svc_row                           one per service-check row (the row key)
   svc_<key>_<field>                 id, name, type, target, mode, interval,
-                                    timeout, verify, enabled, and for DNS
-                                    checks dns_name, dns_type, dns_rcode,
+                                    timeout, verify, enabled, cert_min_days
+                                    (http only), and for DNS checks dns_name, dns_type, dns_rcode,
                                     dns_answer
 """
 
@@ -45,6 +45,8 @@ MIN_INTERVAL = 30
 MAX_INTERVAL = 86400
 MIN_TIMEOUT = 1
 MAX_TIMEOUT = 60
+MIN_CERT_DAYS = 1
+MAX_CERT_DAYS = 365
 MAX_SERVICE_CHECKS = 20
 NAME_MAX = 100
 TARGET_MAX = 255
@@ -76,6 +78,7 @@ def _row_from_check(check, key=None, label=None):
         "dns_type": check.dns_record_type or DNS_DEFAULT_RECORD_TYPE,
         "dns_rcode": check.dns_expected_rcode or DNS_DEFAULT_RCODE,
         "dns_answer": check.dns_expected_answer or "",
+        "cert_days": "" if check.cert_min_days is None else str(check.cert_min_days),
     }
 
 
@@ -85,7 +88,7 @@ def _blank_url_row(which, label):
         "target": "", "mode": CHECK_MODE_STATUS, "interval": "", "timeout": "",
         "verify": True, "enabled": False,
         "dns_name": "", "dns_type": DNS_DEFAULT_RECORD_TYPE, "dns_rcode": DNS_DEFAULT_RCODE,
-        "dns_answer": "",
+        "dns_answer": "", "cert_days": "",
     }
 
 
@@ -138,6 +141,27 @@ def _coerce_interval(raw, low, high, label, errors, field):
         errors.append({
             "field": field,
             "message": f"{label} must be a whole number of seconds from {low} to {high}",
+        })
+        return None
+    return value
+
+
+def _coerce_cert_days(raw, errors):
+    """Minimum days left on the certificate from `raw` (int, numeric string,
+    blank or None). Blank/None means "off" (None). Anything else outside
+    1..365 appends an error and returns None; booleans and floats are rejected."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    value = None
+    if isinstance(raw, str):
+        text = raw.strip()
+        value = int(text) if text.isascii() and text.isdigit() else None
+    elif isinstance(raw, int) and not isinstance(raw, bool):
+        value = raw
+    if value is None or not MIN_CERT_DAYS <= value <= MAX_CERT_DAYS:
+        errors.append({
+            "field": "cert_min_days",
+            "message": f"min cert days must be a whole number of days from {MIN_CERT_DAYS} to {MAX_CERT_DAYS}",
         })
         return None
     return value
@@ -251,8 +275,10 @@ def _validate_dns_fields(d):
 def validate_url_check_settings(d):
     """Settings shared by URL checks and service checks.
 
-    Reads `enabled`, `mode`, `verify`, `interval`, `timeout`. Returns values
-    `{enabled, mode, verify, interval_value, timeout_value}`.
+    Reads `enabled`, `mode`, `verify`, `interval`, `timeout` and the optional
+    `cert_min_days` (certificate-expiry minimum, 1..365; blank = off). Returns
+    values `{enabled, mode, verify, interval_value, timeout_value,
+    cert_days_value}`.
     """
     errors = []
     mode = d.get("mode")
@@ -270,6 +296,7 @@ def validate_url_check_settings(d):
             d.get("interval"), MIN_INTERVAL, MAX_INTERVAL, "interval", errors, "interval"),
         "timeout_value": _coerce_interval(
             d.get("timeout"), MIN_TIMEOUT, MAX_TIMEOUT, "timeout", errors, "timeout"),
+        "cert_days_value": _coerce_cert_days(d.get("cert_min_days"), errors),
     }
     return values, errors
 
@@ -277,10 +304,11 @@ def validate_url_check_settings(d):
 def validate_service_check(d):
     """A service check: `name`, `check_type`, `target` plus the shared settings.
     DNS checks also read `dns_name`, `dns_record_type`, `dns_expected_rcode`
-    and `dns_expected_answer` (ignored for every other type).
+    and `dns_expected_answer` (ignored for every other type). `cert_min_days`
+    is allowed on HTTP checks only; on tcp/ping/dns it is an error.
 
     Returns values `{name, check_type, target, enabled, mode, verify,
-    interval_value, timeout_value, dns_name, dns_record_type,
+    interval_value, timeout_value, cert_days_value, dns_name, dns_record_type,
     dns_expected_rcode, dns_expected_answer}` (the dns_* values are None
     unless the type is DNS).
     """
@@ -302,6 +330,10 @@ def validate_service_check(d):
     if problem:
         errors.append({"field": "target", "message": problem})
     common, common_errors = validate_url_check_settings(d)
+    if check_type != CHECK_TYPE_HTTP and common["cert_days_value"] is not None:
+        common_errors.append({"field": "cert_min_days", "message":
+                              "a certificate-expiry minimum only applies to HTTP/HTTPS checks"})
+        common["cert_days_value"] = None
     values = {"name": name, "check_type": check_type, "target": target, **common}
     dns_errors = []
     if check_type == CHECK_TYPE_DNS:
@@ -332,14 +364,17 @@ def _with_who(errors, who):
     return [f"{who}: {e['message']}." for e in errors]
 
 
-def _parse_common(form, prefix, row, errors, who):
-    """Fill the fields shared by URL rows and service rows."""
+def _parse_common(form, prefix, row, errors, who, cert=True):
+    """Fill the fields shared by URL rows and service rows. `cert` is False
+    for a service row that is not an HTTP check: its (hidden) minimum-days
+    input is ignored."""
     raw = {
         "enabled": form.get(f"{prefix}enabled") is not None,
         "mode": (form.get(f"{prefix}mode") or CHECK_MODE_STATUS).strip(),
         "verify": form.get(f"{prefix}verify") is not None,
         "interval": (form.get(f"{prefix}interval") or "").strip(),
         "timeout": (form.get(f"{prefix}timeout") or "").strip(),
+        "cert_min_days": (form.get(f"{prefix}cert_min_days") or "").strip() if cert else "",
     }
     values, problems = validate_url_check_settings(raw)
     errors.extend(_with_who(problems, who))
@@ -349,6 +384,8 @@ def _parse_common(form, prefix, row, errors, who):
     row["interval"], row["timeout"] = raw["interval"], raw["timeout"]
     row["interval_value"] = values["interval_value"]
     row["timeout_value"] = values["timeout_value"]
+    row["cert_days"] = raw["cert_min_days"]
+    row["cert_days_value"] = values["cert_days_value"]
 
 
 def parse_form(form, existing_service_ids=()):
@@ -401,7 +438,7 @@ def parse_form(form, existing_service_ids=()):
         row["dns_rcode"] = raw["dns_expected_rcode"].strip() or DNS_DEFAULT_RCODE
         row["dns_answer"] = raw["dns_expected_answer"].strip()
         row.update({k: values[k] for k in _DNS_VALUE_KEYS})
-        _parse_common(form, prefix, row, errors, who)
+        _parse_common(form, prefix, row, errors, who, cert=values["check_type"] == CHECK_TYPE_HTTP)
         if raw_id and row["id"] not in existing_service_ids:
             errors.append(f"{who}: this check no longer exists (it may have been removed in another window). Reload the page.")
         svc_rows.append(row)
@@ -440,7 +477,7 @@ def _signature(check):
     return (check.check_type, check.target, check.mode, check.interval_seconds,
             check.timeout_seconds, check.verify_tls, check.enabled,
             check.dns_name, check.dns_record_type, check.dns_expected_rcode,
-            check.dns_expected_answer)
+            check.dns_expected_answer, check.cert_min_days)
 
 
 def _assign(check, row):
@@ -452,6 +489,11 @@ def _assign(check, row):
     check.timeout_seconds = row["timeout_value"]
     check.verify_tls = row["verify"] if is_http else True
     check.enabled = row["enabled"]
+    # The certificate-expiry minimum belongs to http checks. The cached expiry
+    # goes with it, so a removed condition never leaves a stale date.
+    check.cert_min_days = row.get("cert_days_value") if is_http else None
+    if check.cert_min_days is None:
+        check.last_cert_expires_at = None
     # DNS settings exist only on DNS checks; switching type away clears them.
     is_dns = check_type == CHECK_TYPE_DNS
     check.dns_name = row.get("dns_name") if is_dns else None

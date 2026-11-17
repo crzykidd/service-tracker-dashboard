@@ -161,6 +161,8 @@ def check_payload(entry, check, range_name="24h", now=None):
         "dns_record_type": check.dns_record_type,
         "dns_expected_rcode": check.dns_expected_rcode,
         "dns_expected_answer": check.dns_expected_answer,
+        "cert_min_days": check.cert_min_days,
+        "cert_expires_at": iso_z(check.last_cert_expires_at),
         "state": _check_state(check),
         "last_checked_at": iso_z(check.last_checked_at),
         "latency_ms": check.last_latency_ms,

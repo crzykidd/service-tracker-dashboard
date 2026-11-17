@@ -98,7 +98,8 @@ upgrade is needed. Four database migrations run on startup; back up
   notifier reports it running) and any number of service checks: HTTP/HTTPS
   (status code, or body mode where `OK` passes and `Error: <message>` fails
   with that message), TCP (`host:port`), Ping and DNS (ask a DNS server for a
-  name and check the reply). Each has its own interval
+  name and check the reply). HTTPS checks can also fail when the certificate
+  is close to expiry. Each has its own interval
   and timeout, set in one "Health checks" section on Add and Edit.
 - **Concurrent checker with a week of history.** Checks run in parallel
   (`health_check_workers`, default 8). Every sample is kept for 24 hours, then
@@ -796,6 +797,20 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   type `A`, expected answer `10.100.17.10`. Through the management API and
   MCP: `check_type: "dns"`, `target` (the server), `dns_name`,
   `dns_record_type`, `dns_expected_rcode`, `dns_expected_answer`.
+- **Certificate expiry.** URL checks and HTTP/HTTPS service checks can set
+  **Min cert days** (1-365; blank is off). The field appears beside Verify TLS
+  only while the URL starts with `https://`. When set, the check also reads the
+  server's certificate (a separate TLS connection to the URL's host and port,
+  so it works with Verify TLS off and does not use an `HTTPS_PROXY`) and fails
+  when too few days are left, even if the page itself is fine: `cert expires in
+  5 days (min 7)`, `cert expired 3 days ago`, or `cert check failed: <reason>`
+  when the certificate cannot be read. An HTTP failure keeps its own message
+  and still records the expiry. On an `http://` URL a saved value is kept but
+  ignored. The health detail panel shows "Cert expires <date> (N days)" (red
+  when below the minimum). Management API and MCP: `cert_min_days` (null
+  clears it) on URL checks and http service checks; a 400 on TCP, ping and DNS
+  checks. Checks report `cert_min_days` and `cert_expires_at`. Example: a URL
+  check on `https://em-pve01.crzynet.me:8006/` with `cert_min_days: 7`.
 - **Container check.** Every notifier (Docker) entry has an automatic
   *Container* check: it passes while the notifier reports the container
   `running` and has reported within `stale_after_minutes`, and fails with

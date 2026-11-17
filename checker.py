@@ -8,9 +8,12 @@ scheduler thread, see jobs.py).
 
 import ipaddress
 import socket
+import ssl
 import time
 import warnings
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 import dns.exception
 import dns.message
@@ -19,6 +22,7 @@ import dns.rcode
 import dns.rdatatype
 import dns.reversename
 import requests
+from cryptography import x509
 from urllib3.exceptions import InsecureRequestWarning
 
 try:  # icmplib is a pinned dependency; guard so a broken install fails the probe, not the app
@@ -48,6 +52,9 @@ class ProbeResult:
     status_code: int | None = None
     message: str | None = None
     error_type: str | None = None
+    # Leaf certificate notAfter (naive UTC), set only by an https probe that
+    # was given `cert_min_days` and got a certificate.
+    cert_expires_at: datetime | None = None
 
 
 def _elapsed_ms(started):
@@ -91,8 +98,88 @@ def _error_text(body):
     return None
 
 
-def probe_http(target, mode="status", timeout=5, verify=True):
-    """GET `target` (redirects followed) and judge it by `mode`.
+def _read_cert_expiry(host, port, timeout):
+    """The leaf certificate's notAfter (aware UTC) from a fresh TLS handshake
+    to `host:port` (SNI set to `host`). Raises on any connection, handshake or
+    parse failure.
+
+    Verification is deliberately off (the point is to read the certificate, so
+    a self-signed or expired one must not stop the handshake). This is its own
+    connection, so it does not follow an `HTTPS_PROXY` the way `requests` does.
+    """
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        with context.wrap_socket(sock, server_hostname=host) as tls:
+            der = tls.getpeercert(binary_form=True)
+    if not der:
+        raise ssl.SSLError("the server presented no certificate")
+    return x509.load_der_x509_certificate(der).not_valid_after_utc
+
+
+def _naive_utc(moment):
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
+
+
+def _apply_cert_condition(result, target, cert_min_days, timeout):
+    """Fold the certificate-expiry condition into an HTTP `result`.
+
+    Rules, in order: a failed HTTP result keeps its message (the expiry is
+    still reported when the handshake got one); an ok result with fewer than
+    `cert_min_days` days left fails with `cert expires in N days (min M)` (or
+    `cert expired N days ago`); an ok result whose certificate could not be
+    read fails with `cert check failed: <reason>`; otherwise it stays ok.
+    Plain http targets are left alone (no handshake).
+    """
+    try:
+        parts = urlsplit(target)
+        if parts.scheme.lower() != "https" or not parts.hostname:
+            return result
+        port = parts.port or 443
+    except ValueError:
+        return result
+    try:
+        expires = _naive_utc(_read_cert_expiry(parts.hostname, port, timeout))
+    except Exception as e:
+        if not result.ok:
+            return result
+        return ProbeResult(
+            False, result.latency_ms, result.status_code,
+            _clip(f"cert check failed: {_exception_message(e)}"), type(e).__name__,
+        )
+    result.cert_expires_at = expires
+    if not result.ok:
+        return result
+    left = expires - datetime.now(timezone.utc).replace(tzinfo=None)
+    if left < timedelta(0):
+        days_ago = int((-left).total_seconds() // 86400)
+        result.ok, result.message = False, f"cert expired {days_ago} days ago"
+    elif left < timedelta(days=cert_min_days):
+        days = int(left.total_seconds() // 86400)
+        result.ok, result.message = False, f"cert expires in {days} days (min {cert_min_days})"
+    return result
+
+
+def probe_http(target, mode="status", timeout=5, verify=True, cert_min_days=None):
+    """GET `target` (redirects followed) and judge it by `mode`; with
+    `cert_min_days` set and an https target, also judge the certificate's
+    remaining validity (see `_apply_cert_condition`). The request itself is
+    `_probe_http_request`.
+    """
+    result = _probe_http_request(target, mode, timeout, verify)
+    if cert_min_days:
+        try:
+            result = _apply_cert_condition(result, target, cert_min_days, timeout)
+        except Exception as e:  # defensive: probes never raise
+            return _failure(time.monotonic(), e)
+    return result
+
+
+def _probe_http_request(target, mode, timeout, verify):
+    """GET `target` (redirects followed) and judge it by `mode`:
 
     status: below 400 is ok; failures carry the code or exception text.
     body: reads at most 4 KB. `OK` (case-insensitive) is ok; an `Error:`
@@ -336,6 +423,7 @@ def run_probe(job):
                 job["target"], job.get("dns_name"), job.get("dns_record_type"),
                 job.get("dns_expected_rcode"), job.get("dns_expected_answer"), job["timeout"],
             )
-        return probe_http(job["target"], job.get("mode", "status"), job["timeout"], job.get("verify", True))
+        return probe_http(job["target"], job.get("mode", "status"), job["timeout"], job.get("verify", True),
+                          job.get("cert_min_days"))
     except Exception as e:  # defensive: probes already catch everything
         return ProbeResult(False, 0, None, _exception_message(e), type(e).__name__)

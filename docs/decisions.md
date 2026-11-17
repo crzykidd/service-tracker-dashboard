@@ -5,6 +5,50 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-02 implementation calls (certificate expiry)
+
+- **`cryptography` to parse the certificate.** The stdlib cannot decode a
+  certificate from an unverified handshake: `getpeercert()` returns an empty
+  dict when `verify_mode` is `CERT_NONE`, and only the DER form is available.
+  Rejected: a hand-rolled ASN.1 walker (more code than the feature, easy to get
+  wrong on odd validity encodings) and the private
+  `ssl._ssl._test_decode_cert` (undocumented, can change or vanish between
+  Python releases). `cryptography` was already in the MCP server's pins (via
+  PyJWT), now a direct app dependency at the same pin (50.0.2); it ships
+  manylinux wheels, and `docker build .` on `python:3.11-slim` still works.
+  `requirements.txt` was regenerated with `--upgrade-package cryptography`
+  only (new pins: `cryptography`, `cffi`, `pycparser`).
+- **The handshake is a separate connection** (`checker._read_cert_expiry`):
+  `requests` does not expose the peer certificate, and with Verify TLS on a
+  failing certificate would never reach us. Consequence: it connects straight
+  to the target host and ignores an `HTTPS_PROXY` / `NO_PROXY` that `requests`
+  would honour. A proxied setup would therefore read a different path (or fail
+  with `cert check failed`). Accepted; documented in the README and CHANGELOG.
+- **A failed HTTP result is attempted for its expiry too**, and keeps its HTTP
+  message: the panel still shows the date when the service is down. When both
+  fail, the HTTP failure wins and no date is recorded.
+- **`record_check_result` always overwrites `last_cert_expires_at`** from the
+  result instead of the job deciding when to clear it. No condition, plain
+  http, or an unreadable certificate all produce None, which is the "never
+  show a stale date" rule in one line. Editing the minimum to blank also clears
+  it at once (the form/API assign path), so the panel does not wait for the next
+  run.
+- **Validator value is `cert_days_value`** (like `interval_value` /
+  `timeout_value`), while the API/DB field is `cert_min_days`. The form parses
+  the hidden input of a non-HTTP service row as blank rather than erroring
+  ("the form never submits it"), while the API rejects it with a 400. A PATCH
+  that switches a service check away from http drops a stored minimum unless
+  the request sends one (which is then a 400), so retyping a check does not need
+  an extra `cert_min_days: null`.
+- **`last_cert_expires_at` is not in `to_config()`** (a cache, like the other
+  `last_*` columns); `cert_min_days` is, and restore range-checks it.
+- **The detail panel date uses the browser's locale** (`toLocaleDateString`
+  with the year), like the panel's other times, rather than a fixed
+  `YYYY-MM-DD`; the day count is floored client-side so it matches the probe's
+  message.
+
+---
+
 ## 2026-11-16 — v090-01 implementation calls (DNS check)
 
 - **The server must be an IP literal.** The check exists to ask one specific

@@ -43,6 +43,7 @@ CHECK_PATCH_FIELDS = {
     "enabled", "name", "check_type", "target", "mode", "interval_seconds",
     "timeout_seconds", "verify_tls",
     "dns_name", "dns_record_type", "dns_expected_rcode", "dns_expected_answer",
+    "cert_min_days",
 }
 
 
@@ -219,6 +220,7 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
         url_checks: settings for the URL checks, e.g.
             {"internal": {"enabled": true, "mode": "body", "interval_seconds": 60}, "external": {"enabled": false}}
             mode is `status` (HTTP status below 400 is up) or `body` (the body must be `OK`; anything else is down and `Error: <msg>` shows <msg> as the failure message).
+            cert_min_days (1..365, https URLs only) also fails the check when the certificate has fewer days left, e.g. {"internal": {"enabled": true, "verify_tls": false, "cert_min_days": 7}}.
         checks: extra service checks, each {target, check_type (http|tcp|ping|dns), name, mode, interval_seconds, timeout_seconds, verify_tls, enabled}, e.g.
             [{"target": "nas.lan", "check_type": "ping"}, {"target": "http://nas.lan:5000/health", "mode": "body", "interval_seconds": 60}]
             tcp targets are `host:port`. A dns check takes the DNS server as target plus dns_name (see add_check).
@@ -257,7 +259,7 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
                   timeout_seconds: int | None = None, verify_tls: bool = True,
                   enabled: bool = True, dns_name: str | None = None,
                   dns_record_type: str | None = None, dns_expected_rcode: str | None = None,
-                  dns_expected_answer: str | None = None) -> dict:
+                  dns_expected_answer: str | None = None, cert_min_days: int | None = None) -> dict:
         """Add a service check to an entry.
 
         check_type: http (target is a URL), tcp (target is `host:port`), ping (target is a host) or dns (target is the DNS server).
@@ -268,12 +270,14 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
             dns_expected_answer: optional; up only when any answer record matches exactly (case-insensitive, trailing dot ignored). Omit it to judge by rcode only. A NOERROR reply with no answers is up only when no answer is expected.
             Example: check_type="dns", target="10.100.16.16", dns_name="em-pve01.crzynet.me", dns_record_type="A", dns_expected_answer="10.100.17.10"
         mode (http only): `status` (default; up when the HTTP status is below 400) or `body` (up only when the response body is exactly `OK`; a body like `Error: disk full` is down and shows `disk full` as the message).
+        cert_min_days (http checks only, 1..365): also fail the check when the https certificate has fewer than this many days left (message `cert expires in N days (min M)`). The certificate is read separately from the HTTP request, so it works with verify_tls false: a self-signed cert still reports its expiry. Ignored for an http:// target; tcp, ping and dns checks reject it.
+            Example (Emmett's Proxmox, self-signed): check_type="http", target="https://em-pve01.crzynet.me:8006/", verify_tls=false, cert_min_days=7
         interval_seconds 30..86400 and timeout_seconds 1..60; omit for the global defaults.
         """
         body = _drop_none(target=target, check_type=check_type, name=name, mode=mode,
                           interval_seconds=interval_seconds, timeout_seconds=timeout_seconds, dns_name=dns_name,
                           dns_record_type=dns_record_type, dns_expected_rcode=dns_expected_rcode,
-                          dns_expected_answer=dns_expected_answer)
+                          dns_expected_answer=dns_expected_answer, cert_min_days=cert_min_days)
         body.update(verify_tls=verify_tls, enabled=enabled)
         return client.request("POST", f"/entries/{entry_id}/checks", json=body)
 
@@ -281,9 +285,10 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
     def update_check(check_id: int, fields: dict) -> dict:
         """Edit or enable/disable a check. `fields` names only what changes (null clears where that makes sense).
 
-        Allowed: enabled, name, check_type, target, mode, interval_seconds, timeout_seconds, verify_tls, dns_name, dns_record_type, dns_expected_rcode, dns_expected_answer.
+        Allowed: enabled, name, check_type, target, mode, interval_seconds, timeout_seconds, verify_tls, dns_name, dns_record_type, dns_expected_rcode, dns_expected_answer, cert_min_days.
+        cert_min_days (URL checks and http service checks, 1..365; null clears it) fails the check when the https certificate has fewer days left, e.g. a URL check on https://em-pve01.crzynet.me:8006/ with {"cert_min_days": 7}; Proxmox's self-signed certificate with verify_tls false still reports its expiry. It is a 400 on tcp, ping and dns checks.
         The dns_* fields apply to service checks of type dns (target is then the DNS server), e.g. {"check_type": "dns", "target": "10.100.16.16", "dns_name": "em-pve01.crzynet.me", "dns_record_type": "A", "dns_expected_answer": "10.100.17.10"}; dns_expected_answer null clears it (rcode only).
-        URL checks (internal/external) accept enabled, mode, interval_seconds, timeout_seconds and verify_tls; container checks accept enabled and interval_seconds; service checks accept everything.
+        URL checks (internal/external) accept enabled, mode, interval_seconds, timeout_seconds, verify_tls and cert_min_days; container checks accept enabled and interval_seconds; service checks accept everything.
         Example fields: {"enabled": false}  or  {"mode": "body", "interval_seconds": 60}
         """
         return client.request("PATCH", f"/checks/{check_id}",

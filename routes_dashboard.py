@@ -56,6 +56,7 @@ from models import (
     CHECK_KIND_SERVICE,
     CHECK_MODES,
     CHECK_TYPE_DNS,
+    CHECK_TYPE_HTTP,
     CHECK_TYPES,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
@@ -1043,6 +1044,13 @@ def _restore_checks(entry, item):
             rcode = _text_or_none(cfg.get('dns_expected_rcode'))
             check.dns_expected_rcode = rcode.upper() if is_dns and rcode else None
             check.dns_expected_answer = _text_or_none(cfg.get('dns_expected_answer')) if is_dns else None
+            # Certificate-expiry minimum (v0.9.0); absent in older backups. Only
+            # http checks use it, and the cached expiry is never restored.
+            days = cfg.get('cert_min_days')
+            is_http = check.check_type == CHECK_TYPE_HTTP
+            valid = isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= 365
+            check.cert_min_days = days if is_http and valid else None
+            check.last_cert_expires_at = None
         return
 
     timeout = _positive_int(item.get('health_check_timeout'))

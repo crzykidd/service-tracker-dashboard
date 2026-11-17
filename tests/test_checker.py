@@ -181,7 +181,7 @@ def test_run_probe_dispatch_never_raises():
                            "timeout": 3, "verify": False})
     tcp.assert_called_once_with("h:1", 3)
     ping.assert_called_once_with("h", 3)
-    http.assert_called_once_with("http://h", "body", 3, False)
+    http.assert_called_once_with("http://h", "body", 3, False, None)  # cert_min_days off
     assert checker.run_probe({"check_type": "tcp"}).ok is False  # missing keys
 
 

@@ -103,14 +103,17 @@ OPERATIONS: tuple = (
        params=_PAGE, errors=(404,)),
     Op("POST", "/entries/{id}/checks", "write", "Add a service check", S.CheckOut,
        request=S.ServiceCheckCreate, status=201, errors=(404, 409),
-       description="HTTP checks can use `mode: body` to look at the response body. DNS checks "
+       description="HTTP checks can use `mode: body` to look at the response body, and "
+                   "`cert_min_days` (1-365) to fail when an https target's certificate has fewer "
+                   "days left (a 400 on tcp, ping and dns checks). DNS checks "
                    "(`check_type: dns`) take the DNS server as `target` and `dns_name`, "
                    "`dns_record_type`, `dns_expected_rcode` and `dns_expected_answer`."),
     Op("PATCH", "/checks/{id}", "write", "Edit or enable/disable a check", S.CheckOut,
        request=S.CheckPatch, errors=(404, 409),
        description=_PATCH_NOTE + " Which fields are allowed depends on the check: URL checks take "
-       "enabled, mode, interval, timeout and verify; container checks take enabled and interval; "
-       "service checks take everything (the dns_* fields only make sense on a dns check)."),
+       "enabled, mode, interval, timeout, verify and cert_min_days (null clears it); container checks take enabled and interval; "
+       "service checks take everything (the dns_* fields only make sense on a dns check; "
+       "cert_min_days only on an http check)."),
     Op("DELETE", "/checks/{id}", "write", "Delete a service check", S.CheckDeleteOut,
        errors=(404, 409), description="Only service checks can be deleted; disable the others."),
     Op("POST", "/entries/{id}/checks/run", "write", "Check now", S.RunRequestedOut,
