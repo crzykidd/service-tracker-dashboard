@@ -5,6 +5,29 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-03 implementation calls (API key rotation, name reuse)
+
+- **Key management stays out of the management API.** Rotate, like create and
+  revoke, is Settings-UI only (admin + CSRF). §14.8 keeps users and keys out of
+  `/api/v1`, so a leaked key could never mint or rotate keys. No OpenAPI or MCP
+  change.
+- **Rotate replaces the prefix too.** It reuses `generate_key()`, so the new key
+  is a different prefix and secret on the same row. Rejected: keeping the
+  prefix (the displayed prefix would no longer tell old from new key).
+- **`rotate_key` raises `ValueError` on a revoked key**, matching the module's
+  guard style; the route checks `revoked_at` first and flashes instead.
+- **Name uniqueness moved to a partial index.** `uq_api_key_name` is dropped
+  (batch mode) and `ux_api_key_name_active` (`name WHERE revoked_at IS NULL`)
+  added in the same migration as `rotated_at`. Rotation keeps the name and the
+  row, so it never trips the index. The downgrade raises a `RuntimeError`
+  naming the duplicated names rather than silently dropping rows.
+- **Audit filter switched from name to key id** (`audit_key=id:<n>`), because a
+  reused name would otherwise merge two different keys. Audit rows whose key row
+  was deleted (`api_key_id` NULL) still get a name-only option; the old
+  `?audit_key=<name>` URLs keep working for those.
+
+---
+
 ## 2026-11-16 — v090-02 implementation calls (certificate expiry)
 
 - **`cryptography` to parse the certificate.** The stdlib cannot decode a

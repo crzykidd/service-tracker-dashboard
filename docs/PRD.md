@@ -58,6 +58,7 @@
 | 0.48    | 2026-11-15 | v0.8.0 released. §14 retitled Delivered: admin API keys (read/write scopes) and write audit log, `/api/v1` management API for entries, checks, health, groups, widgets, exposure settings and config, generated OpenAPI spec, stdio MCP server in `mcp/`. Schema §5.7 (`api_key`, `api_audit`). Add-page "None" group fix. Register contract unchanged; no notifier change. |
 | 0.49    | 2026-11-16 | Added §15 (v0.9.0 — DNS and certificate-expiry checks, in progress) and delivered §15.1 on `dev` (v090-01): new `dns` service check (server IP, query name, record type, expected rcode, optional expected answer; NODATA handling), migration `a1c5e8d2f093` (four nullable `health_check` columns), `dnspython`, Add/Edit/detail/API/MCP support; §15.2 certificate expiry stubbed as planned. Later sections renumbered (§15→§16, §16→§17, §17→§18) and cross-references fixed. §5.6 `check_type` list and §14.3 add-check row updated. Register wire contract unchanged. |
 | 0.50    | 2026-11-16 | §15.2 delivered on `dev` (v090-02): optional certificate-expiry condition (`cert_min_days`, 1-365) on URL checks and HTTP service checks, failing with `cert expires in N days (min M)`; separate unverified TLS handshake parsed with `cryptography`; migration `b7d3f1a94e26` (`cert_min_days`, `last_cert_expires_at`); "Min cert days" field shown only for https targets, detail-panel expiry line, API/OpenAPI/MCP support. §5.6 `health_check` columns updated. Register wire contract unchanged. |
+| 0.51    | 2026-11-16 | §15.3 delivered on `dev` (v090-03): rotate an API key from Settings → API (`api_key.rotated_at`, new key shown once, old key invalid at once), and API key names unique among active keys only (partial index `ux_api_key_name_active`, migration `c2e8a5b3d917`). §14.2 updated. |
 
 ---
 
@@ -1785,11 +1786,13 @@ token and needs no update.
 
 ### 14.2 API keys [`v080-01-api-keys-and-audit`] — Delivered in v0.8.0
 
-- **Model `ApiKey`** (table `api_key`): `id`, `name` (unique, ≤64),
+- **Model `ApiKey`** (table `api_key`): `id`, `name` (≤64; unique among
+  active keys only since v0.9.0, see §15.3),
   `prefix` (first 8 chars, for display and lookup), `key_hash`
   (SHA-256 hex of the full key), `scope` (`read` or `write`, where `write`
   includes read), `created_at`, `created_by` (FK `user.id`, nullable,
-  indexed), `last_used_at`, `last_used_ip`, `revoked_at`.
+  indexed), `last_used_at`, `last_used_ip`, `revoked_at`, `rotated_at`
+  (v0.9.0).
 - **Key format:** `std_<prefix>_<secret>`. It holds 32+ random bytes from
   `secrets.token_urlsafe`. Because the key is high-entropy, a plain SHA-256
   is sufficient (no KDF). Lookup is by `prefix`, then the hash is compared
@@ -1797,8 +1800,8 @@ token and needs no update.
 - **Settings → API tab** (admin only):
   - **Create key** asks for a name and scope and shows the full key
     **once**, with a copy button.
-  - Key list: name, prefix, scope, created, last used (time and IP),
-    **Revoke**.
+  - Key list: name, prefix, scope, created, rotated (v0.9.0), last used
+    (time and IP), **Rotate** (v0.9.0) and **Revoke**.
   - The recent audit log is shown here too (§14.6).
 - **Decorator `require_api_key(scope)`:**
   - Missing or invalid key → 401 JSON. Revoked → 401. Read key on a write
@@ -1826,8 +1829,8 @@ token and needs no update.
   default response.
 - Settings → API (admin, CSRF): create shows the key on the POST response page
   (`api_key_created.html`, `Cache-Control: no-store`), never via flash or
-  session; revoke keeps the row greyed out. Key names are unique including
-  revoked keys. The audit list on this tab arrives with v080-04.
+  session; revoke keeps the row greyed out. (Superseded in v0.9.0, §15.3: names are unique among active keys only; originally unique including
+  revoked keys.) The audit list on this tab arrives with v080-04.
 
 ### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered in v0.8.0
 
@@ -2156,6 +2159,33 @@ expiry, even though the HTTP status is fine.
 - **Example (Emmett)**: a URL check on `https://em-pve01.crzynet.me:8006/`
   with `cert_min_days=7`; Proxmox's self-signed certificate with Verify TLS off
   still reports its expiry.
+
+### 15.3 API key rotation [`v090-03-api-key-rotate`] — Delivered on `dev`
+
+- **Rotate** on each active key in Settings → API (`POST
+  /settings/api-keys/<id>/rotate`, admin and CSRF, like revoke). It keeps the
+  row (id, name, scope, `created_at`, audit history) and issues a fresh key
+  from `generate_key()`, so the prefix and the secret are both new.
+  `api_keys.rotate_key(key)` replaces `prefix` and `key_hash`, sets
+  `rotated_at`, clears `last_used_at` / `last_used_ip` (they described the old
+  secret) and returns the full key. A revoked key raises `ValueError`.
+- No grace period: `verify` looks up by prefix and hash, so the old secret is
+  rejected at once.
+- The new key is shown once on `api_key_created.html` (headed "Key rotated"),
+  with `Cache-Control: no-store, no-cache`. A revoked or unknown id flashes an
+  error and redirects to the API tab. The log line carries the key id only.
+- New column `api_key.rotated_at` (nullable, naive UTC); the list shows it as
+  **Rotated** ("—" when never rotated).
+- **Name reuse.** `api_key.name` is no longer unique across all rows: the
+  column constraint `uq_api_key_name` is replaced by the partial unique index
+  `ux_api_key_name_active` (`name WHERE revoked_at IS NULL`), so a revoked
+  key's name can be used again. `validate_name` checks active keys only. The
+  audit-log key filter uses the key id (`audit_key=id:<n>`), with a revoked
+  key labelled "(revoked)"; rows whose key was deleted keep a name-only
+  option. The downgrade refuses, with a message listing the names, if a name
+  is shared by more than one row.
+- Migration `c2e8a5b3d917` (on top of `b7d3f1a94e26`) does both changes.
+- Not in the management API: users and keys stay UI-only (§14.8).
 
 ---
 

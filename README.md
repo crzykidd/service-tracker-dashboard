@@ -877,14 +877,19 @@ API](#management-api) under `/api/v1` (new in v0.8.0). Keys are separate from th
 `api_token`, which can only register services and is rejected here, and a
 management key is rejected by `/api/v1/register`.
 
-- Pick a name (unique, up to 64 characters) and a scope: **read** or **write**
+- Pick a name (unique among active keys, up to 64 characters; a revoked key's
+  name can be reused) and a scope: **read** or **write**
   (write includes read). The full key (`std_<prefix>_<secret>`) is shown
   **once** with a Copy button; only a hash is stored, so a lost key means
   revoking it and creating another.
 - Send it as `Authorization: Bearer <key>`. Browser sessions do not
   authenticate the management API.
-- The key list shows prefix, scope, created, last used (time and IP) and
-  status. Revoked keys stay listed, greyed out.
+- **Rotate** (v0.9.0) issues a new secret for an active key and keeps its name,
+  scope and audit history. The new key is shown once, the old one stops working
+  immediately, and the list's **Rotated** column shows when. Update whatever
+  used the old key. Key management stays in the UI; it is not in the API.
+- The key list shows prefix, scope, created, rotated, last used (time and IP)
+  and status. Revoked keys stay listed, greyed out.
 - Every write made with a key (POST, PATCH, PUT, DELETE, including rejected
   ones) is recorded in an audit log, with secret values masked. Rows are kept
   for `api_audit_retention_days` (90). The most recent 200 are listed under the

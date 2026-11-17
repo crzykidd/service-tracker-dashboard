@@ -33,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available in the management API (`cert_min_days`, with `cert_expires_at` on
   checks) and the MCP tools. The certificate is read over its own connection,
   so it does not go through an `HTTPS_PROXY`.
+- **Rotate an API key.** Settings → API has a **Rotate** button on each active
+  key. It keeps the key's name, scope and audit history but issues a new
+  secret, shown once on the same copy-it-now page as when a key is created. The
+  old key stops working immediately (there is no grace period), and "last used"
+  starts over. A new **Rotated** column shows when each key was last rotated.
+  Update anything that used the old key (for example the MCP client config).
+
+### Fixed
+
+- A revoked API key's name can be used again for a new key. Names only have to
+  be unique among active keys; the audit-log key filter lists a reused name
+  once per key, with the revoked one marked "(revoked)".
 
 ## [0.8.0] — 2026-11-15
 

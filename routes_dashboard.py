@@ -691,14 +691,27 @@ def settings():
 
     audit_filter = (request.args.get('audit_key') or '').strip()
     audit_query = ApiAudit.query
-    if audit_filter:
-        audit_query = audit_query.filter(ApiAudit.key_name == audit_filter)
+    if audit_filter.startswith('id:') and audit_filter[3:].isdigit():
+        audit_query = audit_query.filter(ApiAudit.api_key_id == int(audit_filter[3:]))
+    elif audit_filter:
+        audit_query = audit_query.filter(ApiAudit.key_name == audit_filter, ApiAudit.api_key_id.is_(None))
     audit_rows = [
         {'row': r, 'changes': _audit_change_lines(r.changes)}
         for r in audit_query.order_by(ApiAudit.ts.desc(), ApiAudit.id.desc()).limit(AUDIT_VIEW_LIMIT).all()
     ]
-    audit_key_names = [n for (n,) in db.session.query(ApiAudit.key_name)
-                       .filter(ApiAudit.key_name.isnot(None)).distinct().order_by(ApiAudit.key_name).all()]
+    # Filter options: one per key id (a reused name is two different keys, the
+    # revoked one labelled), plus name-only options for rows whose key is gone.
+    audit_key_options = []
+    for kid, kname, revoked_at in (
+            db.session.query(ApiAudit.api_key_id, ApiAudit.key_name, ApiKey.revoked_at)
+            .outerjoin(ApiKey, ApiKey.id == ApiAudit.api_key_id)
+            .filter(ApiAudit.key_name.isnot(None)).distinct()
+            .order_by(ApiAudit.key_name, ApiAudit.api_key_id).all()):
+        if kid is None:
+            audit_key_options.append({'value': kname, 'label': kname})
+        else:
+            audit_key_options.append({'value': f'id:{kid}',
+                                      'label': f'{kname} (revoked)' if revoked_at else kname})
 
     return render_template(
         'settings.html',
@@ -720,7 +733,7 @@ def settings():
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
          default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
          audit_rows=audit_rows,
-         audit_key_names=audit_key_names,
+         audit_key_options=audit_key_options,
          audit_filter=audit_filter,
          audit_limit=AUDIT_VIEW_LIMIT,
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
@@ -1396,6 +1409,27 @@ def create_api_key():
     logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
     response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
     response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@dashboard_bp.route('/settings/api-keys/<int:id>/rotate', methods=['POST'])
+@login_required
+@is_admin_required
+def rotate_api_key(id):
+    """Issue a new secret for an active key; shown once, like creation.
+
+    Logs the key id only (never the name, prefix or secret).
+    """
+    key = db.session.get(ApiKey, id)
+    if key is None or key.revoked_at is not None:
+        flash("That API key doesn't exist or is revoked, so it can't be rotated.", "danger")
+        return redirect(url_for('dashboard.settings', section='api'))
+    full_key = api_keys.rotate_key(key)
+    logger.info(f"Rotated API key id={key.id} by {current_user.username}.")
+    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key,
+                                             rotated=True))
+    response.headers['Cache-Control'] = 'no-store, no-cache'
+    response.headers['Pragma'] = 'no-cache'
     return response
 
 

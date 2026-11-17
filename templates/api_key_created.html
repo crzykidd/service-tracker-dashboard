@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 
 {% block head %}
-  <title>API key created</title>
+  <title>API key {{ 'rotated' if rotated else 'created' }}</title>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-screen-md mx-auto py-8 px-6">
-  <h2 class="text-2xl font-semibold mb-4">API key created</h2>
+  <h2 class="text-2xl font-semibold mb-4">{{ 'Key rotated' if rotated else 'Key created' }}</h2>
   <div class="mb-4 p-4 bg-yellow-900 text-yellow-100 rounded shadow">
     <strong>Copy this key now. You won't see it again.</strong>
     Only a hash is stored, so a lost key can't be recovered; revoke it and create a new one.
+    {% if rotated %}The previous key for this name has stopped working. Update anything that used it.{% endif %}
   </div>
   <p class="mb-2 text-sm text-gray-300">
     Name <strong>{{ key.name }}</strong>, scope <strong>{{ key.scope }}</strong>.

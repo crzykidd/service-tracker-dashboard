@@ -30,7 +30,10 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 In STD, open **Settings → API** and create a key. Use **write** if Claude should
 be able to change things, **read** to let it look only. A read key exposes only
 the read tools; the server checks the key with `GET /api/v1/whoami` when it
-starts. Revoke the key from the same page at any time.
+starts. Revoke the key from the same page at any time. **Rotate** on the same
+page issues a new secret for the key and invalidates the old one at once; after
+rotating, put the new key in the MCP client config (`STD_API_KEY`) or the server
+gets 401s.
 
 ## Add it to Claude Code
 
