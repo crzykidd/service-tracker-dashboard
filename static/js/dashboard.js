@@ -37,6 +37,9 @@ window.stdPost = function (url, options) {
   function initRefresh() {
     const refreshLabel    = document.getElementById('refreshTimer');
     const refreshDropdown = document.getElementById('refreshInterval');
+    // Only the dashboard views (filter bar) auto-refresh. dashboard.js loads
+    // on every page via base.html, so Settings/Edit must not start the timer.
+    if (!refreshDropdown) return;
     const saved = localStorage.getItem('refreshInterval');
     if (saved !== null) {
       refreshInterval = parseInt(saved, 10);

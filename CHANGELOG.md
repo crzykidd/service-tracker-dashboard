@@ -73,6 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `channel`, `build_time` and an `update` status; the MCP `server_info` tool
   reports them too.
 
+### Fixed
+
+- Auto-refresh now runs only on the Dashboard, Tiled and Compact views.
+  Before, Settings and the Add/Edit pages also reloaded every refresh
+  interval, which could discard unsaved form changes.
+
 ## [0.9.0] — 2026-11-16
 
 ### Added
