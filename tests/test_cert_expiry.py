@@ -650,3 +650,14 @@ def test_migration_adds_and_drops_the_cert_columns(tmp_path):
 
     _alembic(tmp_path, db_path, "upgrade", "head")
     assert cols <= _health_cols(db_path)
+
+
+def test_cert_handshake_requires_tls_1_2():
+    """The cert-reading handshake refuses TLS 1.0/1.1 (CodeQL py/insecure-protocol)."""
+    import ssl
+    ctx = MagicMock()
+    with patch("checker.ssl.create_default_context", return_value=ctx), \
+         patch("checker.socket.create_connection", side_effect=OSError("stop")):
+        with pytest.raises(OSError):
+            checker._read_cert_expiry("example.test", 443, 1)
+    assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2

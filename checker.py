@@ -175,6 +175,8 @@ def _read_cert_expiry(host, port, timeout):
     connection, so it does not follow an `HTTPS_PROXY` the way `requests` does.
     """
     context = ssl.create_default_context()
+    # Never negotiate TLS 1.0/1.1, even though we only read the certificate.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     with socket.create_connection((host, port), timeout=timeout) as sock:

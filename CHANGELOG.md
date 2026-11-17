@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Cert expires <date> (N days)", in red when it is below your minimum. Also
   available in the management API (`cert_min_days`, with `cert_expires_at` on
   checks) and the MCP tools. The certificate is read over its own connection,
-  so it does not go through an `HTTPS_PROXY`.
+  so it does not go through an `HTTPS_PROXY`, and it needs TLS 1.2 or newer.
 - **Rotate an API key.** Settings → API has a **Rotate** button on each active
   key. It keeps the key's name, scope and audit history but issues a new
   secret, shown once on the same copy-it-now page as when a key is created. The
