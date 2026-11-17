@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **DNS service check.** A new service-check type, **DNS**, asks a DNS server
+  for a name and checks the reply, for example to watch a site's resolver.
+  Set the server (an IP address, optionally with a port), the query name, the
+  record type (A, AAAA, CNAME, TXT, PTR, MX, NS or SRV), the expected rcode
+  (default NOERROR) and an optional expected answer. The check queries the
+  server you give directly, never the host's own resolver. Without an expected
+  answer it passes on the rcode alone; with one, any matching answer record
+  passes, and a reply with no answers fails. Failures show what came back
+  (`rcode NXDOMAIN`, `answer 10.0.0.5, expected 10.100.17.10`, `timeout`).
+  Available on Add and Edit, the health detail panel, the management API
+  (`check_type: "dns"` and the `dns_*` fields) and the MCP tools.
+
 ## [0.8.0] — 2026-11-15
 
 > The management API and the MCP server are new in this release and have not

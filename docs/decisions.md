@@ -5,6 +5,43 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-01 implementation calls (DNS check)
+
+- **The server must be an IP literal.** The check exists to ask one specific
+  server, and a hostname would need the system resolver to find it. Bare IPv6
+  without a port (`2001:db8::1`) is accepted because it is unambiguous; with a
+  port it must be bracketed (`[2001:db8::1]:53`), so `2001:db8::1:53` reads as
+  an address, not as an address plus a port.
+- **`dns.resolver` is not used anywhere**; `udp_with_fallback` talks to the
+  given server (TCP only on truncation). A test patches the resolver (and
+  `socket.getaddrinfo`) to explode while a probe runs.
+- **Answer comparison is exact-match-on-any after normalizing**, not a
+  substring or regex match: case-insensitive, trailing dot stripped,
+  whitespace collapsed, IPs compared in canonical form (so `2001:0DB8::1`
+  equals `2001:db8::1`), TXT as joined strings without quotes. MX and SRV
+  compare the full presentation form (`10 mail.example.com`). The IP
+  canonicalization goes beyond the written rules; it only removes false
+  mismatches.
+- **` | ` joins several answers in the failure message** (readable in the
+  tooltip and unlikely to occur inside a record).
+- **Numeric rcodes are rejected** (`dns.rcode.from_text("3")` would accept
+  them) so the stored value is always the name that the probe compares with.
+- **The expected rcode is stored explicitly as `NOERROR`** when left blank
+  (blank means NOERROR per the spec); `dns_expected_answer` blank is stored
+  NULL. The probe still treats a NULL/blank rcode as NOERROR, for rows from
+  older backups or direct writes.
+- **`dns_*` fields on a non-DNS service check are silently dropped** (stored
+  NULL) rather than rejected, matching how mode/verify are handled for
+  non-HTTP types. On URL and container checks, PATCH rejects them with 400
+  like `target`.
+- **`CheckOut` carries the four fields always** (null for other types),
+  matching how it already carries `mode` and `verify_tls` for every type.
+- **Downgrade drops the four columns but leaves `check_type='dns'` rows**;
+  they would fail as unknown types on an older version. Documented in the
+  migration; remove DNS checks before a real downgrade.
+
+---
+
 ## 2026-11-15 — v080-05 implementation calls (MCP server)
 
 - **Pinned `mcp==1.30.0` (the v1 line), not 2.x.** 2.x (latest 2.3.0, October)

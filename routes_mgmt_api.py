@@ -324,6 +324,8 @@ _CHECK_FIELD_TO_VALIDATOR = {
     "enabled": "enabled", "mode": "mode", "interval_seconds": "interval",
     "timeout_seconds": "timeout", "verify_tls": "verify",
     "name": "name", "check_type": "check_type", "target": "target",
+    "dns_name": "dns_name", "dns_record_type": "dns_record_type",
+    "dns_expected_rcode": "dns_expected_rcode", "dns_expected_answer": "dns_expected_answer",
 }
 _URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls"}
 _CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds"}
@@ -445,6 +447,8 @@ def _service_check_input(c: ServiceCheckCreate):
         "name": c.name, "check_type": c.check_type, "target": c.target, "mode": c.mode,
         "enabled": c.enabled, "verify": c.verify_tls,
         "interval": c.interval_seconds, "timeout": c.timeout_seconds,
+        "dns_name": c.dns_name, "dns_record_type": c.dns_record_type,
+        "dns_expected_rcode": c.dns_expected_rcode, "dns_expected_answer": c.dns_expected_answer,
     }
 
 
@@ -804,6 +808,9 @@ def patch_check(id):
         "enabled": check.enabled, "mode": check.mode, "verify": check.verify_tls is not False,
         "interval": check.interval_seconds, "timeout": check.timeout_seconds,
         "name": check.name, "check_type": check.check_type, "target": check.target,
+        "dns_name": check.dns_name, "dns_record_type": check.dns_record_type,
+        "dns_expected_rcode": check.dns_expected_rcode,
+        "dns_expected_answer": check.dns_expected_answer,
     }
     merged = _settings_dict(data, _CHECK_FIELD_TO_VALIDATOR, current)
     if check.kind == CHECK_KIND_CONTAINER:

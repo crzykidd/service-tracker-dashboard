@@ -1,13 +1,27 @@
 // Add/Edit page: repeatable service-check rows (clone a <template>) and
-// HTTP-only field visibility. Removed rows simply leave the form; the server
+// per-type field visibility (HTTP-only, DNS-only). Removed rows simply leave the form; the server
 // deletes saved checks that are missing from the submission.
 (function () {
   function syncRow(row) {
     var select = row.querySelector('[data-check-type]');
     var isHttp = !select || select.value === 'http';
+    var isDns = !!select && select.value === 'dns';
     row.querySelectorAll('[data-http-only]').forEach(function (el) {
       el.classList.toggle('hidden', !isHttp);
     });
+    row.querySelectorAll('[data-dns-only]').forEach(function (el) {
+      el.classList.toggle('hidden', !isDns);
+    });
+    row.querySelectorAll('[data-not-dns]').forEach(function (el) {
+      el.classList.toggle('hidden', isDns);
+    });
+    var label = row.querySelector('[data-target-label]');
+    if (label) label.textContent = isDns ? 'DNS server' : 'Target';
+    var target = row.querySelector('[data-target-placeholder]');
+    if (target) {
+      target.placeholder = isDns ? target.getAttribute('data-dns-placeholder')
+                                 : target.getAttribute('data-target-placeholder');
+    }
   }
 
   function syncEmpty(list) {

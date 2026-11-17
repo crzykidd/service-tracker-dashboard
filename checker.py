@@ -6,11 +6,18 @@ run on the worker threads of the checker pool (all DB writes happen on the
 scheduler thread, see jobs.py).
 """
 
+import ipaddress
 import socket
 import time
 import warnings
 from dataclasses import dataclass
 
+import dns.exception
+import dns.message
+import dns.query
+import dns.rcode
+import dns.rdatatype
+import dns.reversename
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -25,6 +32,7 @@ UNEXPECTED_PREVIEW = 60
 MESSAGE_COLUMN_LIMIT = 255
 PING_COUNT = 3
 ICMP_NOT_PERMITTED = "ICMP not permitted"
+DNS_DEFAULT_PORT = 53
 
 
 @dataclass
@@ -189,15 +197,145 @@ def probe_ping(target, timeout=5):
     )
 
 
+def split_dns_server(target):
+    """A DNS server target -> (ip string, int port). Raises ValueError.
+
+    Accepts `ip`, `ip:port`, `[v6]` and `[v6]:port`; the port defaults to 53.
+    The server must be an IP literal: the check never uses the system
+    resolver, so a hostname could not be looked up.
+    """
+    text = (target or "").strip()
+    if not text:
+        raise ValueError("a DNS server is required")
+    port = DNS_DEFAULT_PORT
+    host = text
+    if text.startswith("["):
+        host, sep, rest = text[1:].partition("]")
+        if not sep:
+            raise ValueError("a DNS server must be an IP address, optionally with a port")
+        if rest:
+            if not rest.startswith(":"):
+                raise ValueError("a DNS server must be an IP address, optionally with a port")
+            port_text = rest[1:]
+        else:
+            port_text = None
+    else:
+        try:
+            ipaddress.ip_address(text)  # a bare IPv4 or IPv6 literal: no port
+            port_text = None
+        except ValueError:
+            host, sep, port_text = text.rpartition(":")
+            if not sep:
+                host, port_text = text, None
+            elif ":" in host:  # an unbracketed IPv6 with a port is ambiguous
+                raise ValueError("write an IPv6 server with a port as [address]:port") from None
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        raise ValueError("a DNS server must be an IP address (not a hostname), optionally with a port") from None
+    if port_text is not None:
+        if not port_text.isascii() or not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+            raise ValueError("the DNS server port must be from 1 to 65535")
+        port = int(port_text)
+    return str(ip), port
+
+
+def _dns_query_name(name, record_type):
+    """The name to query: PTR takes an IP (converted to its reverse name); a
+    name already under in-addr.arpa / ip6.arpa is used as is."""
+    name = (name or "").strip()
+    if record_type == "PTR":
+        try:
+            ipaddress.ip_address(name)
+        except ValueError:
+            return name
+        return dns.reversename.from_address(name)
+    return name
+
+
+def _dns_norm(text, txt=False):
+    """Comparison form of an answer or expected value: case-insensitive,
+    trailing dot removed, whitespace runs collapsed, IPs in canonical form."""
+    text = str(text).strip()
+    if txt and len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+        text = text[1:-1]
+    text = " ".join(text.split()).lower().rstrip(".")
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return text
+
+
+def _dns_answers(response, rdtype):
+    """Printable answers of `rdtype` at any owner name (so a CNAME chain
+    followed by an A record still yields the A records), as
+    (shown, normalized) pairs."""
+    out = []
+    for rrset in response.answer:
+        if rrset.rdtype != rdtype:
+            continue
+        for rdata in rrset:
+            if rdtype == dns.rdatatype.TXT:
+                shown = b"".join(rdata.strings).decode("utf-8", errors="replace")
+                out.append((shown, _dns_norm(shown)))
+            else:
+                shown = rdata.to_text().rstrip(".")
+                out.append((shown, _dns_norm(shown)))
+    return out
+
+
+def probe_dns(server, name, record_type="A", expected_rcode=None, expected_answer=None, timeout=5):
+    """Query `server` directly for `name` and judge the reply.
+
+    Low-level dnspython (UDP, TCP fallback on truncation); the system
+    resolver is never consulted. ok when the rcode equals `expected_rcode`
+    (default NOERROR) and, if `expected_answer` is set, any answer record of
+    the queried type matches it exactly (normalized, see `_dns_norm`). NOERROR
+    with no answers (NODATA) passes only when no answer is expected.
+    """
+    started = time.monotonic()
+    try:
+        ip, port = split_dns_server(server)
+        rtype = (record_type or "A").strip().upper()
+        rdtype = dns.rdatatype.from_text(rtype)
+        query = dns.message.make_query(_dns_query_name(name, rtype), rdtype)
+        response, _used_tcp = dns.query.udp_with_fallback(query, ip, timeout=timeout, port=port)
+        latency = _elapsed_ms(started)
+        want_rcode = (expected_rcode or "").strip().upper() or "NOERROR"
+        actual = dns.rcode.to_text(response.rcode())
+        if actual != want_rcode:
+            return ProbeResult(False, latency, None, _clip(f"rcode {actual}"))
+        want = (expected_answer or "").strip()
+        if not want:
+            return ProbeResult(True, latency)
+        answers = _dns_answers(response, rdtype)
+        if not answers:
+            return ProbeResult(False, latency, None, _clip(f"no answer, expected {want}"))
+        target = _dns_norm(want, txt=rdtype == dns.rdatatype.TXT)
+        if any(norm == target for _shown, norm in answers):
+            return ProbeResult(True, latency)
+        shown = " | ".join(s for s, _n in answers)
+        return ProbeResult(False, latency, None, _clip(f"answer {shown}, expected {want}"))
+    except dns.exception.Timeout:
+        return ProbeResult(False, _elapsed_ms(started), None, "timeout", "Timeout")
+    except Exception as e:
+        return _failure(started, e)
+
+
 def run_probe(job):
     """Run one probe described by a plain dict (check_type, target, mode,
-    timeout, verify). Never raises."""
+    timeout, verify, and the dns_* fields for DNS). Never raises."""
     check_type = job.get("check_type")
     try:
         if check_type == "tcp":
             return probe_tcp(job["target"], job["timeout"])
         if check_type == "ping":
             return probe_ping(job["target"], job["timeout"])
+        if check_type == "dns":
+            return probe_dns(
+                job["target"], job.get("dns_name"), job.get("dns_record_type"),
+                job.get("dns_expected_rcode"), job.get("dns_expected_answer"), job["timeout"],
+            )
         return probe_http(job["target"], job.get("mode", "status"), job["timeout"], job.get("verify", True))
     except Exception as e:  # defensive: probes already catch everything
         return ProbeResult(False, 0, None, _exception_message(e), type(e).__name__)

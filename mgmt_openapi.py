@@ -83,7 +83,7 @@ OPERATIONS: tuple = (
     Op("POST", "/entries", "write", "Add a manual entry", S.EntryDetailOut, request=S.EntryCreate,
        status=201, errors=(409,),
        description="Creates a manual (non-Docker) entry, optionally with URL-check settings and "
-                   "service checks (HTTP, TCP or ping). A missing group is created. "
+                   "service checks (HTTP, TCP, ping or DNS). A missing group is created. "
                    "An entry with no `group` is left ungrouped."),
     Op("GET", "/entries/{id}", "read", "Get one entry in full", S.EntryDetailOut, errors=(404,),
        description="Adds notifier-reported data (networks, ports, exposures) and the widget."),
@@ -103,12 +103,14 @@ OPERATIONS: tuple = (
        params=_PAGE, errors=(404,)),
     Op("POST", "/entries/{id}/checks", "write", "Add a service check", S.CheckOut,
        request=S.ServiceCheckCreate, status=201, errors=(404, 409),
-       description="HTTP checks can use `mode: body` to look at the response body."),
+       description="HTTP checks can use `mode: body` to look at the response body. DNS checks "
+                   "(`check_type: dns`) take the DNS server as `target` and `dns_name`, "
+                   "`dns_record_type`, `dns_expected_rcode` and `dns_expected_answer`."),
     Op("PATCH", "/checks/{id}", "write", "Edit or enable/disable a check", S.CheckOut,
        request=S.CheckPatch, errors=(404, 409),
        description=_PATCH_NOTE + " Which fields are allowed depends on the check: URL checks take "
        "enabled, mode, interval, timeout and verify; container checks take enabled and interval; "
-       "service checks take everything."),
+       "service checks take everything (the dns_* fields only make sense on a dns check)."),
     Op("DELETE", "/checks/{id}", "write", "Delete a service check", S.CheckDeleteOut,
        errors=(404, 409), description="Only service checks can be deleted; disable the others."),
     Op("POST", "/entries/{id}/checks/run", "write", "Check now", S.RunRequestedOut,

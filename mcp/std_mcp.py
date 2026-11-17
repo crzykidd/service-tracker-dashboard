@@ -42,6 +42,7 @@ ENTRY_PATCH_FIELDS = {
 CHECK_PATCH_FIELDS = {
     "enabled", "name", "check_type", "target", "mode", "interval_seconds",
     "timeout_seconds", "verify_tls",
+    "dns_name", "dns_record_type", "dns_expected_rcode", "dns_expected_answer",
 }
 
 
@@ -218,9 +219,9 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
         url_checks: settings for the URL checks, e.g.
             {"internal": {"enabled": true, "mode": "body", "interval_seconds": 60}, "external": {"enabled": false}}
             mode is `status` (HTTP status below 400 is up) or `body` (the body must be `OK`; anything else is down and `Error: <msg>` shows <msg> as the failure message).
-        checks: extra service checks, each {target, check_type (http|tcp|ping), name, mode, interval_seconds, timeout_seconds, verify_tls, enabled}, e.g.
+        checks: extra service checks, each {target, check_type (http|tcp|ping|dns), name, mode, interval_seconds, timeout_seconds, verify_tls, enabled}, e.g.
             [{"target": "nas.lan", "check_type": "ping"}, {"target": "http://nas.lan:5000/health", "mode": "body", "interval_seconds": 60}]
-            tcp targets are `host:port`.
+            tcp targets are `host:port`. A dns check takes the DNS server as target plus dns_name (see add_check).
         """
         body = _drop_none(name=name, host=host, description=description, group=group,
                           internalurl=internalurl, externalurl=externalurl, icon=icon,
@@ -254,15 +255,25 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
     def add_check(entry_id: int, target: str, check_type: str = "http", name: str | None = None,
                   mode: str | None = None, interval_seconds: int | None = None,
                   timeout_seconds: int | None = None, verify_tls: bool = True,
-                  enabled: bool = True) -> dict:
+                  enabled: bool = True, dns_name: str | None = None,
+                  dns_record_type: str | None = None, dns_expected_rcode: str | None = None,
+                  dns_expected_answer: str | None = None) -> dict:
         """Add a service check to an entry.
 
-        check_type: http (target is a URL), tcp (target is `host:port`) or ping (target is a host).
+        check_type: http (target is a URL), tcp (target is `host:port`), ping (target is a host) or dns (target is the DNS server).
+        dns checks query the given server directly (never the system resolver). target is an IP address, optionally with a port (`10.100.16.16`, `10.100.16.16:5353`, `[2001:db8::1]:53`); a hostname is rejected.
+            dns_name: the name to look up (required; an IP address is accepted for PTR).
+            dns_record_type: A (default), AAAA, CNAME, TXT, PTR, MX, NS or SRV.
+            dns_expected_rcode: NOERROR (default), NXDOMAIN, SERVFAIL, REFUSED, ...
+            dns_expected_answer: optional; up only when any answer record matches exactly (case-insensitive, trailing dot ignored). Omit it to judge by rcode only. A NOERROR reply with no answers is up only when no answer is expected.
+            Example: check_type="dns", target="10.100.16.16", dns_name="em-pve01.crzynet.me", dns_record_type="A", dns_expected_answer="10.100.17.10"
         mode (http only): `status` (default; up when the HTTP status is below 400) or `body` (up only when the response body is exactly `OK`; a body like `Error: disk full` is down and shows `disk full` as the message).
         interval_seconds 30..86400 and timeout_seconds 1..60; omit for the global defaults.
         """
         body = _drop_none(target=target, check_type=check_type, name=name, mode=mode,
-                          interval_seconds=interval_seconds, timeout_seconds=timeout_seconds)
+                          interval_seconds=interval_seconds, timeout_seconds=timeout_seconds, dns_name=dns_name,
+                          dns_record_type=dns_record_type, dns_expected_rcode=dns_expected_rcode,
+                          dns_expected_answer=dns_expected_answer)
         body.update(verify_tls=verify_tls, enabled=enabled)
         return client.request("POST", f"/entries/{entry_id}/checks", json=body)
 
@@ -270,7 +281,8 @@ def build_server(client: StdClient, scope: str) -> FastMCP:
     def update_check(check_id: int, fields: dict) -> dict:
         """Edit or enable/disable a check. `fields` names only what changes (null clears where that makes sense).
 
-        Allowed: enabled, name, check_type, target, mode, interval_seconds, timeout_seconds, verify_tls.
+        Allowed: enabled, name, check_type, target, mode, interval_seconds, timeout_seconds, verify_tls, dns_name, dns_record_type, dns_expected_rcode, dns_expected_answer.
+        The dns_* fields apply to service checks of type dns (target is then the DNS server), e.g. {"check_type": "dns", "target": "10.100.16.16", "dns_name": "em-pve01.crzynet.me", "dns_record_type": "A", "dns_expected_answer": "10.100.17.10"}; dns_expected_answer null clears it (rcode only).
         URL checks (internal/external) accept enabled, mode, interval_seconds, timeout_seconds and verify_tls; container checks accept enabled and interval_seconds; service checks accept everything.
         Example fields: {"enabled": false}  or  {"mode": "body", "interval_seconds": 60}
         """

@@ -12,23 +12,31 @@ Form field names:
   cc_row, cc_enabled, cc_interval   Container check (notifier entries on Edit)
   svc_row                           one per service-check row (the row key)
   svc_<key>_<field>                 id, name, type, target, mode, interval,
-                                    timeout, verify, enabled
+                                    timeout, verify, enabled, and for DNS
+                                    checks dns_name, dns_type, dns_rcode,
+                                    dns_answer
 """
 
 import ipaddress
 import re
 from urllib.parse import urlsplit
 
-from checker import split_host_port
+import dns.rcode
+
+from checker import split_dns_server, split_host_port
 from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
     CHECK_MODE_STATUS,
     CHECK_MODES,
+    CHECK_TYPE_DNS,
     CHECK_TYPE_HTTP,
     CHECK_TYPE_PING,
     CHECK_TYPE_TCP,
     CHECK_TYPES,
+    DNS_DEFAULT_RCODE,
+    DNS_DEFAULT_RECORD_TYPE,
+    DNS_RECORD_TYPES,
     HealthCheck,
     ensure_url_checks,
 )
@@ -40,11 +48,15 @@ MAX_TIMEOUT = 60
 MAX_SERVICE_CHECKS = 20
 NAME_MAX = 100
 TARGET_MAX = 255
+DNS_NAME_MAX = 255
+DNS_ANSWER_MAX = 255
 
 URL_ROWS = (("internal", "Internal URL"), ("external", "External URL"))
 
 _KEY_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 _HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
+# One DNS label: letters, digits, hyphen and underscore (SRV/TXT names use it).
+_DNS_LABEL_RE = re.compile(r"^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?$")
 
 
 def _row_from_check(check, key=None, label=None):
@@ -60,6 +72,10 @@ def _row_from_check(check, key=None, label=None):
         "timeout": "" if check.timeout_seconds is None else str(check.timeout_seconds),
         "verify": check.verify_tls is not False,
         "enabled": bool(check.enabled),
+        "dns_name": check.dns_name or "",
+        "dns_type": check.dns_record_type or DNS_DEFAULT_RECORD_TYPE,
+        "dns_rcode": check.dns_expected_rcode or DNS_DEFAULT_RCODE,
+        "dns_answer": check.dns_expected_answer or "",
     }
 
 
@@ -68,6 +84,8 @@ def _blank_url_row(which, label):
         "key": which, "label": label, "id": None, "name": label, "check_type": CHECK_TYPE_HTTP,
         "target": "", "mode": CHECK_MODE_STATUS, "interval": "", "timeout": "",
         "verify": True, "enabled": False,
+        "dns_name": "", "dns_type": DNS_DEFAULT_RECORD_TYPE, "dns_rcode": DNS_DEFAULT_RCODE,
+        "dns_answer": "",
     }
 
 
@@ -152,7 +170,73 @@ def validate_target(check_type, target):
         except ValueError:
             if not _HOSTNAME_RE.match(target):
                 return "a Ping target must be a hostname or IP address, with no port or path"
+    elif check_type == CHECK_TYPE_DNS:
+        try:
+            split_dns_server(target)
+        except ValueError as e:
+            return str(e)
     return None
+
+
+def _valid_dns_name(name):
+    """True for a plausible DNS name: dot-separated labels, at most 253
+    characters, an optional trailing dot (a lone `.` is the root)."""
+    if name == ".":
+        return True
+    name = name[:-1] if name.endswith(".") else name
+    return bool(name) and len(name) <= 253 and all(_DNS_LABEL_RE.match(lbl) for lbl in name.split("."))
+
+
+def _validate_dns_fields(d):
+    """The four DNS query fields -> (values, errors). Only called for DNS
+    checks. Values are always complete (safe fallbacks for invalid input)."""
+    errors = []
+
+    def text(key):
+        raw = d.get(key)
+        return raw.strip() if isinstance(raw, str) else ""
+
+    rtype = text("dns_record_type").upper() or DNS_DEFAULT_RECORD_TYPE
+    if rtype not in DNS_RECORD_TYPES:
+        errors.append({"field": "dns_record_type",
+                       "message": f"record type must be one of {', '.join(DNS_RECORD_TYPES)}"})
+        rtype = DNS_DEFAULT_RECORD_TYPE
+
+    name = text("dns_name")
+    if not name:
+        errors.append({"field": "dns_name", "message": "a query name is required"})
+    elif len(name) > DNS_NAME_MAX:
+        errors.append({"field": "dns_name",
+                       "message": f"query name is limited to {DNS_NAME_MAX} characters"})
+    elif not _valid_dns_name(name):
+        ok_ip = False
+        if rtype == "PTR":
+            try:
+                ipaddress.ip_address(name)
+                ok_ip = True
+            except ValueError:
+                pass
+        if not ok_ip:
+            errors.append({"field": "dns_name", "message": "query name must be a valid DNS name"
+                           + (" or an IP address" if rtype == "PTR" else "")})
+
+    rcode = text("dns_expected_rcode").upper() or DNS_DEFAULT_RCODE
+    try:
+        if rcode.isdigit():
+            raise ValueError(rcode)
+        dns.rcode.from_text(rcode)
+    except Exception:
+        errors.append({"field": "dns_expected_rcode",
+                       "message": "expected rcode must be a DNS response code such as NOERROR or NXDOMAIN"})
+        rcode = DNS_DEFAULT_RCODE
+
+    answer = text("dns_expected_answer")
+    if len(answer) > DNS_ANSWER_MAX:
+        errors.append({"field": "dns_expected_answer",
+                       "message": f"expected answer is limited to {DNS_ANSWER_MAX} characters"})
+    values = {"dns_name": name, "dns_record_type": rtype, "dns_expected_rcode": rcode,
+              "dns_expected_answer": answer or None}
+    return values, errors
 
 
 # --- validation over plain dicts (shared by the form parser and the API) ------
@@ -192,9 +276,13 @@ def validate_url_check_settings(d):
 
 def validate_service_check(d):
     """A service check: `name`, `check_type`, `target` plus the shared settings.
+    DNS checks also read `dns_name`, `dns_record_type`, `dns_expected_rcode`
+    and `dns_expected_answer` (ignored for every other type).
 
     Returns values `{name, check_type, target, enabled, mode, verify,
-    interval_value, timeout_value}`.
+    interval_value, timeout_value, dns_name, dns_record_type,
+    dns_expected_rcode, dns_expected_answer}` (the dns_* values are None
+    unless the type is DNS).
     """
     errors = []
     check_type = d.get("check_type")
@@ -202,7 +290,7 @@ def validate_service_check(d):
     if isinstance(check_type, str):
         check_type = check_type.strip()
     if check_type not in CHECK_TYPES:
-        errors.append({"field": "check_type", "message": "type must be HTTP/HTTPS, TCP or Ping"})
+        errors.append({"field": "check_type", "message": "type must be HTTP/HTTPS, TCP, Ping or DNS"})
         check_type = CHECK_TYPE_HTTP
     name = d.get("name")
     name = name.strip() if isinstance(name, str) else ""
@@ -215,7 +303,14 @@ def validate_service_check(d):
         errors.append({"field": "target", "message": problem})
     common, common_errors = validate_url_check_settings(d)
     values = {"name": name, "check_type": check_type, "target": target, **common}
-    return values, errors + common_errors
+    dns_errors = []
+    if check_type == CHECK_TYPE_DNS:
+        dns_values, dns_errors = _validate_dns_fields(d)
+        values.update(dns_values)
+    else:
+        values.update(dns_name=None, dns_record_type=None, dns_expected_rcode=None,
+                      dns_expected_answer=None)
+    return values, errors + dns_errors + common_errors
 
 
 def validate_container_check(d):
@@ -290,12 +385,22 @@ def parse_form(form, existing_service_ids=()):
             "name": name,
             "check_type": (form.get(f"{prefix}type") or CHECK_TYPE_HTTP).strip(),
             "target": (form.get(f"{prefix}target") or "").strip(),
+            "dns_name": form.get(f"{prefix}dns_name") or "",
+            "dns_record_type": form.get(f"{prefix}dns_type") or "",
+            "dns_expected_rcode": form.get(f"{prefix}dns_rcode") or "",
+            "dns_expected_answer": form.get(f"{prefix}dns_answer") or "",
         }
         values, problems = validate_service_check(raw)
         errors.extend(_with_who(problems, who))
         row["name"] = name
         row["check_type"] = values["check_type"]
         row["target"] = raw["target"]
+        # Keep what the operator typed (trimmed) so a failed submit re-renders it.
+        row["dns_name"] = raw["dns_name"].strip()
+        row["dns_type"] = raw["dns_record_type"].strip() or DNS_DEFAULT_RECORD_TYPE
+        row["dns_rcode"] = raw["dns_expected_rcode"].strip() or DNS_DEFAULT_RCODE
+        row["dns_answer"] = raw["dns_expected_answer"].strip()
+        row.update({k: values[k] for k in _DNS_VALUE_KEYS})
         _parse_common(form, prefix, row, errors, who)
         if raw_id and row["id"] not in existing_service_ids:
             errors.append(f"{who}: this check no longer exists (it may have been removed in another window). Reload the page.")
@@ -328,9 +433,14 @@ def apply_container(entry, row):
         check.last_checked_at = None
 
 
+_DNS_VALUE_KEYS = ("dns_record_type", "dns_expected_rcode", "dns_expected_answer")
+
+
 def _signature(check):
     return (check.check_type, check.target, check.mode, check.interval_seconds,
-            check.timeout_seconds, check.verify_tls, check.enabled)
+            check.timeout_seconds, check.verify_tls, check.enabled,
+            check.dns_name, check.dns_record_type, check.dns_expected_rcode,
+            check.dns_expected_answer)
 
 
 def _assign(check, row):
@@ -342,6 +452,12 @@ def _assign(check, row):
     check.timeout_seconds = row["timeout_value"]
     check.verify_tls = row["verify"] if is_http else True
     check.enabled = row["enabled"]
+    # DNS settings exist only on DNS checks; switching type away clears them.
+    is_dns = check_type == CHECK_TYPE_DNS
+    check.dns_name = row.get("dns_name") if is_dns else None
+    check.dns_record_type = row.get("dns_record_type") if is_dns else None
+    check.dns_expected_rcode = row.get("dns_expected_rcode") if is_dns else None
+    check.dns_expected_answer = row.get("dns_expected_answer") if is_dns else None
 
 
 def apply_rows(entry, url_rows, svc_rows):

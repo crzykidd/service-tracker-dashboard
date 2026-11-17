@@ -55,6 +55,7 @@ from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
     CHECK_MODES,
+    CHECK_TYPE_DNS,
     CHECK_TYPES,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
@@ -985,6 +986,11 @@ def _positive_int(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
+def _text_or_none(value):
+    value = value.strip() if isinstance(value, str) else ''
+    return value or None
+
+
 def _restore_checks(entry, item):
     """Apply a backup record's health-check configuration to `entry`.
 
@@ -1029,6 +1035,14 @@ def _restore_checks(entry, item):
             check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
             check.verify_tls = cfg.get('verify_tls') is not False
             check.enabled = bool(cfg.get('enabled'))
+            # DNS settings (v0.9.0); absent in older backups, so they stay NULL.
+            is_dns = check.check_type == CHECK_TYPE_DNS and kind == CHECK_KIND_SERVICE
+            check.dns_name = _text_or_none(cfg.get('dns_name')) if is_dns else None
+            rtype = _text_or_none(cfg.get('dns_record_type'))
+            check.dns_record_type = rtype.upper() if is_dns and rtype else None
+            rcode = _text_or_none(cfg.get('dns_expected_rcode'))
+            check.dns_expected_rcode = rcode.upper() if is_dns and rcode else None
+            check.dns_expected_answer = _text_or_none(cfg.get('dns_expected_answer')) if is_dns else None
         return
 
     timeout = _positive_int(item.get('health_check_timeout'))

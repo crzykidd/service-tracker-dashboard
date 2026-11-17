@@ -44,13 +44,18 @@ class UrlChecksIn(_Request):
 
 class ServiceCheckCreate(_Request):
     target: str
-    check_type: str = "http"             # "http" | "tcp" | "ping"
+    check_type: str = "http"             # "http" | "tcp" | "ping" | "dns"
     name: str | None = None              # defaults to the target
     mode: str | None = None              # "status" (default) | "body"; HTTP only
     interval_seconds: int | None = None
     timeout_seconds: int | None = None
     verify_tls: bool = True
     enabled: bool = True
+    # DNS checks only (target is then the DNS server, an IP with optional port).
+    dns_name: str | None = None              # the query name (an IP for PTR); required for dns
+    dns_record_type: str | None = None       # A (default) | AAAA | CNAME | TXT | PTR | MX | NS | SRV
+    dns_expected_rcode: str | None = None    # NOERROR (default), NXDOMAIN, ...
+    dns_expected_answer: str | None = None   # empty/null = judge by rcode only
 
 
 class EntryCreate(_Request):
@@ -86,7 +91,7 @@ class EntryPatch(_Request):
 class CheckPatch(_Request):
     """Every field optional. Which are allowed depends on the check's kind
     (URL: enabled/mode/interval/timeout/verify; container: enabled/interval;
-    service: everything)."""
+    service: everything, including the dns_* fields)."""
 
     enabled: bool | None = None
     name: str | None = None
@@ -96,6 +101,10 @@ class CheckPatch(_Request):
     interval_seconds: int | None = None
     timeout_seconds: int | None = None
     verify_tls: bool | None = None
+    dns_name: str | None = None              # service checks of type dns only
+    dns_record_type: str | None = None
+    dns_expected_rcode: str | None = None
+    dns_expected_answer: str | None = None   # null clears it (rcode only)
 
 
 # Notifier-owned entry fields. A PATCH naming any of them is a 400.
@@ -188,6 +197,10 @@ class CheckOut(TypedDict):
     interval_seconds: int | None
     timeout_seconds: int | None
     verify_tls: bool
+    dns_name: str | None             # dns checks only; null on every other type
+    dns_record_type: str | None
+    dns_expected_rcode: str | None
+    dns_expected_answer: str | None
     consecutive_failures: int
     last: CheckLastOut
 

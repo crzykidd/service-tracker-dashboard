@@ -97,7 +97,8 @@ upgrade is needed. Four database migrations run on startup; back up
   check, an automatic **Container** check (Docker entries: passes while the
   notifier reports it running) and any number of service checks: HTTP/HTTPS
   (status code, or body mode where `OK` passes and `Error: <message>` fails
-  with that message), TCP (`host:port`) and Ping. Each has its own interval
+  with that message), TCP (`host:port`), Ping and DNS (ask a DNS server for a
+  name and check the reply). Each has its own interval
   and timeout, set in one "Health checks" section on Add and Edit.
 - **Concurrent checker with a week of history.** Checks run in parallel
   (`health_check_workers`, default 8). Every sample is kept for 24 hours, then
@@ -751,9 +752,9 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   next tick.
 - Check types: HTTP/HTTPS (status code, or in *body* mode a reply of `OK`;
   an `Error: ...` reply shows the text as the failure message), TCP connect
-  to `host:port`, and ping (ICMP echo, 3 packets). Ping needs the `NET_RAW`
-  capability, which Docker grants by default; without it the check fails with
-  "ICMP not permitted".
+  to `host:port`, ping (ICMP echo, 3 packets) and DNS (see below). Ping needs
+  the `NET_RAW` capability, which Docker grants by default; without it the
+  check fails with "ICMP not permitted".
 - Every run is stored. Samples are kept individually for `health_raw_hours`
   (24 h), then successes are merged into hourly ranges, and everything older
   than `health_history_days` (7) is deleted.
@@ -775,9 +776,26 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - Each URL check also has its own enabled switch, mode (status code or
   response body), interval (30-86400 s) and timeout (1-60 s).
 - **Service checks** are extra checks you add per entry on the Edit or Add
-  page: HTTP/HTTPS (full URL), TCP (`host:port`) and Ping (hostname or IP).
-  The notifier never touches them. Removing one deletes it and its results
+  page: HTTP/HTTPS (full URL), TCP (`host:port`), Ping (hostname or IP) and
+  DNS. The notifier never touches them. Removing one deletes it and its results
   when you save.
+- **DNS checks.** A DNS service check asks one DNS server directly, never
+  through the host's own resolver, so you can watch a specific server (for
+  example one per site). Set the **DNS server** (an IP address, with an
+  optional port: `10.100.16.16`, `10.100.16.16:5353`, `[2001:db8::1]:53`; a
+  hostname is not accepted), the **query name**, the **record type** (A, AAAA,
+  CNAME, TXT, PTR, MX, NS or SRV; PTR also takes an IP address as the name),
+  the **expected rcode** (NOERROR by default; NXDOMAIN, SERVFAIL or REFUSED
+  if that is what you expect) and, optionally, an **expected answer**. With
+  no expected answer the check passes on the rcode alone. With one, it passes
+  when any answer record of that type matches exactly (case-insensitive,
+  trailing dot ignored; TXT quotes ignored). A reply with no answers fails
+  when an answer is expected. Failures read `rcode NXDOMAIN`,
+  `answer 10.0.0.5, expected 10.100.17.10`, `no answer, expected ...` or
+  `timeout`. Example: server `10.100.16.16`, name `em-pve01.crzynet.me`,
+  type `A`, expected answer `10.100.17.10`. Through the management API and
+  MCP: `check_type: "dns"`, `target` (the server), `dns_name`,
+  `dns_record_type`, `dns_expected_rcode`, `dns_expected_answer`.
 - **Container check.** Every notifier (Docker) entry has an automatic
   *Container* check: it passes while the notifier reports the container
   `running` and has reported within `stale_after_minutes`, and fails with
@@ -793,7 +811,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - **Kinds.** Each entry has an *Internal URL* and an *External URL* check
   (they follow the entry's URLs) plus any *service checks* you add, and
   notifier entries also have a *Container* check (Docker state). Types:
-  HTTP/HTTPS, TCP and Ping.
+  HTTP/HTTPS, TCP, Ping and DNS.
 - **Body mode.** An HTTP check in *response body* mode passes when the reply
   is `OK`; a reply of `Error: <message>` fails and shows `<message>`.
 - **Retention.** `health_raw_hours` (24) keeps every sample; older successes

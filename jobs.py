@@ -250,6 +250,10 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
             "mode": check.mode,
             "timeout": check.timeout_seconds or default_timeout,
             "verify": check.verify_tls is not False,
+            "dns_name": check.dns_name,
+            "dns_record_type": check.dns_record_type,
+            "dns_expected_rcode": check.dns_expected_rcode,
+            "dns_expected_answer": check.dns_expected_answer,
         })
     return jobs_due
 

@@ -263,7 +263,7 @@ history and filters.
   Ownership also needs deciding (do UI edits beat labels, as with URL
   provenance?). Parked on user direction: the notifier sends nothing
   new in 0.7.0.
-- **More check types.** DNS resolve (expect a record), HTTP keyword or
+- **More check types.** HTTP keyword or
   JSON-path match, TLS certificate expiry. The 0.7.0 body mode (`OK` /
   `Error: <msg>`) covers the custom-endpoint case.
 - **Longer history and a status page.** 30-day uptime, a public

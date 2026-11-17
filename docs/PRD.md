@@ -56,6 +56,7 @@
 | 0.46    | 2026-11-15 | §14.5 and the §14.6 Settings view delivered (unreleased, v080-04): `GET /api/v1/openapi.json` generated from a route registry (`mgmt_openapi.py`) plus the pydantic/TypedDict models, with completeness tests against `app.url_map`; Settings → API audit log view; README Management API and Managing STD with Claude sections; JSON 404/405 for unmatched `/api/v1/*` API-client requests. No schema change. Register wire contract unchanged. |
 | 0.47    | 2026-11-15 | §14.7 delivered (unreleased, v080-05), the last v0.8.0 chunk; §14 status line now "all chunks delivered": stdio MCP server `mcp/std_mcp.py` (read key = read tools only, write key = all), outside the Docker image (`.dockerignore`), tested in CI. No STD server change, no schema change. Register wire contract unchanged. |
 | 0.48    | 2026-11-15 | v0.8.0 released. §14 retitled Delivered: admin API keys (read/write scopes) and write audit log, `/api/v1` management API for entries, checks, health, groups, widgets, exposure settings and config, generated OpenAPI spec, stdio MCP server in `mcp/`. Schema §5.7 (`api_key`, `api_audit`). Add-page "None" group fix. Register contract unchanged; no notifier change. |
+| 0.49    | 2026-11-16 | Added §15 (v0.9.0 — DNS and certificate-expiry checks, in progress) and delivered §15.1 on `dev` (v090-01): new `dns` service check (server IP, query name, record type, expected rcode, optional expected answer; NODATA handling), migration `a1c5e8d2f093` (four nullable `health_check` columns), `dnspython`, Add/Edit/detail/API/MCP support; §15.2 certificate expiry stubbed as planned. Later sections renumbered (§15→§16, §16→§17, §17→§18) and cross-references fixed. §5.6 `check_type` list and §14.3 add-check row updated. Register wire contract unchanged. |
 
 ---
 
@@ -75,9 +76,10 @@
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
-15. [Versioning, Branches, and Releases](#15-versioning-branches-and-releases)
-16. [Cross-Repo Coordination](#16-cross-repo-coordination)
-17. [Open Questions](#17-open-questions)
+15. [v0.9.0 — DNS and certificate-expiry checks (In progress)](#15-v090--dns-and-certificate-expiry-checks-in-progress)
+16. [Versioning, Branches, and Releases](#16-versioning-branches-and-releases)
+17. [Cross-Repo Coordination](#17-cross-repo-coordination)
+18. [Open Questions](#18-open-questions)
 
 ---
 
@@ -192,7 +194,7 @@ jobs.py             ← concurrent health-check scheduler, health-result
                       compaction/purge, widget refresh loop, daily
                       backup, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
-checker.py          ← health-check probes (http/tcp/ping); network only, no DB
+checker.py          ← health-check probes (http/tcp/ping/dns); network only, no DB
 check_form.py       ← Add/Edit health-check form parsing + validation
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none)
 health_history.py   ← history bars, uptime, recent failures for the detail panel
@@ -368,7 +370,7 @@ its index in the same migration.
 | Column | `service_entry.source` (`String(16)`, NOT NULL, server default `'notifier'`): `notifier` or `manual`. Backfill: `manual` where `last_api_update IS NULL`, else `notifier` (§13.2). |
 | Column | `service_entry.host` becomes nullable (manual entries may omit it). `(host, container_name)` index unchanged. |
 | Column | `service_entry.description` (`String(255)`, nullable). Operator text, mainly for manual entries. |
-| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
+| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `dns` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
 | Table  | `health_result`: one row per check sample or compacted success range. `check_id` FK (ON DELETE CASCADE), `ts`, `ts_end` (NULL for a single sample), `samples` (default 1), `ok`, `latency_ms` (average for a range), `latency_max_ms`, `status_code`, `message`. Composite index `(check_id, ts)` (also serves the FK). Timestamps are naive UTC. |
 | Data   | Migration creates the two URL-kind `health_check` rows for every entry, copying `*_health_check_enabled`, `health_check_timeout`, `health_check_verify_tls` and the last status. |
 | Data   | Migration `c1d7a3e5f2b8` inserts one enabled `container` row for every `source='notifier'` entry (soft-deleted included). No new columns or indexes; the downgrade deletes the rows and their results. |
@@ -960,7 +962,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §15 (Versioning, Branches, and Releases); this section
+release mechanics is §16 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -982,7 +984,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§15).
+  checks (§16).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1007,7 +1009,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§16) is not engaged and every notifier
+consumer-leads ordering rule (§17) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1192,7 +1194,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§17).
+Resolves the Open Question on health-check timeouts (§18).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1313,7 +1315,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§16) is not engaged. Every notifier version that works
+ordering rule (§17) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -1840,7 +1842,7 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 | `DELETE /entries/<id>` | write | Soft delete. `?permanent=true` hard-deletes, but only an already soft-deleted entry; otherwise 409. |
 | `POST /entries/<id>/restore` | write | Restore a soft-deleted entry. |
 | `GET /entries/<id>/checks` | read | The entry's checks. |
-| `POST /entries/<id>/checks` | write | Add a service check (http/tcp/ping). |
+| `POST /entries/<id>/checks` | write | Add a service check (http/tcp/ping/dns). |
 | `PATCH /checks/<id>` | write | Update any check. URL-kind checks: enabled, mode, interval, timeout, verify. Container check: enabled, interval. Service checks: everything. |
 | `DELETE /checks/<id>` | write | Delete a **service** check. URL and container checks can't be deleted (409); disable them instead. |
 | `POST /entries/<id>/checks/run` | write | Check now (uses `jobs.request_run`). Returns `requested_at`. |
@@ -2007,7 +2009,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§17), users and passwords through the API, and
+- Per-host notifier tokens (§18), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2015,7 +2017,86 @@ view of the log is not built yet.
 
 ---
 
-## 15. Versioning, Branches, and Releases
+## 15. v0.9.0 — DNS and certificate-expiry checks (In progress)
+
+Two new kinds of service check, so STD can take over what Gatus checks at the
+Emmett site: a DNS check (this chunk) and certificate expiry on HTTPS checks
+(planned). Chunks are tracked as handoff prompts `v090-NN-*`.
+
+### 15.1 DNS check [`v090-01-dns-check`] — Delivered on `dev`
+
+A fourth service-check type, `dns`, that asks a given DNS server a question
+and judges the reply. It goes through every place the other types do: model
+and migration, Add/Edit, the management API and OpenAPI spec, the MCP tools,
+the detail panel and rollup.
+
+- **Schema** (migration `a1c5e8d2f093`, nullable columns on `health_check`,
+  no indexes needed): `dns_name` (query name), `dns_record_type` (`A`, `AAAA`,
+  `CNAME`, `TXT`, `PTR`, `MX`, `NS`, `SRV`; default `A`), `dns_expected_rcode`
+  (default `NOERROR`, stored upper-case) and `dns_expected_answer` (empty or
+  NULL means "rcode only"). All four are NULL on other check types and are
+  part of `to_config()` and backup restore (older backups restore them as
+  NULL). `check_type` `dns` fits the existing `String(8)`.
+- **Server** = `target`: an IP literal, `ip`, `ip:port`, `[v6]` or
+  `[v6]:port` (a bare IPv6 without a port is also accepted), port 53 by
+  default. A hostname is rejected: the check must never use the system
+  resolver, so the server has to be an address.
+- **Probe** `checker.probe_dns(server, name, record_type, expected_rcode,
+  expected_answer, timeout)`: low-level dnspython
+  (`dns.message.make_query` + `dns.query.udp_with_fallback`, TCP on
+  truncation); `dns.resolver` is never used. Latency is the query round trip;
+  `status_code` stays NULL.
+  - PTR accepts an IP as the name (converted with `dns.reversename`); a name
+    already under `in-addr.arpa` / `ip6.arpa` is used as is.
+  - An rcode mismatch fails with `rcode <ACTUAL>` (e.g. `rcode NXDOMAIN`).
+  - Answers are the answer-section rdatas of the queried type at any owner
+    name, so a CNAME chain followed by an A record still matches the A record.
+    The comparison is an exact match on **any** answer, after normalizing:
+    case-insensitive, trailing dot removed, whitespace collapsed, IP addresses
+    in canonical form, TXT as its joined strings without quotes; MX and SRV
+    compare the full presentation form.
+  - NODATA (NOERROR, no answers) passes when no answer is expected, and fails
+    with `no answer, expected <x>` when one is.
+  - A wrong answer fails with `answer <a> | <b>, expected <x>` (answers joined
+    with ` | `, clipped to the 255-character message column).
+  - A timeout gives exactly `timeout`; any other exception follows the usual
+    failing-result path. The probe never raises.
+- **Validation** (`check_form.py`, one rule set for the form and the API):
+  the server per the rules above; `dns_name` required and a valid DNS name (an
+  IP for PTR); record type in the list above; rcode a known rcode name
+  (numeric codes rejected); expected answer optional and trimmed. `mode` and
+  `verify` do not apply and are stored as `status` and true. The DNS fields are
+  part of the change signature, so editing them makes the check due at the
+  next tick. Switching a check away from DNS clears the DNS columns.
+- **UI**: the type select has DNS. With DNS selected the target relabels to
+  "DNS server", four fields appear (query name, record type, expected rcode
+  among NOERROR / NXDOMAIN / SERVFAIL / REFUSED, expected answer) and Mode and
+  Verify TLS hide. Form fields `svc_<key>_dns_name`, `_dns_type`,
+  `_dns_rcode`, `_dns_answer`. A failed submit re-renders the input.
+- **Detail panel**: shows `A em-pve01.crzynet.me @ 10.100.16.16` and, below,
+  `expect NOERROR + 10.100.17.10`. Bars, uptime, the rollup badge and status
+  filters work unchanged; a failing DNS check makes the entry down (or
+  degraded alongside passing checks).
+- **Management API and MCP**: `check_type: "dns"` plus the four `dns_*`
+  fields on `POST /entries/<id>/checks`, on the inline `checks` of
+  `POST /entries` and on `PATCH /checks/<id>` (service checks only: URL and
+  container checks return 400, as for `target`). `CheckOut` always carries the
+  four fields, null on other types. The OpenAPI spec picks them up. MCP
+  `add_check` takes the four fields and `update_check` accepts them.
+- **Dependency**: `dnspython` (pinned in `requirements.txt`).
+- **Example (Emmett)**: `check_type=dns`, `target=10.100.16.16`,
+  `dns_name=em-pve01.crzynet.me`, `dns_record_type=A`,
+  `dns_expected_answer=10.100.17.10`.
+
+### 15.2 Certificate expiry on HTTPS checks [`v090-02-cert-expiry`] — Planned
+
+A certificate-expiry condition on HTTPS service checks (fail when the served
+certificate expires within a configurable number of days). Not built yet;
+the details are filled in when the chunk ships.
+
+---
+
+## 16. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -2054,12 +2135,12 @@ view of the log is not built yet.
 
 ---
 
-## 16. Cross-Repo Coordination
+## 17. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 16.1 Contract ownership
+### 17.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -2072,7 +2153,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 16.2 Release history
+### 17.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -2097,7 +2178,7 @@ not lead.
 
 ---
 
-## 17. Open Questions
+## 18. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)
