@@ -17,7 +17,8 @@
       </div>
     {% else %}
       {% set _target_url = item.entry.internalurl or item.entry.externalurl %}
-      <div class="compact-tile{% if not _target_url %} cursor-default{% endif %}"
+      {% set _h = entry_health(item.entry) %}
+      <div class="compact-tile{% if not _target_url %} cursor-default{% endif %}{% if _h.state in ('degraded', 'down') %} entry-health-{{ _h.state }}{% endif %}"
            {% if _target_url %}onclick="if (event.target.closest('.uptime-strip')) return; window.open('{{ _target_url }}', '_blank')"{% endif %}>
         <div>
           {% if item.entry.image_icon %}

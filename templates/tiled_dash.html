@@ -72,8 +72,9 @@
                     {% set _has_dozzle  = _dozzle_base and _dozzle_id %}
 
                     {# ── Tile wrapper ──────────────────────────────────── #}
+                    {% set _h = entry_health(entry) %}
                     <div class="tile-wrapper">
-                        <div class="tile{% if _is_headless %} tile-headless{% endif %}"
+                        <div class="tile{% if _is_headless %} tile-headless{% endif %}{% if _h.state in ('degraded', 'down') %} entry-health-{{ _h.state }}{% endif %}"
                              data-internalurl="{{ entry.internalurl if entry.internalurl else '' }}"
                              data-externalurl="{{ entry.externalurl if entry.externalurl else '' }}">
 

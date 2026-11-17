@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Degraded and down services get a soft amber or red background on the
+  Dashboard, Tiled and Compact views, so problems stand out at a glance.
+  Up, unknown and not-monitored entries look the same as before.
 - **An entry whose URL/service checks are all failing now shows Down even when its container is running (it used to show Degraded).** The Container check counts on its own: if it fails the entry is Down; otherwise the URL and service checks are judged as a group (all failing is Down, some failing is Degraded). The Status filter, the Failing count and `GET /api/v1/health/summary` follow.
 - **HTTP check failures now include the reason from the response, e.g. `503: Scope 'Mgmt1' not found`, instead of just the status code.** For a status of 400 or above in Status mode, STD reads the first 4 KB of the reply: a JSON `last_error`, `error`, `message` or `detail`, else the first line of text (at most about 200 characters). An empty or binary body still shows just the code.
 - **Tiled view: tiles show the icon on the left, the name across the full tile width (host underneath when shown), and all status, exposure and action icons in one row along the bottom.** The `/tiled_preview` page is gone.

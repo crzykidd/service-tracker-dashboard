@@ -5,6 +5,15 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-11 health-tinted entries
+
+- Tint is a plain `entry-health-<state>` class set in the templates, CSS-only
+  (no `!important`: the Dashboard rows carry no Tailwind background or hover
+  class, so a `tr.group-entry.entry-health-*` selector wins). Auto-refresh
+  reloads the page, so no JS patching was needed. Only degraded/down are
+  classed; up/unknown/none stay untouched.
+
+
 ## 2026-11-16 — v090-10 (B) v2 tile layout adopted as the Tiled view
 
 - The operator chose the preview layout. `tile_layout` plumbing, the notice,

@@ -67,6 +67,7 @@
 | 0.57    | 2026-11-16 | §15.7 delivered on `dev` (v090-09): the MCP server installs with `uv run` (PEP 723 inline dependencies), knows its own version (`MCP_VERSION`), compares it with the STD version now returned by `GET /api/v1/whoami`, and adds a `server_info` tool. §14.2 and §14.7 updated. No schema or register-contract change. |
 | 0.58    | 2026-11-16 | §15.8 delivered on `dev` (v090-10 B): the v2 layout is the Tiled tile layout; `/tiled_preview` removed; §8.9 and §9.4 updated. No schema or register-contract change. |
 | 0.59    | 2026-11-16 | §15.9 delivered on `dev` (v090-10 A): Body-mode HTTP checks use the same reply-reason extraction as Status mode on 4xx/5xx; health detail panel always shows a reason line for a down check; static CSS/JS carry `?v=<mtime>`. §15.6 note corrected. No schema or register-contract change. |
+| 0.60    | 2026-11-16 | §15.10 delivered on `dev` (v090-11): degraded/down entries get a soft amber/red background on the Dashboard, Tiled and Compact views (`entry-health-<state>` class). §13.6 updated. No schema or register-contract change. |
 
 ---
 
@@ -1576,6 +1577,8 @@ schema change.
 
 ### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`] — Delivered in v0.7.0
 
+- **Tint (v0.9.0, §15.10).** Degraded and down entries also get a soft
+  amber/red background on all three views.
 - **`health.py` is unchanged** (liveness). The rollup lives in a new
   `health_state.py`:
   - `entry_health(entry)` returns the state (§13.1), the counts, and the
@@ -2327,6 +2330,20 @@ expiry, even though the HTTP status is fine.
   panel: the stored message, else `status N (empty reply)`, else `no reply`.
 - **Cache busting.** `base.html` and the edit/add/settings templates request
   shared static CSS/JS with `?v=<file mtime>` (`static_v()` template helper).
+- No schema, register-contract or job change.
+
+### 15.10 Health-tinted entries [`v090-11-health-tinted-rows`] — Delivered on `dev`
+
+- An entry whose rolled-up health (§13.6) is **degraded** or **down** gets
+  the class `entry-health-degraded` / `entry-health-down` on its Dashboard
+  row (and its expanded health row), its Tiled `.tile` and its Compact
+  `.compact-tile`. Up, unknown and none get no class and look unchanged.
+- CSS (`static/css/dashboard.css`): a 12% `color-mix` of `--color-status-warn`
+  / `--color-status-bad` into `--color-bg-surface` (18% on row and compact
+  hover), with an `rgba` fallback line and a 3px left edge in the same hue.
+  The open Tiled drawer keeps its neutral background.
+- Auto-refresh reloads the page, so the tint follows the server render; no
+  JS change.
 - No schema, register-contract or job change.
 
 ---

@@ -107,6 +107,8 @@ upgrade is needed. Four database migrations run on startup; back up
   days (`health_raw_hours`, `health_history_days`).
 - **One health badge per service** (Up, Degraded, Down, Unknown, Not
   monitored) on every view, and **Status / Source filters** in the filter bar.
+  Degraded and down entries also get a soft amber or red background (and a
+  thin colored edge) on the Dashboard, Tiled and Compact views.
 - **Health detail panel** in the Tiled drawer, a Dashboard expand row and the
   Edit page: per-check state, uptime for 24h and 7d, recent failures, a
   24h / 7d bar strip with tooltips, and **Check now**.

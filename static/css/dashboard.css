@@ -1059,3 +1059,37 @@ body.show-uptime .compact-tile:not(.group-header) { padding-bottom: 0.9rem; }
   .uptime-strip .health-bars { gap: 0; }
   .uptime-strip .hbar { border-radius: 0; }
 }
+
+/* ── Health-tinted entries (degraded amber / down red) ────── */
+/* Soft background on all three views; the rgba line is the fallback for
+   browsers without color-mix. Up/unknown/none are unchanged. */
+.tile.entry-health-degraded,
+.compact-tile.entry-health-degraded,
+tr.group-entry.entry-health-degraded,
+tr.health-expand-row.entry-health-degraded {
+  background-color: rgba(245, 158, 11, 0.12);
+  background-color: color-mix(in srgb, var(--color-status-warn) 12%, var(--color-bg-surface));
+}
+.tile.entry-health-down,
+.compact-tile.entry-health-down,
+tr.group-entry.entry-health-down,
+tr.health-expand-row.entry-health-down {
+  background-color: rgba(239, 68, 68, 0.12);
+  background-color: color-mix(in srgb, var(--color-status-bad) 12%, var(--color-bg-surface));
+}
+.compact-tile.entry-health-degraded:hover,
+tr.group-entry.entry-health-degraded:hover {
+  background-color: rgba(245, 158, 11, 0.18);
+  background-color: color-mix(in srgb, var(--color-status-warn) 18%, var(--color-bg-surface));
+}
+.compact-tile.entry-health-down:hover,
+tr.group-entry.entry-health-down:hover {
+  background-color: rgba(239, 68, 68, 0.18);
+  background-color: color-mix(in srgb, var(--color-status-bad) 18%, var(--color-bg-surface));
+}
+.tile.entry-health-degraded:not(.tile-open),
+.compact-tile.entry-health-degraded,
+tr.group-entry.entry-health-degraded > td:first-child { border-left: 3px solid var(--color-status-warn); }
+.tile.entry-health-down:not(.tile-open),
+.compact-tile.entry-health-down,
+tr.group-entry.entry-health-down > td:first-child { border-left: 3px solid var(--color-status-bad); }
