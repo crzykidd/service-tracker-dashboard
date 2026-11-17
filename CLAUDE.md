@@ -353,7 +353,8 @@ A newer STD with an older notifier must keep working:
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints, jobs
 extensions.py       ← SQLAlchemy, login manager, scheduler instances
-models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ApiKey, ApiAudit, ...)
+models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ApiKey, ApiAudit,
+                      NotificationChannel, ...)
 schemas.py          ← pydantic request/response schemas
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
                       /settings, /settings/exposure
@@ -369,6 +370,10 @@ mgmt_serializers.py ← model -> response-dict functions for the management API
 mcp/                ← stdio MCP server (std_mcp.py), HTTP client of the management API only;
                       own requirements.in/.txt + README; NOT in the Docker image (.dockerignore);
                       no __init__.py (a package named `mcp` would shadow the SDK)
+notify.py           ← notification channels: registry, CRUD helpers, bounded-queue publisher
+                      thread, non-blocking `enqueue(event)`; never block producers on the broker
+notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, test message);
+                      the password (`NotificationChannel.secret`) is write-only everywhere
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API

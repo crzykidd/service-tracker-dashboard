@@ -5,6 +5,63 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — notif-01 channel framework and MQTT
+
+- **`paho-mqtt` 2.x, not `aiomqtt`.** STD is threaded (gunicorn threads,
+  APScheduler, a health thread), not asyncio. `aiomqtt` would need its own
+  event loop thread plus a bridge to every producer; paho's `loop_start()` is
+  already a network thread and `publish()` is thread-safe. Pinned
+  `paho-mqtt>=2,<3` in `requirements.in` (2.2.0 compiled), using
+  `CallbackAPIVersion.VERSION2`.
+- **One publisher thread, one bounded queue (1000), drop oldest.** Producers
+  call `notify.enqueue()`, which only does `put_nowait` and never raises. A
+  state change is superseded by the next one, so the oldest event is the right
+  one to lose; the full-queue warning is rate limited to once a minute. The
+  thread is the only code that touches brokers.
+- **`connect_async` + `loop_start`, never a blocking `connect`.** Applying a
+  channel never waits on the network, and a broker that is down at startup
+  does not delay STD. paho's own `reconnect_delay_set(1, 60)` does the
+  backoff. State changes are logged only when the (state, error) pair
+  changes, so retries stay silent.
+- **The test button uses a throwaway client with a `-test` client id.** Two
+  clients sharing a client id make the broker disconnect the older one, so
+  testing with the live id would knock the real connection offline. The test
+  client has no will (it must not flip `<base>/status` to `offline`). It runs
+  in the request thread (up to ~13 s), not on the publisher.
+- **Reload = diff by fingerprint.** `reload_now` compares each enabled
+  channel's (type, config, secret, instance id) with its live session; only
+  changed, removed or new channels are stopped/started. A clean stop publishes
+  `offline` itself because a clean disconnect does not fire the will.
+- **Port is resolved at validation.** `port` blank becomes 1883, or 8883 with
+  TLS, and is stored, so the config always carries the real port. `client_id`
+  stays NULL (resolved to `std-<instance>` at connect) so the default follows
+  the instance id. `tls_insecure` without `tls` is rejected.
+- **`ha_discovery`, `ha_prefix`, `ha_device_prefix` are stored now, unused.**
+  notif-03 needs no config reshuffle; the UI does not expose them yet and a
+  UI edit preserves them (config is merged).
+- **The secret is a plain column, like `widget_api_key`.** No at-rest
+  encryption: the same trust model as the existing widget keys and the
+  SQLite file. It is write-only: `secret_set` in responses, never logged,
+  never in the audit (the audit records only a `credential_set` flag), and a
+  failed-save re-render never echoes it.
+- **A failed test is HTTP 200 `ok: false`**, not an error status: the request
+  worked and the answer is "the broker said no". Unknown config keys and bad
+  values are still 400; a duplicate name is 409. The test endpoint needs the
+  `write` scope (it is a POST that opens a connection and publishes).
+- **Event shape for MQTT is `{topic, payload, retain}`** with `topic` relative
+  to `base_topic`; richer event kinds arrive with notif-02. Events that do not
+  fit are ignored by the channel.
+- **`on_connect_hooks` are called from paho's network thread** with the
+  session; hooks must not block for long.
+- **Not started under pytest.** `request_reload()` is a no-op unless the
+  publisher thread runs; conftest installs a client factory that raises, so a
+  test can never open a real socket. `test_checker.py` now patches
+  `jobs.notify.start` where it patches the threads.
+- **No `MCP_VERSION` bump.** It is set only by `/release-prep` (v090-09
+  decision), so the three new MCP tools leave it alone.
+
+---
+
 ## 2026-11-16 — version in the UI (update check design)
 
 - **PR builds get `channel=pr`**, not `dev`: a PR image is neither the dev

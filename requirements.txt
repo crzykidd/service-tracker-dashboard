@@ -58,6 +58,8 @@ markupsafe==3.0.4
     #   mako
     #   werkzeug
     #   wtforms
+paho-mqtt==2.2.0
+    # via -r requirements.in
 pycparser==3.12
     # via cffi
 pydantic==2.14.3

@@ -151,6 +151,29 @@ class UpdateCheckSettingsPut(_Request):
     interval_hours: int | None = None   # whole hours, 1 or more
 
 
+class NotificationChannelCreate(_Request):
+    """Add a notification channel. `config` holds the non-secret settings of the
+    channel type (for `mqtt`: host, port, tls, tls_insecure, username, client_id,
+    base_topic, qos, keepalive; unknown keys are rejected). `secret` is the MQTT
+    password, write-only."""
+
+    name: str
+    type: str = "mqtt"
+    enabled: bool = False
+    config: dict[str, Any] = {}
+    secret: str | None = None
+
+
+class NotificationChannelPatch(_Request):
+    """Every field optional. `config` keys are merged over the stored config;
+    `secret` omitted keeps the stored value, null clears it."""
+
+    name: str | None = None
+    enabled: bool | None = None
+    config: dict[str, Any] | None = None
+    secret: str | None = None
+
+
 class ExposureSettingsPut(_Request):
     layer_directions: dict[str, str]
     host_overrides: dict[str, dict[str, str]] = {}
@@ -454,3 +477,31 @@ class ConfigOut(TypedDict):
     update: UpdateInfoOut
     settings: dict[str, Any]         # secrets appear as "***" (null when unset)
     sources: dict[str, str]          # "env" | "file" | "default" per setting
+
+
+class NotificationStatusOut(TypedDict):
+    state: str                       # disabled | stopped | connecting | connected | error
+    last_error: str | None
+    since: str | None                # when the state last changed (UTC), null when not live
+
+
+class NotificationChannelOut(TypedDict):
+    id: int
+    type: str
+    name: str
+    enabled: bool
+    config: dict[str, Any]
+    secret_set: bool                 # the secret itself is never returned
+    status: NotificationStatusOut
+    created_at: str | None
+    updated_at: str | None
+
+
+class NotificationTestOut(TypedDict):
+    ok: bool
+    message: str                     # what happened; never contains the secret
+
+
+class NotificationChannelDeleteOut(TypedDict):
+    id: int
+    deleted: bool

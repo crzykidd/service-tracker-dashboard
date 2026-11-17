@@ -31,11 +31,12 @@ _spec.loader.exec_module(std_mcp)
 READ_TOOLS = {
     "list_entries", "get_entry", "health_summary", "get_health_history", "list_groups",
     "list_widgets", "list_widget_types", "get_exposure_settings", "get_config", "server_info",
+    "list_notification_channels", "get_notification_channel",
 }
 WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
     "update_check", "delete_check", "run_checks", "upsert_group", "set_widget",
-    "remove_widget", "set_exposure_settings",
+    "remove_widget", "set_exposure_settings", "test_notification_channel",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -50,6 +51,10 @@ CALLS = {
     "list_widget_types": ({}, "GET", "/api/v1/widgets/types", {}, None),
     "get_exposure_settings": ({}, "GET", "/api/v1/settings/exposure", {}, None),
     "get_config": ({}, "GET", "/api/v1/config", {}, None),
+    "list_notification_channels": ({}, "GET", "/api/v1/notifications/channels",
+                                   {"limit": "200", "offset": "0"}, None),
+    "get_notification_channel": ({"channel_id": 4}, "GET", "/api/v1/notifications/channels/4", {}, None),
+    "test_notification_channel": ({"channel_id": 4}, "POST", "/api/v1/notifications/channels/4/test", {}, None),
     "create_manual_entry": (
         {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000",
          "checks": [{"target": "nas.lan", "check_type": "ping"}]},

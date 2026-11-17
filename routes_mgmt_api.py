@@ -33,6 +33,7 @@ import entry_rules
 import health_history
 import jobs
 import mgmt_openapi
+import notify
 import routes_api
 import settings_loader
 import settings_store
@@ -50,6 +51,8 @@ from mgmt_schemas import (
     ExposureSettingsPut,
     GroupCreate,
     GroupPatch,
+    NotificationChannelCreate,
+    NotificationChannelPatch,
     ServiceCheckCreate,
     UpdateCheckSettingsPut,
     WidgetPut,
@@ -59,6 +62,7 @@ from mgmt_serializers import (
     entry_detail_out,
     entry_out,
     group_out,
+    notification_channel_out,
     widget_instance_out,
     widget_out,
 )
@@ -72,6 +76,7 @@ from models import (
     Group,
     HealthCheck,
     HealthResult,
+    NotificationChannel,
     ServiceEntry,
     Widget,
     WidgetValue,
@@ -1239,6 +1244,106 @@ def put_update_check_settings():
     after = _update_check_payload()
     audit("update_check_settings", None, _diff(before, after))
     return jsonify(after)
+
+
+# --- notification channels (PRD 17.2) --------------------------------------------
+
+
+def _channel_snapshot(channel):
+    """Audit view: the secret is only ever recorded as a changed flag."""
+    return {"name": channel.name, "enabled": bool(channel.enabled), "config": dict(channel.config or {})}
+
+
+def _load_channel(id):
+    channel = db.session.get(NotificationChannel, id)
+    if channel is None:
+        abort(404, f"No notification channel with id {id}.")
+    return channel
+
+
+@mgmt_bp.route("/notifications/channels", methods=["GET"])
+@require_api_key("read")
+def list_notification_channels():
+    limit, offset = _page_args()
+    query = NotificationChannel.query.order_by(NotificationChannel.id.asc())
+    total = query.count()
+    items = [notification_channel_out(c) for c in query.limit(limit).offset(offset).all()]
+    return _page(items, total, limit, offset)
+
+
+@mgmt_bp.route("/notifications/channels", methods=["POST"])
+@require_api_key("write")
+def create_notification_channel():
+    audit("notification_channel")
+    data = NotificationChannelCreate.model_validate(_json_body())
+    channel, errors = notify.create_channel(data.name, data.type, data.enabled, data.config, data.secret)
+    if errors:
+        status_conflict = any("already exists" in e["message"] for e in errors)
+        if status_conflict:
+            return json_error(409, errors[0]["message"], errors)
+        return _fail(errors)
+    audit("notification_channel", channel.id,
+          {**_channel_snapshot(channel), "credential_set": [None, bool(channel.secret)]})
+    response = jsonify(notification_channel_out(channel))
+    response.status_code = 201
+    return response
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>", methods=["GET"])
+@require_api_key("read")
+def get_notification_channel(id):
+    return jsonify(notification_channel_out(_load_channel(id)))
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>", methods=["PATCH"])
+@require_api_key("write")
+def patch_notification_channel(id):
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    data = NotificationChannelPatch.model_validate(_json_body())
+    sent = data.model_fields_set
+    if not sent:
+        return _fail([{"field": "body", "message": "name at least one field to change"}])
+    errors = [{"field": f, "message": "cannot be null"} for f in ("name", "enabled", "config")
+              if f in sent and getattr(data, f) is None]
+    if errors:
+        return _fail(errors)
+    before = _channel_snapshot(channel)
+    had_secret = bool(channel.secret)
+    kwargs = {f: getattr(data, f) for f in ("name", "enabled", "config", "secret") if f in sent}
+    _, errors = notify.update_channel(channel, **kwargs)
+    if errors:
+        if any("already exists" in e["message"] for e in errors):
+            return json_error(409, errors[0]["message"], errors)
+        return _fail(errors)
+    changes = _diff(before, _channel_snapshot(channel))
+    if "secret" in sent:
+        changes["credential_set"] = [had_secret, bool(channel.secret)]
+    audit("notification_channel", id, changes)
+    return jsonify(notification_channel_out(channel))
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>", methods=["DELETE"])
+@require_api_key("write")
+def delete_notification_channel(id):
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    name = channel.name
+    notify.delete_channel(channel)
+    audit("notification_channel", id, {"name": [name, None]})
+    return jsonify({"id": id, "deleted": True})
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/test", methods=["POST"])
+@require_api_key("write")
+def test_notification_channel(id):
+    """Connect with the stored config and publish a non-retained message to
+    `<base_topic>/test`. A failed test is a 200 with `ok: false` and the reason."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    ok, message = notify.test_channel(channel.type, dict(channel.config or {}), channel.secret)
+    audit("notification_channel", id, {"test": [None, "ok" if ok else "failed"]})
+    return jsonify({"ok": ok, "message": message})
 
 
 _SECRET_SUFFIXES = ("_key", "_token", "_password", "_secret")

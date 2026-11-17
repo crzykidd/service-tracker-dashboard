@@ -249,12 +249,12 @@ design session (PRD §13). Each item came up and was deliberately kept
 out of 0.7.0 to hold its scope to manual entries, the check model,
 history and filters.
 
-- **Alerting / notifications on failure.** For example webhook, ntfy,
+- **Alerting rules and push channels.** For example webhook, ntfy,
   Gotify or email when a check goes from ok to failing (or after N
   consecutive failures; `health_check.consecutive_failures` already
-  exists for this). Parked because 0.7.0 is display-only monitoring;
-  alert delivery, de-duplication and quiet hours are a feature of their
-  own.
+  exists for this), with de-duplication and quiet hours. State
+  publishing to MQTT and Home Assistant is scoped in PRD §17 and builds
+  the channel framework these would plug into.
 - **Notifier-defined service checks.** A container label (e.g.
   `dockernotifier.std.check.type=tcp`, `...check.target=...`) that the
   notifier forwards so service checks come from compose, not the UI.

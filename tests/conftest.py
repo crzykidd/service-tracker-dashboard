@@ -139,3 +139,19 @@ def no_update_check_network(monkeypatch):
     )
     yield
     version_check.reset()
+
+
+@pytest.fixture(autouse=True)
+def no_mqtt_sockets():
+    """Notification tests inject a fake paho client; anything else must never
+    open a real connection. The publisher thread is not started in tests."""
+    import notify
+
+    notify.reset()
+
+    def refuse(client_id):
+        raise AssertionError("test tried to open a real MQTT client")
+
+    notify.set_client_factory(refuse)
+    yield
+    notify.reset()

@@ -69,7 +69,9 @@
 | 0.59    | 2026-11-16 | §15.9 delivered on `dev` (v090-10 A): Body-mode HTTP checks use the same reply-reason extraction as Status mode on 4xx/5xx; health detail panel always shows a reason line for a down check; static CSS/JS carry `?v=<mtime>`. §15.6 note corrected. No schema or register-contract change. |
 | 0.60    | 2026-11-16 | §15.10 delivered on `dev` (v090-11): degraded/down entries get a soft amber/red background on the Dashboard, Tiled and Compact views (`entry-health-<state>` class). §13.6 updated. No schema or register-contract change. |
 | 0.61    | 2026-11-16 | v0.9.0 released: §15 marked Delivered (DNS check, cert expiry, API key rotation, Groups single Save, host on tiles, roll-up and HTTP failure reasons, MCP uv install + version check, Tiled layout, health tints). |
-| 0.62    | 2026-11-16 | Added §16 (Next release — Version in the UI, delivered on `dev`): `BUILD_CHANNEL` build arg and `channel` in `version.txt`, header version with What's New link and dev-build SHA link, GitHub update check (page-load driven, cached, backoff, DB settings `update_check_enabled` / `update_check_interval_hours`), `whoami`/`config` build and update fields, `/api/v1/settings/update-check`. Later sections renumbered (§16→§17, §17→§18, §18→§19) and cross-references fixed. §3.1 module layout updated. No schema or register-contract change. |
+| 0.62    | 2026-11-16 | Added §16 (Next release — Version in the UI, delivered on `dev`): `BUILD_CHANNEL` build arg and `channel` in `version.txt`, header version with What's New link and dev-build SHA link, GitHub update check (page-load driven, cached, backoff, DB settings `update_check_enabled` / `update_check_interval_hours`), `whoami`/`config` build and update fields, `/api/v1/settings/update-check`. §3.1 module layout updated. No schema or register-contract change. |
+| 0.63    | 2026-11-16 | Added the §16 body (the 0.62 row described it, but the section text was missing) and §17 (Next release — Notifications: MQTT and Home Assistant, planned: channel framework, retained state publishing, HA discovery; operator decisions in §17.1). Former §16–§18 renumbered §18–§20 and cross-references updated. FUTURE.md alerting item split: state publishing moved here; alert rules and push channels stay parked. |
+| 0.64    | 2026-11-16 | §17.2 delivered on `dev` (notif-01): `notification_channel` table (migration `a2f4c6e8b031`, new §5.8), `notify.py` / `notify_mqtt.py` (channel registry, bounded-queue publisher thread, MQTT via `paho-mqtt` 2.x, availability + LWT, reload on config change), instance id in the `setting` store, Settings → Notifications tab with **Send test message**, management API `/api/v1/notifications/channels` (+ `/test`) and MCP tools; §3.1 and §3.2 updated. §17.3 and §17.4 remain planned. No register-contract change. |
 
 ---
 
@@ -90,9 +92,11 @@
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
 15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
-16. [Versioning, Branches, and Releases](#16-versioning-branches-and-releases)
-17. [Cross-Repo Coordination](#17-cross-repo-coordination)
-18. [Open Questions](#18-open-questions)
+16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
+17. [Next release — Notifications: MQTT and Home Assistant (Planned)](#17-next-release--notifications-mqtt-and-home-assistant-planned)
+18. [Versioning, Branches, and Releases](#18-versioning-branches-and-releases)
+19. [Cross-Repo Coordination](#19-cross-repo-coordination)
+20. [Open Questions](#20-open-questions)
 
 ---
 
@@ -197,6 +201,10 @@ models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure,
                       Setting, User, Widget, WidgetValue, Group)
 schemas.py          ← pydantic request/response schemas
 version_check.py    ← build channel/display strings + cached GitHub update check
+notify.py           ← notification channel registry + CRUD helpers, the
+                      bounded-queue publisher thread, `enqueue()`
+notify_mqtt.py      ← MQTT channel type: pydantic config, paho session
+                      (LWT/availability), test message
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
                       /settings/exposure, /add, /edit/<id>, group CRUD,
                       /images/<filename>
@@ -267,6 +275,15 @@ docs/               ← PRD.md, HISTORY.md, FUTURE.md, decisions.md, screenshots
   mapping in v0.6.0). Distinct from `settings_loader.py`, which
   loads `settings.yml` once at startup. DB reads happen per call —
   the rows are tiny and edit rate is human-scale.
+- **`notify.py` / `notify_mqtt.py`** — notification channels (§17).
+  `notify.py` holds the channel-type registry, the shared create/update/
+  delete helpers used by the Settings page and the management API, and the
+  publisher: one daemon thread owning a bounded `queue.Queue` and one live
+  session per enabled channel. Producers call the non-blocking
+  `enqueue(event_dict)`; the thread is the only code that talks to a broker.
+  `notify_mqtt.py` is the MQTT channel type (paho 2.x `loop_start()`
+  threading, `connect_async`, an injectable client factory for tests).
+  Started from `start_background_workers`; never started under pytest.
 - **`synthesizer.py`** — exposure interpreter logic. Combines
   `ServiceExposure` rows + per-interpreter settings + URL
   provenance to produce synthesized `internalurl` / `externalurl`
@@ -399,6 +416,15 @@ Planned for v0.8.0 (§14). FKs get their index in the same migration. `api_key` 
 |--------|--------|
 | Table | `api_key`: `id`, `name` (unique), `prefix` (indexed), `key_hash` (SHA-256 hex), `scope` (`read`/`write`), `created_at`, `created_by` (FK `user.id`, nullable, indexed), `last_used_at`, `last_used_ip`, `revoked_at`. |
 | Table | `api_audit`: `id`, `ts` (naive UTC, indexed), `api_key_id` (FK `api_key.id` ON DELETE SET NULL, indexed), `key_name`, `method`, `path`, `object_type`, `object_id`, `status_code`, `changes` (JSON). Pruned by `api_audit_retention_days`. |
+
+### 5.8 Notification schema changes
+
+Migration `a2f4c6e8b031` (§17.2). No foreign keys.
+
+| Change | Detail |
+|--------|--------|
+| Table | `notification_channel`: `id`, `type` (`String(32)`, indexed `ix_notification_channel_type`), `name` (`String(64)`, unique index `ux_notification_channel_name`), `enabled` (bool, default false), `config` (JSON, non-secret settings), `secret` (`String(512)`, nullable, the MQTT password; write-only in the UI, API, logs and audit), `created_at`, `updated_at`. |
+| Setting key | `instance_id` in `setting`: a UUID created on first use and never changed (MQTT client ids; Home Assistant unique ids in §17.4). |
 
 ---
 
@@ -980,7 +1006,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §17 (Versioning, Branches, and Releases); this section
+release mechanics is §18 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -1002,7 +1028,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§17).
+  checks (§18).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1027,7 +1053,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§18) is not engaged and every notifier
+consumer-leads ordering rule (§19) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1212,7 +1238,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§19).
+Resolves the Open Question on health-check timeouts (§20).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1333,7 +1359,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§18) is not engaged. Every notifier version that works
+ordering rule (§19) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -2040,7 +2066,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§19), users and passwords through the API, and
+- Per-host notifier tokens (§20), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2351,7 +2377,157 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-## 16. Versioning, Branches, and Releases
+## 16. Next release — Version in the UI (Delivered on `dev`)
+
+Prompt: `prompts/done/2026-11-16-version-in-ui.md`. No schema or
+register-contract change.
+
+- **Build channel.** The `Dockerfile` takes a `BUILD_CHANNEL` build arg
+  (default `local`) and writes `channel=` into `/app/version.txt` next to
+  `version`, `commit` (full SHA from `GIT_COMMIT`) and `build_time`.
+  `publish.yml` sets `release` (published release), `main` (push to main),
+  `dev` (push to dev) or `pr` (PR build). `read_version_info()` always
+  returns all four keys; a local run or an older image gets `local` /
+  `unknown`.
+- **Display** (`version_check.display_info`): `v0.9.0` for a release,
+  `v0.9.0 · main` for main, `dev · 0.9.0` (one-line form
+  `dev · 0.9.0+sha-abc1234`) for dev, pr and local. Main and dev-style builds
+  link the short SHA to the GitHub commit (hidden below the `sm`
+  breakpoint). The `v` prefix is display-only; `VERSION` stays bare.
+- **Header** (`templates/base.html`, every page): a low-emphasis version label
+  after the title; clicking it opens the What's New popup. When an update is
+  available, a separate `update available → vX.Y.Z` link goes to the release
+  page.
+- **Update check** (`version_check.py`):
+  - releases only, via `GET /repos/crzykidd/service-tracker-dashboard/releases/latest`;
+    drafts and prereleases are ignored, and a dev build of the same version is
+    not an update;
+  - page-load driven: the template context processor starts a background
+    refresh (one at a time, behind a lock) when the cache is older than the
+    interval; pages never wait on GitHub; no page loads means no checks;
+  - an open page re-reads `GET /api/update-status` (login-protected,
+    dashboard blueprint) hourly, which also starts a refresh when stale;
+  - server-side only, no auth, generic `User-Agent`, 5 s timeout, `ETag` /
+    `If-None-Match`, honours `Retry-After` and `X-RateLimit-Reset`;
+  - on error it keeps the last good value and backs off
+    `interval × 2^failures`, capped at 24 h;
+  - the last good result (with ETag) persists in the `setting` table;
+    backoff and the last error are in memory only.
+- **Settings** (DB runtime, Settings → Info): `update_check_enabled`
+  (default on) and `update_check_interval_hours` (default 6, minimum 1).
+  Disabled means no fetch and no link. Info also shows channel, linked
+  commit, build time, latest release seen, last checked and last error.
+- **Management API / MCP:** `whoami` and `config` add `commit`, `channel`,
+  `build_time` and `update {enabled, latest_version, update_available,
+  release_url, checked_at}`; `GET/PUT /api/v1/settings/update-check`. MCP
+  `server_info` adds `std_commit`, `std_channel`, `std_update`; the version
+  compatibility logic is unchanged.
+
+---
+
+## 17. Next release — Notifications: MQTT and Home Assistant (Planned)
+
+The FUTURE.md item "Alerting / notifications on failure", scoped down to
+**state publishing**: STD publishes check and roll-up state to an external
+channel. Alert rules (N consecutive failures, de-duplication, quiet hours)
+and push channels (ntfy, webhook, Gotify, email) stay in FUTURE.md and will
+reuse this channel framework. Home Assistant users can already alert from
+the published state with HA automations.
+
+No register-contract change: the notifier is not involved.
+
+### 17.1 Decisions (operator, 2026-11-16)
+
+- Publish **state changes only, retained**, plus a full republish on every
+  (re)connect. Not every check result (that is parked in FUTURE.md).
+- Topics use **ids, not names**, so a rename never moves a topic.
+- Home Assistant: **one device per STD entry**, linked to an STD hub device.
+- HA discovery is **opt-in per channel** and then publishes every entry and
+  check, including new ones automatically; **per-entry and per-check
+  opt-outs** remove them.
+- Devices are named `<prefix> <entry name>` (prefix default `STD`), so
+  entity ids start `std_` for auto-entities globs.
+- The STD group is an **attribute**, not a `suggested_area`.
+- **No command entities** (no "Check now" button from HA); parked in
+  FUTURE.md pending a security review.
+
+### 17.2 Channel framework and MQTT [`notif-01-channel-framework-and-mqtt`] — Delivered on `dev`
+
+- `notification_channel` table (§5.8: `type`, unique `name`, `enabled`, JSON
+  `config`, write-only `secret`). Channel types register a pydantic config
+  (`extra="forbid"`), `defaults()`, `test()` and `publish()`; only `mqtt`
+  exists.
+- MQTT via `paho-mqtt` 2.x (`CallbackAPIVersion.VERSION2`), threaded
+  `loop_start()` with `connect_async` (no asyncio). Config: `host`, `port`
+  (default 1883, 8883 with TLS), `tls`, `tls_insecure`, `username`, password
+  (the write-only `secret`), `client_id` (default `std-<first 8 hex of the
+  instance id>`), `base_topic` (default `std`, trailing `/` stripped),
+  `qos` (0 or 1, default 1), `keepalive` (default 60). The Home Assistant
+  fields `ha_discovery`, `ha_prefix` (`homeassistant`) and `ha_device_prefix`
+  (`STD`) are accepted and stored but unused until §17.4. The instance id is
+  a UUID in the `setting` table.
+- One publisher thread with a bounded queue (1000). Producers call the
+  non-blocking `notify.enqueue(event_dict)`, which never raises or blocks;
+  when full the oldest event is dropped with a rate-limited warning. An MQTT
+  event is `{"topic": <suffix under base_topic>, "payload": str|dict|list,
+  "retain": bool}`. `notify.on_connect_hooks` run after every (re)connect so
+  §17.3/§17.4 can republish.
+- LWT: `<base>/status` = `offline` (retained); `online` (retained) on every
+  connect; `offline` published on a clean stop. paho reconnects with
+  `reconnect_delay_set(1, 60)`; each connection state change is logged once.
+- Saving, enabling, disabling or deleting a channel (UI or API) makes the
+  publisher reload: a changed channel is stopped cleanly and reconnected
+  with the new settings, without restarting STD.
+- Settings → Notifications tab (admin): channel list with live status
+  (connected / connecting / error with the last error / disabled), add, edit,
+  enable/disable, delete; write-only password (blank keeps it, a checkbox
+  clears it); **Send test message** publishes a non-retained JSON message to
+  `<base>/test` using the submitted, possibly unsaved, values (a throwaway
+  client with a `-test` client id, so the live connection is not dropped).
+- Management API: `GET`/`POST /api/v1/notifications/channels`,
+  `GET`/`PATCH`/`DELETE .../channels/{id}`, `POST .../channels/{id}/test`
+  (read scope for GET, write for the rest). `secret` is write-only
+  (`secret_set` in responses; PATCH omitted keeps, null clears); responses
+  carry the live `status`. MCP: `list_notification_channels`,
+  `get_notification_channel`, `test_notification_channel`.
+
+### 17.3 State publishing [`notif-02-state-publishing`] — Planned
+
+- Retained topics: `<base>/entry/<entry_id>/state` (roll-up from
+  `health_state.entry_health`), `<base>/entry/<entry_id>/check/<check_id>`,
+  `<base>/summary`. JSON payloads carry name, host, group, source, check
+  type, target, latency, message and timestamps.
+- Change detection at `jobs.record_check_result()` (an `ok` change or first
+  result) and on roll-up change; events are plain dicts built on the
+  scheduler thread.
+- **Reconcile, don't chase deletes:** `full_sync()` publishes the desired
+  set and an empty retained payload to every previously published topic that
+  is no longer desired. It runs on connect, on config change, on a debounced
+  request from mutation paths, and on a periodic safety net. The published
+  set persists across restarts.
+
+### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Planned
+
+- Discovery prefix default `homeassistant`; node id `std_<instance>`.
+- Hub device: connectivity `binary_sensor` and up/degraded/down/unknown
+  count sensors.
+- Entry device: `manufacturer: Service Tracker Dashboard`, `model` = entry
+  source, `sw_version` = image tag if known, `configuration_url` = the STD
+  entry page, `via_device` = hub. Entities: an enum `sensor` for the roll-up
+  state and a `problem` `binary_sensor` per check, with JSON attributes for
+  auto-entities filters. Unique ids come from the instance id and database
+  ids.
+- Every entity uses `<base>/status` for availability. Configs are retained
+  and published before states. STD republishes on HA's
+  `homeassistant/status` = `online`.
+- Schema: `service_entries.ha_exclude` and `health_check.ha_exclude`
+  (opt-out, default false), operator-owned and never touched by register.
+- Opt-outs, deletes and turning discovery off clear configs with an empty
+  retained payload (through the §17.3 reconcile).
+
+---
+
+## 18. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -2390,12 +2566,12 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-## 17. Cross-Repo Coordination
+## 19. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 18.1 Contract ownership
+### 19.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -2408,7 +2584,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 18.2 Release history
+### 19.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -2433,7 +2609,7 @@ not lead.
 
 ---
 
-## 18. Open Questions
+## 20. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)

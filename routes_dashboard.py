@@ -47,6 +47,8 @@ import check_form
 import entry_rules
 import health_history
 import jobs
+import mgmt_serializers
+import notify
 import settings_store
 import synthesizer
 import version_check
@@ -67,6 +69,7 @@ from models import (
     ApiKey,
     Group,
     HealthCheck,
+    NotificationChannel,
     ServiceEntry,
     User,
     Widget,
@@ -664,7 +667,7 @@ def settings():
     return _render_settings()
 
 
-def _render_settings(group_form=None, status=200):
+def _render_settings(group_form=None, status=200, notification_form=None):
     """Render the Settings page. `group_form` (a failed Groups save) is shown in
     place of the stored groups, with its per-row errors, on the Groups tab."""
     BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
@@ -748,7 +751,7 @@ def _render_settings(group_form=None, status=200):
          groups=groups,
          group_form=group_form,
          group_rows=group_rows,
-         force_section='groups' if group_form else '',
+         force_section='groups' if group_form else ('notifications' if notification_form else ''),
          users=users,
          deleted_rows=_deleted_entry_rows(),
          detached_widgets=_detached_widget_rows(),
@@ -763,11 +766,121 @@ def _render_settings(group_form=None, status=200):
          audit_filter=audit_filter,
          audit_limit=AUDIT_VIEW_LIMIT,
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
+         notification_channels=[mgmt_serializers.notification_channel_out(c) for c in
+                                NotificationChannel.query.order_by(NotificationChannel.id).all()],
+         notification_form=notification_form,
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
          exposure_host_overrides=exposure_host_overrides,
     ), status
+
+
+# --- Settings -> Notifications (PRD 17.2) -----------------------------------------
+
+
+def _notification_form_data(form):
+    """Read the channel form: `(name, enabled, config, secret_op)` where
+    `secret_op` is `notify.UNSET` (keep), None (clear) or the new password."""
+    def text(key):
+        return (form.get(key) or '').strip()
+
+    def number(key):
+        raw = text(key)
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return raw          # left as text so validation reports it
+
+    config = {
+        'host': text('host'),
+        'port': number('port'),
+        'tls': form.get('tls') == '1',
+        'tls_insecure': form.get('tls_insecure') == '1',
+        'username': text('username') or None,
+        'client_id': text('client_id') or None,
+        'base_topic': text('base_topic') or 'std',
+        'qos': number('qos') if text('qos') else 1,
+        'keepalive': number('keepalive') if text('keepalive') else 60,
+    }
+    password = form.get('password') or ''
+    if form.get('clear_password') == '1':
+        secret = None
+    elif password:
+        secret = password
+    else:
+        secret = notify.UNSET
+    return text('name'), form.get('enabled') == '1', config, secret
+
+
+@dashboard_bp.route('/settings/notifications/save', methods=['POST'])
+@login_required
+@is_admin_required
+def save_notification_channel():
+    """Create (no `channel_id`) or update an MQTT channel. A blank password keeps
+    the stored one; the clear box removes it. The password never leaves the server."""
+    name, enabled, config, secret = _notification_form_data(request.form)
+    raw_id = (request.form.get('channel_id') or '').strip()
+    if raw_id:
+        channel = db.get_or_404(NotificationChannel, int(raw_id) if raw_id.isdigit() else 0)
+        _, errors = notify.update_channel(channel, name=name, enabled=enabled, config=config, secret=secret)
+    else:
+        channel, errors = notify.create_channel(name, 'mqtt', enabled, config,
+                                                None if secret is notify.UNSET else secret)
+    if errors:
+        for e in errors:
+            flash(f"Notification channel: {e['field']} {e['message']}", "danger")
+        form = {'id': raw_id, 'name': name, 'enabled': enabled, **config}
+        return _render_settings(notification_form=form, status=400)
+    logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
+    flash(f"✅ Notification channel '{channel.name}' saved.", "success")
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/toggle', methods=['POST'])
+@login_required
+@is_admin_required
+def toggle_notification_channel(id):
+    channel = db.get_or_404(NotificationChannel, id)
+    notify.update_channel(channel, enabled=not channel.enabled)
+    flash(f"Notification channel '{channel.name}' {'enabled' if channel.enabled else 'disabled'}.", "success")
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_notification_channel(id):
+    channel = db.get_or_404(NotificationChannel, id)
+    name = channel.name
+    notify.delete_channel(channel)
+    flash(f"Deleted notification channel '{name}'.", "success")
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+@dashboard_bp.route('/settings/notifications/test', methods=['POST'])
+@login_required
+@is_admin_required
+def test_notification_channel_form():
+    """Send a test message with the submitted (possibly unsaved) values.
+    A blank password on a saved channel tests with the stored one."""
+    _, _, config, secret = _notification_form_data(request.form)
+    if secret is notify.UNSET:
+        raw_id = (request.form.get('channel_id') or '').strip()
+        stored = db.session.get(NotificationChannel, int(raw_id)) if raw_id.isdigit() else None
+        secret = stored.secret if stored else None
+    ok, message = notify.test_channel('mqtt', config, secret)
+    return jsonify({'ok': ok, 'message': message})
+
+
+@dashboard_bp.route('/settings/notifications/status', methods=['GET'])
+@login_required
+@is_admin_required
+def notification_status():
+    """Live connection status per channel id, polled by the Notifications tab."""
+    return jsonify({str(c.id): notify.channel_status(c) for c in NotificationChannel.query.all()})
 
 
 @dashboard_bp.route('/settings/exposure', methods=['POST'])

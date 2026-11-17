@@ -298,6 +298,16 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("GET", "/settings/exposure")
 
     @read_tool
+    def list_notification_channels(limit: int = 200, offset: int = 0) -> dict:
+        """List notification channels (where STD publishes state, MQTT first) with their settings and live connection `status` ({state: disabled | stopped | connecting | connected | error, last_error, since}). The password is never returned, only `secret_set`. Returns {items, total, limit, offset}."""
+        return client.request("GET", "/notifications/channels", params={"limit": limit, "offset": offset})
+
+    @read_tool
+    def get_notification_channel(channel_id: int) -> dict:
+        """Get one notification channel: type, name, enabled, config (host, port, tls, base_topic, qos, ...), `secret_set` and its live connection `status`. Use it to check whether the MQTT broker is connected and why not (status.last_error)."""
+        return client.request("GET", f"/notifications/channels/{channel_id}")
+
+    @read_tool
     def get_config() -> dict:
         """The effective STD configuration, read-only. Secrets appear as `***`; `sources` says whether each value came from env, file or default."""
         return client.request("GET", "/config")
@@ -452,6 +462,11 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         """Detach an entry's widget. delete=true also removes the widget and its stored values (when no other entry uses it); otherwise it stays in Settings -> Widgets."""
         return client.request("DELETE", f"/entries/{entry_id}/widget",
                               params={"delete": delete or None})
+
+    @write_tool
+    def test_notification_channel(channel_id: int) -> dict:
+        """Send a test message through a notification channel: connects with the stored settings and publishes a non-retained JSON message to `<base_topic>/test`. Returns {ok, message}; a failure is ok=false with the reason (it is not an error). Takes up to about 13 seconds."""
+        return client.request("POST", f"/notifications/channels/{channel_id}/test")
 
     @write_tool
     def set_exposure_settings(layer_directions: dict[str, str],

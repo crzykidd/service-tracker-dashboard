@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Notifications: MQTT channels.** New Settings → Notifications tab (admins):
+  add an MQTT broker (host, port, TLS, username, password, client id, base
+  topic, QoS, keepalive), enable or disable it, and see its live connection
+  status. **Send test message** publishes a non-retained message to
+  `<base topic>/test` using the form's values, even before you save. STD
+  announces itself on `<base topic>/status` (`online`, retained, with an
+  `offline` last will, also sent on a clean shutdown) and reconnects on its
+  own; changing a channel reconnects it without a restart. The password is
+  write-only: never shown, returned, logged or audited. Check and state
+  publishing, and Home Assistant discovery, follow in later releases.
+- **Notification channels in the management API and MCP.** `GET`/`POST
+  /api/v1/notifications/channels`, `GET`/`PATCH`/`DELETE
+  /api/v1/notifications/channels/{id}` and `POST .../{id}/test`, plus the
+  MCP tools `list_notification_channels`, `get_notification_channel` and
+  `test_notification_channel`.
+- New dependency `paho-mqtt` 2.x, and a database migration that adds the
+  `notification_channel` table (runs automatically on start).
 - **Version in the header.** The running version shows next to the page title;
   click it to open the What's New popup. Dev builds show `dev · 0.9.0` with the
   short commit linked to GitHub.

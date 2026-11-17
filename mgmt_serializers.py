@@ -2,6 +2,7 @@
 `mgmt_schemas.py` (v0.8.0, PRD 14). No queries beyond what is eager-loaded,
 except `entry_detail_out` (exposures, widget)."""
 
+import notify
 from health_history import effective_target, iso_z
 from health_state import entry_health
 from mgmt_schemas import (
@@ -12,6 +13,7 @@ from mgmt_schemas import (
     EntryOut,
     ExposureOut,
     GroupOut,
+    NotificationChannelOut,
     NotifierOut,
     WidgetInstanceOut,
     WidgetOut,
@@ -155,3 +157,18 @@ def widget_out(widget) -> WidgetOut:
 def widget_instance_out(widget) -> WidgetInstanceOut:
     entry_ids = sorted(e.id for e in widget.services)
     return {**widget_out(widget), "entry_ids": entry_ids, "detached": not entry_ids}
+
+
+def notification_channel_out(channel) -> NotificationChannelOut:
+    """The secret is reported only as `secret_set`."""
+    return {
+        "id": channel.id,
+        "type": channel.type,
+        "name": channel.name,
+        "enabled": bool(channel.enabled),
+        "config": dict(channel.config or {}),
+        "secret_set": bool(channel.secret),
+        "status": notify.channel_status(channel),
+        "created_at": iso_z(channel.created_at),
+        "updated_at": iso_z(channel.updated_at),
+    }

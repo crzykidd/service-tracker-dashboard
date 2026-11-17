@@ -159,6 +159,31 @@ OPERATIONS: tuple = (
        S.UpdateCheckSettingsOut, request=S.UpdateCheckSettingsPut,
        description="`enabled` (default on) and `interval_hours` (default 6, minimum 1). Omitted "
                    "fields keep their value. When disabled STD makes no request to GitHub."),
+    Op("GET", "/notifications/channels", "read", "List notification channels",
+       S.Page[S.NotificationChannelOut], params=_PAGE,
+       description="Each channel carries its live connection `status`. The secret (the MQTT "
+                   "password) is never returned, only `secret_set`."),
+    Op("POST", "/notifications/channels", "write", "Add a notification channel",
+       S.NotificationChannelOut, request=S.NotificationChannelCreate, status=201, errors=(409,),
+       description="`type` is `mqtt`. `config` takes host (required), port (default 1883, or 8883 "
+                   "with tls), tls, tls_insecure, username, client_id, base_topic (default `std`), "
+                   "qos (0 or 1, default 1) and keepalive (default 60); unknown keys are a 400. "
+                   "`secret` is the MQTT password. A channel is created disabled unless "
+                   "`enabled` is true."),
+    Op("GET", "/notifications/channels/{id}", "read", "Get a notification channel",
+       S.NotificationChannelOut, errors=(404,)),
+    Op("PATCH", "/notifications/channels/{id}", "write", "Edit a notification channel",
+       S.NotificationChannelOut, request=S.NotificationChannelPatch, errors=(404, 409),
+       description="`config` keys are merged over the stored config. `secret` omitted keeps the "
+                   "stored password, null clears it. The publisher reconnects with the new settings "
+                   "at once. A request that names no field is rejected with 400."),
+    Op("DELETE", "/notifications/channels/{id}", "write", "Delete a notification channel",
+       S.NotificationChannelDeleteOut, errors=(404,)),
+    Op("POST", "/notifications/channels/{id}/test", "write", "Send a test message through a channel",
+       S.NotificationTestOut, errors=(404,),
+       description="Connects with the stored settings and publishes a non-retained JSON message to "
+                   "`<base_topic>/test`. Takes up to about 13 seconds. A failed test is a 200 with "
+                   "`ok: false` and the reason in `message`."),
     Op("GET", "/config", "read", "Effective configuration (read-only)", S.ConfigOut,
        description="Secrets are masked as `***`. `sources` says where each value came from."),
 )

@@ -33,6 +33,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func
 
 import checker
+import notify
 from extensions import db
 from image_utils import fetch_icon_if_missing
 from models import (
@@ -707,5 +708,9 @@ def start_background_workers(app):
         replace_existing=True
     )
     scheduler.start()
+
+    # Notification publisher: its own thread and queue; it loads the enabled
+    # channels itself and never blocks the checker (PRD 17.2).
+    notify.start(app)
 
     threading.Thread(target=partial(health_check_loop, app), daemon=True, name="health-check-loop").start()

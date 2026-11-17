@@ -23,6 +23,10 @@ Keys currently in use:
                            release_url, checked_at, etag) so a restart does
                            not refetch at once.
 
+- `instance_id`            str: a UUID generated once. Stable identity of this
+                           STD install for MQTT client ids and Home Assistant
+                           unique ids (PRD 17.2). Never changes after creation.
+
 - `exposure_layers_per_host`  dict[str, dict[str, str]]
                               e.g. {"docker-edge": {"traefik": "external"}}
                               Per-host override for `exposure_layers`.
@@ -35,6 +39,7 @@ the homelab workload is low, and a stale-cache bug here would be
 silently wrong rather than silently slow.
 """
 
+import uuid
 from typing import Dict, List
 
 from extensions import db
@@ -48,6 +53,7 @@ KEY_EXPOSURE_LAYERS_PER_HOST = "exposure_layers_per_host"
 KEY_UPDATE_CHECK_ENABLED = "update_check_enabled"
 KEY_UPDATE_CHECK_INTERVAL = "update_check_interval_hours"
 KEY_UPDATE_CHECK_CACHE = "update_check_cache"
+KEY_INSTANCE_ID = "instance_id"
 
 DEFAULT_UPDATE_CHECK_ENABLED = True
 DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
@@ -200,3 +206,19 @@ def save_update_check_cache(cache: dict) -> None:
     background thread, which owns its own app context)."""
     _set_value(KEY_UPDATE_CHECK_CACHE, cache)
     db.session.commit()
+
+
+def get_instance_id() -> str:
+    """The install's stable UUID, created and committed on first use."""
+    value = _get_value(KEY_INSTANCE_ID, None)
+    if isinstance(value, str) and value:
+        return value
+    value = str(uuid.uuid4())
+    _set_value(KEY_INSTANCE_ID, value)
+    db.session.commit()
+    return value
+
+
+def short_instance_id(instance_id: str) -> str:
+    """The first 8 hex digits, for client ids (`std-1a2b3c4d`)."""
+    return instance_id.replace("-", "")[:8]

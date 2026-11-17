@@ -32,14 +32,15 @@ through the web UI or directly via API.
 7. [API: Registering Services](#api-registering-services)
 8. [Management API](#management-api)
 9. [Managing STD with Claude](#managing-std-with-claude)
-10. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
-11. [Files and Paths](#files-and-paths)
-12. [Health Checks](#health-checks)
-13. [Routes](#routes)
-14. [Widgets](#widgets)
-15. [Behavior Notes](#behavior-notes)
-16. [Versioning & Releases](#versioning--releases)
-17. [Development](#development)
+10. [Notifications](#notifications)
+11. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
+12. [Files and Paths](#files-and-paths)
+13. [Health Checks](#health-checks)
+14. [Routes](#routes)
+15. [Widgets](#widgets)
+16. [Behavior Notes](#behavior-notes)
+17. [Versioning & Releases](#versioning--releases)
+18. [Development](#development)
 
 ---
 
@@ -645,6 +646,12 @@ token.
 | PUT | `/api/v1/settings/exposure` | write | Replace exposure direction settings |
 | GET | `/api/v1/settings/update-check` | read | Update check settings |
 | PUT | `/api/v1/settings/update-check` | write | Change the update check settings |
+| GET | `/api/v1/notifications/channels` | read | List notification channels |
+| POST | `/api/v1/notifications/channels` | write | Add a notification channel |
+| GET | `/api/v1/notifications/channels/{id}` | read | Get a notification channel |
+| PATCH | `/api/v1/notifications/channels/{id}` | write | Edit a notification channel |
+| DELETE | `/api/v1/notifications/channels/{id}` | write | Delete a notification channel |
+| POST | `/api/v1/notifications/channels/{id}/test` | write | Send a test message through a channel |
 | GET | `/api/v1/config` | read | Effective configuration (read-only) |
 
 Ids are the numeric ids shown in the API output. Write endpoints that create
@@ -766,6 +773,41 @@ changes is recorded in the audit log under the key's name. Details, settings
 [`mcp/README.md`](mcp/README.md).
 
 ---
+
+## Notifications
+
+STD can publish to an MQTT broker (the first notification channel; Home
+Assistant discovery and check/state publishing build on it in later
+releases). Configure it under **Settings → Notifications** (admins only).
+
+1. **Add the broker.** Name, host, port (1883, or 8883 with TLS), optional
+   username and password, and a **base topic** (default `std`; a trailing `/`
+   is dropped). Optional: TLS (with "skip certificate verification" for a
+   self-signed broker), a client id (default `std-<instance id>`), QoS (1 by
+   default) and keepalive. Tick **Enabled** and save.
+2. **Check it.** **Send test message** connects with the values currently in
+   the form (saved or not) and publishes a JSON message to
+   `<base topic>/test` (not retained). Success or the reason for the failure
+   shows right next to the button. Subscribe with
+   `mosquitto_sub -t 'std/#' -v` to watch.
+3. **Watch the status.** The channel list shows connected, connecting,
+   error (with the last error) or disabled, and refreshes while the tab is
+   open.
+
+What STD publishes in this release is its own availability on
+`<base topic>/status`: `online` (retained) when it connects, and `offline`
+(retained) as the broker's last will if STD disappears, or when it shuts
+down cleanly. STD reconnects by itself, and editing, disabling or deleting a
+channel takes effect at once, without a restart.
+
+The password is write-only: the form shows only that one is set, a blank
+field keeps it and a checkbox removes it; it is never returned by the API,
+written to the log or recorded in the audit log. Channels are also managed
+through the [management API](#management-api)
+(`/api/v1/notifications/channels`) and the MCP server.
+
+STD sends its MQTT traffic from one background thread, so a slow or offline
+broker never delays health checks or the dashboard.
 
 ## Container Labels (via docker-api-notifier)
 
@@ -918,7 +960,8 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
 | `/health/strips?ids=1,2,3` | 24h uptime strips for up to 500 entries (JSON, login). |
 | `/service/<id>/checks/run` | Check now (POST, login). |
-| `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
+| `/settings`          | Settings + backup/restore UI (incl. Exposure and Notifications tabs). |
+| `/settings/notifications/...` | Notifications tab: `save`, `<id>/toggle`, `<id>/delete`, `test` (admin POST), `status` (admin GET). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
 | `/settings/api-keys` `/settings/api-keys/<id>/revoke` | Create (shown once) and revoke admin API keys (admin POST). |

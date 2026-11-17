@@ -692,3 +692,27 @@ def hard_delete_entry(entry):
     or deleted from Settings -> Deleted.
     """
     db.session.delete(entry)
+
+
+class NotificationChannel(db.Model):
+    """A place STD publishes state to (v0.10.0, PRD 17.2). `type` selects the
+    channel implementation in `notify.py` (`mqtt` first); `config` holds its
+    non-secret settings as JSON; `secret` (an MQTT password) is write-only:
+    never returned by the UI or API, never logged."""
+    __tablename__ = 'notification_channel'
+    __table_args__ = (
+        db.Index('ux_notification_channel_name', 'name', unique=True),
+        db.Index('ix_notification_channel_type', 'type'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    type = db.Column(db.String(32), nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    config = db.Column(db.JSON, nullable=False, default=dict)
+    secret = db.Column(db.String(512), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<NotificationChannel {self.id} {self.type} {self.name!r}>'

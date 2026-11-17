@@ -15,6 +15,7 @@
     <button onclick="showSection('groups')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-groups">Groups</button>
     <button onclick="showSection('users')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-users">Users</button>
     <button onclick="showSection('exposure')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-exposure">Exposure</button>
+    <button onclick="showSection('notifications')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-notifications">Notifications</button>
     <button onclick="showSection('api')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-api">API</button>
     <button onclick="showSection('deleted')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-deleted">Deleted{% if deleted_rows %} ({{ deleted_rows|length }}){% endif %}</button>
 
@@ -655,6 +656,119 @@
       {% endif %}
     </section>
 
+    <!-- === Notifications Section === -->
+    <section id="section-notifications" class="section hidden">
+      <h2 class="text-2xl font-semibold mb-4">Notifications</h2>
+      <style>
+        .notification-state[data-state="connected"] { color: #4ade80; }
+        .notification-state[data-state="connecting"] { color: #facc15; }
+        .notification-state[data-state="error"] { color: #f87171; }
+        .notification-state[data-state="disabled"], .notification-state[data-state="stopped"] { color: #9ca3af; }
+      </style>
+      <p class="text-sm text-gray-400 mb-6">
+        Channels STD publishes to. MQTT is the first: STD announces <code class="text-xs bg-gray-700 px-1 rounded">&lt;base&gt;/status</code>
+        (<code class="text-xs bg-gray-700 px-1 rounded">online</code>, retained, with an <code class="text-xs bg-gray-700 px-1 rounded">offline</code> last will).
+        Use <strong>Send test message</strong> to check the broker settings.
+      </p>
+
+      {% if notification_channels %}
+      <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow mb-6" id="notification-table">
+        <thead class="bg-gray-800 text-gray-400">
+          <tr><th class="py-2 px-3">Name</th><th class="py-2 px-3">Broker</th><th class="py-2 px-3">Status</th><th class="py-2 px-3 text-right">Actions</th></tr>
+        </thead>
+        <tbody>
+        {% for ch in notification_channels %}
+          <tr class="border-t border-gray-700" data-channel-id="{{ ch.id }}">
+            <td class="py-2 px-3">{{ ch.name }} <span class="text-xs text-gray-500">({{ ch.type }})</span></td>
+            <td class="py-2 px-3 font-mono text-xs">{{ ch.config.host }}:{{ ch.config.port }}{% if ch.config.tls %} (TLS){% endif %}<br>{{ ch.config.base_topic }}/…</td>
+            <td class="py-2 px-3">
+              <span class="notification-state font-semibold" data-state="{{ ch.status.state }}">{{ ch.status.state }}</span>
+              <div class="notification-error text-xs text-red-300">{{ ch.status.last_error or '' }}</div>
+            </td>
+            <td class="py-2 px-3 text-right whitespace-nowrap">
+              <button type="button" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
+                      data-notification-edit="{{ ch.id }}">Edit</button>
+              <form method="POST" action="{{ url_for('dashboard.toggle_notification_channel', id=ch.id) }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">{{ 'Disable' if ch.enabled else 'Enable' }}</button>
+              </form>
+              <form method="POST" action="{{ url_for('dashboard.delete_notification_channel', id=ch.id) }}" class="inline"
+                    onsubmit="return confirm('Delete notification channel {{ ch.name|e }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p class="text-gray-400 mb-6" id="notification-empty">No notification channels yet. Add an MQTT broker below.</p>
+      {% endif %}
+
+      {% set nf = notification_form or {} %}
+      <form method="POST" action="{{ url_for('dashboard.save_notification_channel') }}" id="notification-form"
+            class="bg-gray-800 rounded shadow p-6 space-y-4" data-unsaved-guard
+            {% if notification_form %}data-unsaved-start-dirty{% endif %}>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="channel_id" id="nf-channel-id" value="{{ nf.get('id', '') }}">
+        <h3 class="text-lg font-semibold text-white border-b border-gray-600 pb-1" id="nf-title">{{ 'Edit MQTT channel' if nf.get('id') else 'Add MQTT channel' }}</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <label>Name
+            <input type="text" name="name" id="nf-name" maxlength="64" required value="{{ nf.get('name', '') }}" class="form-input block mt-1 w-full">
+          </label>
+          <label class="flex items-center gap-2 mt-6">
+            <input type="checkbox" name="enabled" id="nf-enabled" value="1" {% if nf.get('enabled') %}checked{% endif %}> Enabled
+          </label>
+          <label>Host
+            <input type="text" name="host" id="nf-host" required placeholder="mqtt.lan" value="{{ nf.get('host', '') }}" class="form-input block mt-1 w-full">
+          </label>
+          <label>Port
+            <input type="number" name="port" id="nf-port" min="1" max="65535" placeholder="1883 (8883 with TLS)" value="{{ nf.get('port') if nf.get('port') is not none else '' }}" class="form-input block mt-1 w-full">
+          </label>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" name="tls" id="nf-tls" value="1" {% if nf.get('tls') %}checked{% endif %}> Use TLS
+          </label>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" name="tls_insecure" id="nf-tls-insecure" value="1" {% if nf.get('tls_insecure') %}checked{% endif %}> Skip certificate verification (not recommended)
+          </label>
+          <label>Username
+            <input type="text" name="username" id="nf-username" maxlength="128" autocomplete="off" value="{{ nf.get('username') or '' }}" class="form-input block mt-1 w-full">
+          </label>
+          <div>
+            <label>Password <span class="text-xs text-gray-500" id="nf-password-state"></span>
+              <input type="password" name="password" id="nf-password" autocomplete="new-password" maxlength="256" class="form-input block mt-1 w-full">
+            </label>
+            <label class="text-xs text-gray-400 flex items-center gap-2 mt-1" id="nf-clear-row" hidden>
+              <input type="checkbox" name="clear_password" id="nf-clear-password" value="1"> Remove the stored password
+            </label>
+          </div>
+          <label>Client id
+            <input type="text" name="client_id" id="nf-client-id" maxlength="64" placeholder="std-&lt;instance id&gt;" value="{{ nf.get('client_id') or '' }}" class="form-input block mt-1 w-full">
+          </label>
+          <label>Base topic
+            <input type="text" name="base_topic" id="nf-base-topic" maxlength="128" value="{{ nf.get('base_topic', 'std') }}" class="form-input block mt-1 w-full">
+          </label>
+          <label>QoS
+            <select name="qos" id="nf-qos" class="form-input block mt-1 w-full">
+              <option value="1" {% if nf.get('qos', 1) == 1 %}selected{% endif %}>1 (at least once)</option>
+              <option value="0" {% if nf.get('qos', 1) == 0 %}selected{% endif %}>0 (at most once)</option>
+            </select>
+          </label>
+          <label>Keepalive (seconds)
+            <input type="number" name="keepalive" id="nf-keepalive" min="5" max="3600" value="{{ nf.get('keepalive', 60) }}" class="form-input block mt-1 w-full">
+          </label>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" data-unsaved-save class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold py-2 px-6 rounded shadow">Save channel</button>
+          <button type="button" id="nf-test" class="bg-gray-600 hover:bg-gray-500 text-white text-sm font-semibold py-2 px-6 rounded shadow">Send test message</button>
+          <button type="button" id="nf-reset" data-unsaved-discard class="text-sm underline text-gray-300">New channel</button>
+          <span id="nf-test-result" class="text-sm" role="status"></span>
+          <span data-unsaved-hint hidden class="text-sm text-yellow-300">Unsaved changes</span>
+        </div>
+      </form>
+    </section>
+
     <!-- === Exposure Section === -->
     <section id="section-exposure" class="section hidden">
       <h2 class="text-2xl font-semibold mb-4">Exposure Interpreter</h2>
@@ -850,5 +964,97 @@
     btn.textContent = marked ? 'Undo' : 'Delete';
     flag.form.dispatchEvent(new Event('change', { bubbles: true }));
   });
+
+  // --- Settings -> Notifications ---
+  (function () {
+    const channels = {{ notification_channels|tojson }};
+    const form = document.getElementById('notification-form');
+    if (!form) return;
+    const $ = (id) => document.getElementById(id);
+    const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+    function fill(ch) {
+      const c = ch ? ch.config : {};
+      $('nf-channel-id').value = ch ? ch.id : '';
+      $('nf-title').textContent = ch ? 'Edit MQTT channel' : 'Add MQTT channel';
+      $('nf-name').value = ch ? ch.name : '';
+      $('nf-enabled').checked = ch ? ch.enabled : false;
+      $('nf-host').value = c.host || '';
+      $('nf-port').value = c.port || '';
+      $('nf-tls').checked = !!c.tls;
+      $('nf-tls-insecure').checked = !!c.tls_insecure;
+      $('nf-username').value = c.username || '';
+      $('nf-password').value = '';
+      $('nf-clear-password').checked = false;
+      $('nf-client-id').value = c.client_id || '';
+      $('nf-base-topic').value = c.base_topic || 'std';
+      $('nf-qos').value = String(c.qos === undefined ? 1 : c.qos);
+      $('nf-keepalive').value = c.keepalive || 60;
+      const set = ch && ch.secret_set;
+      $('nf-password-state').textContent = set ? '(set; leave blank to keep)' : '';
+      $('nf-clear-row').hidden = !set;
+      $('nf-test-result').textContent = '';
+      form.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    document.addEventListener('click', (event) => {
+      const edit = event.target.closest('[data-notification-edit]');
+      if (edit) {
+        fill(channels.find((c) => String(c.id) === edit.dataset.notificationEdit));
+        showSection('notifications');
+        form.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+    $('nf-reset').addEventListener('click', () => fill(null));
+
+    // Re-render after a failed save keeps the typed values; only show the password hint.
+    const savedId = $('nf-channel-id').value;
+    if (savedId) {
+      const ch = channels.find((c) => String(c.id) === savedId);
+      $('nf-password-state').textContent = ch && ch.secret_set ? '(set; leave blank to keep)' : '';
+      $('nf-clear-row').hidden = !(ch && ch.secret_set);
+    }
+
+    $('nf-test').addEventListener('click', async () => {
+      const out = $('nf-test-result');
+      const btn = $('nf-test');
+      out.className = 'text-sm text-gray-300';
+      out.textContent = 'Sending...';
+      btn.disabled = true;
+      try {
+        const resp = await fetch('{{ url_for("dashboard.test_notification_channel_form") }}', {
+          method: 'POST', headers: { 'X-CSRFToken': csrf() }, body: new FormData(form),
+        });
+        const data = await resp.json();
+        out.className = 'text-sm ' + (data.ok ? 'text-green-400' : 'text-red-400');
+        out.textContent = (data.ok ? 'Success: ' : 'Failed: ') + data.message;
+      } catch (err) {
+        out.className = 'text-sm text-red-400';
+        out.textContent = 'Failed: could not reach STD (' + err + ').';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Live status: poll while the tab is visible.
+    async function pollStatus() {
+      const section = $('section-notifications');
+      if (!section || section.classList.contains('hidden') || document.hidden) return;
+      try {
+        const resp = await fetch('{{ url_for("dashboard.notification_status") }}', { credentials: 'same-origin' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        document.querySelectorAll('#notification-table tr[data-channel-id]').forEach((row) => {
+          const st = data[row.dataset.channelId];
+          if (!st) return;
+          const el = row.querySelector('.notification-state');
+          el.textContent = st.state;
+          el.dataset.state = st.state;
+          row.querySelector('.notification-error').textContent = st.last_error || '';
+        });
+      } catch (err) { /* transient; the next tick retries */ }
+    }
+    setInterval(pollStatus, 5000);
+  })();
 </script>
 {% endblock %}
