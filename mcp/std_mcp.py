@@ -241,7 +241,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def server_info() -> dict:
         """Versions of this MCP server and of the STD it talks to, and whether they match. Call it when a tool seems missing or returns 404, or when the operator asks about versions.
 
-        Returns {mcp_version, std_version, status: match | std_newer | std_older | unknown, advice}. Answered from what was checked at startup; no request is made.
+        Returns {mcp_version, std_version, status: match | std_newer | std_older | unknown, advice}, plus std_commit, std_channel (release | main | dev | pr | local) and std_update ({enabled, latest_version, update_available, release_url, checked_at}) when STD reports them. Answered from what was checked at startup; no request is made.
         """
         return dict(version_info)
 
@@ -483,8 +483,18 @@ def main() -> None:
         sys.exit(f"std-mcp: cannot use the API key at {url}: {exc}")
     std_version = who.get("version")
     info = compare_versions(MCP_VERSION, std_version)
-    print(f"std-mcp: connected to STD {std_version or 'unknown version'} as key {who['name']!r} "
+    # Build facts and the update check are reported as-is; they never affect the comparison.
+    for field, name in (("commit", "std_commit"), ("channel", "std_channel"), ("update", "std_update")):
+        if who.get(field) is not None:
+            info[name] = who[field]
+    channel = who.get("channel")
+    print(f"std-mcp: connected to STD {std_version or 'unknown version'}"
+          f"{f' ({channel} build)' if channel and channel != 'release' else ''} as key {who['name']!r} "
           f"({who['scope']}); std_mcp {MCP_VERSION}", file=sys.stderr)
+    update = who.get("update") or {}
+    if update.get("update_available"):
+        print(f"std-mcp: STD {update.get('latest_version')} is available (running {std_version})",
+              file=sys.stderr)
     notice = version_notice(info)
     if notice:
         print(f"std-mcp: {notice}", file=sys.stderr)

@@ -490,22 +490,40 @@ window.stdPost = function (url, options) {
     const modal   = document.getElementById('changelog-modal');
     if (!modal) return;
 
+    // Clicking the version in the header opens the same popup for the running version.
+    const versionBtn = document.getElementById('std-version-btn');
+    if (versionBtn) {
+      versionBtn.addEventListener('click', () => {
+        fetch('/api/v1/changelog')
+          .then(r => r.json())
+          .then(data => showModal(data.sections, true))
+          .catch(() => {});
+      });
+    }
+
     const currentVersion = document.body.dataset.stdVersion || '';
     if (!currentVersion || currentVersion === 'unknown') return;
 
     const STORAGE_KEY = 'std:lastSeenVersion';
     const lastSeen    = localStorage.getItem(STORAGE_KEY);
 
-    function showModal(sections) {
-      if (!sections || sections.length === 0) return;
+    function showModal(sections, always) {
+      if (!sections || sections.length === 0) {
+        if (!always) return;
+        sections = [];
+      }
 
       const body = document.getElementById('changelog-content');
-      body.innerHTML = sections.map(s => `
+      if (sections.length === 0) {
+        body.innerHTML = '<p>No release notes for this version.</p>';
+      } else {
+        body.innerHTML = sections.map(s => `
         <div class="changelog-version-block">
           <p class="changelog-version-header">v${s.version} — ${s.date}</p>
           ${s.html}
         </div>
       `).join('');
+      }
 
       modal.classList.remove('hidden');
       document.addEventListener('keydown', onEsc);
@@ -547,6 +565,31 @@ window.stdPost = function (url, options) {
     }
   }
 
+  /* ── Update-available link ───────────────────────────── */
+  // The server decides; this only re-reads the cached status once an hour so a
+  // page left open (auto-refresh off) still learns about a new release.
+  function initUpdateCheck() {
+    const header = document.getElementById('std-header');
+    const link = document.getElementById('std-update-link');
+    if (!header || !link || header.dataset.updateEnabled !== 'true') return;
+    function poll() {
+      fetch('/api/update-status', { headers: { 'Accept': 'application/json' } })
+        .then(r => r.ok ? r.json() : null)
+        .then(s => {
+          if (!s) return;
+          if (s.update_available && s.release_url) {
+            link.href = s.release_url;
+            document.getElementById('std-update-version').textContent = s.latest_version;
+            link.classList.remove('hidden');
+          } else {
+            link.classList.add('hidden');
+          }
+        })
+        .catch(() => {});
+    }
+    setInterval(poll, 60 * 60 * 1000);
+  }
+
   /* Expose popover API for pages with inline script (e.g. edit_entry.html) */
   window.showDeletePopover = showDeletePopover;
 
@@ -557,6 +600,7 @@ window.stdPost = function (url, options) {
     initFilter();
     initFilterBarMobile();
     initChangelogModal();
+    initUpdateCheck();
 
     const view = document.body.dataset.view;
     if (view === 'tiled') {

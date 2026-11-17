@@ -49,6 +49,7 @@ import health_history
 import jobs
 import settings_store
 import synthesizer
+import version_check
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
@@ -740,6 +741,8 @@ def _render_settings(group_form=None, status=200):
          config_from_file=current_app.config['CONFIG_FROM_FILE'],
          server_backup_files=server_backup_files,
          version_info=current_app.config['VERSION_INFO'],
+         version_display=version_check.display_info(current_app.config['VERSION_INFO']),
+         update_status=version_check.status(current_app.config['VERSION_INFO'].get('version', 'unknown')),
          widgets=widgets,
          missing_icons=missing_icons,
          groups=groups,
@@ -804,6 +807,27 @@ def save_exposure_settings():
         "success",
     )
     return redirect(url_for('dashboard.settings', section='exposure'))
+
+
+@dashboard_bp.route('/settings/update-check', methods=['POST'])
+@login_required
+@is_admin_required
+def save_update_check():
+    """Save the update-check toggle and interval (Settings -> Info)."""
+    enabled = request.form.get('update_check_enabled') == '1'
+    raw = (request.form.get('update_check_interval_hours') or '').strip()
+    try:
+        hours = int(raw)
+        if hours < 1:
+            raise ValueError
+    except ValueError:
+        flash("Update check interval must be a whole number of hours, 1 or more.", "danger")
+        return redirect(url_for('dashboard.settings', section='info'))
+    settings_store.save_update_check_settings(enabled, hours)
+    db.session.commit()
+    version_check.reset()  # re-read the cache/interval; the next page load may refetch
+    flash("✅ Update check settings saved.", "success")
+    return redirect(url_for('dashboard.settings', section='info'))
 
 
 def _parse_group_form(form, groups):
@@ -1554,6 +1578,17 @@ def purge_deleted_entry(id):
     logger.info(f"Permanently deleted entry '{name}'.")
     flash(f"🗑️ Permanently deleted '{name}'.", "success")
     return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+@dashboard_bp.route('/api/update-status')
+@login_required
+def update_status_api():
+    """Cached update-check status for the header's hourly poll. Starts a
+    background refresh when the cache is stale; never waits on GitHub and is
+    read-only for the caller (GET)."""
+    version_check.maybe_refresh(current_app._get_current_object())
+    running = current_app.config['VERSION_INFO'].get('version', 'unknown')
+    return jsonify(version_check.status(running))
 
 
 @dashboard_bp.route('/api/v1/changelog')

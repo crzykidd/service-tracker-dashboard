@@ -144,6 +144,13 @@ class WidgetPut(_Request):
     widget_api_key: str | None = None
 
 
+class UpdateCheckSettingsPut(_Request):
+    """Omitted fields keep their value; at least one is required."""
+
+    enabled: bool | None = None
+    interval_hours: int | None = None   # whole hours, 1 or more
+
+
 class ExposureSettingsPut(_Request):
     layer_directions: dict[str, str]
     host_overrides: dict[str, dict[str, str]] = {}
@@ -168,11 +175,23 @@ class ErrorOut(TypedDict):
     details: Any
 
 
+class UpdateInfoOut(TypedDict):
+    enabled: bool                    # false: update check turned off (no fetch is made)
+    latest_version: str | None       # latest GitHub release seen, bare (e.g. "0.9.1")
+    update_available: bool           # true only when latest_version > the running version
+    release_url: str | None          # the release page, set when update_available
+    checked_at: str | None           # UTC ISO time of the last successful check
+
+
 class WhoamiOut(TypedDict):
     name: str
     prefix: str
     scope: str                       # "read" | "write"
     version: str                     # the STD version, e.g. "0.9.0" (older STDs omit it)
+    commit: str                      # full git SHA of the build, or "unknown"
+    channel: str                     # release | main | dev | pr | local
+    build_time: str                  # UTC ISO build time, or "unknown"
+    update: UpdateInfoOut            # GitHub update check (additive; older STDs omit it)
 
 
 class CheckDeleteOut(TypedDict):
@@ -422,7 +441,16 @@ class ExposureSettingsSavedOut(ExposureSettingsOut):
     recomputed: int                  # services whose URLs were recomputed
 
 
+class UpdateCheckSettingsOut(TypedDict):
+    enabled: bool
+    interval_hours: int
+
+
 class ConfigOut(TypedDict):
     version: str
+    commit: str
+    channel: str
+    build_time: str
+    update: UpdateInfoOut
     settings: dict[str, Any]         # secrets appear as "***" (null when unset)
     sources: dict[str, str]          # "env" | "file" | "default" per setting

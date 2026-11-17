@@ -260,6 +260,24 @@ is dropped into `/config` for reference.
 
 Default login: `admin` / `changeme123`. Change it on first run.
 
+### Version and update check
+
+The running version shows next to the page title on every page; click it for
+the What's New popup. Release images show `v0.9.0`; `:dev` and local builds
+show `dev · 0.9.0+sha-abc1234` with the short commit linked to GitHub. When
+GitHub has a newer **release**, a subtle `update available → vX.Y.Z` link
+appears.
+
+The check runs inside STD (your browser never calls GitHub), only when someone
+loads a page, at most once per interval, and never delays a page. It sends no
+credentials or personal data. Change it in **Settings → Info** (or
+`PUT /api/v1/settings/update-check`):
+
+| Setting | Default | What it does |
+|---|---|---|
+| `update_check_enabled` | on | Off means STD makes no request to GitHub and shows no update link (Settings → Info says "Update check disabled"). |
+| `update_check_interval_hours` | `6` | Hours between checks (minimum 1). After an error STD keeps the last known result and backs off up to 24 hours. |
+
 ### Settings reference
 
 | Setting                    | Type   | ENV                          | Default            | What it does |
@@ -625,6 +643,8 @@ token.
 | DELETE | `/api/v1/widgets/{id}` | write | Delete a detached widget |
 | GET | `/api/v1/settings/exposure` | read | Exposure direction settings |
 | PUT | `/api/v1/settings/exposure` | write | Replace exposure direction settings |
+| GET | `/api/v1/settings/update-check` | read | Update check settings |
+| PUT | `/api/v1/settings/update-check` | write | Change the update check settings |
 | GET | `/api/v1/config` | read | Effective configuration (read-only) |
 
 Ids are the numeric ids shown in the API output. Write endpoints that create
@@ -902,14 +922,16 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
 | `/settings/api-keys` `/settings/api-keys/<id>/revoke` | Create (shown once) and revoke admin API keys (admin POST). |
+| `/settings/update-check` | Save the update-check toggle and interval (admin POST). |
+| `/api/update-status` | Cached update-check status for the header (JSON, login). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
 | `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
 | `/api/v1/openapi.json` | OpenAPI 3.1 description of the management API (public). |
-| `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope (admin API key). |
+| `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope, plus the STD version, build commit/channel and update status (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
-| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
+| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
 | `/login` `/logout`   | Local user auth.                         |
 
 ### Admin API keys (management API)

@@ -380,7 +380,8 @@ health.py           ← /healthz (liveness; /readyz not implemented)
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) for the badges + status filter
 health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)
 settings_loader.py  ← file/ENV settings; loaded once at startup
-settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
+settings_store.py   ← DB-stored runtime settings (per-interpreter directions, update check)
+version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views

@@ -69,6 +69,7 @@
 | 0.59    | 2026-11-16 | §15.9 delivered on `dev` (v090-10 A): Body-mode HTTP checks use the same reply-reason extraction as Status mode on 4xx/5xx; health detail panel always shows a reason line for a down check; static CSS/JS carry `?v=<mtime>`. §15.6 note corrected. No schema or register-contract change. |
 | 0.60    | 2026-11-16 | §15.10 delivered on `dev` (v090-11): degraded/down entries get a soft amber/red background on the Dashboard, Tiled and Compact views (`entry-health-<state>` class). §13.6 updated. No schema or register-contract change. |
 | 0.61    | 2026-11-16 | v0.9.0 released: §15 marked Delivered (DNS check, cert expiry, API key rotation, Groups single Save, host on tiles, roll-up and HTTP failure reasons, MCP uv install + version check, Tiled layout, health tints). |
+| 0.62    | 2026-11-16 | Added §16 (Next release — Version in the UI, delivered on `dev`): `BUILD_CHANNEL` build arg and `channel` in `version.txt`, header version with What's New link and dev-build SHA link, GitHub update check (page-load driven, cached, backoff, DB settings `update_check_enabled` / `update_check_interval_hours`), `whoami`/`config` build and update fields, `/api/v1/settings/update-check`. Later sections renumbered (§16→§17, §17→§18, §18→§19) and cross-references fixed. §3.1 module layout updated. No schema or register-contract change. |
 
 ---
 
@@ -195,6 +196,7 @@ extensions.py       ← SQLAlchemy + Flask-Login singletons
 models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure,
                       Setting, User, Widget, WidgetValue, Group)
 schemas.py          ← pydantic request/response schemas
+version_check.py    ← build channel/display strings + cached GitHub update check
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
                       /settings/exposure, /add, /edit/<id>, group CRUD,
                       /images/<filename>
@@ -978,7 +980,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §16 (Versioning, Branches, and Releases); this section
+release mechanics is §17 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -1000,7 +1002,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§16).
+  checks (§17).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1025,7 +1027,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§17) is not engaged and every notifier
+consumer-leads ordering rule (§18) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1210,7 +1212,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§18).
+Resolves the Open Question on health-check timeouts (§19).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1331,7 +1333,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§17) is not engaged. Every notifier version that works
+ordering rule (§18) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -2038,7 +2040,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§18), users and passwords through the API, and
+- Per-host notifier tokens (§19), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2393,7 +2395,7 @@ expiry, even though the HTTP status is fine.
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 17.1 Contract ownership
+### 18.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -2406,7 +2408,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 17.2 Release history
+### 18.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.

@@ -5,6 +5,36 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — version in the UI (update check design)
+
+- **PR builds get `channel=pr`**, not `dev`: a PR image is neither the dev
+  branch nor main, and the display treats `pr` like `dev` anyway
+  (`dev · 0.9.0+sha-…`), so nothing is lost by being precise.
+- **Persisted the last good result** in the `setting` table
+  (`update_check_cache`: latest version, release URL, checked_at, ETag), in
+  addition to the in-memory cache, so a restart does not refetch at once and
+  the ETag survives. Failure state (backoff, last error) stays in memory only:
+  a restart is a fair moment to retry.
+- **Backoff:** `interval * 2^failures`, capped at 24h, pushed further by
+  `Retry-After` or `X-RateLimit-Reset` when remaining is 0. Only the first
+  failure of a run logs a warning, so page loads never spam the log.
+- **Status endpoint is `GET /api/update-status` in the dashboard blueprint**
+  (login-protected), not the management API: it serves the browser header, not
+  API keys. The management API instead gets the same data in `whoami`/`config`
+  plus `GET/PUT /settings/update-check`.
+- **The check is triggered from the template context processor**, so every
+  rendered page starts a stale refresh with no per-route code; it swallows all
+  errors so the header can never break a page. A lock allows one refresh in
+  flight; saving the settings calls `version_check.reset()` so the new interval
+  applies at once.
+- **Tests:** conftest stubs `version_check._spawn` and `_http_get` for every
+  test (no threads, no network); tests that exercise the check drive
+  `refresh_now()` / `maybe_refresh()` directly.
+- **MCP:** the new fields are merged into `server_info` after
+  `compare_versions`, leaving the compatibility logic untouched.
+
+---
+
 ## 2026-11-16 — v090-11 health-tinted entries
 
 - Tint is a plain `entry-health-<state>` class set in the templates, CSS-only

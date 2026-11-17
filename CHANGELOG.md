@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Version in the header.** The running version shows next to the page title;
+  click it to open the What's New popup. Dev builds show `dev · 0.9.0` with the
+  short commit linked to GitHub.
+- **Update available link.** When GitHub has a newer release, a subtle
+  `update available → vX.Y.Z` link appears next to the version. The check runs
+  on the server when pages are loaded (at most every 6 hours, never delaying a
+  page) and uses releases only.
+- **Update check setting.** Settings → Info can turn the check off or change
+  the interval (also `GET`/`PUT /api/v1/settings/update-check`). Settings →
+  Info now also shows the build channel, linked commit, latest release seen,
+  last checked time and last error.
+- `GET /api/v1/whoami` and `GET /api/v1/config` now include `commit`,
+  `channel`, `build_time` and an `update` status; the MCP `server_info` tool
+  reports them too.
+
 ## [0.9.0] — 2026-11-16
 
 ### Added

@@ -20,6 +20,7 @@ from dateutil import parser
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 from flask_wtf.csrf import CSRFError
 
+import version_check
 from extensions import csrf, db, login_manager
 from health import health_bp
 from health_state import entry_health
@@ -59,9 +60,11 @@ def _configure_logging():
 
 
 def read_version_info():
+    """Build metadata: always has `version`, `commit`, `channel`, `build_time`."""
+    info = {}
     try:
         with open("/app/version.txt", "r") as f:
-            return dict(line.strip().split("=", 1) for line in f)
+            info = dict(line.strip().split("=", 1) for line in f if "=" in line)
     except Exception as e:
         logger.warning(f"⚠️ Could not read version info: {e}")
         # Local run (no image build): fall back to the repo's VERSION file.
@@ -71,11 +74,13 @@ def read_version_info():
                 version = vf.read().strip() or "unknown"
         except OSError:
             pass
-        return {
-            "version": version,
-            "commit": "unknown",
-            "build_time": "unknown"
-        }
+        info = {"version": version}
+    # An image built before the channel arg existed has no `channel` line.
+    for key, default in (("version", "unknown"), ("commit", "unknown"),
+                         ("channel", "local"), ("build_time", "unknown")):
+        if not info.get(key):
+            info[key] = default
+    return info
 
 
 def create_app():
@@ -163,7 +168,16 @@ def create_app():
 
     @app.context_processor
     def inject_globals():
+        version_ui = {}
+        try:
+            version_check.maybe_refresh(app)
+            running = app.config['VERSION_INFO'].get('version', 'unknown')
+            version_ui = {'display': version_check.display_info(app.config['VERSION_INFO']),
+                          'upd': version_check.status(running)}
+        except Exception as exc:  # the header must never break a page
+            logger.debug(f"version header unavailable: {exc}")
         return {
+            'version_ui': version_ui,
             'static_v': static_v,
             'now': datetime.now,
             'version_info': app.config['VERSION_INFO'],

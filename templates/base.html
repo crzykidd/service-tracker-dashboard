@@ -20,7 +20,21 @@
       data-std-version="{{ version_info.version | default('unknown') }}">
   <div class="max-w-screen-2xl mx-auto">
   <!-- Header -->
-    <div class="text-xl font-semibold text-white mb-4">Service Tracker Dashboard</div>
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0 mb-4" id="std-header"
+         data-update-enabled="{{ 'true' if version_ui.upd and version_ui.upd.enabled else 'false' }}">
+      <div class="text-xl font-semibold text-white">Service Tracker Dashboard</div>
+      {% if version_ui.display %}
+      <span class="text-xs text-gray-500" id="std-version">
+        <button type="button" id="std-version-btn" class="hover:text-gray-300 underline-offset-2 hover:underline"
+                title="What's new in this version">{{ version_ui.display.label }}</button>
+        {%- if version_ui.display.sha %}<a href="{{ version_ui.display.sha_url }}" target="_blank" rel="noopener noreferrer"
+           class="hidden sm:inline ml-1 hover:text-gray-300 hover:underline" title="Commit {{ version_ui.display.sha }}">{{ '+' if not version_ui.display.channel == 'main' }}sha-{{ version_ui.display.sha }}</a>{% endif %}
+      </span>
+      {% endif %}
+      <a id="std-update-link" target="_blank" rel="noopener noreferrer"
+         class="text-xs text-amber-500 hover:text-amber-300 hover:underline{% if not (version_ui.upd and version_ui.upd.update_available) %} hidden{% endif %}"
+         href="{{ version_ui.upd.release_url if version_ui.upd and version_ui.upd.release_url else '#' }}">update available → v<span id="std-update-version">{{ version_ui.upd.latest_version if version_ui.upd and version_ui.upd.latest_version else '' }}</span></a>
+    </div>
 
     <!-- Tabs -->
     <div class="border-b border-gray-700 mb-4">

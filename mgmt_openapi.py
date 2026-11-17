@@ -68,7 +68,8 @@ OPERATIONS: tuple = (
                    "It describes shapes only, never data. `/api/v1/register` is not part of it."),
     Op("GET", "/whoami", "read", "Name, prefix and scope of the calling key, and the STD version", S.WhoamiOut,
        description="Handy to check that a key works and what it may do. `version` is the STD "
-                   "version; the MCP server compares it with its own."),
+                   "version; the MCP server compares it with its own. `commit`, `channel` and `build_time` "
+                   "identify the build, and `update` is the cached GitHub update check."),
 
     Op("GET", "/entries", "read", "List entries", S.Page[S.EntryOut], params=_PAGE + (
         Param("status", {"type": "string", "enum": list(VALID_STATUS_FILTERS), "default": "all"},
@@ -152,6 +153,12 @@ OPERATIONS: tuple = (
        S.ExposureSettingsSavedOut, request=S.ExposureSettingsPut,
        description="Replaces both mappings, then recomputes every service's synthesized URLs. "
                    "UI edits and explicit labels are never overwritten."),
+    Op("GET", "/settings/update-check", "read", "Update check settings", S.UpdateCheckSettingsOut,
+       description="Whether STD asks GitHub for the latest release, and how often (hours)."),
+    Op("PUT", "/settings/update-check", "write", "Change the update check settings",
+       S.UpdateCheckSettingsOut, request=S.UpdateCheckSettingsPut,
+       description="`enabled` (default on) and `interval_hours` (default 6, minimum 1). Omitted "
+                   "fields keep their value. When disabled STD makes no request to GitHub."),
     Op("GET", "/config", "read", "Effective configuration (read-only)", S.ConfigOut,
        description="Secrets are masked as `***`. `sources` says where each value came from."),
 )

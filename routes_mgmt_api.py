@@ -37,6 +37,7 @@ import routes_api
 import settings_loader
 import settings_store
 import synthesizer
+import version_check
 import widget_rules
 from extensions import csrf, db
 from health_state import entry_health
@@ -50,6 +51,7 @@ from mgmt_schemas import (
     GroupCreate,
     GroupPatch,
     ServiceCheckCreate,
+    UpdateCheckSettingsPut,
     WidgetPut,
 )
 from mgmt_serializers import (
@@ -306,13 +308,23 @@ def openapi_spec():
     return jsonify(mgmt_openapi.build_spec(str(version)))
 
 
+def _build_facts():
+    """commit / channel / build_time / update, shared by whoami and config (additive fields)."""
+    info = current_app.config.get("VERSION_INFO") or {}
+    running = str(info.get("version") or "unknown")
+    return {"commit": info.get("commit") or "unknown",
+            "channel": info.get("channel") or "local",
+            "build_time": info.get("build_time") or "unknown",
+            "update": version_check.api_update(running)}
+
+
 @mgmt_bp.route("/whoami", methods=["GET"])
 @require_api_key("read")
 def whoami():
     key = g.api_key
     version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
     return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope,
-                    "version": str(version)})
+                    "version": str(version), **_build_facts()})
 
 
 # --- shared helpers --------------------------------------------------------------
@@ -1197,6 +1209,38 @@ def put_exposure_settings():
     return jsonify({**_exposure_payload(), "recomputed": touched})
 
 
+def _update_check_payload():
+    enabled, hours = settings_store.get_update_check_settings()
+    return {"enabled": enabled, "interval_hours": hours}
+
+
+@mgmt_bp.route("/settings/update-check", methods=["GET"])
+@require_api_key("read")
+def get_update_check_settings():
+    return jsonify(_update_check_payload())
+
+
+@mgmt_bp.route("/settings/update-check", methods=["PUT"])
+@require_api_key("write")
+def put_update_check_settings():
+    audit("update_check_settings")
+    data = UpdateCheckSettingsPut.model_validate(_json_body())
+    errors = []
+    if data.enabled is None and data.interval_hours is None:
+        errors.append({"field": "body", "message": "name at least one of enabled, interval_hours"})
+    if data.interval_hours is not None and data.interval_hours < 1:
+        errors.append({"field": "interval_hours", "message": "must be a whole number of hours, 1 or more"})
+    if errors:
+        return _fail(errors)
+    before = _update_check_payload()
+    settings_store.save_update_check_settings(data.enabled, data.interval_hours)
+    db.session.commit()
+    version_check.reset()
+    after = _update_check_payload()
+    audit("update_check_settings", None, _diff(before, after))
+    return jsonify(after)
+
+
 _SECRET_SUFFIXES = ("_key", "_token", "_password", "_secret")
 
 
@@ -1220,4 +1264,4 @@ def get_config():
         sources[name] = "env" if name in from_env else "file" if name in from_file else "default"
     sources["display_tools"] = "derived"
     version = (cfg.get("VERSION_INFO") or {}).get("version", "unknown")
-    return jsonify({"version": version, "settings": values, "sources": sources})
+    return jsonify({"version": version, **_build_facts(), "settings": values, "sources": sources})

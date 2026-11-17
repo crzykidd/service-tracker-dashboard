@@ -78,3 +78,4 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             GIT_COMMIT=${{ github.sha }}
+            BUILD_CHANNEL=${{ github.event_name == 'release' && 'release' || (github.event_name == 'pull_request' && 'pr') || (github.ref_name == 'main' && 'main') || 'dev' }}
