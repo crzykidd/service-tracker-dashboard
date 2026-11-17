@@ -74,6 +74,7 @@
 | 0.64    | 2026-11-16 | §17.2 delivered on `dev` (notif-01): `notification_channel` table (migration `a2f4c6e8b031`, new §5.8), `notify.py` / `notify_mqtt.py` (channel registry, bounded-queue publisher thread, MQTT via `paho-mqtt` 2.x, availability + LWT, reload on config change), instance id in the `setting` store, Settings → Notifications tab with **Send test message**, management API `/api/v1/notifications/channels` (+ `/test`) and MCP tools; §3.1 and §3.2 updated. §17.3 and §17.4 remain planned. No register-contract change. |
 | 0.65    | 2026-11-16 | §17.3 delivered on `dev` (notif-02): retained state publishing. The topic and payload contract (`<base>/entry/<entry_id>/state`, `.../check/<check_id>`, `<base>/summary`) is public and documented in §17.3; change detection at `jobs.record_check_result()`, the `full_sync()` reconcile in new `notify_state.py` (connect, debounced mutation requests via a commit listener, a 10-minute forced safety net), published set persisted in the `setting` key `notify_publish_state` (§5.8); §3.1 and §3.2 updated. §17.4 remains planned. No register-contract change. |
 | 0.66    | 2026-11-16 | §17.4 delivered on `dev` (notif-03): Home Assistant MQTT discovery. New `notify_ha.py`; discovery configs reconcile through `notify_state.full_sync()` (configs before states, per-channel published set in `notify_publish_state.ha`, cleared on opt-out/delete/purge/discovery off), birth-message subscription `<ha_prefix>/status` in `MqttSession`, additive state-payload attributes (`std_entry_id`, and `entry_name`/`host`/`group`/`source`/`dashboard_url` on checks), `ha_exclude` on `service_entry` and `health_check` (migration `d8e2a6f4b915`, new §5.9), Settings/edit-page controls, management API and MCP fields. §17 marked Delivered on `dev`. No register-contract change. |
+| 0.67    | 2026-11-17 | §17.1/§17.4/§5.9 (notif-04, on `dev`): Home Assistant entries become opt-in (`service_entry.ha_publish`, default false; migration `e3b7c1d9a204` drops `service_entry.ha_exclude`, every entry starts unpublished; checks keep `ha_exclude`). Device names and `default_entity_id` include the host (`<prefix> <name> (<host>)`). Settings → Notifications "Home Assistant entries" bulk picker, `ha_publish` on the Add page, management API (`ha_publish` on entries) and MCP, `ha_publish`/check `ha_exclude` in backups. No register-contract change. |
 
 ---
 
@@ -434,12 +435,12 @@ Migration `a2f4c6e8b031` (§17.2). No foreign keys.
 
 ### 5.9 Home Assistant schema changes
 
-Migration `d8e2a6f4b915` (§17.4). No foreign keys, no new index (flags, not lookup columns).
+Migrations `d8e2a6f4b915` and `e3b7c1d9a204` (§17.4). No foreign keys, no new index (flags, not lookup columns).
 
 | Change | Detail |
 |--------|--------|
-| Column | `service_entry.ha_exclude` (Boolean, NOT NULL, default false). Opt-out from Home Assistant discovery. Operator-owned: register never writes it. |
-| Column | `health_check.ha_exclude` (Boolean, NOT NULL, default false). Per-check opt-out. Not part of `to_config()` (backups). |
+| Column | `service_entry.ha_publish` (Boolean, NOT NULL, default false). Opt-in to Home Assistant discovery. Operator-owned: register never writes it. Added by `e3b7c1d9a204`, which dropped the interim `ha_exclude` on entries; every existing entry is false after it (clean slate). Part of `to_dict()` (backups). |
+| Column | `health_check.ha_exclude` (Boolean, NOT NULL, default false). Per-check opt-out. Part of `to_config()` (backups). |
 | Setting key | `notify_publish_state` gains `ha`: `{channel id: [discovery config topics]}` (§17.4). |
 
 ---
@@ -2458,11 +2459,16 @@ No register-contract change: the notifier is not involved.
   (re)connect. Not every check result (that is parked in FUTURE.md).
 - Topics use **ids, not names**, so a rename never moves a topic.
 - Home Assistant: **one device per STD entry**, linked to an STD hub device.
-- HA discovery is **opt-in per channel** and then publishes every entry and
-  check, including new ones automatically; **per-entry and per-check
-  opt-outs** remove them.
-- Devices are named `<prefix> <entry name>` (prefix default `STD`), so
-  entity ids start `std_` for auto-entities globs.
+- HA discovery is **opt-in per channel** (master switch; the hub device
+  publishes whenever it is on). **Entries are opt-in** (`ha_publish`, default
+  false); inside a published entry every check publishes unless **opted out**
+  per check (`ha_exclude`). Changed 2026-11-17 (notif-04): notif-03 shipped
+  entries as opt-out and the operator got ~50 unwanted devices; the migration
+  starts every entry unpublished.
+- Devices are named `<prefix> <entry name> (<host>)` (prefix default `STD`;
+  no host, as on a manual entry, gives `<prefix> <entry name>`), so same-named
+  entries on different hosts are distinguishable (2026-11-17) and entity ids
+  start `std_` for auto-entities globs.
 - The STD group is an **attribute**, not a `suggested_area`.
 - **No command entities** (no "Check now" button from HA); parked in
   FUTURE.md pending a security review.
@@ -2550,9 +2556,10 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
 ### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Delivered on `dev`
 
 Per channel, **Add to Home Assistant** (`ha_discovery`, default off) publishes
-MQTT discovery so Home Assistant creates one device per STD entry. Every active
-entry and every check that has a state topic is published, including ones added
-later; per-entry and per-check opt-outs remove them. Implemented in
+MQTT discovery so Home Assistant creates one device per STD entry that is
+opted in (`ha_publish`, default false). Within a published entry every counted
+check is published unless its `ha_exclude` is set; checks added later appear
+on their own. Implemented in
 `notify_ha.py` (pure config builders) and reconciled by `notify_state.full_sync()`
 (§17.3), not by a second mechanism.
 
@@ -2566,7 +2573,7 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 | Device | Identifiers / fields |
 |--------|----------------------|
 | Hub | `identifiers: [<node>]`, `name` = `ha_device_prefix` (`STD`), `manufacturer: Service Tracker Dashboard`, `model: STD`, `sw_version` = the STD version. No `configuration_url`: STD has no configured public base URL. |
-| Entry | `identifiers: [<node>_entry_<entry_id>]`, `name` = `<ha_device_prefix> <entry name>`, same `manufacturer`, `model` = `Docker container` or `Manual`, `sw_version` = the image tag when the entry has one, `via_device: <node>`. No `suggested_area` (the group is an attribute). |
+| Entry | `identifiers: [<node>_entry_<entry_id>]`, `name` = `<ha_device_prefix> <entry name> (<host>)` (`<ha_device_prefix> <entry name>` when the entry has no host), same `manufacturer`, `model` = `Docker container` or `Manual`, `sw_version` = the image tag when the entry has one, `via_device: <node>`. No `suggested_area` (the group is an attribute). |
 
 | Entity | Config |
 |--------|--------|
@@ -2577,8 +2584,9 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 
 Every entity except the connectivity sensor uses `availability_topic`
 `<base>/status` (`online` / `offline`). Entity ids are suggested with
-`default_entity_id` (`<component>.<slug of "<prefix> <entry name>">_<slug of
-entity name>`, so they start `std_` by default) for auto-entities globs; Home
+`default_entity_id` (`<component>.<slug of the device name>_<slug of entity
+name>`, so they start `std_` by default and include the slugified host, e.g.
+`sensor.std_traefik_host1_state`) for auto-entities globs; Home
 Assistant keeps an id once registered. A rename republishes the config with the
 same unique ids, so Home Assistant updates the device in place.
 
@@ -2587,8 +2595,8 @@ need: both add `std_entry_id`; the check payload also carries `entry_name`,
 `host`, `group`, `source` and `dashboard_url` (additive; no field was removed).
 
 **Lifecycle.** The desired discovery set is: channel enabled with
-`ha_discovery` on, times active entries without `ha_exclude`, times their
-counted checks without `ha_exclude`, plus the hub. Everything previously
+`ha_discovery` on, times active entries with `ha_publish`, times their
+counted checks without `ha_exclude`, plus the hub (always). Everything previously
 published for that channel and no longer desired (opt-outs, removed or disabled
 checks, soft delete, purge, `ha_discovery` turned off or the prefix changed)
 gets an empty retained payload on its config topic. Configs are published
@@ -2600,20 +2608,26 @@ sync, republishing every config and then every state. A channel that is
 deleted or disabled while discovery is on leaves its configs on that broker
 (STD no longer has a session to clear them).
 
-**Schema** (§5.9): `service_entry.ha_exclude` and `health_check.ha_exclude`
-(NOT NULL, default false): opt-out flags, operator-owned, never written by
-register (tested). The state topics are still published for an excluded entry;
-only discovery is withheld.
+**Schema** (§5.9): `service_entry.ha_publish` (opt-in) and
+`health_check.ha_exclude` (opt-out), both NOT NULL default false, operator-owned,
+never written by register (tested). Both round-trip through backups. The state
+topics are still published for an unpublished entry; only discovery is withheld.
 
 **UI, API and MCP.** Settings → Notifications has the **Add to Home Assistant**
 checkbox, **Discovery prefix** and **Device name prefix**. The entry edit page
-has **Exclude from Home Assistant**; every check row (URL, container, service)
+and the Add Entry page have **Publish to Home Assistant** (default off; a hidden
+marker keeps a form without the field from changing the stored value). Settings →
+Notifications has a **Home Assistant entries** panel: a table of active entries
+(name, host, group) with a Publish checkbox, a filter, Select all / Select none
+(visible rows) and one Save that applies every change in a single commit (one
+sync). Every check row (URL, container, service)
 has **Publish to Home Assistant** (default on; stored inverted as `ha_exclude`;
 a form that lacks the toggle's hidden marker leaves the stored value alone). The
 controls are always visible and say they only matter with a Home Assistant
-channel. The management API carries `ha_exclude` on entries and checks (read and
-write; PATCH accepts it on every kind of check) and the three `ha_*` channel
-config keys; the MCP `update_entry` / `update_check` accept it.
+channel. The management API carries `ha_publish` on entries (read, create, PATCH) and
+`ha_exclude` on checks (read and write; PATCH accepts it on every kind of
+check) and the three `ha_*` channel config keys; the MCP `create_manual_entry`
+/ `update_entry` accept `ha_publish`, `update_check` accepts `ha_exclude`.
 
 Out of scope, parked in FUTURE.md: a "Check now" button entity (needs a
 security review) and per-result latency sensors.

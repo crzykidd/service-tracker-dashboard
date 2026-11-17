@@ -50,7 +50,7 @@ DEFAULT_TIMEOUT = 15.0
 # readable error, not a round trip. The server stays the authority.
 ENTRY_PATCH_FIELDS = {
     "name", "host", "description", "group", "internalurl", "externalurl",
-    "icon", "sort_priority", "locked", "ha_exclude",
+    "icon", "sort_priority", "locked", "ha_publish",
 }
 CHECK_PATCH_FIELDS = {
     "enabled", "name", "check_type", "target", "mode", "interval_seconds",
@@ -319,11 +319,13 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
                             group: str | None = None, internalurl: str | None = None,
                             externalurl: str | None = None, icon: str | None = None,
                             sort_priority: int | None = None, locked: bool = False,
+                            ha_publish: bool = False,
                             url_checks: dict | None = None,
                             checks: list[dict] | None = None) -> dict:
         """Add a manual (non-Docker) entry, optionally with checks.
 
         group: group name; created if missing; omit to leave the entry ungrouped.
+        ha_publish: true publishes the entry to Home Assistant (default false; needs a channel with Add to Home Assistant on).
         url_checks: settings for the URL checks, e.g.
             {"internal": {"enabled": true, "mode": "body", "interval_seconds": 60}, "external": {"enabled": false}}
             mode is `status` (HTTP status below 400 is up) or `body` (the body must be `OK`; anything else is down and `Error: <msg>` shows <msg> as the failure message).
@@ -336,13 +338,14 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
                           internalurl=internalurl, externalurl=externalurl, icon=icon,
                           sort_priority=sort_priority, url_checks=url_checks, checks=checks)
         body["locked"] = locked
+        body["ha_publish"] = ha_publish
         return client.request("POST", "/entries", json=body)
 
     @write_tool
     def update_entry(entry_id: int, fields: dict) -> dict:
         """Edit an entry. `fields` names only what changes; a field left out is untouched and a field set to null clears it.
 
-        Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, sort_priority, locked, ha_exclude (true removes the entry's device from Home Assistant; only matters when a notification channel has Add to Home Assistant on).
+        Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, sort_priority, locked, ha_publish (true publishes the entry's device to Home Assistant, default false; only matters when a notification channel has Add to Home Assistant on).
         Docker-owned fields of notifier entries are rejected. A URL you edit here is protected from being overwritten by the notifier.
         Example fields: {"description": "Media server", "group": "Media", "externalurl": null}
         """

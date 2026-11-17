@@ -113,10 +113,10 @@
 
         <div class="flex items-center">
           <input type="hidden" name="ha_form" value="1">
-          <input type="checkbox" name="ha_exclude" id="ha_exclude" class="form-checkbox h-4 w-4" {% if (form is not none and 'ha_exclude' in form) or (form is none and entry.ha_exclude) %}checked{% endif %}>
-          <label for="ha_exclude" class="ml-2 text-sm text-dashboard-secondary">Exclude from Home Assistant</label>
+          <input type="checkbox" name="ha_publish" id="ha_publish" class="form-checkbox h-4 w-4" {% if (form is not none and 'ha_publish' in form) or (form is none and entry.ha_publish) %}checked{% endif %}>
+          <label for="ha_publish" class="ml-2 text-sm text-dashboard-secondary">Publish to Home Assistant</label>
         </div>
-        <p class="edit-helper">Only matters when a notification channel has Add to Home Assistant on. Removes this entry's device and all its entities from Home Assistant.</p>
+        <p class="edit-helper">Only matters when a notification channel has Add to Home Assistant on. Off by default. Ticked, this entry gets a device in Home Assistant with an entity per check (untick a check's own Publish box to leave it out).</p>
       </div>
 
       {# ── Widget ───────────────────────────────────────────── #}

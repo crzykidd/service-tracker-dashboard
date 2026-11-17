@@ -101,6 +101,15 @@
         <p class="mt-1 text-xs text-gray-500">If checked, a notifier report for the same name and host is ignored instead of taking over this entry.</p>
       </div>
 
+      <!-- Home Assistant opt-in -->
+      <div class="mb-6">
+        <div class="flex items-center">
+          <input type="checkbox" name="ha_publish" id="ha_publish" class="form-checkbox h-5 w-5 rounded border-gray-600" {% if 'ha_publish' in entry %}checked{% endif %}>
+          <label for="ha_publish" class="ml-2 text-sm font-medium text-gray-400">Publish to Home Assistant</label>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">Only matters when a notification channel has Add to Home Assistant on. Creates a device for this entry and its checks in Home Assistant.</p>
+      </div>
+
       <!-- Buttons -->
       <div class="flex flex-col sm:flex-row sm:justify-end space-y-3 sm:space-y-0 sm:space-x-4">
         <button type="submit" class="btn-primary w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm">Add Entry</button>

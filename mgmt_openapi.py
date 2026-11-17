@@ -91,8 +91,8 @@ OPERATIONS: tuple = (
        description="Adds notifier-reported data (networks, ports, exposures) and the widget."),
     Op("PATCH", "/entries/{id}", "write", "Edit an entry", S.EntryDetailOut, request=S.EntryPatch,
        errors=(404, 409), description=_PATCH_NOTE + " Notifier-owned fields are rejected by name; "
-       "`name` and `host` can be changed on manual entries only. `ha_exclude` true removes the "
-       "entry's device from Home Assistant discovery."),
+       "`name` and `host` can be changed on manual entries only. `ha_publish` true publishes the "
+       "entry's device to Home Assistant discovery (default false)."),
     Op("DELETE", "/entries/{id}", "write", "Delete an entry (soft) or remove it for good",
        S.EntryOut | S.PermanentDeleteOut,
        params=(Param("permanent", _BOOL, "Permanently remove an entry that is already deleted."),),

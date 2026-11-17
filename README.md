@@ -834,21 +834,29 @@ What gets created:
 
 - An **STD hub device** with a connectivity sensor (STD online or not) and
   sensors for the number of entries that are up, degraded, down and unknown.
-- One **device per entry**, named `<prefix> <entry name>` (for example
-  `STD Plex`), linked to the hub, with a **State** sensor (`up`, `degraded`,
+- One **device per published entry**, named `<prefix> <entry name> (<host>)`
+  (for example `STD Plex (nas1)`; an entry with no host is `STD Plex`, and the
+  host tells apart same-named entries on different hosts), linked to the hub, with a **State** sensor (`up`, `degraded`,
   `down`, `unknown`, `none`) and one **problem** binary sensor per check named
   after the check (`HTTP`, `TCP 443`, `Container`, ...). The sensor is on when
   the check is failing. Docker entries show the image tag as the software
   version.
-- Entity ids start with `std_` (for example `binary_sensor.std_plex_http`), so
+- Entity ids start with `std_` and include the host (for example
+  `binary_sensor.std_plex_nas1_http`), so
   they are easy to find. The entry's group, host, source, check type, target,
   latency, message and last change are **attributes**, not areas.
 
-New entries and checks appear automatically. To keep one out, tick **Exclude
-from Home Assistant** on the entry's edit page, or untick **Publish to Home
-Assistant** on a single check (also `ha_exclude` in the management API and
-MCP). Deleted, excluded or disabled entries and checks are removed from Home
-Assistant, as is everything when you untick **Add to Home Assistant**. Delete
+Entries are **opt-in**: nothing is published until you tick **Publish to Home
+Assistant** on an entry (Add or edit page), or pick several in **Settings →
+Notifications → Home Assistant entries**, a table of your entries with a
+filter box, **Select all** / **Select none** (they act on the rows the filter
+shows) and one **Save** that applies every change at once. Within a published
+entry its checks appear automatically; untick **Publish to Home Assistant** on
+a single check to leave it out. The management API and MCP carry `ha_publish`
+on entries and `ha_exclude` on checks. Unticked, deleted or disabled entries
+and checks are removed from Home Assistant, as is everything when you untick
+**Add to Home Assistant**. The hub device always appears while the channel's
+**Add to Home Assistant** is on. Delete
 a channel only after unticking it, or its devices stay behind. When Home
 Assistant restarts, STD republishes everything.
 

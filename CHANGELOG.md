@@ -37,21 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Notifications: Home Assistant discovery.** Tick **Add to Home Assistant**
   on an MQTT channel (with an optional discovery prefix, default
   `homeassistant`, and device name prefix, default `STD`) and Home Assistant
-  creates one device per STD entry, named `STD <entry name>`: a State sensor
-  (up, degraded, down, unknown, none) and a problem sensor per check, all under
-  an STD hub device with a connectivity sensor and up/degraded/down/unknown
-  counts. New entries and checks appear on their own. Entity ids start `std_`,
-  so an auto-entities card can match `binary_sensor.std_*`; the group, host,
-  source, check type and target are attributes. **Exclude from Home Assistant**
-  on an entry's edit page and **Publish to Home Assistant** on each check
-  remove them again (also `ha_exclude` in the management API and MCP). Deleted,
-  excluded or disabled entries and checks are cleared from Home Assistant, and
-  everything is republished when Home Assistant restarts.
+  creates one device per STD entry you opt in, named `STD <entry name>
+  (<host>)` (just `STD <entry name>` when the entry has no host): a State
+  sensor (up, degraded, down, unknown, none) and a problem sensor per check,
+  all under an STD hub device with a connectivity sensor and
+  up/degraded/down/unknown counts. **No entry is published until you tick
+  Publish to Home Assistant**: on the entry's Add or edit page, or for many at
+  once in the **Home Assistant entries** table under Settings → Notifications
+  (filter, Select all / Select none, one Save). Within a published entry, every
+  check appears unless you untick **Publish to Home Assistant** on that check
+  (the management API and MCP carry `ha_publish` on entries and `ha_exclude` on
+  checks). Entity ids start `std_`, so an auto-entities card can match
+  `binary_sensor.std_*`; the group, host, source, check type and target are
+  attributes. Unticked, deleted or disabled entries and checks are cleared from
+  Home Assistant, and everything is republished when Home Assistant restarts.
 - **More attributes on published state.** The entry state topic adds
   `std_entry_id`; the check topic adds `std_entry_id`, `entry_name`, `host`,
   `group`, `source` and `dashboard_url`.
-- Database migration adds `ha_exclude` to entries and checks (runs
-  automatically on start).
+- Database migrations add `ha_publish` to entries (off for every entry) and
+  `ha_exclude` to checks (run automatically on start).
 - New dependency `paho-mqtt` 2.x, and a database migration that adds the
   `notification_channel` table (runs automatically on start).
 - **Version in the header.** The running version shows next to the page title;

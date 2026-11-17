@@ -783,6 +783,65 @@
           <span data-unsaved-hint hidden class="text-sm text-yellow-300">Unsaved changes</span>
         </div>
       </form>
+
+      <!-- Home Assistant entries: opt-in picker (PRD 17.4) -->
+      <h3 class="text-lg font-semibold text-white border-b border-gray-600 pb-1 mt-10 mb-2">Home Assistant entries</h3>
+      <p class="text-sm text-gray-400 mb-3">
+        Only ticked entries get a device in Home Assistant; none are published by default.
+        {% if not ha_discovery_on %}<strong>No channel has Add to Home Assistant on yet</strong>, so nothing is published until one does.{% endif %}
+        Select all / none act on the rows the filter shows.
+      </p>
+      <form method="POST" action="{{ url_for('dashboard.save_ha_entries') }}" id="ha-entries-form" data-unsaved-guard>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="flex flex-wrap items-center gap-3 my-3">
+          <input type="text" id="ha-filter" placeholder="Filter by name, host or group" class="form-input text-sm w-64">
+          <button type="button" id="ha-select-all" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Select all</button>
+          <button type="button" id="ha-select-none" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Select none</button>
+          <button type="submit" data-unsaved-save class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm">Save</button>
+          <span data-unsaved-hint class="hidden text-yellow-400 text-sm">Unsaved changes</span>
+        </div>
+        {% if ha_entries %}
+        <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="ha-entries-table">
+          <thead class="bg-gray-800 text-gray-400">
+            <tr><th class="py-2 px-3">Publish</th><th class="py-2 px-3">Name</th><th class="py-2 px-3">Host</th><th class="py-2 px-3">Group</th></tr>
+          </thead>
+          <tbody>
+          {% for e in ha_entries %}
+            <tr class="border-t border-gray-700" data-ha-row>
+              <td class="py-1 px-3">
+                <input type="hidden" name="ha_entry_ids" value="{{ e.id }}">
+                <input type="checkbox" name="ha_publish" value="{{ e.id }}" class="form-checkbox h-4 w-4" aria-label="Publish {{ e.container_name }}" {% if e.ha_publish %}checked{% endif %}>
+              </td>
+              <td class="py-1 px-3">{{ e.container_name }}</td>
+              <td class="py-1 px-3">{{ e.host or '' }}</td>
+              <td class="py-1 px-3">{{ e.group.group_name if e.group else '' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-400">No entries yet.</p>
+        {% endif %}
+      </form>
+      <script>
+        (function () {
+          const form = document.getElementById('ha-entries-form');
+          if (!form) return;
+          const rows = () => Array.from(form.querySelectorAll('tr[data-ha-row]'));
+          const visible = () => rows().filter((r) => !r.hidden);
+          const setAll = (on) => visible().forEach((r) => {
+            const box = r.querySelector('input[type=checkbox]');
+            if (box.checked !== on) { box.checked = on; box.dispatchEvent(new Event('change', { bubbles: true })); }
+          });
+          document.getElementById('ha-select-all').addEventListener('click', () => setAll(true));
+          document.getElementById('ha-select-none').addEventListener('click', () => setAll(false));
+          document.getElementById('ha-filter').addEventListener('input', (ev) => {
+            const q = ev.target.value.trim().toLowerCase();
+            rows().forEach((r) => { r.hidden = q !== '' && !r.textContent.toLowerCase().includes(q); });
+          });
+        })();
+      </script>
+
     </section>
 
     <!-- === Exposure Section === -->

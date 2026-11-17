@@ -52,7 +52,7 @@ SUMMARY_TOPIC = "summary"
 # What changes a topic's payload. Cached `last_*` result columns are left out
 # on purpose: every health tick writes those, and a sync per tick is wasteful.
 _ENTRY_ATTRS = ("container_name", "host", "group_id", "source", "deleted_at",
-                "internalurl", "externalurl", "is_static", "image_tag", "ha_exclude")
+                "internalurl", "externalurl", "is_static", "image_tag", "ha_publish")
 _CHECK_ATTRS = ("enabled", "kind", "name", "check_type", "target", "ha_exclude")
 _GROUP_ATTRS = ("group_name",)
 

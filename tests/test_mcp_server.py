@@ -59,7 +59,7 @@ CALLS = {
         {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000",
          "checks": [{"target": "nas.lan", "check_type": "ping"}]},
         "POST", "/api/v1/entries", {},
-        {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000", "locked": False,
+        {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000", "locked": False, "ha_publish": False,
          "checks": [{"target": "nas.lan", "check_type": "ping"}]}),
     "update_entry": ({"entry_id": 7, "fields": {"externalurl": None, "description": "x"}},
                      "PATCH", "/api/v1/entries/7", {}, {"externalurl": None, "description": "x"}),

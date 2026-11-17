@@ -90,7 +90,7 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "icon": entry.image_icon or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
-        "ha_exclude": bool(entry.ha_exclude),
+        "ha_publish": bool(entry.ha_publish),
         "stale": entry.source == SOURCE_NOTIFIER and entry.is_docker_status_stale,
         "last_updated": _local_iso(entry.last_updated),
         "deleted_at": _local_iso(entry.deleted_at),

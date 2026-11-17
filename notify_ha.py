@@ -51,10 +51,18 @@ def hub_device(node, device_prefix, version):
             "model": "STD", "sw_version": version}
 
 
+def device_name(device_prefix, entry):
+    """`<prefix> <name> (<host>)`; no host (a manual entry) is `<prefix> <name>`.
+    The host is always shown so same-named entries on different hosts differ."""
+    name = f"{device_prefix} {entry.container_name}"
+    host = (entry.host or "").strip()
+    return f"{name} ({host})" if host else name
+
+
 def entry_device(node, device_prefix, entry):
     device = {
         "identifiers": [f"{node}_entry_{entry.id}"],
-        "name": f"{device_prefix} {entry.container_name}",
+        "name": device_name(device_prefix, entry),
         "manufacturer": MANUFACTURER,
         "model": "Manual" if entry.source == SOURCE_MANUAL else "Docker container",
         "via_device": node,
@@ -144,7 +152,7 @@ def desired_configs(entries, config, instance_id, version):
     node = node_id(instance_id)
     out = hub_configs(base, prefix, node, device_prefix, version)
     for entry in entries:
-        if entry.ha_exclude:
+        if not entry.ha_publish:
             continue
         out.update(entry_configs(base, prefix, node, device_prefix, entry))
     return out

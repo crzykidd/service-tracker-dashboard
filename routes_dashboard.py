@@ -737,6 +737,8 @@ def _render_settings(group_form=None, status=200, notification_form=None):
             audit_key_options.append({'value': f'id:{kid}',
                                       'label': f'{kname} (revoked)' if revoked_at else kname})
 
+    notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
+                                 NotificationChannel.query.order_by(NotificationChannel.id).all()]
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -766,9 +768,10 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          audit_filter=audit_filter,
          audit_limit=AUDIT_VIEW_LIMIT,
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
-         notification_channels=[mgmt_serializers.notification_channel_out(c) for c in
-                                NotificationChannel.query.order_by(NotificationChannel.id).all()],
+         notification_channels=notification_channels_out,
          notification_form=notification_form,
+         ha_entries=ServiceEntry.active().order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
+         ha_discovery_on=any(c['config'].get('ha_discovery') for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
@@ -839,6 +842,29 @@ def save_notification_channel():
         return _render_settings(notification_form=form, status=400)
     logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
     flash(f"✅ Notification channel '{channel.name}' saved.", "success")
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+@dashboard_bp.route('/settings/notifications/ha-entries', methods=['POST'])
+@login_required
+@is_admin_required
+def save_ha_entries():
+    """Apply the Home Assistant entries picker in one commit (so one sync).
+
+    `ha_entry_ids` lists every row the operator saw; `ha_publish` the ticked
+    ones. Rows not listed (an entry added since the page loaded) are left alone."""
+    def ids(name):
+        return {int(v) for v in request.form.getlist(name) if v.isdigit()}
+    seen, ticked = ids('ha_entry_ids'), ids('ha_publish')
+    changed = 0
+    for entry in ServiceEntry.active().filter(ServiceEntry.id.in_(seen)).all():
+        want = entry.id in ticked
+        if bool(entry.ha_publish) != want:
+            entry.ha_publish = want
+            changed += 1
+    db.session.commit()
+    logger.info(f"Home Assistant entries saved by {current_user.username} ({changed} changed).")
+    flash(f"✅ Home Assistant entries saved ({changed} changed).", "success")
     return redirect(url_for('dashboard.settings', section='notifications'))
 
 
@@ -1198,6 +1224,7 @@ def add_entry():
             image_icon=image_icon,
             sort_priority=sort_priority,
             is_static=is_static,
+            ha_publish='ha_publish' in request.form,
         )
         check_form.apply_rows(entry, url_rows, svc_rows)
 
@@ -1266,6 +1293,7 @@ def _restore_checks(entry, item):
             check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
             check.verify_tls = cfg.get('verify_tls') is not False
             check.enabled = bool(cfg.get('enabled'))
+            check.ha_exclude = cfg.get('ha_exclude') is True
             # DNS settings (v0.9.0); absent in older backups, so they stay NULL.
             is_dns = check.check_type == CHECK_TYPE_DNS and kind == CHECK_KIND_SERVICE
             check.dns_name = _text_or_none(cfg.get('dns_name')) if is_dns else None
@@ -1407,7 +1435,7 @@ def edit_entry(id):
         was_locked = entry.is_static
         entry.is_static = 'is_static' in request.form
         if 'ha_form' in request.form:
-            entry.ha_exclude = 'ha_exclude' in request.form
+            entry.ha_publish = 'ha_publish' in request.form
         if was_locked and not entry.is_static and entry.container_check is not None:
             # Unlocked: the container state was frozen, so re-evaluate it now.
             entry.container_check.last_checked_at = None

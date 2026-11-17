@@ -72,7 +72,7 @@ class EntryCreate(_Request):
     icon: str | None = None              # icon file name; fetched if missing
     sort_priority: int | None = None
     locked: bool = False
-    ha_exclude: bool = False             # true: no Home Assistant device for this entry
+    ha_publish: bool = False             # true: publish this entry's device to Home Assistant
     url_checks: UrlChecksIn | None = None
     checks: list[ServiceCheckCreate] = []
 
@@ -91,7 +91,7 @@ class EntryPatch(_Request):
     icon: str | None = None
     sort_priority: int | None = None
     locked: bool | None = None
-    ha_exclude: bool | None = None       # true removes the entry's Home Assistant device
+    ha_publish: bool | None = None       # true publishes the entry's Home Assistant device
 
 
 class CheckPatch(_Request):
@@ -325,7 +325,7 @@ class EntryOut(TypedDict):
     icon: str | None
     sort_priority: int | None
     locked: bool
-    ha_exclude: bool                 # true: not published to Home Assistant
+    ha_publish: bool                 # true: published to Home Assistant (opt-in)
     stale: bool
     last_updated: str | None
     deleted_at: str | None

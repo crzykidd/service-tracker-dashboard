@@ -444,7 +444,7 @@ def _entry_snapshot(entry):
         "icon": entry.image_icon or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
-        "ha_exclude": bool(entry.ha_exclude),
+        "ha_publish": bool(entry.ha_publish),
     }
 
 
@@ -604,7 +604,7 @@ def create_entry():
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(), group_id=group.id if group else None,
             image_icon=icon, sort_priority=data.sort_priority, is_static=data.locked,
-            ha_exclude=data.ha_exclude,
+            ha_publish=data.ha_publish,
         )
         ensure_url_checks(entry)
         for which, values in url_values.items():
@@ -670,8 +670,8 @@ def patch_entry(id):
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
     if "locked" in sent and data.locked is None:
         errors.append({"field": "locked", "message": "locked must be true or false"})
-    if "ha_exclude" in sent and data.ha_exclude is None:
-        errors.append({"field": "ha_exclude", "message": "ha_exclude must be true or false"})
+    if "ha_publish" in sent and data.ha_publish is None:
+        errors.append({"field": "ha_publish", "message": "ha_publish must be true or false"})
     if errors:
         return _fail(errors)
 
@@ -703,8 +703,8 @@ def patch_entry(id):
             entry.image_icon = icon or ""
         if "sort_priority" in sent:
             entry.sort_priority = data.sort_priority
-        if "ha_exclude" in sent and data.ha_exclude is not None:
-            entry.ha_exclude = data.ha_exclude
+        if "ha_publish" in sent and data.ha_publish is not None:
+            entry.ha_publish = data.ha_publish
         if "locked" in sent and data.locked is not None:
             was_locked = entry.is_static
             entry.is_static = data.locked

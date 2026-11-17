@@ -5,6 +5,38 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — notif-04 Home Assistant entries are opt-in; host in device names
+
+- **Opt-in, not opt-out.** notif-03 published every entry once "Add to Home
+  Assistant" was on; the operator got ~50 unwanted devices. Publishing is now
+  opt-in per entry (`service_entry.ha_publish`, default false) because an
+  unwanted device in HA is noisy to clean up while a missing one is one tick
+  away. Checks stay opt-out (`health_check.ha_exclude`) inside a published
+  entry. The channel box remains the master switch and the hub publishes
+  whenever it is on.
+- **Clean-slate migration `e3b7c1d9a204`.** Every existing entry becomes
+  `ha_publish = false` regardless of its old `ha_exclude` (operator decision);
+  `service_entry.ha_exclude` is dropped (batch mode). A new forward migration
+  rather than editing `d8e2a6f4b915`, which has already run on the operator's
+  dev database. Downgrade restores `ha_exclude` (false). Nothing released
+  carries `ha_exclude` on entries, so the API field was renamed with no shim.
+- **Bulk picker.** Settings -> Notifications -> "Home Assistant entries" posts
+  the ids it displayed plus the ticked ones; only displayed ids are changed, so
+  an entry added meanwhile is not silently unpublished. All changes are one
+  commit, so the commit listener causes one sync. Select all / none apply to the
+  rows the filter shows.
+- **Host in the device name** (operator, same day): `<prefix> <name> (<host>)`
+  always, not only on collisions; no host (manual entries) gives
+  `<prefix> <name>`. `default_entity_id` is the slug of that device name, so it
+  includes the slugified host. `unique_id` is unchanged (instance id and
+  database ids). HA keeps entity ids it has already registered, which is moot
+  because the migration starts everyone with nothing published.
+- **Backups.** `ha_publish` (entries) and `ha_exclude` (checks) now round-trip;
+  notif-03 had left them out. Older backups without the keys leave the value
+  at its default (unpublished / published check).
+
+---
+
 ## 2026-11-16 — notif-03 Home Assistant discovery
 
 - **`default_entity_id`, not `object_id`.** The HA MQTT docs (fetched

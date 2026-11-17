@@ -146,9 +146,9 @@ class ServiceEntry(db.Model):
         db.String(16), nullable=False, default=SOURCE_NOTIFIER, server_default=SOURCE_NOTIFIER
     )
     description = db.Column(db.String(255), nullable=True)
-    # Home Assistant opt-out (PRD 17.4). Operator-owned: register never writes
-    # it. True removes this entry's device from Home Assistant discovery.
-    ha_exclude = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # Home Assistant opt-in (PRD 17.4). Operator-owned: register never writes
+    # it. True publishes this entry's device to Home Assistant discovery.
+    ha_publish = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
 
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
@@ -194,6 +194,7 @@ class ServiceEntry(db.Model):
             'source': self.source,
             'description': self.description,
             'sort_priority': self.sort_priority,
+            'ha_publish': bool(self.ha_publish),
             'networks': self.networks,
             'exposed_ports': self.exposed_ports,
             'published_ports': self.published_ports,
@@ -464,6 +465,7 @@ class HealthCheck(db.Model):
             'dns_expected_rcode': self.dns_expected_rcode,
             'dns_expected_answer': self.dns_expected_answer,
             'cert_min_days': self.cert_min_days,
+            'ha_exclude': bool(self.ha_exclude),
         }
 
     def __repr__(self):
