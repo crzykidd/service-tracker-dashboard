@@ -111,7 +111,7 @@
 </div>
 {% endblock %}
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/health_checks_form.js') }}"></script>
+<script src="{{ static_v('js/health_checks_form.js') }}"></script>
 <script>
   function toggleGroupMode() {
     const useExisting = document.getElementById('select_existing').checked;

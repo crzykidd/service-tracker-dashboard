@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.8.0-blue)
+![Version](https://img.shields.io/badge/version-0.9.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -44,6 +44,31 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.9.0 (2026-11-16)
+
+New check types, clearer health, and a Tiled view that's easier to read.
+Three database migrations run on startup (DNS check columns, certificate
+columns, API key rotation); no notifier change is needed.
+
+- **DNS service check:** query a given DNS server for a name and record type,
+  expect an rcode and optionally an answer (`rcode NXDOMAIN`,
+  `answer 10.0.0.5, expected 10.100.17.10`).
+- **Certificate expiry on HTTPS checks:** optional **Min cert days**; works
+  with Verify TLS off, and the detail panel shows the expiry date.
+- **Clearer health:** a running container no longer softens failing URL or
+  service checks to Degraded; HTTP failures show the reply's reason
+  (`503: <last_error>`) in Status and Body mode; degraded and down entries get
+  a soft amber or red background on every view.
+- **Tiled view redesign:** names use the full tile width, the host shows under
+  the name when the name isn't unique (`tile_show_host`), and all icons sit in
+  one row along the bottom. Exposure icons show once per proxy.
+- **API keys:** rotate a key from Settings → API; a revoked key's name can be
+  reused.
+- **Settings → Groups:** one Save for the whole table, with a warning before
+  leaving unsaved changes. Fixes the per-row Save clearing a group's priority.
+- **MCP server:** installs with one `uv run` command and warns when it doesn't
+  match your STD version; `whoami` now reports the STD version.
 
 ### v0.8.0 (2026-11-15)
 
@@ -97,7 +122,9 @@ upgrade is needed. Four database migrations run on startup; back up
   check, an automatic **Container** check (Docker entries: passes while the
   notifier reports it running) and any number of service checks: HTTP/HTTPS
   (status code, or body mode where `OK` passes and `Error: <message>` fails
-  with that message), TCP (`host:port`) and Ping. Each has its own interval
+  with that message), TCP (`host:port`), Ping and DNS (ask a DNS server for a
+  name and check the reply). HTTPS checks can also fail when the certificate
+  is close to expiry. Each has its own interval
   and timeout, set in one "Health checks" section on Add and Edit.
 - **Concurrent checker with a week of history.** Checks run in parallel
   (`health_check_workers`, default 8). Every sample is kept for 24 hours, then
@@ -105,6 +132,8 @@ upgrade is needed. Four database migrations run on startup; back up
   days (`health_raw_hours`, `health_history_days`).
 - **One health badge per service** (Up, Degraded, Down, Unknown, Not
   monitored) on every view, and **Status / Source filters** in the filter bar.
+  Degraded and down entries also get a soft amber or red background (and a
+  thin colored edge) on the Dashboard, Tiled and Compact views.
 - **Health detail panel** in the Tiled drawer, a Dashboard expand row and the
   Edit page: per-check state, uptime for 24h and 7d, recent failures, a
   24h / 7d bar strip with tooltips, and **Check now**.
@@ -171,7 +200,7 @@ compose file; your config, database, and settings carry over unchanged. See
 
 ## What It Does
 
-- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens the drawer in widget-only mode (showing just the metric cards); the chevron opens the full drawer. The two modes switch in-place without closing and reopening.
+- Three dashboard views (table, tiled, compact). Tiled view shows each service as a tile: the icon on the left, the name across the full tile width (with the host in small text underneath when the same name exists on another host, per `tile_show_host`), and one row along the bottom with the status icons, the exposure badges and the actions with a per-tile expand drawer for full host, URL, Docker, network, port, exposure, and widget detail. Icons use [Tabler Icons](https://tabler.io/icons) v3.34.0 (loaded via CDN). Clicking the chart icon on a tile opens the drawer in widget-only mode (showing just the metric cards); the chevron opens the full drawer. The two modes switch in-place without closing and reopening.
 - **Stale indicator.** A dynamic service whose last notifier update is older than `stale_after_minutes` (default 5) shows an amber warning icon with a "Stale — updated <time>" tooltip on all three views. Manual and locked entries are never flagged.
 - **Dashboard view controls (v0.6.0+).** A `Group by` axis selector
   (`group` / `stack` / `host`) and a `Show URL-less` filter render
@@ -249,6 +278,7 @@ Default login: `admin` / `changeme123`. Change it on first run.
 | `widget_value_retention_days` | int | `WIDGET_VALUE_RETENTION_DAYS` | `30`            | Days of `widget_value` history to retain. A daily 00:15 background job prunes older rows. |
 | `deleted_retention_days`   | int    | `DELETED_RETENTION_DAYS`     | `30`               | Days a deleted service stays recoverable in Settings → Deleted before a daily 00:25 job removes it permanently. `0` purges at the next run. |
 | `stale_after_minutes`      | int    | `STALE_AFTER_MINUTES`        | `5`                | Minutes without a notifier update before a dynamic service is flagged stale (warning icon on the Dashboard, Tiled, and Compact views). Manual and locked entries are never stale; the notifier re-scans every 60 s by default. |
+| `tile_show_host`           | string | `TILE_SHOW_HOST`             | `duplicates`       | Show the host under the name on Tiled tiles and after it on Compact rows: `duplicates` (only where the same name exists on another host), `always` (every entry with a host) or `never`. |
 | `register_field_ownership` | string | `REGISTER_FIELD_OWNERSHIP`   | `user_wins`        | How register calls handle conflicts with UI edits on `group_name` and `sort_priority`. `user_wins` (default) preserves non-NULL UI values on update; `notifier_wins` always overwrites. Invalid values fall back to `user_wins` with a startup warning. |
 | `user_session_length`      | int    | `USER_SESSION_LENGTH`        | `120`              | User session length in minutes. |
 | `flask_secret_key`         | string | `FLASK_SECRET_KEY`           | —                  | Required for production. Used to sign session cookies. If unset, a built-in default is used and Settings shows a warning (as it does while `admin` still has the default password). |
@@ -270,6 +300,7 @@ widget_background_reload: 900
 widget_value_retention_days: 30
 register_field_ownership: user_wins
 stale_after_minutes: 5
+tile_show_host: duplicates
 user_session_length: 120
 ```
 
@@ -506,10 +537,10 @@ indicating the current source.
 #### Badges and headless rendering
 
 Each tile (tiled view) and row (table view) renders up to three
-exposure badges showing the layer name, a lock icon (`ti-lock`) if
-TLS-terminated, and a key icon (`ti-key`) if auth is required. A `+N`
-overflow badge appears when a service is observed by more than three
-interpreters.
+exposure badges, one brand logo per proxy layer (Traefik, Cloudflare, …)
+however many routes it has. Hover a logo for the route count and each
+route's hostname, TLS and auth. A `+N` overflow badge appears when a
+service is observed by more than three layers.
 
 Services with no exposure observations **and** no URLs (manual,
 explicit, or synthesized) are considered "headless." Their tiles
@@ -695,12 +726,19 @@ machine, not in the container. A **read** key gives it only the read tools; a
 **write** key gives it all of them.
 
 ```bash
-cd mcp && uv venv && uv pip install -r requirements.txt     # or python -m venv + pip
-claude mcp add std \
+claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- /path/to/service-tracker-dashboard/mcp/.venv/bin/python /path/to/service-tracker-dashboard/mcp/std_mcp.py
+  -- uv run /abs/path/to/service-tracker-dashboard/mcp/std_mcp.py
 ```
+
+[uv](https://docs.astral.sh/uv/) reads the dependencies from the script itself,
+so there is no virtualenv to set up. Without a checkout, point `uv run` at a
+release tag instead (updating means changing the tag):
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.9.0/mcp/std_mcp.py`.
+The server warns Claude when it is older or newer than your STD, and Claude can
+check with the `server_info` tool. A venv-based install and a Claude Desktop
+example are in [`mcp/README.md`](mcp/README.md).
 
 Then ask Claude in plain language, as in the examples above. Everything it
 changes is recorded in the audit log under the key's name. Details, settings
@@ -751,18 +789,24 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   next tick.
 - Check types: HTTP/HTTPS (status code, or in *body* mode a reply of `OK`;
   an `Error: ...` reply shows the text as the failure message), TCP connect
-  to `host:port`, and ping (ICMP echo, 3 packets). Ping needs the `NET_RAW`
-  capability, which Docker grants by default; without it the check fails with
-  "ICMP not permitted".
+  to `host:port`, ping (ICMP echo, 3 packets) and DNS (see below). Ping needs
+  the `NET_RAW` capability, which Docker grants by default; without it the
+  check fails with "ICMP not permitted".
 - Every run is stored. Samples are kept individually for `health_raw_hours`
   (24 h), then successes are merged into hourly ranges, and everything older
   than `health_history_days` (7) is deleted.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
+- When an HTTP check in status mode gets a reply of 400 or above, its message
+  is `<code>: <reason>` taken from the reply body (a JSON `last_error`,
+  `error`, `message` or `detail`, else the first line of text), for example
+  `503: Scope 'Mgmt1' not found`; an empty or binary body leaves just the code.
 - Status code, response time, and timestamp are recorded per check, as a
   result row in the database. An entry's badge rolls its enabled checks up:
-  **Up** (every check that has run passed), **Degraded** (some pass, some
-  fail), **Down** (every check that has run fails), **Unknown** (checks are
+  **Up** (every check that has run passed), **Degraded** (some URL/service
+  checks pass and some fail), **Down** (the Container check fails, or every
+  URL/service check that has run fails, even when the container is running),
+  **Unknown** (checks are
   enabled but none has run yet), **Not monitored** (no enabled checks). A URL
   check whose URL is empty does not count.
 - Each entry has an internal-URL and an external-URL check; the notifier's
@@ -775,9 +819,40 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - Each URL check also has its own enabled switch, mode (status code or
   response body), interval (30-86400 s) and timeout (1-60 s).
 - **Service checks** are extra checks you add per entry on the Edit or Add
-  page: HTTP/HTTPS (full URL), TCP (`host:port`) and Ping (hostname or IP).
-  The notifier never touches them. Removing one deletes it and its results
+  page: HTTP/HTTPS (full URL), TCP (`host:port`), Ping (hostname or IP) and
+  DNS. The notifier never touches them. Removing one deletes it and its results
   when you save.
+- **DNS checks.** A DNS service check asks one DNS server directly, never
+  through the host's own resolver, so you can watch a specific server (for
+  example one per site). Set the **DNS server** (an IP address, with an
+  optional port: `10.100.16.16`, `10.100.16.16:5353`, `[2001:db8::1]:53`; a
+  hostname is not accepted), the **query name**, the **record type** (A, AAAA,
+  CNAME, TXT, PTR, MX, NS or SRV; PTR also takes an IP address as the name),
+  the **expected rcode** (NOERROR by default; NXDOMAIN, SERVFAIL or REFUSED
+  if that is what you expect) and, optionally, an **expected answer**. With
+  no expected answer the check passes on the rcode alone. With one, it passes
+  when any answer record of that type matches exactly (case-insensitive,
+  trailing dot ignored; TXT quotes ignored). A reply with no answers fails
+  when an answer is expected. Failures read `rcode NXDOMAIN`,
+  `answer 10.0.0.5, expected 10.100.17.10`, `no answer, expected ...` or
+  `timeout`. Example: server `10.100.16.16`, name `em-pve01.crzynet.me`,
+  type `A`, expected answer `10.100.17.10`. Through the management API and
+  MCP: `check_type: "dns"`, `target` (the server), `dns_name`,
+  `dns_record_type`, `dns_expected_rcode`, `dns_expected_answer`.
+- **Certificate expiry.** URL checks and HTTP/HTTPS service checks can set
+  **Min cert days** (1-365; blank is off). The field appears beside Verify TLS
+  only while the URL starts with `https://`. When set, the check also reads the
+  server's certificate (a separate TLS connection to the URL's host and port,
+  so it works with Verify TLS off and does not use an `HTTPS_PROXY`) and fails
+  when too few days are left, even if the page itself is fine: `cert expires in
+  5 days (min 7)`, `cert expired 3 days ago`, or `cert check failed: <reason>`
+  when the certificate cannot be read. An HTTP failure keeps its own message
+  and still records the expiry. On an `http://` URL a saved value is kept but
+  ignored. The health detail panel shows "Cert expires <date> (N days)" (red
+  when below the minimum). Management API and MCP: `cert_min_days` (null
+  clears it) on URL checks and http service checks; a 400 on TCP, ping and DNS
+  checks. Checks report `cert_min_days` and `cert_expires_at`. Example: a URL
+  check on `https://em-pve01.crzynet.me:8006/` with `cert_min_days: 7`.
 - **Container check.** Every notifier (Docker) entry has an automatic
   *Container* check: it passes while the notifier reports the container
   `running` and has reported within `stale_after_minutes`, and fails with
@@ -793,7 +868,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 - **Kinds.** Each entry has an *Internal URL* and an *External URL* check
   (they follow the entry's URLs) plus any *service checks* you add, and
   notifier entries also have a *Container* check (Docker state). Types:
-  HTTP/HTTPS, TCP and Ping.
+  HTTP/HTTPS, TCP, Ping and DNS.
 - **Body mode.** An HTTP check in *response body* mode passes when the reply
   is `OK`; a reply of `Error: <message>` fails and shows `<message>`.
 - **Retention.** `health_raw_hours` (24) keeps every sample; older successes
@@ -844,14 +919,19 @@ API](#management-api) under `/api/v1` (new in v0.8.0). Keys are separate from th
 `api_token`, which can only register services and is rejected here, and a
 management key is rejected by `/api/v1/register`.
 
-- Pick a name (unique, up to 64 characters) and a scope: **read** or **write**
+- Pick a name (unique among active keys, up to 64 characters; a revoked key's
+  name can be reused) and a scope: **read** or **write**
   (write includes read). The full key (`std_<prefix>_<secret>`) is shown
   **once** with a Copy button; only a hash is stored, so a lost key means
   revoking it and creating another.
 - Send it as `Authorization: Bearer <key>`. Browser sessions do not
   authenticate the management API.
-- The key list shows prefix, scope, created, last used (time and IP) and
-  status. Revoked keys stay listed, greyed out.
+- **Rotate** (v0.9.0) issues a new secret for an active key and keeps its name,
+  scope and audit history. The new key is shown once, the old one stops working
+  immediately, and the list's **Rotated** column shows when. Update whatever
+  used the old key. Key management stays in the UI; it is not in the API.
+- The key list shows prefix, scope, created, rotated, last used (time and IP)
+  and status. Revoked keys stay listed, greyed out.
 - Every write made with a key (POST, PATCH, PUT, DELETE, including rejected
   ones) is recorded in an audit log, with secret values masked. Rows are kept
   for `api_audit_retention_days` (90). The most recent 200 are listed under the

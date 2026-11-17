@@ -153,8 +153,14 @@
 }
 
 /* ── Tile ─────────────────────────────────────────────────── */
+/* Icon and full-width name block on top; one row along the bottom with the
+   status icons, then the exposure badges, then the actions (right-aligned). */
 .tile {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-areas: "icon details" "bar bar";
+  column-gap: 10px;
+  row-gap: 6px;
   align-items: center;
   background-color: var(--color-bg-surface);
   border: 1px solid var(--color-border);
@@ -188,8 +194,7 @@
 
 /* ── Tile icon (32px) ─────────────────────────────────────── */
 .tile-icon {
-  flex-shrink: 0;
-  margin-right: 10px;
+  grid-area: icon;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -227,9 +232,10 @@
 
 /* ── Tile details column ──────────────────────────────────── */
 .tile-details {
-  flex-grow: 1;
-  margin-right: 8px;
+  grid-area: details;
+  min-width: 0;
   overflow: hidden;
+  line-height: 1.15;
 }
 .container-name {
   font-weight: 600;
@@ -240,21 +246,34 @@
   text-overflow: ellipsis;
   font-size: 0.95em;
 }
+.tile-host {
+  display: block;
+  font-size: 0.7rem;
+  color: #aaaaaa;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-/* ── Status icon block (two rows: status top, actions bottom) ─ */
+/* ── Bottom row: status icons, exposure badges, actions ───── */
 .tile-status-row {
+  grid-area: bar;
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  flex-shrink: 0;
-  align-items: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2px;
+  align-self: stretch;
+  border-top: 1px solid var(--color-border);
+  padding-top: 4px;
 }
 .tile-icon-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  justify-content: flex-end;
 }
+.tile-icon-row-status { justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
+.tile-icon-row-actions { justify-content: flex-end; flex: 0 0 auto; }
 .tile-status-row .status-icon {
   font-size: 16px;
   line-height: 1;
@@ -297,6 +316,23 @@
 }
 .tile-chevron:hover { color: var(--color-text-secondary); }
 .tile-open .tile-chevron { color: var(--color-accent); }
+
+/* Exposure badges in the bottom row: after the status icons, thin separator,
+   same 16px-icon baseline; shrinks (clips) rather than pushing actions off. */
+.tile .exposure-icons-inline {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding-left: 5px;
+  border-left: 1px solid var(--color-border);
+}
+.tile .exposure-icons-inline .exposure-icon-img { width: 16px; height: 16px; }
+.tile .exposure-icons-inline .exposure-icon-layer { flex-shrink: 0; gap: 1px; }
+.tile .exposure-icons-inline .exposure-icon-overflow { flex-shrink: 0; line-height: 1; }
 
 /* ── Tile drawer ──────────────────────────────────────────── */
 .tile-drawer {
@@ -945,6 +981,7 @@
 .health-dotmark.health-down { background: var(--color-status-bad); }
 .health-check-target { font-family: ui-monospace, monospace; font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; }
 .health-check-meta { color: var(--color-text-muted); margin-top: 2px; }
+.health-cert-low { color: var(--color-status-bad); font-weight: 600; }
 .health-check-msg { color: var(--color-status-bad); margin-top: 2px; word-break: break-word; }
 
 .health-bars { display: flex; gap: 2px; height: 28px; margin-top: 8px; }
@@ -1022,3 +1059,37 @@ body.show-uptime .compact-tile:not(.group-header) { padding-bottom: 0.9rem; }
   .uptime-strip .health-bars { gap: 0; }
   .uptime-strip .hbar { border-radius: 0; }
 }
+
+/* ── Health-tinted entries (degraded amber / down red) ────── */
+/* Soft background on all three views; the rgba line is the fallback for
+   browsers without color-mix. Up/unknown/none are unchanged. */
+.tile.entry-health-degraded,
+.compact-tile.entry-health-degraded,
+tr.group-entry.entry-health-degraded,
+tr.health-expand-row.entry-health-degraded {
+  background-color: rgba(245, 158, 11, 0.12);
+  background-color: color-mix(in srgb, var(--color-status-warn) 12%, var(--color-bg-surface));
+}
+.tile.entry-health-down,
+.compact-tile.entry-health-down,
+tr.group-entry.entry-health-down,
+tr.health-expand-row.entry-health-down {
+  background-color: rgba(239, 68, 68, 0.12);
+  background-color: color-mix(in srgb, var(--color-status-bad) 12%, var(--color-bg-surface));
+}
+.compact-tile.entry-health-degraded:hover,
+tr.group-entry.entry-health-degraded:hover {
+  background-color: rgba(245, 158, 11, 0.18);
+  background-color: color-mix(in srgb, var(--color-status-warn) 18%, var(--color-bg-surface));
+}
+.compact-tile.entry-health-down:hover,
+tr.group-entry.entry-health-down:hover {
+  background-color: rgba(239, 68, 68, 0.18);
+  background-color: color-mix(in srgb, var(--color-status-bad) 18%, var(--color-bg-surface));
+}
+.tile.entry-health-degraded:not(.tile-open),
+.compact-tile.entry-health-degraded,
+tr.group-entry.entry-health-degraded > td:first-child { border-left: 3px solid var(--color-status-warn); }
+.tile.entry-health-down:not(.tile-open),
+.compact-tile.entry-health-down,
+tr.group-entry.entry-health-down > td:first-child { border-left: 3px solid var(--color-status-bad); }

@@ -33,6 +33,7 @@ VALID_KEYS = {
     "health_raw_hours": int,
     "health_history_days": int,
     "api_audit_retention_days": int,
+    "tile_show_host": str,
 }
 
 # Keys whose values must never be written to logs in clear text.
@@ -60,7 +61,10 @@ DEFAULT_VALUES = {
     "health_raw_hours": 24,
     "health_history_days": 7,
     "api_audit_retention_days": 90,
+    "tile_show_host": "duplicates",
 }
+
+VALID_TILE_SHOW_HOST = ("duplicates", "always", "never")
 def load_settings():
     file_config = {}
 
@@ -106,6 +110,17 @@ def load_settings():
     logger.debug("Final settings set are:")
     for key, val in final_config.items():
         logger.debug(f"  {key} = {mask_value(key, val)}")
+
+    # tile_show_host: lower-case + trim; an unknown value falls back to the default.
+    raw_mode = final_config.get("tile_show_host")
+    mode = str(raw_mode).strip().lower() if raw_mode is not None else ""
+    if mode not in VALID_TILE_SHOW_HOST:
+        logger.warning(
+            f"Invalid tile_show_host={raw_mode!r}; expected one of "
+            f"{', '.join(VALID_TILE_SHOW_HOST)}. Falling back to 'duplicates'."
+        )
+        mode = DEFAULT_VALUES["tile_show_host"]
+    final_config["tile_show_host"] = mode
 
     # --- Derived settings ---
     final_config["display_tools"] = bool(final_config.get("std_dozzle_url"))

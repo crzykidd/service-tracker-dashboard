@@ -39,7 +39,7 @@ import settings_store
 import synthesizer
 import widget_rules
 from extensions import csrf, db
-from health_state import STATE_DEGRADED, STATE_DOWN
+from health_state import entry_health
 from image_utils import fetch_icon_if_missing
 from mgmt_schemas import (
     NOTIFIER_OWNED_FIELDS,
@@ -310,7 +310,9 @@ def openapi_spec():
 @require_api_key("read")
 def whoami():
     key = g.api_key
-    return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope})
+    version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
+    return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope,
+                    "version": str(version)})
 
 
 # --- shared helpers --------------------------------------------------------------
@@ -324,8 +326,12 @@ _CHECK_FIELD_TO_VALIDATOR = {
     "enabled": "enabled", "mode": "mode", "interval_seconds": "interval",
     "timeout_seconds": "timeout", "verify_tls": "verify",
     "name": "name", "check_type": "check_type", "target": "target",
+    "dns_name": "dns_name", "dns_record_type": "dns_record_type",
+    "dns_expected_rcode": "dns_expected_rcode", "dns_expected_answer": "dns_expected_answer",
+    "cert_min_days": "cert_min_days",
 }
-_URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls"}
+_URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls",
+                        "cert_min_days"}
 _CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds"}
 _NOT_NULL = {"enabled", "verify_tls", "mode", "check_type", "target"}
 
@@ -445,6 +451,9 @@ def _service_check_input(c: ServiceCheckCreate):
         "name": c.name, "check_type": c.check_type, "target": c.target, "mode": c.mode,
         "enabled": c.enabled, "verify": c.verify_tls,
         "interval": c.interval_seconds, "timeout": c.timeout_seconds,
+        "dns_name": c.dns_name, "dns_record_type": c.dns_record_type,
+        "dns_expected_rcode": c.dns_expected_rcode, "dns_expected_answer": c.dns_expected_answer,
+        "cert_min_days": c.cert_min_days,
     }
 
 
@@ -804,8 +813,16 @@ def patch_check(id):
         "enabled": check.enabled, "mode": check.mode, "verify": check.verify_tls is not False,
         "interval": check.interval_seconds, "timeout": check.timeout_seconds,
         "name": check.name, "check_type": check.check_type, "target": check.target,
+        "dns_name": check.dns_name, "dns_record_type": check.dns_record_type,
+        "dns_expected_rcode": check.dns_expected_rcode,
+        "dns_expected_answer": check.dns_expected_answer,
+        "cert_min_days": check.cert_min_days,
     }
     merged = _settings_dict(data, _CHECK_FIELD_TO_VALIDATOR, current)
+    if (check.kind == CHECK_KIND_SERVICE and "cert_min_days" not in sent
+            and merged.get("check_type") != "http"):
+        # Switching a check away from HTTP drops its certificate condition.
+        merged["cert_min_days"] = None
     if check.kind == CHECK_KIND_CONTAINER:
         values, problems = check_form.validate_container_check(merged)
     elif check.kind == CHECK_KIND_SERVICE:
@@ -902,29 +919,15 @@ def health_summary():
             {"check": c.name or c.kind, "kind": c.kind, "message": c.last_message, "since": _failing_since(c)}
             for c in e.checks if check_counts(e, c) and c.last_ok is False
         ]
-        state = STATE_DOWN if all(c.last_ok is False for c in e.checks
-                                  if check_counts(e, c) and c.last_ok is not None) else STATE_DEGRADED
-        failing.append({"id": e.id, "name": e.container_name, "host": e.host, "state": state,
+        failing.append({"id": e.id, "name": e.container_name, "host": e.host, "state": entry_health(e).state,
                         "failures": failures})
     return jsonify({"counts": counts, "failing": failing})
 
 
 # --- groups --------------------------------------------------------------------
 
-GROUP_NAME_MAX = 100
-GROUP_ICON_MAX = 255
-
-
 def _group_problems(name, icon, name_sent=True, icon_sent=True):
-    errors = []
-    if name_sent:
-        if not (name or "").strip():
-            errors.append({"field": "name", "message": "name is required"})
-        elif len(name.strip()) > GROUP_NAME_MAX:
-            errors.append({"field": "name", "message": f"name is limited to {GROUP_NAME_MAX} characters"})
-    if icon_sent and icon and len(icon) > GROUP_ICON_MAX:
-        errors.append({"field": "icon", "message": f"icon is limited to {GROUP_ICON_MAX} characters"})
-    return errors
+    return entry_rules.validate_group(name, icon, name_sent, icon_sent)
 
 
 def _group_snapshot(group):

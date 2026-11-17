@@ -1,43 +1,37 @@
-{# Renders brand logo icons for each exposure layer (up to 3 shown).
-   Caller passes `exposures` (list of ServiceExposure rows).
-   Icons: brand logo 18×18, ti-lock if TLS, ti-pencil if explicit hostname.
+{# Renders one brand-logo badge per exposure LAYER (up to 3 shown, +N overflow in layers).
+   Caller passes `exposures` (list of ServiceExposure rows); optional `exposure_inline`
+   (v2 tile bottom row) adds a modifier class. Grouping is done by the
+   `exposure_layers` filter (view_helpers.exposure_layers).
+   Badge: the brand logo only (no TLS/hostname marks, no count); the title gives the
+   route count and lists each route with its TLS/auth.
 #}
-{% if exposures %}
-  {% set _shown = exposures[:3] %}
-  {% set _overflow = exposures|length - _shown|length %}
-  <div class="exposure-icons"
-       title="Exposure: {{ exposures|map(attribute='layer')|join(', ') }}">
-    {% for ex in _shown %}
-      {% set _auth_required = ex.auth and ex.auth not in ['none', ''] %}
-      <span class="exposure-icon-layer"
-            title="{{ ex.layer }}{% if ex.hostname %} — {{ ex.hostname }}{% endif %}{% if ex.path_prefix %}{{ ex.path_prefix }}{% endif %}{% if ex.tls %} (TLS){% endif %}{% if _auth_required %} (auth: {{ ex.auth }}){% endif %}">
+{% set _layers = exposures|exposure_layers %}
+{% if _layers %}
+  {% set _shown = _layers[:3] %}
+  {% set _overflow = _layers|length - _shown|length %}
+  <div class="exposure-icons{% if exposure_inline %} exposure-icons-inline{% endif %}"
+       title="Exposure: {{ _layers|map(attribute='layer')|join(', ') }}">
+    {% for ly in _shown %}
+      <span class="exposure-icon-layer" title="{{ ly.title }}">
         {# Brand logo #}
-        {% if ex.layer == 'traefik' %}
+        {% if ly.layer == 'traefik' %}
           <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/traefik.svg') }}" alt="Traefik">
-        {% elif ex.layer == 'cloudflare' %}
+        {% elif ly.layer == 'cloudflare' %}
           <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/cloudflare.svg') }}" alt="Cloudflare">
-        {% elif ex.layer == 'dockflare' %}
+        {% elif ly.layer == 'dockflare' %}
           <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/dockflare.svg') }}" alt="DockFlare">
-        {% elif ex.layer == 'nginx' %}
+        {% elif ly.layer == 'nginx' %}
           <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/nginx.svg') }}" alt="nginx">
-        {% elif ex.layer == 'caddy' %}
+        {% elif ly.layer == 'caddy' %}
           <img class="exposure-icon-img" src="{{ url_for('static', filename='icons/exposure/caddy.svg') }}" alt="Caddy">
         {% else %}
           <i class="ti ti-route exposure-icon-fallback" aria-hidden="true"></i>
-        {% endif %}
-        {# TLS indicator #}
-        {% if ex.tls %}
-          <i class="ti ti-lock exposure-icon-tls" aria-hidden="true"></i>
-        {% endif %}
-        {# Explicit hostname indicator #}
-        {% if ex.hostname %}
-          <i class="ti ti-pencil exposure-icon-label" aria-hidden="true"></i>
         {% endif %}
       </span>
     {% endfor %}
     {% if _overflow > 0 %}
       <span class="exposure-icon-overflow"
-            title="{{ _overflow }} more: {{ exposures[3:]|map(attribute='layer')|join(', ') }}">+{{ _overflow }}</span>
+            title="{{ _overflow }} more: {{ _layers[3:]|map(attribute='layer')|join(', ') }}">+{{ _overflow }}</span>
     {% endif %}
   </div>
 {% endif %}

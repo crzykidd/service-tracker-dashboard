@@ -6,12 +6,24 @@ run on the worker threads of the checker pool (all DB writes happen on the
 scheduler thread, see jobs.py).
 """
 
+import ipaddress
+import json
 import socket
+import ssl
 import time
 import warnings
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
+import dns.exception
+import dns.message
+import dns.query
+import dns.rcode
+import dns.rdatatype
+import dns.reversename
 import requests
+from cryptography import x509
 from urllib3.exceptions import InsecureRequestWarning
 
 try:  # icmplib is a pinned dependency; guard so a broken install fails the probe, not the app
@@ -25,6 +37,7 @@ UNEXPECTED_PREVIEW = 60
 MESSAGE_COLUMN_LIMIT = 255
 PING_COUNT = 3
 ICMP_NOT_PERMITTED = "ICMP not permitted"
+DNS_DEFAULT_PORT = 53
 
 
 @dataclass
@@ -40,6 +53,9 @@ class ProbeResult:
     status_code: int | None = None
     message: str | None = None
     error_type: str | None = None
+    # Leaf certificate notAfter (naive UTC), set only by an https probe that
+    # was given `cert_min_days` and got a certificate.
+    cert_expires_at: datetime | None = None
 
 
 def _elapsed_ms(started):
@@ -76,6 +92,72 @@ def _read_body(response):
     return raw[:BODY_READ_LIMIT].decode("utf-8", errors="replace").strip()
 
 
+def _is_binary(text):
+    """Undecodable (replacement chars) or mostly control characters."""
+    if not text:
+        return False
+    if "\ufffd" in text:
+        return True
+    ctrl = sum(1 for ch in text if ord(ch) < 32 and ch not in "\t\n\r")
+    return ctrl / len(text) > 0.1
+
+
+def _reply_reason(raw):
+    """The human-readable reason in a failing HTTP reply's body, or None.
+
+    JSON object: first non-empty string among last_error / error / message /
+    detail (`error` may be an object with a string `message`); no such key
+    falls back to the raw text. Otherwise the first non-empty line. None for
+    an empty, whitespace-only or binary body.
+    """
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text.strip() or _is_binary(text):
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        for key in ("last_error", "error", "message", "detail"):
+            value = data.get(key)
+            if isinstance(value, dict):
+                value = value.get("message")
+            if isinstance(value, str) and value.strip():
+                return value
+        return text
+    for line in text.splitlines():
+        if line.strip():
+            return line
+    return None
+
+
+def _status_failure_message(code, response):
+    """`<code>: <reason>` from the body of a failing status reply, else `<code>`.
+    Reads at most BODY_READ_LIMIT bytes; the whole message is at most
+    ERROR_MESSAGE_LIMIT characters (`…` when cut)."""
+    raw = b""
+    try:
+        for chunk in response.iter_content(chunk_size=1024):
+            raw += chunk
+            if len(raw) >= BODY_READ_LIMIT:
+                break
+    except Exception:
+        return str(code)
+    return _code_with_reason(code, raw[:BODY_READ_LIMIT])
+
+
+def _code_with_reason(code, raw):
+    """`<code>: <reason>` from the reply bytes `raw`, else `<code>`."""
+    reason = _reply_reason(raw)
+    reason = " ".join(reason.split()) if reason else ""
+    if not reason:
+        return str(code)
+    return _clip(f"{code}: {reason}", min(ERROR_MESSAGE_LIMIT, MESSAGE_COLUMN_LIMIT))
+
+
 def _error_text(body):
     """The text after an `Error:` prefix (case-sensitive per the spec), else None."""
     if body.startswith("Error:"):
@@ -83,14 +165,99 @@ def _error_text(body):
     return None
 
 
-def probe_http(target, mode="status", timeout=5, verify=True):
-    """GET `target` (redirects followed) and judge it by `mode`.
+def _read_cert_expiry(host, port, timeout):
+    """The leaf certificate's notAfter (aware UTC) from a fresh TLS handshake
+    to `host:port` (SNI set to `host`). Raises on any connection, handshake or
+    parse failure.
 
-    status: below 400 is ok; failures carry the code or exception text.
+    Verification is deliberately off (the point is to read the certificate, so
+    a self-signed or expired one must not stop the handshake). This is its own
+    connection, so it does not follow an `HTTPS_PROXY` the way `requests` does.
+    """
+    context = ssl.create_default_context()
+    # Never negotiate TLS 1.0/1.1, even though we only read the certificate.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        with context.wrap_socket(sock, server_hostname=host) as tls:
+            der = tls.getpeercert(binary_form=True)
+    if not der:
+        raise ssl.SSLError("the server presented no certificate")
+    return x509.load_der_x509_certificate(der).not_valid_after_utc
+
+
+def _naive_utc(moment):
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
+
+
+def _apply_cert_condition(result, target, cert_min_days, timeout):
+    """Fold the certificate-expiry condition into an HTTP `result`.
+
+    Rules, in order: a failed HTTP result keeps its message (the expiry is
+    still reported when the handshake got one); an ok result with fewer than
+    `cert_min_days` days left fails with `cert expires in N days (min M)` (or
+    `cert expired N days ago`); an ok result whose certificate could not be
+    read fails with `cert check failed: <reason>`; otherwise it stays ok.
+    Plain http targets are left alone (no handshake).
+    """
+    try:
+        parts = urlsplit(target)
+        if parts.scheme.lower() != "https" or not parts.hostname:
+            return result
+        port = parts.port or 443
+    except ValueError:
+        return result
+    try:
+        expires = _naive_utc(_read_cert_expiry(parts.hostname, port, timeout))
+    except Exception as e:
+        if not result.ok:
+            return result
+        return ProbeResult(
+            False, result.latency_ms, result.status_code,
+            _clip(f"cert check failed: {_exception_message(e)}"), type(e).__name__,
+        )
+    result.cert_expires_at = expires
+    if not result.ok:
+        return result
+    left = expires - datetime.now(timezone.utc).replace(tzinfo=None)
+    if left < timedelta(0):
+        days_ago = int((-left).total_seconds() // 86400)
+        result.ok, result.message = False, f"cert expired {days_ago} days ago"
+    elif left < timedelta(days=cert_min_days):
+        days = int(left.total_seconds() // 86400)
+        result.ok, result.message = False, f"cert expires in {days} days (min {cert_min_days})"
+    return result
+
+
+def probe_http(target, mode="status", timeout=5, verify=True, cert_min_days=None):
+    """GET `target` (redirects followed) and judge it by `mode`; with
+    `cert_min_days` set and an https target, also judge the certificate's
+    remaining validity (see `_apply_cert_condition`). The request itself is
+    `_probe_http_request`.
+    """
+    result = _probe_http_request(target, mode, timeout, verify)
+    if cert_min_days:
+        try:
+            result = _apply_cert_condition(result, target, cert_min_days, timeout)
+        except Exception as e:  # defensive: probes never raise
+            return _failure(time.monotonic(), e)
+    return result
+
+
+def _probe_http_request(target, mode, timeout, verify):
+    """GET `target` (redirects followed) and judge it by `mode`:
+
+    status: below 400 is ok (body not read); 400 and above fails with
+    `<code>: <reason from the body>` (see `_status_failure_message`), or just
+    the code when the body gives nothing; exceptions carry their text.
     body: reads at most 4 KB. `OK` (case-insensitive) is ok; an `Error:`
     prefix gives that text as the message; anything else is
     `Unexpected response: <first 60 chars>`; a status of 400 or above is
-    failing, using the `Error:` text when present, else the status code.
+    failing, using the `Error:` text when present, else `<code>: <reason>` as in
+    status mode (just the code when the body gives nothing).
 
     The urllib3 InsecureRequestWarning is silenced for this call only, and
     only when `verify` is off.
@@ -101,12 +268,13 @@ def probe_http(target, mode="status", timeout=5, verify=True):
         with warnings.catch_warnings():
             if not verify:
                 warnings.simplefilter("ignore", InsecureRequestWarning)
-            response = requests.get(target, timeout=timeout, verify=verify, stream=body_mode)
+            response = requests.get(target, timeout=timeout, verify=verify, stream=True)
         try:
             code = int(response.status_code)
             if not body_mode:
                 ok = code < 400
-                return ProbeResult(ok, _elapsed_ms(started), code, None if ok else str(code))
+                message = None if ok else _status_failure_message(code, response)
+                return ProbeResult(ok, _elapsed_ms(started), code, message)
             body = _read_body(response)
         finally:
             close = getattr(response, "close", None)
@@ -115,7 +283,10 @@ def probe_http(target, mode="status", timeout=5, verify=True):
         latency = _elapsed_ms(started)
         error_text = _error_text(body)
         if code >= 400:
-            return ProbeResult(False, latency, code, error_text or str(code))
+            # An `Error:` body keeps its text; otherwise the same JSON/text
+            # reason as Status mode (`503: <reason>`), else just the code.
+            return ProbeResult(False, latency, code,
+                               error_text or _code_with_reason(code, body.encode("utf-8")))
         if body.upper() == "OK":
             return ProbeResult(True, latency, code, None)
         if error_text is not None:
@@ -189,15 +360,146 @@ def probe_ping(target, timeout=5):
     )
 
 
+def split_dns_server(target):
+    """A DNS server target -> (ip string, int port). Raises ValueError.
+
+    Accepts `ip`, `ip:port`, `[v6]` and `[v6]:port`; the port defaults to 53.
+    The server must be an IP literal: the check never uses the system
+    resolver, so a hostname could not be looked up.
+    """
+    text = (target or "").strip()
+    if not text:
+        raise ValueError("a DNS server is required")
+    port = DNS_DEFAULT_PORT
+    host = text
+    if text.startswith("["):
+        host, sep, rest = text[1:].partition("]")
+        if not sep:
+            raise ValueError("a DNS server must be an IP address, optionally with a port")
+        if rest:
+            if not rest.startswith(":"):
+                raise ValueError("a DNS server must be an IP address, optionally with a port")
+            port_text = rest[1:]
+        else:
+            port_text = None
+    else:
+        try:
+            ipaddress.ip_address(text)  # a bare IPv4 or IPv6 literal: no port
+            port_text = None
+        except ValueError:
+            host, sep, port_text = text.rpartition(":")
+            if not sep:
+                host, port_text = text, None
+            elif ":" in host:  # an unbracketed IPv6 with a port is ambiguous
+                raise ValueError("write an IPv6 server with a port as [address]:port") from None
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        raise ValueError("a DNS server must be an IP address (not a hostname), optionally with a port") from None
+    if port_text is not None:
+        if not port_text.isascii() or not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+            raise ValueError("the DNS server port must be from 1 to 65535")
+        port = int(port_text)
+    return str(ip), port
+
+
+def _dns_query_name(name, record_type):
+    """The name to query: PTR takes an IP (converted to its reverse name); a
+    name already under in-addr.arpa / ip6.arpa is used as is."""
+    name = (name or "").strip()
+    if record_type == "PTR":
+        try:
+            ipaddress.ip_address(name)
+        except ValueError:
+            return name
+        return dns.reversename.from_address(name)
+    return name
+
+
+def _dns_norm(text, txt=False):
+    """Comparison form of an answer or expected value: case-insensitive,
+    trailing dot removed, whitespace runs collapsed, IPs in canonical form."""
+    text = str(text).strip()
+    if txt and len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+        text = text[1:-1]
+    text = " ".join(text.split()).lower().rstrip(".")
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return text
+
+
+def _dns_answers(response, rdtype):
+    """Printable answers of `rdtype` at any owner name (so a CNAME chain
+    followed by an A record still yields the A records), as
+    (shown, normalized) pairs."""
+    out = []
+    for rrset in response.answer:
+        if rrset.rdtype != rdtype:
+            continue
+        for rdata in rrset:
+            if rdtype == dns.rdatatype.TXT:
+                shown = b"".join(rdata.strings).decode("utf-8", errors="replace")
+                out.append((shown, _dns_norm(shown)))
+            else:
+                shown = rdata.to_text().rstrip(".")
+                out.append((shown, _dns_norm(shown)))
+    return out
+
+
+def probe_dns(server, name, record_type="A", expected_rcode=None, expected_answer=None, timeout=5):
+    """Query `server` directly for `name` and judge the reply.
+
+    Low-level dnspython (UDP, TCP fallback on truncation); the system
+    resolver is never consulted. ok when the rcode equals `expected_rcode`
+    (default NOERROR) and, if `expected_answer` is set, any answer record of
+    the queried type matches it exactly (normalized, see `_dns_norm`). NOERROR
+    with no answers (NODATA) passes only when no answer is expected.
+    """
+    started = time.monotonic()
+    try:
+        ip, port = split_dns_server(server)
+        rtype = (record_type or "A").strip().upper()
+        rdtype = dns.rdatatype.from_text(rtype)
+        query = dns.message.make_query(_dns_query_name(name, rtype), rdtype)
+        response, _used_tcp = dns.query.udp_with_fallback(query, ip, timeout=timeout, port=port)
+        latency = _elapsed_ms(started)
+        want_rcode = (expected_rcode or "").strip().upper() or "NOERROR"
+        actual = dns.rcode.to_text(response.rcode())
+        if actual != want_rcode:
+            return ProbeResult(False, latency, None, _clip(f"rcode {actual}"))
+        want = (expected_answer or "").strip()
+        if not want:
+            return ProbeResult(True, latency)
+        answers = _dns_answers(response, rdtype)
+        if not answers:
+            return ProbeResult(False, latency, None, _clip(f"no answer, expected {want}"))
+        target = _dns_norm(want, txt=rdtype == dns.rdatatype.TXT)
+        if any(norm == target for _shown, norm in answers):
+            return ProbeResult(True, latency)
+        shown = " | ".join(s for s, _n in answers)
+        return ProbeResult(False, latency, None, _clip(f"answer {shown}, expected {want}"))
+    except dns.exception.Timeout:
+        return ProbeResult(False, _elapsed_ms(started), None, "timeout", "Timeout")
+    except Exception as e:
+        return _failure(started, e)
+
+
 def run_probe(job):
     """Run one probe described by a plain dict (check_type, target, mode,
-    timeout, verify). Never raises."""
+    timeout, verify, and the dns_* fields for DNS). Never raises."""
     check_type = job.get("check_type")
     try:
         if check_type == "tcp":
             return probe_tcp(job["target"], job["timeout"])
         if check_type == "ping":
             return probe_ping(job["target"], job["timeout"])
-        return probe_http(job["target"], job.get("mode", "status"), job["timeout"], job.get("verify", True))
+        if check_type == "dns":
+            return probe_dns(
+                job["target"], job.get("dns_name"), job.get("dns_record_type"),
+                job.get("dns_expected_rcode"), job.get("dns_expected_answer"), job["timeout"],
+            )
+        return probe_http(job["target"], job.get("mode", "status"), job["timeout"], job.get("verify", True),
+                          job.get("cert_min_days"))
     except Exception as e:  # defensive: probes already catch everything
         return ProbeResult(False, 0, None, _exception_message(e), type(e).__name__)

@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  const TYPE_LABELS = { http: 'HTTP', tcp: 'TCP', ping: 'Ping', docker: 'Docker' };
+  const TYPE_LABELS = { http: 'HTTP', tcp: 'TCP', ping: 'Ping', dns: 'DNS', docker: 'Docker' };
   const STATE_LABELS = { up: 'Up', down: 'Down', unknown: 'Not run yet' };
   const CHECK_NOW_POLL_MS = 2000;      // re-fetch interval while a Check now is pending
   const CHECK_NOW_MAX_WAIT_MS = 75000; // scheduler tick (5 s) + up to a 60 s probe timeout
@@ -24,6 +24,10 @@
     return new Date(iso).toLocaleString([], {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
+  }
+
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
   function fmtClock(iso) {
@@ -107,7 +111,16 @@
     head.appendChild(el('span', 'health-check-state health-text-' + c.state, STATE_LABELS[c.state] || c.state));
     box.appendChild(head);
 
-    if (c.target) box.appendChild(el('div', 'health-check-target', c.target));
+    if (c.check_type === 'dns') {
+      // "A name @ server", then what the reply must be.
+      box.appendChild(el('div', 'health-check-target',
+        (c.dns_record_type || 'A') + ' ' + (c.dns_name || '') + ' @ ' + (c.target || '')));
+      box.appendChild(el('div', 'health-check-meta',
+        'expect ' + (c.dns_expected_rcode || 'NOERROR') +
+        (c.dns_expected_answer ? ' + ' + c.dns_expected_answer : '')));
+    } else if (c.target) {
+      box.appendChild(el('div', 'health-check-target', c.target));
+    }
 
     const meta = el('div', 'health-check-meta');
     const bits = ['Checked ' + ago(c.last_checked_at)];
@@ -116,7 +129,18 @@
     bits.push('Uptime 24h ' + fmtUptime(c.uptime_24h) + ' · 7d ' + fmtUptime(c.uptime_7d));
     meta.textContent = bits.join(' · ');
     box.appendChild(meta);
-    if (c.state === 'down' && c.message) box.appendChild(el('div', 'health-check-msg', c.message));
+    if (c.cert_expires_at) {
+      // "Cert expires <date> (N days)", red when below the check's minimum.
+      const left = Math.floor((new Date(c.cert_expires_at).getTime() - Date.now()) / 86400000);
+      const low = c.cert_min_days && left < c.cert_min_days;
+      box.appendChild(el('div', 'health-check-meta health-cert' + (low ? ' health-cert-low' : ''),
+        'Cert expires ' + fmtDate(c.cert_expires_at) + ' (' + left + (left === 1 ? ' day' : ' days') + ')'));
+    }
+    if (c.state === 'down') {
+      // Always say why: the probe's text, else the status code, else "no reply".
+      box.appendChild(el('div', 'health-check-msg', c.message ||
+        (c.status_code ? 'status ' + c.status_code + ' (empty reply)' : 'no reply')));
+    }
 
     const strip = el('div', 'health-bars health-bars-' + range);
     c.bars.forEach(function (b) {

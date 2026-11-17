@@ -62,8 +62,8 @@ def validate_name(name):
         return "A key name is required."
     if len(name) > NAME_MAX:
         return f"Key names are at most {NAME_MAX} characters."
-    if ApiKey.query.filter_by(name=name).first():
-        return f"A key named '{name}' already exists (revoked keys keep their name)."
+    if ApiKey.query.filter_by(name=name, revoked_at=None).first():
+        return f"An active key named '{name}' already exists."
     return None
 
 
@@ -81,3 +81,22 @@ def revoke_key(key):
     if key.revoked_at is None:
         key.revoked_at = datetime.utcnow()
         db.session.commit()
+
+
+def rotate_key(key):
+    """Issue a new secret for an active key and commit. Returns the full new key.
+
+    The row (id, name, scope, created_at) is kept; prefix and hash are
+    replaced, so the old secret stops verifying at once. `last_used_*`
+    described the old secret and are cleared. A revoked key raises ValueError.
+    """
+    if key.revoked_at is not None:
+        raise ValueError("A revoked key cannot be rotated.")
+    full_key, prefix, key_hash = generate_key()
+    key.prefix = prefix
+    key.key_hash = key_hash
+    key.rotated_at = datetime.utcnow()
+    key.last_used_at = None
+    key.last_used_ip = None
+    db.session.commit()
+    return full_key

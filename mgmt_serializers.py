@@ -49,6 +49,12 @@ def check_out(entry: ServiceEntry, check: HealthCheck) -> CheckOut:
         "interval_seconds": check.interval_seconds,
         "timeout_seconds": check.timeout_seconds,
         "verify_tls": check.verify_tls is not False,
+        "dns_name": check.dns_name,
+        "dns_record_type": check.dns_record_type,
+        "dns_expected_rcode": check.dns_expected_rcode,
+        "dns_expected_answer": check.dns_expected_answer,
+        "cert_min_days": check.cert_min_days,
+        "cert_expires_at": iso_z(check.last_cert_expires_at),
         "consecutive_failures": check.consecutive_failures or 0,
         "last": last,
     }

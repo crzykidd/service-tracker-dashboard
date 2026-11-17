@@ -169,3 +169,76 @@ def test_panel_renders_on_each_surface(app, admin_client):
     edit = admin_client.get(f"/edit/{eid}").get_data(as_text=True)
     assert marker in edit and 'id="health-history"' in edit and "data-autoload" in edit
     assert "data-health-detail" not in admin_client.get("/compact_dash").get_data(as_text=True)
+
+
+# --- failure text: probe -> stored rows -> panel JSON and management API ----------------
+
+_EMMETT = (b'{"status":"Error","last_error":"Mgmt1: Scope \'Mgmt1\' not found on destination ...",'
+           b'"failing_scopes":["Mgmt","Mgmt1"]}')
+_EMMETT_MSG = "503: Mgmt1: Scope 'Mgmt1' not found on destination ..."
+
+
+def _mock_503(body=_EMMETT):
+    from unittest.mock import MagicMock, patch
+
+    r = MagicMock()
+    r.status_code = 503
+    r.iter_content.side_effect = lambda chunk_size=1024: iter(
+        [body[i:i + chunk_size] for i in range(0, len(body), chunk_size)])
+    return patch("checker.requests.get", return_value=r)
+
+
+def test_panel_bars_and_failures_carry_the_stored_message(app, admin_client):
+    with app.app_context():
+        e, c = _entry()
+        eid = e.id
+        c.last_ok, c.last_status_code, c.last_message = False, 503, "503: something"
+        _res(c, datetime.utcnow() - timedelta(minutes=2), ok=False, msg="503: something")
+        db.session.commit()
+    ch = admin_client.get(f"/service/{eid}/health").get_json()["checks"][0]
+    assert ch["status_code"] == 503 and ch["message"] == "503: something"
+    assert ch["failures"][0]["message"] == "503: something"
+    assert any("503: something" in b["messages"] for b in ch["bars"])
+
+
+def test_probe_503_text_reaches_check_rows_panel_and_api(app, admin_client):
+    import jobs
+    from tests.test_health_schema import _SyncExecutor
+
+    with app.app_context():
+        e, c = _entry()
+        e.source = "manual"
+        e.host = "h"
+        c.interval_seconds = 30
+        eid, cid = e.id, c.id
+        db.session.commit()
+        sched = jobs.HealthScheduler(app, executor=_SyncExecutor())
+        with _mock_503():
+            sched.tick(datetime.utcnow() + timedelta(hours=1))
+            sched.tick(datetime.utcnow() + timedelta(hours=1))
+            # "Check now": due regardless of interval, same write path
+            jobs.request_run([cid])
+            sched.tick()
+            sched.tick()
+        db.session.expire_all()
+        from models import HealthCheck
+
+        chk = db.session.get(HealthCheck, cid)
+        assert chk.last_message == _EMMETT_MSG and chk.last_status_code == 503
+        rows = db.session.query(HealthResult).filter_by(check_id=cid).all()
+        assert rows and all(r.message == _EMMETT_MSG for r in rows)
+    ch = admin_client.get(f"/service/{eid}/health").get_json()["checks"][0]
+    assert ch["message"] == _EMMETT_MSG
+    assert ch["failures"][0]["message"] == _EMMETT_MSG
+    assert _EMMETT_MSG in [m for b in ch["bars"] for m in b["messages"]]
+
+
+def test_panel_js_falls_back_to_status_for_a_down_check_without_message():
+    src = open("static/js/health_detail.js").read()
+    assert "c.message ||" in src and "' (empty reply)'" in src and "'no reply'" in src
+
+
+def test_static_assets_carry_a_version_query(admin_client):
+    html = admin_client.get("/tiled_dash").get_data(as_text=True)
+    for f in ("css/dashboard.css", "js/dashboard.js", "js/health_detail.js", "js/uptime_strip.js"):
+        assert f"/static/{f}?v=" in html

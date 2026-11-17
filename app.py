@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import humanize
 from dateutil import parser
-from flask import Flask, flash, jsonify, redirect, render_template, request
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 from flask_wtf.csrf import CSRFError
 
 from extensions import csrf, db, login_manager
@@ -31,7 +31,7 @@ from routes_dashboard import dashboard_bp
 from routes_mgmt_api import mgmt_bp
 from routes_widgets import widgets_bp
 from settings_loader import CONFIG_DIR, load_settings, mask_value
-from view_helpers import safe_redirect_target
+from view_helpers import exposure_layers, safe_redirect_target
 
 DATABASE_PATH = os.path.join(CONFIG_DIR, 'services.db')
 LOGFILE = os.path.join(CONFIG_DIR, 'std.log')
@@ -152,13 +152,25 @@ def create_app():
 
     os.makedirs(IMAGE_DIR, exist_ok=True)
 
+    def static_v(filename):
+        """Static file URL with `?v=<file mtime>` so browsers fetch changed
+        CSS/JS after an upgrade instead of reusing a cached copy."""
+        try:
+            version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            version = 0
+        return url_for('static', filename=filename, v=version)
+
     @app.context_processor
     def inject_globals():
         return {
+            'static_v': static_v,
             'now': datetime.now,
             'version_info': app.config['VERSION_INFO'],
             'entry_health': entry_health,
         }
+
+    app.add_template_filter(exposure_layers, 'exposure_layers')
 
     @app.template_filter('time_since')
     def time_since(dt):

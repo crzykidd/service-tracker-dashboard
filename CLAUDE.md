@@ -208,8 +208,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.8.0** (latest tag on `main`).
-In flight: nothing scoped.
+Current shipped release: **v0.9.0** (latest tag on `main`).
+In flight: nothing scoped (next: version in UI + MQTT notifications; see `prompts/startnewsession.md`).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -375,7 +375,7 @@ check_form.py       ← health-check form parsing + dict-based validators shared
 routes_widgets.py   ← widget endpoints
 routes_auth.py      ← /login, /logout, user mgmt
 jobs.py             ← concurrent health scheduler, widget refresh, backup, retention/compaction, API audit purge
-checker.py          ← health-check probes (http/tcp/ping); pure network, no DB
+checker.py          ← health-check probes (http/tcp/ping/dns); pure network, no DB
 health.py           ← /healthz (liveness; /readyz not implemented)
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) for the badges + status filter
 health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)

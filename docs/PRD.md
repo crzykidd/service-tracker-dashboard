@@ -56,6 +56,19 @@
 | 0.46    | 2026-11-15 | §14.5 and the §14.6 Settings view delivered (unreleased, v080-04): `GET /api/v1/openapi.json` generated from a route registry (`mgmt_openapi.py`) plus the pydantic/TypedDict models, with completeness tests against `app.url_map`; Settings → API audit log view; README Management API and Managing STD with Claude sections; JSON 404/405 for unmatched `/api/v1/*` API-client requests. No schema change. Register wire contract unchanged. |
 | 0.47    | 2026-11-15 | §14.7 delivered (unreleased, v080-05), the last v0.8.0 chunk; §14 status line now "all chunks delivered": stdio MCP server `mcp/std_mcp.py` (read key = read tools only, write key = all), outside the Docker image (`.dockerignore`), tested in CI. No STD server change, no schema change. Register wire contract unchanged. |
 | 0.48    | 2026-11-15 | v0.8.0 released. §14 retitled Delivered: admin API keys (read/write scopes) and write audit log, `/api/v1` management API for entries, checks, health, groups, widgets, exposure settings and config, generated OpenAPI spec, stdio MCP server in `mcp/`. Schema §5.7 (`api_key`, `api_audit`). Add-page "None" group fix. Register contract unchanged; no notifier change. |
+| 0.49    | 2026-11-16 | Added §15 (v0.9.0 — DNS and certificate-expiry checks, in progress) and delivered §15.1 on `dev` (v090-01): new `dns` service check (server IP, query name, record type, expected rcode, optional expected answer; NODATA handling), migration `a1c5e8d2f093` (four nullable `health_check` columns), `dnspython`, Add/Edit/detail/API/MCP support; §15.2 certificate expiry stubbed as planned. Later sections renumbered (§15→§16, §16→§17, §17→§18) and cross-references fixed. §5.6 `check_type` list and §14.3 add-check row updated. Register wire contract unchanged. |
+| 0.50    | 2026-11-16 | §15.2 delivered on `dev` (v090-02): optional certificate-expiry condition (`cert_min_days`, 1-365) on URL checks and HTTP service checks, failing with `cert expires in N days (min M)`; separate unverified TLS handshake parsed with `cryptography`; migration `b7d3f1a94e26` (`cert_min_days`, `last_cert_expires_at`); "Min cert days" field shown only for https targets, detail-panel expiry line, API/OpenAPI/MCP support. §5.6 `health_check` columns updated. Register wire contract unchanged. |
+| 0.51    | 2026-11-16 | §15.3 delivered on `dev` (v090-03): rotate an API key from Settings → API (`api_key.rotated_at`, new key shown once, old key invalid at once), and API key names unique among active keys only (partial index `ux_api_key_name_active`, migration `c2e8a5b3d917`). §14.2 updated. |
+| 0.52    | 2026-11-16 | §15.4 delivered on `dev` (v090-04): Settings → Groups saves the whole table with one `POST /settings/groups/save` (all-or-nothing, per-row errors, delete applies on Save) and warns before leaving with unsaved changes (`static/js/unsaved_guard.js`); `/update_group`, `/add_group`, `/delete_group` removed; per-row Save priority-wipe bug fixed. Group name/icon rules moved to `entry_rules.validate_group`, shared with the management API. No schema or register-contract change. |
+| 0.53    | 2026-11-16 | §15.5 delivered on `dev` (v090-05): `tile_show_host` setting (`duplicates` default, `always`, `never`) shows the host under the name on Tiled tiles, and after it on Compact rows, where the same name exists on another host (`view_helpers.duplicate_name_ids` / `host_label_ids`, computed over all active entries). Compact's old `more than one host` rule replaced. No schema or register-contract change. |
+| 0.54    | 2026-11-16 | §8.9 updated (v090-07, `dev`): exposure badges render once per layer instead of once per `ServiceExposure` row. No schema or register-contract change. |
+| 0.55    | 2026-11-16 | §8.9: exposure badges are the brand logo only; TLS and hostname overlays removed, details moved to the hover text. |
+| 0.56    | 2026-11-16 | §15.6 delivered on `dev` (v090-08): roll-up no longer lets a passing Container check soften failing URL/service checks (all failing = down); status-mode HTTP failures carry the reply's reason (`503: ...`). §13.1, §13.4, §13.6 updated. No schema or register-contract change. |
+| 0.57    | 2026-11-16 | §15.7 delivered on `dev` (v090-09): the MCP server installs with `uv run` (PEP 723 inline dependencies), knows its own version (`MCP_VERSION`), compares it with the STD version now returned by `GET /api/v1/whoami`, and adds a `server_info` tool. §14.2 and §14.7 updated. No schema or register-contract change. |
+| 0.58    | 2026-11-16 | §15.8 delivered on `dev` (v090-10 B): the v2 layout is the Tiled tile layout; `/tiled_preview` removed; §8.9 and §9.4 updated. No schema or register-contract change. |
+| 0.59    | 2026-11-16 | §15.9 delivered on `dev` (v090-10 A): Body-mode HTTP checks use the same reply-reason extraction as Status mode on 4xx/5xx; health detail panel always shows a reason line for a down check; static CSS/JS carry `?v=<mtime>`. §15.6 note corrected. No schema or register-contract change. |
+| 0.60    | 2026-11-16 | §15.10 delivered on `dev` (v090-11): degraded/down entries get a soft amber/red background on the Dashboard, Tiled and Compact views (`entry-health-<state>` class). §13.6 updated. No schema or register-contract change. |
+| 0.61    | 2026-11-16 | v0.9.0 released: §15 marked Delivered (DNS check, cert expiry, API key rotation, Groups single Save, host on tiles, roll-up and HTTP failure reasons, MCP uv install + version check, Tiled layout, health tints). |
 
 ---
 
@@ -75,9 +88,10 @@
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
-15. [Versioning, Branches, and Releases](#15-versioning-branches-and-releases)
-16. [Cross-Repo Coordination](#16-cross-repo-coordination)
-17. [Open Questions](#17-open-questions)
+15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
+16. [Versioning, Branches, and Releases](#16-versioning-branches-and-releases)
+17. [Cross-Repo Coordination](#17-cross-repo-coordination)
+18. [Open Questions](#18-open-questions)
 
 ---
 
@@ -192,7 +206,7 @@ jobs.py             ← concurrent health-check scheduler, health-result
                       compaction/purge, widget refresh loop, daily
                       backup, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
-checker.py          ← health-check probes (http/tcp/ping); network only, no DB
+checker.py          ← health-check probes (http/tcp/ping/dns); network only, no DB
 check_form.py       ← Add/Edit health-check form parsing + validation
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none)
 health_history.py   ← history bars, uptime, recent failures for the detail panel
@@ -368,7 +382,7 @@ its index in the same migration.
 | Column | `service_entry.source` (`String(16)`, NOT NULL, server default `'notifier'`): `notifier` or `manual`. Backfill: `manual` where `last_api_update IS NULL`, else `notifier` (§13.2). |
 | Column | `service_entry.host` becomes nullable (manual entries may omit it). `(host, container_name)` index unchanged. |
 | Column | `service_entry.description` (`String(255)`, nullable). Operator text, mainly for manual entries. |
-| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
+| Table  | `health_check`: one row per configured check. `service_entry_id` FK (ON DELETE CASCADE, indexed), `kind` (`internal_url` / `external_url` / `service` / `container`), `name`, `check_type` (`http` / `tcp` / `ping` / `dns` / `docker`), `target` (NULL for URL kinds: they follow the entry's URL), `mode` (`status` / `body`), `interval_seconds` / `timeout_seconds` (nullable = global default), `verify_tls`, `enabled`, the DNS query columns (§15.1), `cert_min_days` and cached `last_cert_expires_at` (§15.2), cached state `last_ok`, `last_checked_at`, `last_status_code`, `last_latency_ms`, `last_message`, `consecutive_failures`. Exactly one `internal_url` and one `external_url` row per entry; zero or more `service` rows; exactly one `container` row per notifier entry (none for manual entries). |
 | Table  | `health_result`: one row per check sample or compacted success range. `check_id` FK (ON DELETE CASCADE), `ts`, `ts_end` (NULL for a single sample), `samples` (default 1), `ok`, `latency_ms` (average for a range), `latency_max_ms`, `status_code`, `message`. Composite index `(check_id, ts)` (also serves the FK). Timestamps are naive UTC. |
 | Data   | Migration creates the two URL-kind `health_check` rows for every entry, copying `*_health_check_enabled`, `health_check_timeout`, `health_check_verify_tls` and the last status. |
 | Data   | Migration `c1d7a3e5f2b8` inserts one enabled `container` row for every `source='notifier'` entry (soft-deleted included). No new columns or indexes; the downgrade deletes the rows and their results. |
@@ -732,15 +746,19 @@ direction mapping immediately, not on the next register cycle.
 ### 8.9 Badges + headless rendering
 
 Each tile / table row renders up to three exposure badges, one per
-`ServiceExposure` row, capped with a `+N` overflow indicator.
+exposure **layer** (rows of the same layer collapse into one badge;
+`view_helpers.exposure_layers`), capped with a `+N` overflow indicator
+counted in layers. The hover title gives the route count and the distinct
+routes.
 Badge content:
 
 - Layer name (truncated to 8 chars).
 - `🔒` prefix when `tls=true`.
 - `🔑` suffix when `auth` is present and not `"none"`.
 
-Tile-level visual budget: badges live in the tile-details block
-below the host name, ahead of any widget data. The tiled view and
+Tile-level visual budget: on the Tiled view the badges sit in the tile's
+bottom row, after the status icons (§15.8); on the table view they sit under
+the name. The tiled view and
 the table view both render them via `templates/partials/exposure_badges.html`.
 The compact view does not — its single-line tile shape has no room.
 
@@ -823,17 +841,16 @@ Tabler Icons (v3.34.0) loaded via cdnjs CDN. Outline set only.
 | Delete | `ti-trash` |
 | Tools popover | `ti-tools` |
 | Expand/collapse | `ti-chevron-down` / `ti-chevron-up` |
-| TLS badge | `ti-lock` |
-| Auth badge | `ti-key` |
 
 Status colors: green `#22c55e` (ok), amber `#f59e0b` (warn/stale),
 red `#ef4444` (bad), gray `#6b7280` (not configured / static).
 
 ### 9.4 Tiled redesign
 
-- Tile face: icon + container name + exposure badges + status icon row.
-  Host line removed from tile face; moved to drawer.
-- Status icon row (right-aligned): internal URL, external URL, Docker,
+- Tile face: icon + container name; the status/exposure/action row is along
+  the bottom (superseded by §15.8; the host shows under the name only when the
+  name isn't unique, §15.5).
+- Status icon row: internal URL, external URL, Docker,
   separator, widget indicator (if present), Dozzle (if configured),
   edit pencil, expand chevron.
 - Tile-headless treatment unchanged: no click affordance or hover border
@@ -938,8 +955,9 @@ partial, its `base.html` include, `initWidgetModal()`, and the
 `.widget-modal` CSS block are removed.
 
 **Brand exposure icons.** Text-pill `.exposure-badge` badges replaced
-with 18 × 18 px brand SVG logos. Per layer: brand logo + `ti-lock`
-overlay (TLS) + `ti-pencil` overlay (explicit hostname configured).
+with 18 × 18 px brand SVG logos. Per layer: brand logo only (v0.9.0
+dropped the `ti-lock` TLS and `ti-pencil` hostname overlays; the hover
+text carries the route count and each route's hostname/TLS/auth).
 Unknown layers fall back to `ti-route`. SVGs committed to
 `static/icons/exposure/` with a `README.md` documenting sources.
 
@@ -960,7 +978,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §15 (Versioning, Branches, and Releases); this section
+release mechanics is §16 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -982,7 +1000,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§15).
+  checks (§16).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1007,7 +1025,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§16) is not engaged and every notifier
+consumer-leads ordering rule (§17) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1192,7 +1210,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§17).
+Resolves the Open Question on health-check timeouts (§18).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1313,7 +1331,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§16) is not engaged. Every notifier version that works
+ordering rule (§17) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -1339,14 +1357,15 @@ accepts the field and ships first.
 
   | State      | Meaning |
   |------------|---------|
-  | `up`       | every enabled check's last result is ok |
-  | `degraded` | at least one ok and at least one failing |
-  | `down`     | every enabled check that has run is failing |
+  | `up`       | nothing that has run is failing |
+  | `degraded` | some URL/service checks ok and some failing (Container passing) |
+  | `down`     | the Container check is failing, or every URL/service check that has run is failing (even with the container running) |
   | `unknown`  | checks are enabled but none has run yet |
   | `none`     | no enabled checks |
 
   Docker state counts: every notifier entry has an automatic **Container**
-  check (§13.8). The Docker pill and stale icon on the views stay as well.
+  check (§13.8). The Container check counts on its own; the other checks
+  (URL and service) are judged as a group (§13.6, v0.9.0 step 8). The Docker pill and stale icon on the views stay as well.
 
 ### 13.2 Entry sources and manual entries [`v070-01-entry-sources`] — Delivered in v0.7.0
 
@@ -1463,7 +1482,8 @@ both URL rows. The migration test and the interim loop are in
   - `http`: covers HTTP and HTTPS, chosen by the URL scheme. A GET that
     follows redirects, with verify-TLS per check. Two modes:
     - **`status`** (default): an HTTP status below 400 = ok. The
-      message is the status code, or the exception class and text.
+      message is the exception class and text, or for a failing code
+      (400+) `<code>: <reason>` from the body (§15.6), else the code.
     - **`body`**: reads at most 4 KB of the response.
       - Body (trimmed) equals `OK` (case-insensitive) → ok.
       - Body starts with `Error:` → failing, message = the text after
@@ -1558,6 +1578,8 @@ schema change.
 
 ### 13.6 Health rollup, badges, and filters [`v070-05-rollup-and-filters`] — Delivered in v0.7.0
 
+- **Tint (v0.9.0, §15.10).** Degraded and down entries also get a soft
+  amber/red background on all three views.
 - **`health.py` is unchanged** (liveness). The rollup lives in a new
   `health_state.py`:
   - `entry_health(entry)` returns the state (§13.1), the counts, and the
@@ -1587,7 +1609,11 @@ schema change.
 A check counts when it is enabled and has something to probe (a URL check
 whose URL is empty is skipped, since the scheduler never runs it). `none` =
 nothing counts; `unknown` = none has run; otherwise failing checks among those
-that have run decide `down` (all fail), `degraded` (some) or `up` (none).
+that have run decide the state. Since v0.9.0 step 8 (§15.6): a failing
+Container check = `down`; otherwise the URL/service checks form a group
+where all-failing = `down`, some = `degraded`, none = `up`. Every consumer
+(badge, `status` filter, count chips, `/health/summary`, `GET /entries`) goes
+through `entry_health`; `health_summary` no longer has its own rule.
 Checks still waiting for a first run do not hold `up` back. The three view
 handlers share `_load_view_entries()`, which `selectinload`s `checks`, so the
 page query count is flat in entry count (tested). `partials/health_badge.html`
@@ -1782,11 +1808,13 @@ token and needs no update.
 
 ### 14.2 API keys [`v080-01-api-keys-and-audit`] — Delivered in v0.8.0
 
-- **Model `ApiKey`** (table `api_key`): `id`, `name` (unique, ≤64),
+- **Model `ApiKey`** (table `api_key`): `id`, `name` (≤64; unique among
+  active keys only since v0.9.0, see §15.3),
   `prefix` (first 8 chars, for display and lookup), `key_hash`
   (SHA-256 hex of the full key), `scope` (`read` or `write`, where `write`
   includes read), `created_at`, `created_by` (FK `user.id`, nullable,
-  indexed), `last_used_at`, `last_used_ip`, `revoked_at`.
+  indexed), `last_used_at`, `last_used_ip`, `revoked_at`, `rotated_at`
+  (v0.9.0).
 - **Key format:** `std_<prefix>_<secret>`. It holds 32+ random bytes from
   `secrets.token_urlsafe`. Because the key is high-entropy, a plain SHA-256
   is sufficient (no KDF). Lookup is by `prefix`, then the hash is compared
@@ -1794,8 +1822,8 @@ token and needs no update.
 - **Settings → API tab** (admin only):
   - **Create key** asks for a name and scope and shows the full key
     **once**, with a copy button.
-  - Key list: name, prefix, scope, created, last used (time and IP),
-    **Revoke**.
+  - Key list: name, prefix, scope, created, rotated (v0.9.0), last used
+    (time and IP), **Rotate** (v0.9.0) and **Revoke**.
   - The recent audit log is shown here too (§14.6).
 - **Decorator `require_api_key(scope)`:**
   - Missing or invalid key → 401 JSON. Revoked → 401. Read key on a write
@@ -1810,7 +1838,8 @@ token and needs no update.
 **As built (v080-01):** `api_keys.py` (`generate_key`, `verify`,
 `scope_allows`, `create_key`, `revoke_key`), `routes_mgmt_api.py` (blueprint
 `mgmt_api`, `require_api_key(scope)`, `audit()`, `json_error()`,
-`GET /api/v1/whoami`) and models `ApiKey` / `ApiAudit`.
+`GET /api/v1/whoami`) and models `ApiKey` / `ApiAudit`. From v0.9.0 whoami
+also returns `version` (the STD version, same source as `/config`); see §15.7.
 - The prefix is 8 hex characters (`secrets.token_hex(4)`), so it never
   contains `_`; the secret is `token_urlsafe(32)` and may. A key is parsed
   with `split("_", 2)`.
@@ -1823,8 +1852,8 @@ token and needs no update.
   default response.
 - Settings → API (admin, CSRF): create shows the key on the POST response page
   (`api_key_created.html`, `Cache-Control: no-store`), never via flash or
-  session; revoke keeps the row greyed out. Key names are unique including
-  revoked keys. The audit list on this tab arrives with v080-04.
+  session; revoke keeps the row greyed out. (Superseded in v0.9.0, §15.3: names are unique among active keys only; originally unique including
+  revoked keys.) The audit list on this tab arrives with v080-04.
 
 ### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered in v0.8.0
 
@@ -1840,7 +1869,7 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 | `DELETE /entries/<id>` | write | Soft delete. `?permanent=true` hard-deletes, but only an already soft-deleted entry; otherwise 409. |
 | `POST /entries/<id>/restore` | write | Restore a soft-deleted entry. |
 | `GET /entries/<id>/checks` | read | The entry's checks. |
-| `POST /entries/<id>/checks` | write | Add a service check (http/tcp/ping). |
+| `POST /entries/<id>/checks` | write | Add a service check (http/tcp/ping/dns). |
 | `PATCH /checks/<id>` | write | Update any check. URL-kind checks: enabled, mode, interval, timeout, verify. Container check: enabled, interval. Service checks: everything. |
 | `DELETE /checks/<id>` | write | Delete a **service** check. URL and container checks can't be deleted (409); disable them instead. |
 | `POST /entries/<id>/checks/run` | write | Check now (uses `jobs.request_run`). Returns `requested_at`. |
@@ -2005,9 +2034,11 @@ view of the log is not built yet.
 
 **As built (v080-05):** `mcp/std_mcp.py` (FastMCP over stdio, `mcp==1.30.0`, `httpx` client) with its own `mcp/requirements.in` / `requirements.txt` and `mcp/README.md`. Env: `STD_URL`, `STD_API_KEY`, optional `STD_VERIFY_TLS` and `STD_TIMEOUT`. `main()` calls `GET /whoami` and exits with the reason on a bad key; a `read` key registers 9 read tools, a `write` key adds 12 write tools (21 in all). Beyond the §14.7 list: `list_widget_types` (so `set_widget` can be filled in) and `remove_widget`. `update_entry` / `update_check` take a `fields` object so that absent (untouched) and null (clear) stay distinct; `upsert_group` is client-side (list, then create or patch by exact name; optional `new_name`). Errors become tool errors as `HTTP <status> (<meaning>): <error>` plus the API's `details`. `.dockerignore` keeps `mcp/` out of the image; `requirements-dev.txt` includes `mcp/requirements.txt` so `tests/test_mcp_server.py` runs in the CI `Test` job (fake transport for every tool, scope gating, error mapping, every tool's method and path checked against `/api/v1/openapi.json`, and a flow against the real app via `httpx.WSGITransport`). No STD server change, no schema change.
 
+**v0.9.0 addition (§15.7):** one-command install with `uv run` (PEP 723 header in `std_mcp.py`), a startup version comparison against `whoami.version`, and a `server_info` tool.
+
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§17), users and passwords through the API, and
+- Per-host notifier tokens (§18), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2015,7 +2046,310 @@ view of the log is not built yet.
 
 ---
 
-## 15. Versioning, Branches, and Releases
+## 15. v0.9.0 — DNS and certificate-expiry checks (Delivered)
+
+Two new kinds of check, so STD can take over what Gatus checks at the Emmett
+site: a DNS check (§15.1) and certificate expiry on HTTPS checks (§15.2). Chunks are tracked as handoff prompts `v090-NN-*`.
+
+### 15.1 DNS check [`v090-01-dns-check`] — Delivered in v0.9.0
+
+A fourth service-check type, `dns`, that asks a given DNS server a question
+and judges the reply. It goes through every place the other types do: model
+and migration, Add/Edit, the management API and OpenAPI spec, the MCP tools,
+the detail panel and rollup.
+
+- **Schema** (migration `a1c5e8d2f093`, nullable columns on `health_check`,
+  no indexes needed): `dns_name` (query name), `dns_record_type` (`A`, `AAAA`,
+  `CNAME`, `TXT`, `PTR`, `MX`, `NS`, `SRV`; default `A`), `dns_expected_rcode`
+  (default `NOERROR`, stored upper-case) and `dns_expected_answer` (empty or
+  NULL means "rcode only"). All four are NULL on other check types and are
+  part of `to_config()` and backup restore (older backups restore them as
+  NULL). `check_type` `dns` fits the existing `String(8)`.
+- **Server** = `target`: an IP literal, `ip`, `ip:port`, `[v6]` or
+  `[v6]:port` (a bare IPv6 without a port is also accepted), port 53 by
+  default. A hostname is rejected: the check must never use the system
+  resolver, so the server has to be an address.
+- **Probe** `checker.probe_dns(server, name, record_type, expected_rcode,
+  expected_answer, timeout)`: low-level dnspython
+  (`dns.message.make_query` + `dns.query.udp_with_fallback`, TCP on
+  truncation); `dns.resolver` is never used. Latency is the query round trip;
+  `status_code` stays NULL.
+  - PTR accepts an IP as the name (converted with `dns.reversename`); a name
+    already under `in-addr.arpa` / `ip6.arpa` is used as is.
+  - An rcode mismatch fails with `rcode <ACTUAL>` (e.g. `rcode NXDOMAIN`).
+  - Answers are the answer-section rdatas of the queried type at any owner
+    name, so a CNAME chain followed by an A record still matches the A record.
+    The comparison is an exact match on **any** answer, after normalizing:
+    case-insensitive, trailing dot removed, whitespace collapsed, IP addresses
+    in canonical form, TXT as its joined strings without quotes; MX and SRV
+    compare the full presentation form.
+  - NODATA (NOERROR, no answers) passes when no answer is expected, and fails
+    with `no answer, expected <x>` when one is.
+  - A wrong answer fails with `answer <a> | <b>, expected <x>` (answers joined
+    with ` | `, clipped to the 255-character message column).
+  - A timeout gives exactly `timeout`; any other exception follows the usual
+    failing-result path. The probe never raises.
+- **Validation** (`check_form.py`, one rule set for the form and the API):
+  the server per the rules above; `dns_name` required and a valid DNS name (an
+  IP for PTR); record type in the list above; rcode a known rcode name
+  (numeric codes rejected); expected answer optional and trimmed. `mode` and
+  `verify` do not apply and are stored as `status` and true. The DNS fields are
+  part of the change signature, so editing them makes the check due at the
+  next tick. Switching a check away from DNS clears the DNS columns.
+- **UI**: the type select has DNS. With DNS selected the target relabels to
+  "DNS server", four fields appear (query name, record type, expected rcode
+  among NOERROR / NXDOMAIN / SERVFAIL / REFUSED, expected answer) and Mode and
+  Verify TLS hide. Form fields `svc_<key>_dns_name`, `_dns_type`,
+  `_dns_rcode`, `_dns_answer`. A failed submit re-renders the input.
+- **Detail panel**: shows `A em-pve01.crzynet.me @ 10.100.16.16` and, below,
+  `expect NOERROR + 10.100.17.10`. Bars, uptime, the rollup badge and status
+  filters work unchanged; a failing DNS check makes the entry down (or
+  degraded alongside passing checks).
+- **Management API and MCP**: `check_type: "dns"` plus the four `dns_*`
+  fields on `POST /entries/<id>/checks`, on the inline `checks` of
+  `POST /entries` and on `PATCH /checks/<id>` (service checks only: URL and
+  container checks return 400, as for `target`). `CheckOut` always carries the
+  four fields, null on other types. The OpenAPI spec picks them up. MCP
+  `add_check` takes the four fields and `update_check` accepts them.
+- **Dependency**: `dnspython` (pinned in `requirements.txt`).
+- **Example (Emmett)**: `check_type=dns`, `target=10.100.16.16`,
+  `dns_name=em-pve01.crzynet.me`, `dns_record_type=A`,
+  `dns_expected_answer=10.100.17.10`.
+
+### 15.2 Certificate expiry on HTTPS checks [`v090-02-cert-expiry`] — Delivered in v0.9.0
+
+An optional **minimum days left** on HTTPS checks, for URL checks (internal
+and external) and HTTP service checks. When set, a check fails with
+`cert expires in N days (min M)` once the leaf certificate is that close to
+expiry, even though the HTTP status is fine.
+
+- **Schema** (migration `b7d3f1a94e26`, two nullable columns on
+  `health_check`, no indexes needed): `cert_min_days` (Integer; NULL = off) and
+  `last_cert_expires_at` (DateTime, naive UTC; the certificate's notAfter as
+  the checker last saw it). `cert_min_days` is in `to_config()` and backup
+  restore (older backups, and values outside 1-365 or on non-http checks,
+  restore as NULL); `last_cert_expires_at` is a cache and is never backed up.
+- **Probe** `checker.probe_http(..., cert_min_days=None)`. With a minimum set
+  and an `https://` target, the probe makes a separate TLS handshake to the
+  target URL's host and port (443 by default) with SNI set to the hostname,
+  through `_read_cert_expiry(host, port, timeout)`: an unverified context
+  (`check_hostname` off, `CERT_NONE`) so it also works with Verify TLS off,
+  `getpeercert(binary_form=True)` parsed with `cryptography.x509`
+  (`not_valid_after_utc`), the probe's timeout. The expiry comes back in the new
+  `ProbeResult.cert_expires_at` (naive UTC, like everything `jobs.py`
+  stores). Result rules, in order:
+  1. HTTP fails: today's HTTP failure message is kept, and the expiry is still
+     reported if the handshake got one.
+  2. HTTP ok but less than `cert_min_days` days left: failing,
+     `cert expires in N days (min M)` (N = whole days left, floored); an
+     already-expired certificate reads `cert expired N days ago`.
+  3. HTTP ok but the certificate could not be read: failing,
+     `cert check failed: <reason>`.
+  4. Otherwise ok; the status code is kept.
+
+  `http://` targets ignore the condition (no handshake, `cert_expires_at`
+  None). The handshake is its own connection, so it does not honour an
+  `HTTPS_PROXY` that `requests` would. The probe never raises.
+- **Jobs**: the due-job dict carries `cert_min_days`; `record_check_result`
+  always overwrites `last_cert_expires_at` from the result, so it is cleared
+  when the check has no condition, the target is plain http, or the
+  certificate could not be read. URL checks use the entry's current URL, so
+  a URL that turns into http ignores the stored condition.
+- **Validation** (`check_form.py`, one rule set for the form and the API):
+  optional; when set a whole number from 1 to 365. Allowed on URL checks and
+  http service checks; a 400 on tcp/ping/dns service checks in the API (the
+  form never submits it for them and ignores it if present). Saving an
+  `http://` URL with a value is allowed: it is stored and ignored at runtime,
+  because the URL can change underneath. In the change signature, so editing
+  it makes the check due at the next tick. Switching a check away from http
+  clears it.
+- **UI**: a "Min cert days" number input (placeholder "off") beside Verify
+  TLS on URL-check rows and HTTP service rows, shown only while the effective
+  URL starts with `https://` (the entry's internal/external URL input for URL
+  checks, the row's own target for service checks), updated live as you type.
+  Form fields `uc_<which>_cert_min_days` and `svc_<key>_cert_min_days`; a
+  failed submit re-renders the value.
+- **Detail panel**: `check_payload` carries `cert_min_days` and
+  `cert_expires_at` (ISO-Z); when an expiry is known the panel shows
+  "Cert expires <local date> (N days)", in the failing colour when below the
+  minimum.
+- **Management API and MCP**: `cert_min_days` (nullable; null clears it) on
+  `POST /entries/<id>/checks`, the inline `checks` and `url_checks` of
+  `POST /entries`, and `PATCH /checks/<id>` (URL checks and http service
+  checks; a 400 on other kinds and types). `CheckOut` carries `cert_min_days`
+  and `cert_expires_at`; the OpenAPI spec picks them up. MCP `add_check` takes
+  `cert_min_days` and `update_check` accepts it.
+- **Dependency**: `cryptography` (pinned in `requirements.txt`; manylinux
+  wheels, so `python:3.11-slim` needs no compiler).
+- **Example (Emmett)**: a URL check on `https://em-pve01.crzynet.me:8006/`
+  with `cert_min_days=7`; Proxmox's self-signed certificate with Verify TLS off
+  still reports its expiry.
+
+### 15.3 API key rotation [`v090-03-api-key-rotate`] — Delivered in v0.9.0
+
+- **Rotate** on each active key in Settings → API (`POST
+  /settings/api-keys/<id>/rotate`, admin and CSRF, like revoke). It keeps the
+  row (id, name, scope, `created_at`, audit history) and issues a fresh key
+  from `generate_key()`, so the prefix and the secret are both new.
+  `api_keys.rotate_key(key)` replaces `prefix` and `key_hash`, sets
+  `rotated_at`, clears `last_used_at` / `last_used_ip` (they described the old
+  secret) and returns the full key. A revoked key raises `ValueError`.
+- No grace period: `verify` looks up by prefix and hash, so the old secret is
+  rejected at once.
+- The new key is shown once on `api_key_created.html` (headed "Key rotated"),
+  with `Cache-Control: no-store, no-cache`. A revoked or unknown id flashes an
+  error and redirects to the API tab. The log line carries the key id only.
+- New column `api_key.rotated_at` (nullable, naive UTC); the list shows it as
+  **Rotated** ("—" when never rotated).
+- **Name reuse.** `api_key.name` is no longer unique across all rows: the
+  column constraint `uq_api_key_name` is replaced by the partial unique index
+  `ux_api_key_name_active` (`name WHERE revoked_at IS NULL`), so a revoked
+  key's name can be used again. `validate_name` checks active keys only. The
+  audit-log key filter uses the key id (`audit_key=id:<n>`), with a revoked
+  key labelled "(revoked)"; rows whose key was deleted keep a name-only
+  option. The downgrade refuses, with a message listing the names, if a name
+  is shared by more than one row.
+- Migration `c2e8a5b3d917` (on top of `b7d3f1a94e26`) does both changes.
+- Not in the management API: users and keys stay UI-only (§14.8).
+### 15.4 Groups: one Save, unsaved-changes warning [`v090-04-groups-save-all`] — Delivered in v0.9.0
+
+- **One form, one route.** Settings → Groups is a single `<form>` posting to
+  `POST /settings/groups/save` (admin and CSRF). Rows post
+  `group-<id>-name|icon|priority|delete`; the optional new row posts
+  `new-name|icon|priority` and is ignored when the name is blank. The per-row
+  Save/Delete forms and `POST /update_group`, `/add_group`, `/delete_group` were
+  removed (the nested per-row forms were invalid HTML and the per-row Save
+  posted only `group_id`, which reset `group_sort_priority` to NULL).
+- **All or nothing.** The submission is validated first: names non-empty (<= 100
+  characters) and unique across the resulting set (so an A<->B swap, or a new
+  group taking a deleted row's name, is fine), icon <= 255 characters,
+  priority blank or an integer (negatives and 0 allowed), every submitted
+  group id still exists and no existing group is missing from the form, and a
+  delete-marked group has no active entries. The name, icon and priority rules
+  are `entry_rules.validate_group` / `parse_sort_priority`, shared with the
+  management API. Any failure writes nothing and re-renders Settings (HTTP 400)
+  on the Groups tab with the submitted values and per-row messages.
+- **Applying.** One transaction: deletes (soft-deleted entries detached), renamed
+  rows parked on a placeholder name so SQLite's per-statement UNIQUE check
+  allows swaps, then the final values and the new row. Flash: "Saved: N updated,
+  N added, N deleted." or "No changes."
+- **Unsaved-changes guard.** `static/js/unsaved_guard.js` (no dependencies,
+  `data-unsaved-guard` on a form) snapshots the form on load, is dirty while the
+  values differ from it, arms a `beforeunload` prompt, highlights Save and shows
+  an "Unsaved changes" hint. Submit and Discard disarm it. A failed save
+  re-renders with `data-unsaved-start-dirty`. Applied to the groups form only.
+
+### 15.5 Host on tiles when the name isn't unique [`v090-05-tile-show-host`] — Delivered in v0.9.0
+
+- **Setting.** `tile_show_host` (`TILE_SHOW_HOST`): `duplicates` (default),
+  `always`, `never`. Lower-cased and trimmed at startup in `settings_loader`;
+  an unknown value logs a warning and falls back to `duplicates`. Startup-only
+  like every `settings.yml` value; it appears in Settings → Info and in
+  `GET /api/v1/config` (not a secret) with no schema change.
+- **Detection.** `view_helpers.duplicate_name_ids(entries)` returns ids whose
+  name (case-insensitive, trimmed) is shared by another active entry on a
+  different host; soft-deleted and host-less entries are ignored.
+  `host_label_ids(entries, mode)` applies the mode (`always` = every entry with
+  a host). The handlers compute it over all active entries (not the filtered
+  view) and pass the id set to the templates.
+- **Views.** Tiled: a `.tile-host` line (small, muted, ellipsis, full host in
+  `title`) directly under the name, only for ids in the set; other tiles are
+  unchanged. Compact: replaces the old `more than one host` rule with the same
+  set (`always` approximates the old behavior). The Dashboard table already
+  has a Host column and is unchanged.
+- No schema, register-contract or job change.
+
+---
+
+### 15.6 Roll-up and HTTP failure messages [`v090-08-rollup-and-http-messages`] — Delivered in v0.9.0
+
+- **Roll-up.** `health_state.entry_health`: Container failing = `down`;
+  otherwise URL and service checks that have run are judged as a group
+  (all failing = `down`, some = `degraded`). Container-only entries are
+  unchanged. The duplicate rule in `routes_mgmt_api.health_summary` was
+  replaced with `entry_health(e).state`.
+- **Status-mode message.** A status of 400 or above (threshold unchanged)
+  reads at most `BODY_READ_LIMIT` (4 KB) of the body (`stream=True` now in
+  status mode too; only read on failure; response always closed). JSON object:
+  first non-empty string among `last_error`, `error` (or `error.message`),
+  `message`, `detail`, else the raw text; text: first non-empty line.
+  Format `<code>: <text>`, whitespace collapsed, whole message at most 200
+  characters (`…`); empty, whitespace-only or binary bodies give just the code.
+  The cert condition is unchanged. (Body mode got the same extraction in §15.9.)
+- No schema, register-contract or job change.
+
+---
+
+### 15.7 MCP easy install and version check [`v090-09-mcp-easy-install-and-version`] — Delivered in v0.9.0
+
+- **uv install.** `mcp/std_mcp.py` starts with a PEP 723 block
+  (`requires-python >= 3.10`, `mcp==1.30.0`, `httpx==0.28.1`), so
+  `uv run std_mcp.py` (or `uv run <raw GitHub URL at a tag>`) needs no virtualenv.
+  `requirements.in` / `requirements.txt` stay for CI and the venv path; a test
+  asserts the header pins equal `requirements.in`.
+- **`whoami.version`.** `GET /api/v1/whoami` adds `version` (from
+  `VERSION_INFO`, as `/config` and `openapi.json` do). Additive; `WhoamiOut`
+  and the OpenAPI description updated.
+- **MCP version.** `MCP_VERSION` in `std_mcp.py` is set by `/release-prep`
+  alongside `VERSION`; a test fails if it is behind `VERSION`.
+- **Startup comparison** (`compare_versions`): `MAJOR.MINOR.PATCH` integers;
+  same major.minor = `match` (a patch difference is noted only on stderr);
+  `std_newer`; `std_older` (a missing `version` means STD older than 0.9.0);
+  `unknown` for anything not plain semver. A difference gives one stderr line
+  and one "Version notice" sentence in the FastMCP instructions. It never
+  refuses to start. The startup line is
+  `connected to STD <v> as key '<name>' (<scope>); std_mcp <v>`.
+- **`server_info`** read tool: `{mcp_version, std_version, status, advice}`
+  from the startup result, no network call.
+- No schema, register-contract or job change.
+
+---
+
+### 15.8 Tiled tile layout [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered in v0.9.0
+
+- Each Tiled tile is a two-row grid: the icon on the left and the name across
+  the full remaining width (host in small text underneath when §15.5 shows
+  it); below, a divided bottom row with, left to right, the status icons
+  (health badge, internal/external URL, widget), the exposure badges (one logo
+  per proxy layer, §8.9), and right-aligned actions (Dozzle, edit, trash/lock,
+  chevron). The uptime strip (Show uptime) sits along the tile's bottom edge.
+- This replaces the earlier right-hand two-row icon block. The temporary
+  `/tiled_preview` route and its `tile_layout` plumbing were removed (unknown
+  URL = 404). Mobile touch targets (< 640 px) are unchanged.
+- No schema, register-contract or job change.
+
+---
+
+### 15.9 Body-mode failure reason and panel message [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered in v0.9.0
+
+- **Body mode, status >= 400.** An `Error:`-prefixed body still gives that
+  text; otherwise the message is `<code>: <reason>` using the §15.6
+  extraction (JSON `last_error` / `error` / `message` / `detail`, else first
+  line), else just the code. Body mode's 2xx outcomes (`OK`, `Error:`,
+  `Unexpected response`) are unchanged.
+- **Panel.** A down check always shows a message line in the health detail
+  panel: the stored message, else `status N (empty reply)`, else `no reply`.
+- **Cache busting.** `base.html` and the edit/add/settings templates request
+  shared static CSS/JS with `?v=<file mtime>` (`static_v()` template helper).
+- No schema, register-contract or job change.
+
+### 15.10 Health-tinted entries [`v090-11-health-tinted-rows`] — Delivered in v0.9.0
+
+- An entry whose rolled-up health (§13.6) is **degraded** or **down** gets
+  the class `entry-health-degraded` / `entry-health-down` on its Dashboard
+  row (and its expanded health row), its Tiled `.tile` and its Compact
+  `.compact-tile`. Up, unknown and none get no class and look unchanged.
+- CSS (`static/css/dashboard.css`): a 12% `color-mix` of `--color-status-warn`
+  / `--color-status-bad` into `--color-bg-surface` (18% on row and compact
+  hover), with an `rgba` fallback line and a 3px left edge in the same hue.
+  The open Tiled drawer keeps its neutral background.
+- Auto-refresh reloads the page, so the tint follows the server render; no
+  JS change.
+- No schema, register-contract or job change.
+
+---
+
+## 16. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -2054,12 +2388,12 @@ view of the log is not built yet.
 
 ---
 
-## 16. Cross-Repo Coordination
+## 17. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 16.1 Contract ownership
+### 17.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -2072,7 +2406,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 16.2 Release history
+### 17.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -2097,7 +2431,7 @@ not lead.
 
 ---
 
-## 17. Open Questions
+## 18. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)

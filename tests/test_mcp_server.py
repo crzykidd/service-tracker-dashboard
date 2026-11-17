@@ -1,4 +1,4 @@
-"""The stdio MCP server in mcp/std_mcp.py (v0.8.0, PRD 14.7).
+"""The stdio MCP server in mcp/std_mcp.py (PRD 14.7, 15.7).
 
 The server is an HTTP client of the management API and imports nothing from the
 app, so most tests run it against an httpx MockTransport (no network). Two tests
@@ -30,7 +30,7 @@ _spec.loader.exec_module(std_mcp)
 
 READ_TOOLS = {
     "list_entries", "get_entry", "health_summary", "get_health_history", "list_groups",
-    "list_widgets", "list_widget_types", "get_exposure_settings", "get_config",
+    "list_widgets", "list_widget_types", "get_exposure_settings", "get_config", "server_info",
 }
 WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
@@ -123,7 +123,7 @@ def test_read_key_registers_only_read_tools():
 
 
 def test_calls_table_covers_every_tool():
-    assert set(CALLS) == (READ_TOOLS | WRITE_TOOLS) - {"upsert_group"}
+    assert set(CALLS) == (READ_TOOLS | WRITE_TOOLS) - {"upsert_group", "server_info"}
 
 
 def test_every_tool_has_a_description():
@@ -319,3 +319,117 @@ def test_read_key_is_refused_by_the_api_even_without_tool_gating(app):
     # Defence in depth: gating hides the write tools, and the API still refuses the key.
     with pytest.raises(Exception, match="HTTP 403"):
         call(std_mcp.build_server(_live_client(app, "read"), "write"), "delete_check", {"check_id": 1})
+
+
+# --- install header and version -----------------------------------------------------
+
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _inline_metadata():
+    """Parse the PEP 723 `# /// script` block at the top of std_mcp.py."""
+    m = re.search(r"^# /// script\n((?:#.*\n)+?)# ///$", _PATH.read_text(), re.MULTILINE)
+    assert m, "std_mcp.py has no PEP 723 script block"
+    body = "\n".join(line[2:] if line.startswith("# ") else line[1:] for line in m.group(1).splitlines())
+    import tomllib
+    return tomllib.loads(body)
+
+
+def test_inline_dependencies_equal_requirements_in():
+    pins = [ln.strip() for ln in (_ROOT / "mcp" / "requirements.in").read_text().splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#")]
+    assert pins
+    assert sorted(_inline_metadata()["dependencies"]) == sorted(pins)
+    assert _inline_metadata()["requires-python"]
+
+
+def test_mcp_version_is_not_behind_the_repo_version():
+    # release-prep sets both to the new version. On dev, between releases, MCP_VERSION may
+    # already be the next release (VERSION is still the last shipped one), never behind it.
+    repo = std_mcp._parse_semver((_ROOT / "VERSION").read_text().strip())
+    mine = std_mcp._parse_semver(std_mcp.MCP_VERSION)
+    assert repo and mine and mine >= repo
+
+
+@pytest.mark.parametrize("std, status, patch_note", [
+    ("0.9.0", "match", False),
+    ("0.9.7", "match", True),
+    ("0.10.1", "std_newer", None),
+    ("1.0.0", "std_newer", None),
+    ("0.8.0", "std_older", None),
+    (None, "std_older", None),
+    ("dev", "unknown", None),
+    ("0.9", "unknown", None),
+    ("0.9.0-rc1", "unknown", None),
+])
+def test_compare_versions(std, status, patch_note):
+    info = std_mcp.compare_versions("0.9.0", std)
+    assert info["status"] == status
+    assert info["mcp_version"] == "0.9.0" and info["std_version"] == std
+    assert info["advice"]
+    if patch_note is not None:
+        assert ("patch" in info["advice"]) is patch_note
+
+
+def test_version_notice_lines():
+    assert std_mcp.version_notice(std_mcp.compare_versions("0.9.0", "0.9.0")) is None
+    assert "patch difference" in std_mcp.version_notice(std_mcp.compare_versions("0.9.0", "0.9.2"))
+    assert "update std_mcp.py" in std_mcp.version_notice(std_mcp.compare_versions("0.9.0", "0.10.1"))
+    assert "older than 0.9.0" in std_mcp.version_notice(std_mcp.compare_versions("0.9.0", None))
+
+
+def _instructions(info):
+    return std_mcp.build_server(Fake().client(), "write", info).instructions
+
+
+def test_instructions_mention_a_mismatch_only_when_there_is_one():
+    for std in ("0.9.0", "0.9.4"):
+        assert "Version notice" not in _instructions(std_mcp.compare_versions("0.9.0", std))
+    assert "Version notice" not in _instructions(None)
+    for std in ("0.10.0", "0.8.0", None, "dev"):
+        text = _instructions(std_mcp.compare_versions("0.9.0", std))
+        assert "Version notice" in text and "update the MCP server" in text
+
+
+def test_server_info_reports_the_startup_comparison_without_a_request():
+    fake = Fake()
+    info = std_mcp.compare_versions("0.9.0", "0.10.1")
+    for scope in ("read", "write"):
+        server = std_mcp.build_server(fake.client(), scope, info)
+        assert call(server, "server_info") == info
+    assert call(std_mcp.build_server(fake.client(), "read"), "server_info")["status"] == "unknown"
+    assert fake.requests == []
+
+
+def test_whoami_includes_the_std_version(app):
+    who = _live_client(app, "read").request("GET", "/whoami")
+    assert who["version"] == app.config["VERSION_INFO"]["version"]
+
+
+@pytest.mark.parametrize("version", ["0.10.1", "0.8.0", "dev", None])
+def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
+    who = {"name": "k", "prefix": "abcd1234", "scope": "write"}
+    if version is not None:
+        who["version"] = version
+    monkeypatch.setenv("STD_URL", "http://std.test")
+    monkeypatch.setenv("STD_API_KEY", "secret")
+    monkeypatch.setattr(std_mcp.StdClient, "request", lambda self, *a, **k: who)
+    ran = []
+    monkeypatch.setattr(std_mcp.FastMCP, "run", lambda self, transport: ran.append(self))
+    std_mcp.main()
+    err = capsys.readouterr().err
+    assert ran and "Version notice" in ran[0].instructions
+    assert f"std_mcp {std_mcp.MCP_VERSION}" in err and "connected to STD" in err
+    assert "std_mcp 0.9.0 talking to STD" in err
+
+
+def test_startup_line_when_versions_are_equal(monkeypatch, capsys):
+    monkeypatch.setenv("STD_URL", "http://std.test")
+    monkeypatch.setenv("STD_API_KEY", "secret")
+    monkeypatch.setattr(std_mcp.StdClient, "request", lambda self, *a, **k: {
+        "name": "k", "prefix": "p", "scope": "read", "version": std_mcp.MCP_VERSION})
+    monkeypatch.setattr(std_mcp.FastMCP, "run", lambda self, transport: None)
+    std_mcp.main()
+    err = capsys.readouterr().err
+    assert f"connected to STD {std_mcp.MCP_VERSION} as key 'k' (read); std_mcp {std_mcp.MCP_VERSION}" in err
+    assert "talking to" not in err

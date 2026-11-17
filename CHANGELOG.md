@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-16
+
+### Added
+
+- **One-command MCP install, and a version check.** The MCP server installs
+  with one command via `uv run` (no virtualenv needed) and warns when it is
+  older or newer than your STD; new `server_info` tool.
+- `GET /api/v1/whoami` now includes the STD version.
+- **Host on Tiled tiles when a name isn't unique.** Entries with the same name
+  on different hosts (for example `technitium` on two DNS servers) used to
+  look identical on Tiled. The host now appears in small muted text under the
+  name for those entries only; other tiles are unchanged. A new
+  `tile_show_host` setting (`TILE_SHOW_HOST`) chooses `duplicates` (default),
+  `always` or `never`. Names compare ignoring case and surrounding spaces, and
+  deleted entries and entries without a host don't count. It shows in
+  Settings → Info and `GET /api/v1/config` like other startup settings.
+- **DNS service check.** A new service-check type, **DNS**, asks a DNS server
+  for a name and checks the reply, for example to watch a site's resolver.
+  Set the server (an IP address, optionally with a port), the query name, the
+  record type (A, AAAA, CNAME, TXT, PTR, MX, NS or SRV), the expected rcode
+  (default NOERROR) and an optional expected answer. The check queries the
+  server you give directly, never the host's own resolver. Without an expected
+  answer it passes on the rcode alone; with one, any matching answer record
+  passes, and a reply with no answers fails. Failures show what came back
+  (`rcode NXDOMAIN`, `answer 10.0.0.5, expected 10.100.17.10`, `timeout`).
+  Available on Add and Edit, the health detail panel, the management API
+  (`check_type: "dns"` and the `dns_*` fields) and the MCP tools.
+- **Certificate-expiry condition on HTTPS checks.** URL checks and HTTP
+  service checks have a new optional **Min cert days** (1-365). When it is set,
+  the check fails with `cert expires in 5 days (min 7)` once the server's
+  certificate is that close to expiring, even if the page itself answers fine
+  (an already-expired certificate reads `cert expired 3 days ago`, and a
+  certificate that cannot be read reads `cert check failed: ...`). It works with
+  Verify TLS turned off, so a self-signed certificate still reports its expiry.
+  The field only appears while the URL starts with `https://`; on an `http://`
+  URL a saved value is kept but ignored. The health detail panel shows
+  "Cert expires <date> (N days)", in red when it is below your minimum. Also
+  available in the management API (`cert_min_days`, with `cert_expires_at` on
+  checks) and the MCP tools. The certificate is read over its own connection,
+  so it does not go through an `HTTPS_PROXY`, and it needs TLS 1.2 or newer.
+- **Rotate an API key.** Settings → API has a **Rotate** button on each active
+  key. It keeps the key's name, scope and audit history but issues a new
+  secret, shown once on the same copy-it-now page as when a key is created. The
+  old key stops working immediately (there is no grace period), and "last used"
+  starts over. A new **Rotated** column shows when each key was last rotated.
+  Update anything that used the old key (for example the MCP client config).
+
+### Changed
+
+- Degraded and down services get a soft amber or red background on the
+  Dashboard, Tiled and Compact views, so problems stand out at a glance.
+  Up, unknown and not-monitored entries look the same as before.
+- **An entry whose URL/service checks are all failing now shows Down even when its container is running (it used to show Degraded).** The Container check counts on its own: if it fails the entry is Down; otherwise the URL and service checks are judged as a group (all failing is Down, some failing is Degraded). The Status filter, the Failing count and `GET /api/v1/health/summary` follow.
+- **HTTP check failures now include the reason from the response, e.g. `503: Scope 'Mgmt1' not found`, instead of just the status code.** For a status of 400 or above in Status mode, STD reads the first 4 KB of the reply: a JSON `last_error`, `error`, `message` or `detail`, else the first line of text (at most about 200 characters). An empty or binary body still shows just the code.
+- **Tiled view: tiles show the icon on the left, the name across the full tile width (host underneath when shown), and all status, exposure and action icons in one row along the bottom.**
+- **The health detail panel always says why a check is down.** A down check shows its reason line under the status; when the probe left no text it reads `status 503 (empty reply)` (or `no reply`) instead of nothing.
+- **Upgrades no longer leave you on stale CSS/JS.** The stylesheet and scripts are now requested with a version (`?v=`) that changes when the file does, so a browser fetches the new copy after an upgrade.
+- **Exposure icons show once per proxy layer instead of once per route; hover shows the route count and lists them.** A traefik service with several routers used to show the same logo several times. The small lock and pencil marks are gone from the badge; TLS and hostnames are in the hover text. This applies to the Dashboard and Tiled views.
+- **Compact view shows the host only where the name isn't unique.** It now
+  follows the new `tile_show_host` setting (default `duplicates`) instead of
+  showing the host on every row whenever more than one host exists. Set
+  `tile_show_host: always` to get the old look back (the host on every entry
+  that has one).
+- **Settings → Groups has one Save.** Edit any number of groups (name, icon,
+  priority), add a new one in the bottom row (left blank, it is ignored) and
+  press **Save changes** once. **Delete** now marks the row (struck through,
+  with **Undo**) and the delete happens on Save; a group that still has
+  entries has no Delete button. Nothing is saved if anything is wrong (empty
+  or duplicate name, a priority that is not a number, a group that gained
+  entries since the page loaded): the page comes back with what you typed and
+  a message on each bad row. Swapping two names, or giving a new group a
+  deleted group's name, works in one save. **Discard** reloads the table.
+- **Warning before leaving Settings → Groups with unsaved changes.** The
+  browser asks before you close the tab or follow a link, and the Save button
+  is highlighted with an "Unsaved changes" hint. Typing a change and putting it
+  back clears the warning. Switching Settings tabs does not lose your edits.
+- The Groups table is always shown, so the first group can be added from an
+  empty list.
+
+### Fixed
+
+- **Body-mode HTTP checks now show the reply's reason on a 4xx/5xx response (e.g. `503: <last_error>`) instead of just the status code.** An `Error: ...` body still gives that text as before.
+- **Saving a group on Settings → Groups no longer clears its priority.** The
+  per-row Save sent only the group's id, so the priority was reset to blank
+  (and the name and icon were not saved). A priority of 0 also showed as blank.
+- A revoked API key's name can be used again for a new key. Names only have to
+  be unique among active keys; the audit-log key filter lists a reused name
+  once per key, with the revoked one marked "(revoked)".
+
 ## [0.8.0] — 2026-11-15
 
 > The management API and the MCP server are new in this release and have not
@@ -891,7 +980,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...v0.7.0

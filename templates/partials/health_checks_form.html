@@ -1,3 +1,5 @@
+{% set dns_record_types = ['A', 'AAAA', 'CNAME', 'TXT', 'PTR', 'MX', 'NS', 'SRV'] %}
+{% set dns_rcodes = ['NOERROR', 'NXDOMAIN', 'SERVFAIL', 'REFUSED'] %}
 {# "Health checks" form section, shared by Add and Edit (PRD 13.5).
    Context: url_rows, svc_rows (dicts from check_form), check_targets
    (dict of current URLs, or none on the Add page), field_cls (input class). #}
@@ -16,6 +18,15 @@
       <option value="body" {% if value == 'body' %}selected{% endif %}>Response body</option>
     </select>
   </div>
+{% endmacro %}
+
+{# "Min cert days" (v0.9.0): shown by health_checks_form.js only while the
+   effective URL (the input whose id is `source_id`) starts with https://. #}
+{% macro cert_field(name, id, value, source_id) %}
+  <div class="hidden" data-cert-field data-cert-source="{{ source_id }}"><div class="flex items-center gap-2">
+    <label for="{{ id }}" class="text-sm text-dashboard-secondary">Min cert days</label>
+    <input type="number" name="{{ name }}" id="{{ id }}" class="{{ field_cls }} w-24" min="1" max="365" step="1" placeholder="off" value="{{ value }}" title="Fail the check when the certificate has fewer than this many days left (1-365). Blank is off.">
+  </div></div>
 {% endmacro %}
 
 {% macro check_box(name, id, checked, label) %}
@@ -40,14 +51,39 @@
           <option value="http" {% if r.check_type == 'http' %}selected{% endif %}>HTTP/HTTPS</option>
           <option value="tcp" {% if r.check_type == 'tcp' %}selected{% endif %}>TCP</option>
           <option value="ping" {% if r.check_type == 'ping' %}selected{% endif %}>Ping</option>
+          <option value="dns" {% if r.check_type == 'dns' %}selected{% endif %}>DNS</option>
         </select>
       </div>
     </div>
     <div>
-      <label for="svc_{{ key }}_target" class="block text-xs font-medium text-dashboard-secondary mb-1">Target</label>
-      <input type="text" name="svc_{{ key }}_target" id="svc_{{ key }}_target" maxlength="255" class="{{ field_cls }} font-mono" placeholder="https://host/health, host:port or host" value="{{ r.target }}" autocapitalize="off" autocomplete="off" spellcheck="false">
-      <p class="edit-helper">HTTP: a full URL. TCP: <code>host:port</code>. Ping: a hostname or IP.</p>
+      <label for="svc_{{ key }}_target" class="block text-xs font-medium text-dashboard-secondary mb-1"><span data-target-label>Target</span></label>
+      <input type="text" name="svc_{{ key }}_target" id="svc_{{ key }}_target" maxlength="255" class="{{ field_cls }} font-mono" placeholder="https://host/health, host:port or host" data-target-placeholder="https://host/health, host:port or host" data-dns-placeholder="10.100.16.16 or 10.100.16.16:53" value="{{ r.target }}" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <p class="edit-helper" data-not-dns>HTTP: a full URL. TCP: <code>host:port</code>. Ping: a hostname or IP.</p>
+      <p class="edit-helper" data-dns-only>The DNS server to ask: an IP address (not a hostname), optionally with a port (default 53). It is queried directly, never through this host's resolver.</p>
     </div>
+    <div data-dns-only><div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div class="sm:col-span-2">
+        <label for="svc_{{ key }}_dns_name" class="block text-xs font-medium text-dashboard-secondary mb-1">Query name</label>
+        <input type="text" name="svc_{{ key }}_dns_name" id="svc_{{ key }}_dns_name" maxlength="255" class="{{ field_cls }} font-mono" placeholder="host.example.com (an IP for PTR)" value="{{ r.dns_name }}" autocapitalize="off" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="svc_{{ key }}_dns_type" class="block text-xs font-medium text-dashboard-secondary mb-1">Record type</label>
+        <select name="svc_{{ key }}_dns_type" id="svc_{{ key }}_dns_type" class="{{ field_cls }}">
+          {% for t in dns_record_types %}<option value="{{ t }}" {% if r.dns_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="svc_{{ key }}_dns_rcode" class="block text-xs font-medium text-dashboard-secondary mb-1">Expected rcode</label>
+        <select name="svc_{{ key }}_dns_rcode" id="svc_{{ key }}_dns_rcode" class="{{ field_cls }}">
+          {% for c in dns_rcodes %}<option value="{{ c }}" {% if r.dns_rcode == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="sm:col-span-4">
+        <label for="svc_{{ key }}_dns_answer" class="block text-xs font-medium text-dashboard-secondary mb-1">Expected answer</label>
+        <input type="text" name="svc_{{ key }}_dns_answer" id="svc_{{ key }}_dns_answer" maxlength="255" class="{{ field_cls }} font-mono" placeholder="any &mdash; rcode only" value="{{ r.dns_answer }}" autocapitalize="off" autocomplete="off" spellcheck="false">
+        <p class="edit-helper">Optional. Passes when any answer record of that type matches exactly (case-insensitive, trailing dot ignored).</p>
+      </div>
+    </div></div>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
       <div data-http-only>{{ mode_field('svc_' ~ key ~ '_mode', 'svc_' ~ key ~ '_mode', r.mode) }}</div>
       {{ num_field('svc_' ~ key ~ '_interval', 'svc_' ~ key ~ '_interval', r.interval, 30, 86400, 'Interval (s)') }}
@@ -56,6 +92,7 @@
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
       {{ check_box('svc_' ~ key ~ '_enabled', 'svc_' ~ key ~ '_enabled', r.enabled, 'Enabled') }}
       <div data-http-only>{{ check_box('svc_' ~ key ~ '_verify', 'svc_' ~ key ~ '_verify', r.verify, 'Verify TLS certificate') }}</div>
+      {{ cert_field('svc_' ~ key ~ '_cert_min_days', 'svc_' ~ key ~ '_cert_min_days', r.cert_days, 'svc_' ~ key ~ '_target') }}
       <button type="button" class="ml-auto text-sm text-red-400 hover:text-red-300" data-remove-check>
         <i class="ti ti-trash" aria-hidden="true"></i> Remove
       </button>
@@ -89,6 +126,7 @@
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
       {{ check_box(p ~ 'enabled', p ~ 'enabled', r.enabled, 'Enabled') }}
       {{ check_box(p ~ 'verify', p ~ 'verify', r.verify, 'Verify TLS certificate') }}
+      {{ cert_field(p ~ 'cert_min_days', p ~ 'cert_min_days', r.cert_days, r.key ~ '_url') }}
     </div>
   </div>
   {% endfor %}
@@ -107,7 +145,7 @@
     </div>
   </div>
   {% endif %}
-  <p class="edit-helper">Blank interval or timeout uses the global setting. Interval 30&ndash;86400 seconds, timeout 1&ndash;60. Untick Verify TLS for self-signed certificates. Response body mode expects the page to answer <code>OK</code>.</p>
+  <p class="edit-helper">Blank interval or timeout uses the global setting. Interval 30&ndash;86400 seconds, timeout 1&ndash;60. Untick Verify TLS for self-signed certificates. Min cert days (HTTPS only) fails the check when the certificate is that close to expiring. Response body mode expects the page to answer <code>OK</code>.</p>
 
   <div class="flex items-center justify-between pt-2">
     <div class="text-sm font-medium text-dashboard-primary">Service checks</div>
@@ -119,5 +157,5 @@
     {% for r in svc_rows %}{{ svc_row(r, r.key) }}{% endfor %}
   </div>
   <p id="service-checks-empty" class="edit-helper {% if svc_rows %}hidden{% endif %}">No service checks. Add one to watch a port, a ping or a separate health URL. Removed checks are deleted when you save.</p>
-  <template id="service-check-template">{{ svc_row({'id': none, 'name': '', 'check_type': 'http', 'target': '', 'mode': 'status', 'interval': '', 'timeout': '', 'verify': true, 'enabled': true}, '__KEY__') }}</template>
+  <template id="service-check-template">{{ svc_row({'id': none, 'name': '', 'check_type': 'http', 'target': '', 'mode': 'status', 'interval': '', 'timeout': '', 'verify': true, 'enabled': true, 'dns_name': '', 'dns_type': 'A', 'dns_rcode': 'NOERROR', 'dns_answer': '', 'cert_days': ''}, '__KEY__') }}</template>
 </div>

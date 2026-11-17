@@ -66,8 +66,9 @@ OPERATIONS: tuple = (
     Op("GET", "/openapi.json", None, "This OpenAPI document", dict,
        description="The machine-readable description of the management API (OpenAPI 3.1). "
                    "It describes shapes only, never data. `/api/v1/register` is not part of it."),
-    Op("GET", "/whoami", "read", "Name, prefix and scope of the calling key", S.WhoamiOut,
-       description="Handy to check that a key works and what it may do."),
+    Op("GET", "/whoami", "read", "Name, prefix and scope of the calling key, and the STD version", S.WhoamiOut,
+       description="Handy to check that a key works and what it may do. `version` is the STD "
+                   "version; the MCP server compares it with its own."),
 
     Op("GET", "/entries", "read", "List entries", S.Page[S.EntryOut], params=_PAGE + (
         Param("status", {"type": "string", "enum": list(VALID_STATUS_FILTERS), "default": "all"},
@@ -83,7 +84,7 @@ OPERATIONS: tuple = (
     Op("POST", "/entries", "write", "Add a manual entry", S.EntryDetailOut, request=S.EntryCreate,
        status=201, errors=(409,),
        description="Creates a manual (non-Docker) entry, optionally with URL-check settings and "
-                   "service checks (HTTP, TCP or ping). A missing group is created. "
+                   "service checks (HTTP, TCP, ping or DNS). A missing group is created. "
                    "An entry with no `group` is left ungrouped."),
     Op("GET", "/entries/{id}", "read", "Get one entry in full", S.EntryDetailOut, errors=(404,),
        description="Adds notifier-reported data (networks, ports, exposures) and the widget."),
@@ -103,12 +104,17 @@ OPERATIONS: tuple = (
        params=_PAGE, errors=(404,)),
     Op("POST", "/entries/{id}/checks", "write", "Add a service check", S.CheckOut,
        request=S.ServiceCheckCreate, status=201, errors=(404, 409),
-       description="HTTP checks can use `mode: body` to look at the response body."),
+       description="HTTP checks can use `mode: body` to look at the response body, and "
+                   "`cert_min_days` (1-365) to fail when an https target's certificate has fewer "
+                   "days left (a 400 on tcp, ping and dns checks). DNS checks "
+                   "(`check_type: dns`) take the DNS server as `target` and `dns_name`, "
+                   "`dns_record_type`, `dns_expected_rcode` and `dns_expected_answer`."),
     Op("PATCH", "/checks/{id}", "write", "Edit or enable/disable a check", S.CheckOut,
        request=S.CheckPatch, errors=(404, 409),
        description=_PATCH_NOTE + " Which fields are allowed depends on the check: URL checks take "
-       "enabled, mode, interval, timeout and verify; container checks take enabled and interval; "
-       "service checks take everything."),
+       "enabled, mode, interval, timeout, verify and cert_min_days (null clears it); container checks take enabled and interval; "
+       "service checks take everything (the dns_* fields only make sense on a dns check; "
+       "cert_min_days only on an http check)."),
     Op("DELETE", "/checks/{id}", "write", "Delete a service check", S.CheckDeleteOut,
        errors=(404, 409), description="Only service checks can be deleted; disable the others."),
     Op("POST", "/entries/{id}/checks/run", "write", "Check now", S.RunRequestedOut,

@@ -369,7 +369,19 @@
     <!-- === Groups Section === -->
     <section id="section-groups" class="section hidden">
       <h2 class="text-2xl font-semibold mb-4">Groups</h2>
-      {% if groups %}
+      {% set new_row = group_form.new if group_form and group_form.new else {} %}
+      {% set group_errors = group_form.errors if group_form else {} %}
+            <form method="POST" action="{{ url_for('dashboard.save_groups') }}" id="groups-form"
+            data-unsaved-guard {% if group_form %}data-unsaved-start-dirty{% endif %}>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% macro save_bar() %}
+        <div class="flex items-center gap-3 my-3">
+          <button type="submit" data-unsaved-save class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm">Save changes</button>
+          <a href="{{ url_for('dashboard.settings', section='groups') }}" data-unsaved-discard class="text-gray-400 hover:text-gray-200 underline text-sm">Discard</a>
+          <span data-unsaved-hint class="hidden text-yellow-400 text-sm">Unsaved changes</span>
+        </div>
+        {% endmacro %}
+        {{ save_bar() }}
         <div class="overflow-x-auto">
           <table id="group-table" class="sortable w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
             <thead class="bg-gray-800 text-gray-400">
@@ -382,73 +394,51 @@
                 <th class="px-4 py-2 text-center">Controls</th>
               </tr>
             </thead>
-              <tbody class="divide-y divide-gray-700 bg-gray-900">
-                {% for group in groups %}
-                <tr class="hover:bg-gray-800">
-                  <td class="px-4 py-2">{{ group.id }}</td>
-                  <td class="px-4 py-2">
-                    <form method="POST" action="{{ url_for('dashboard.update_group') }}">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="group_id" value="{{ group.id }}">
-                      <input type="text" name="group_name" value="{{ group.group_name }}" class="form-input">
-                  </td>
-                  <td class="px-4 py-2">
-                      <input type="text" name="group_icon" value="{{ group.group_icon or '' }}" class="form-input">
-                  </td>
-                  <td class="px-4 py-2">
-                      <input type="number" name="group_sort_priority" value="{{ group.group_sort_priority or '' }}" class="form-input">
-                  </td>
-                  <td class="px-4 py-2 text-center">
-                    {{ group.services_count }}
-                  </td>
-                  
-                  <td class="px-4 py-2 text-right">
-                    <div class="flex gap-2 items-center justify-end whitespace-nowrap">
-                      <form method="POST" action="{{ url_for('dashboard.update_group') }}">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="group_id" value="{{ group.id }}">
-                        <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs">Save</button>
-                      </form>
-
-                      {% if group.services_count == 0 %}
-                      <form method="POST" action="{{ url_for('dashboard.delete_group') }}">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="group_id" value="{{ group.id }}">
-                        <button type="submit" onclick="return confirm('Are you sure you want to delete this group?')"
-                                class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">Delete</button>
-                      </form>
-                      {% endif %}
-                    </div>
-                  </td>
-                </tr>                
-                {% endfor %}
-                <tr class="bg-gray-900 border-t border-gray-700">
-                <form method="POST" action="{{ url_for('dashboard.add_group') }}">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <td class="px-4 py-2 text-gray-500 italic">new</td>
-                  <td class="px-4 py-2">
-                    <input type="text" name="group_name" placeholder="New group name" class="form-input" required>
-                  </td>
-                  <td class="px-4 py-2">
-                    <input type="text" name="group_icon" placeholder="Optional icon" class="form-input">
-                  </td>
-                  <td class="px-4 py-2">
-                    <input type="number" name="group_sort_priority" placeholder="Optional priority" class="form-input">
-                  </td>
-                  <td class="px-4 py-2">
-                     
-                  </td>
-                  <td class="px-4 py-2 text-right">
-                    <button type="submit" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">Add</button>
-                  </td>
-                </form>
+            <tbody class="divide-y divide-gray-700 bg-gray-900">
+              {% for row in group_rows %}
+              {% set errs = group_errors.get(row.id, []) %}
+              <tr class="hover:bg-gray-800{% if row.delete %} opacity-50 line-through{% endif %}" data-group-row="{{ row.id }}">
+                <td class="px-4 py-2">{{ row.id }}</td>
+                <td class="px-4 py-2">
+                  <input type="text" name="group-{{ row.id }}-name" value="{{ row.name }}" class="form-input{% if errs %} border-red-500{% endif %}">
+                  {% for e in errs %}<p class="text-red-400 text-xs mt-1 no-underline">{{ e }}</p>{% endfor %}
+                </td>
+                <td class="px-4 py-2">
+                  <input type="text" name="group-{{ row.id }}-icon" value="{{ row.icon }}" class="form-input">
+                </td>
+                <td class="px-4 py-2">
+                  <input type="number" name="group-{{ row.id }}-priority" value="{{ row.priority }}" class="form-input">
+                </td>
+                <td class="px-4 py-2 text-center">{{ row.services_count }}</td>
+                <td class="px-4 py-2 text-right">
+                  <input type="hidden" name="group-{{ row.id }}-delete" value="{{ '1' if row.delete else '0' }}">
+                  {% if row.services_count == 0 or row.delete %}
+                  <button type="button" data-group-delete-toggle
+                          class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs">{{ 'Undo' if row.delete else 'Delete' }}</button>
+                  {% endif %}
+                </td>
               </tr>
-              </tbody>
+              {% endfor %}
+              <tr class="bg-gray-900 border-t border-gray-700" data-no-sort>
+                <td class="px-4 py-2 text-gray-500 italic">new</td>
+                <td class="px-4 py-2">
+                  <input type="text" name="new-name" value="{{ new_row.name or '' }}" placeholder="New group name" class="form-input{% if group_errors.get('new') %} border-red-500{% endif %}">
+                  {% for e in group_errors.get('new', []) %}<p class="text-red-400 text-xs mt-1">{{ e }}</p>{% endfor %}
+                </td>
+                <td class="px-4 py-2">
+                  <input type="text" name="new-icon" value="{{ new_row.icon or '' }}" placeholder="Optional icon" class="form-input">
+                </td>
+                <td class="px-4 py-2">
+                  <input type="number" name="new-priority" value="{{ new_row.priority or '' }}" placeholder="Optional priority" class="form-input">
+                </td>
+                <td class="px-4 py-2"></td>
+                <td class="px-4 py-2"></td>
+              </tr>
+            </tbody>
           </table>
         </div>
-      {% else %}
-        <p class="text-gray-400">No groups found in the database.</p>
-      {% endif %}
+        {{ save_bar() }}
+      </form>
     </section>
 
     
@@ -551,6 +541,7 @@
             <th class="px-4 py-2">Prefix</th>
             <th class="px-4 py-2">Scope</th>
             <th class="px-4 py-2">Created</th>
+            <th class="px-4 py-2">Rotated</th>
             <th class="px-4 py-2">Last used</th>
             <th class="px-4 py-2">Status</th>
             <th class="px-4 py-2"></th>
@@ -563,14 +554,21 @@
             <td class="px-4 py-2"><code>{{ k.prefix }}</code></td>
             <td class="px-4 py-2">{{ k.scope }}</td>
             <td class="px-4 py-2">{{ k.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+            <td class="px-4 py-2">{% if k.rotated_at %}{{ k.rotated_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}—{% endif %}</td>
             <td class="px-4 py-2">{% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if k.last_used_ip %} from {{ k.last_used_ip }}{% endif %}{% else %}never{% endif %}</td>
             <td class="px-4 py-2">{% if k.revoked_at %}revoked {{ k.revoked_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}active{% endif %}</td>
             <td class="px-4 py-2">
               {% if not k.revoked_at %}
+              <div class="flex gap-3">
+              <form method="POST" action="{{ url_for('dashboard.rotate_api_key', id=k.id) }}" onsubmit="return confirm('Rotate \'{{ k.name|e }}\'? The current key stops working immediately; you\'ll get a new one to copy.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="text-blue-400 hover:text-blue-300 underline">Rotate</button>
+              </form>
               <form method="POST" action="{{ url_for('dashboard.revoke_api_key', id=k.id) }}" onsubmit="return confirm('Revoke key {{ k.name|e }}? Anything using it stops working.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="text-red-400 hover:text-red-300 underline">Revoke</button>
               </form>
+              </div>
               {% endif %}
             </td>
           </tr>
@@ -591,8 +589,8 @@
         <label class="text-sm">Key
           <select name="audit_key" class="block mt-1 px-2 py-1 rounded bg-gray-900 border border-gray-600 text-white" onchange="this.form.submit()">
             <option value="">All keys</option>
-            {% for n in audit_key_names %}
-            <option value="{{ n }}" {% if n == audit_filter %}selected{% endif %}>{{ n }}</option>
+            {% for o in audit_key_options %}
+            <option value="{{ o.value }}" {% if o.value == audit_filter %}selected{% endif %}>{{ o.label }}</option>
             {% endfor %}
           </select>
         </label>
@@ -737,6 +735,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ static_v('js/unsaved_guard.js') }}"></script>
 <script>
   function toggleRestoreSource(value) {
     const serverSection = document.getElementById('server-file-selector-section');
@@ -771,7 +770,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const section = urlParams.get('section') || 'info';
+    const section = {{ force_section|tojson }} || urlParams.get('section') || 'info';
     showSection(section);
   });
 
@@ -790,7 +789,7 @@
   function sortTable(columnIndex) {
     const table = document.getElementById("group-table");
     const tbody = table.querySelector("tbody");
-    const rows = Array.from(tbody.querySelectorAll("tr"));
+    const rows = Array.from(tbody.querySelectorAll("tr:not([data-no-sort])"));
     const ascending = table.getAttribute("data-sort-dir") !== "asc";
     table.setAttribute("data-sort-dir", ascending ? "asc" : "desc");
 
@@ -798,8 +797,8 @@
       let aCell = a.children[columnIndex];
       let bCell = b.children[columnIndex];
 
-      let aValue = aCell.querySelector("input") ? aCell.querySelector("input").value : aCell.innerText.trim();
-      let bValue = bCell.querySelector("input") ? bCell.querySelector("input").value : bCell.innerText.trim();
+      let aValue = aCell.querySelector("input[type=text], input[type=number]") ? aCell.querySelector("input[type=text], input[type=number]").value : aCell.innerText.trim();
+      let bValue = bCell.querySelector("input[type=text], input[type=number]") ? bCell.querySelector("input[type=text], input[type=number]").value : bCell.innerText.trim();
 
       const isNumeric = !isNaN(aValue) && aValue.trim() !== "" && !isNaN(bValue);
 
@@ -811,7 +810,22 @@
       return (aValue < bValue ? -1 : aValue > bValue ? 1 : 0) * (ascending ? 1 : -1);
     });
 
-    rows.forEach(row => tbody.appendChild(row));
+    const newRow = tbody.querySelector("tr[data-no-sort]");
+    rows.forEach(row => tbody.insertBefore(row, newRow));
   }
+
+  // Delete on the Groups table is a toggle; the delete happens on Save.
+  document.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-group-delete-toggle]');
+    if (!btn) return;
+    const row = btn.closest('tr');
+    const flag = row.querySelector('input[type=hidden][name$="-delete"]');
+    const marked = flag.value !== '1';
+    flag.value = marked ? '1' : '0';
+    row.classList.toggle('opacity-50', marked);
+    row.classList.toggle('line-through', marked);
+    btn.textContent = marked ? 'Undo' : 'Delete';
+    flag.form.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 </script>
 {% endblock %}

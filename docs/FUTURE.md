@@ -263,8 +263,8 @@ history and filters.
   Ownership also needs deciding (do UI edits beat labels, as with URL
   provenance?). Parked on user direction: the notifier sends nothing
   new in 0.7.0.
-- **More check types.** DNS resolve (expect a record), HTTP keyword or
-  JSON-path match, TLS certificate expiry. The 0.7.0 body mode (`OK` /
+- **More check types.** HTTP keyword or
+  JSON-path match. The 0.7.0 body mode (`OK` /
   `Error: <msg>`) covers the custom-endpoint case.
 - **Longer history and a status page.** 30-day uptime, a public
   read-only status page. 0.7.0 keeps 7 days.
@@ -273,6 +273,54 @@ history and filters.
   stop being read in 0.7.0 but are kept so a rollback to 0.6.9 still
   works. Drop them in a later release's migration, and stop exporting
   them in backups at the same time.
+
+---
+
+## Register overwrites some operator edits
+
+Parked 2026-11-16, during v0.9.0. The operator asked whether a register
+zeroes out manually configured items. It doesn't. `upsert_service` in
+`routes_api.py` only writes the fields the payload carries, and
+ui_edit URLs, group/priority under `user_wins`, description, service
+checks and check settings are all safe. Two fields are still clobbered,
+though.
+
+### Context
+
+- **Icon.** `resolve_image_metadata` derives an icon from the image name
+  on every register, e.g. `traefik.svg`. When one exists,
+  `entry.image_icon` is overwritten, so a custom icon picked or uploaded
+  on Edit is replaced at the next register. Today the only protection is
+  locking the entry.
+- **URL-check toggles.** When the payload carries
+  `internal_health_check_enabled` / `external_health_check_enabled`, it
+  sets `enabled` on the URL check row. A check the operator turned off in
+  the UI can therefore be turned back on.
+- **Minor: deliberately ungrouped.** Under `user_wins`, a NULL `group_id`
+  counts as "unset", so the notifier's group is applied again after the
+  operator clears the group.
+
+These findings come from reading the code; no test reproduces them yet.
+
+### Sketched shape
+
+Mirror URL provenance: record when the UI set the value, and have the
+register skip it.
+
+- `image_icon_source`: `ui_edit`, or NULL for auto. The register writes
+  the icon only when the source isn't `ui_edit`.
+- A per-check `enabled_source` (or a `user_set` flag) on the URL-check
+  rows, so a register toggle doesn't override a UI toggle.
+- Optionally an "explicitly ungrouped" marker, so `user_wins` respects a
+  cleared group.
+- The notifier's values are still recorded, as with the
+  `notifier_reported_*` columns.
+- Start with tests that reproduce each clobber.
+
+### Why parked
+
+The operator chose to ship v0.9.0 without it ("leave it as is for now").
+Locking the entry is the workaround.
 
 ---
 

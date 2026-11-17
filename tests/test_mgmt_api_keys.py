@@ -124,7 +124,8 @@ def test_whoami_scope_matrix(app, client):
     _, wk = _key(app, "writer", "write")
     r = client.get("/api/v1/whoami", headers=_bearer(rk))
     assert r.status_code == 200
-    assert r.get_json() == {"name": "reader", "prefix": rk.split("_")[1], "scope": "read"}
+    assert r.get_json() == {"name": "reader", "prefix": rk.split("_")[1], "scope": "read",
+                            "version": app.config["VERSION_INFO"]["version"]}
     assert client.get("/api/v1/whoami", headers=_bearer(wk)).get_json()["scope"] == "write"
 
     # read key on a write endpoint -> 403; write key -> 200
@@ -320,10 +321,8 @@ def test_settings_create_rejects_bad_input(app, admin_client, name, scope):
         assert ApiKey.query.count() == 0
 
 
-def test_settings_create_rejects_duplicate_name_even_if_revoked(app, admin_client):
+def test_settings_create_rejects_duplicate_active_name(app, admin_client):
     _, _ = _key(app, "dup", "read")
-    with app.app_context():
-        api_keys.revoke_key(ApiKey.query.one())
     admin_client.post("/settings/api-keys", data={"name": "dup", "scope": "read"})
     with app.app_context():
         assert ApiKey.query.count() == 1
@@ -420,3 +419,242 @@ def test_migration_up_down_up(tmp_path):
     con = sqlite3.connect(db_path)
     assert con.execute("SELECT count(*) FROM service_entry").fetchone()[0] == 1
     con.close()
+
+
+# --- v0.9.0: rotation and name reuse --------------------------------------------
+
+
+REVOKE_REV = "b7d3f1a94e26"
+ROTATE_REV = "c2e8a5b3d917"
+
+
+def _index_sql(db_path, name):
+    con = sqlite3.connect(db_path)
+    try:
+        row = con.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (name,)).fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
+
+
+def _insert_key(db_path, name, revoked=None):
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO api_key (name, prefix, key_hash, scope, created_at, revoked_at) "
+                "VALUES (?, 'abcd1234', 'h', 'read', '2026-01-01 00:00:00', ?)", (name, revoked))
+    con.commit()
+    con.close()
+
+
+def test_migration_rotate_and_name_reuse_up_down_up(tmp_path):
+    db_path = str(tmp_path / "m.db")
+    _alembic(tmp_path, db_path, "upgrade", REVOKE_REV)
+    _insert_key(db_path, "old")
+    con = sqlite3.connect(db_path)
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute("INSERT INTO api_key (name, prefix, key_hash, scope, created_at) "
+                    "VALUES ('old', 'x', 'h', 'read', '2026-01-01 00:00:00')")
+    con.close()
+
+    _alembic(tmp_path, db_path, "upgrade", ROTATE_REV)
+    con = sqlite3.connect(db_path)
+    cols = {r[1] for r in con.execute("PRAGMA table_info(api_key)")}
+    assert "rotated_at" in cols
+    assert con.execute("SELECT rotated_at FROM api_key").fetchone() == (None,)
+    assert "WHERE revoked_at IS NULL" in _index_sql(db_path, "ux_api_key_name_active")
+    idx = {r[1] for r in con.execute("PRAGMA index_list(api_key)")}
+    assert {"ix_api_key_prefix", "ix_api_key_created_by"} <= idx
+    con.execute("UPDATE api_key SET revoked_at='2026-02-01 00:00:00'")
+    con.commit()
+    con.close()
+    _insert_key(db_path, "old")  # reuse after revoke works
+    con = sqlite3.connect(db_path)
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute("INSERT INTO api_key (name, prefix, key_hash, scope, created_at) "
+                    "VALUES ('old', 'y', 'h', 'read', '2026-01-01 00:00:00')")
+    con.close()
+
+    # Duplicate names exist, so the downgrade must refuse with a clear message.
+    ini = tmp_path / "alembic.ini"
+    result = subprocess.run([sys.executable, "-m", "alembic", "-c", str(ini), "downgrade", "-1"],
+                            cwd=REPO_ROOT, capture_output=True, text=True)
+    assert result.returncode != 0 and "Cannot downgrade" in result.stderr and "old" in result.stderr
+
+    con = sqlite3.connect(db_path)
+    con.execute("DELETE FROM api_key WHERE revoked_at IS NOT NULL")
+    con.commit()
+    con.close()
+    _alembic(tmp_path, db_path, "downgrade", "-1")
+    con = sqlite3.connect(db_path)
+    assert "rotated_at" not in {r[1] for r in con.execute("PRAGMA table_info(api_key)")}
+    assert _index_sql(db_path, "ux_api_key_name_active") is None
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute("INSERT INTO api_key (name, prefix, key_hash, scope, created_at) "
+                    "VALUES ('old', 'z', 'h', 'read', '2026-01-01 00:00:00')")
+    con.close()
+
+    _alembic(tmp_path, db_path, "upgrade", "head")
+    assert "rotated_at" in {r[1] for r in sqlite3.connect(db_path).execute("PRAGMA table_info(api_key)")}
+
+
+def test_name_reuse_after_revoke_and_active_clash_rejected(app, admin_client):
+    _key(app, "dup", "read")
+    r = admin_client.post("/settings/api-keys", data={"name": "dup", "scope": "read"})
+    assert r.status_code == 302
+    with app.app_context():
+        assert ApiKey.query.count() == 1
+        api_keys.revoke_key(ApiKey.query.one())
+    r = admin_client.post("/settings/api-keys", data={"name": "dup", "scope": "write"})
+    assert r.status_code == 200
+    with app.app_context():
+        assert ApiKey.query.filter_by(name="dup").count() == 2
+        assert ApiKey.query.filter_by(name="dup", revoked_at=None).count() == 1
+    r = admin_client.post("/settings/api-keys", data={"name": "dup", "scope": "write"})
+    assert r.status_code == 302
+    with app.app_context():
+        assert ApiKey.query.filter_by(name="dup").count() == 2
+
+
+def test_db_rejects_two_active_keys_with_one_name(app):
+    from sqlalchemy.exc import IntegrityError
+
+    with app.app_context():
+        for i in range(2):
+            db.session.add(ApiKey(name="same", prefix=f"p{i}", key_hash="h", scope="read",
+                                  created_at=datetime.utcnow()))
+            if i == 0:
+                db.session.commit()
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+
+def test_audit_filter_tells_a_reused_name_apart(app, admin_client):
+    with app.app_context():
+        old, _ = api_keys.create_key("agent", "write")
+        old_id = old.id
+        api_keys.revoke_key(old)
+        new, _ = api_keys.create_key("agent", "write")
+        new_id = new.id
+        for kid, path in ((old_id, "/api/v1/groups/1"), (new_id, "/api/v1/widgets/9")):
+            db.session.add(ApiAudit(ts=datetime.utcnow(), api_key_id=kid, key_name="agent", method="POST",
+                                    path=path, status_code=200))
+        db.session.commit()
+    page = admin_client.get("/settings?section=api").get_data(as_text=True)
+    assert f'value="id:{old_id}"' in page and "agent (revoked)" in page and f'value="id:{new_id}"' in page
+    only_old = admin_client.get(f"/settings?section=api&audit_key=id:{old_id}").get_data(as_text=True)
+    assert "/api/v1/groups/1" in only_old and "/api/v1/widgets/9" not in only_old
+    only_new = admin_client.get(f"/settings?section=api&audit_key=id:{new_id}").get_data(as_text=True)
+    assert "/api/v1/widgets/9" in only_new and "/api/v1/groups/1" not in only_new
+
+
+def test_rotate_key_replaces_secret_and_keeps_identity(app):
+    with app.app_context():
+        key, old_full = api_keys.create_key("rot", "write")
+        kid, old_prefix, old_hash, created = key.id, key.prefix, key.key_hash, key.created_at
+        key.last_used_at = datetime.utcnow()
+        key.last_used_ip = "10.0.0.1"
+        db.session.commit()
+        new_full = api_keys.rotate_key(key)
+        assert new_full != old_full and new_full.startswith("std_")
+        row = db.session.get(ApiKey, kid)
+        assert row.prefix != old_prefix and row.key_hash != old_hash
+        assert (row.name, row.scope, row.created_at) == ("rot", "write", created)
+        assert row.rotated_at is not None
+        assert row.last_used_at is None and row.last_used_ip is None
+        assert api_keys.verify(old_full) is None
+        assert api_keys.verify(new_full).id == kid
+
+
+def test_rotate_key_refuses_revoked(app):
+    with app.app_context():
+        key, _ = api_keys.create_key("gone", "read")
+        api_keys.revoke_key(key)
+        with pytest.raises(ValueError):
+            api_keys.rotate_key(key)
+        assert key.rotated_at is None
+
+
+def test_rotate_route_shows_new_key_once_with_no_store(app, admin_client, client):
+    kid, old_full = _key(app, "agent", "read")
+    r = admin_client.post(f"/settings/api-keys/{kid}/rotate")
+    assert r.status_code == 200
+    assert "no-store" in r.headers["Cache-Control"] and "no-cache" in r.headers["Cache-Control"]
+    html = r.get_data(as_text=True)
+    assert "Key rotated" in html and "Key created" not in html
+    new_full = re.search(r'id="new-api-key"[^>]*value="(std_[^"]+)"', html).group(1)
+    assert new_full != old_full
+    with admin_client.session_transaction() as sess:
+        assert new_full not in str(dict(sess))
+    page = admin_client.get("/settings?section=api").get_data(as_text=True)
+    assert new_full not in page and new_full.split("_", 2)[2] not in page
+    assert "Rotated" in page
+    assert re.search(r"<td[^>]*>\d{4}-\d\d-\d\d \d\d:\d\d UTC</td>", page)  # the Rotated cell holds a date
+    # The management API: old key 401, new key 200.
+    assert client.get("/api/v1/whoami", headers=_bearer(old_full)).status_code == 401
+    assert client.get("/api/v1/whoami", headers=_bearer(new_full)).status_code == 200
+
+
+def test_settings_list_has_rotated_column_and_buttons(app, admin_client):
+    kid, _ = _key(app, "listed", "read")
+    rid, _ = _key(app, "dead", "read")
+    page = admin_client.get("/settings?section=api").get_data(as_text=True)
+    assert "<th class=\"px-4 py-2\">Rotated</th>" in page
+    assert f"/settings/api-keys/{kid}/rotate" in page
+    assert "The current key stops working immediately" in page and "listed" in page
+    assert "<td class=\"px-4 py-2\">—</td>" in page  # never rotated
+    admin_client.post(f"/settings/api-keys/{kid}/rotate")
+    with app.app_context():
+        stamp = db.session.get(ApiKey, kid).rotated_at.strftime("%Y-%m-%d %H:%M")
+        api_keys.revoke_key(db.session.get(ApiKey, rid))
+    page = admin_client.get("/settings?section=api").get_data(as_text=True)
+    assert stamp in page
+    assert f"/settings/api-keys/{rid}/rotate" not in page and f"/settings/api-keys/{rid}/revoke" not in page
+
+
+def test_rotate_revoked_or_unknown_redirects_with_flash(app, admin_client):
+    kid, full = _key(app, "dead", "read")
+    with app.app_context():
+        api_keys.revoke_key(db.session.get(ApiKey, kid))
+    for target in (kid, 9999):
+        r = admin_client.post(f"/settings/api-keys/{target}/rotate")
+        assert r.status_code == 302 and "section=api" in r.headers["Location"]
+    with admin_client.session_transaction() as sess:
+        assert any("can't be rotated" in m for _, m in sess.get("_flashes", []))
+    with app.app_context():
+        assert db.session.get(ApiKey, kid).rotated_at is None
+
+
+def test_rotate_route_requires_admin(app, client):
+    kid, full = _key(app, "x", "read")
+    assert client.post(f"/settings/api-keys/{kid}/rotate").status_code == 302
+    with app.app_context():
+        assert api_keys.verify(full) is not None
+
+
+def test_rotate_route_enforces_csrf(app, admin_client):
+    kid, full = _key(app, "c", "read")
+    app.config["WTF_CSRF_ENABLED"] = True
+    try:
+        r = admin_client.post(f"/settings/api-keys/{kid}/rotate")
+        assert r.status_code == 302
+        with app.app_context():
+            assert api_keys.verify(full) is not None  # no token, not rotated
+        html = admin_client.get("/settings?section=api").get_data(as_text=True)
+        token = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+        r = admin_client.post(f"/settings/api-keys/{kid}/rotate", data={"csrf_token": token})
+        assert r.status_code == 200
+        with app.app_context():
+            assert api_keys.verify(full) is None
+    finally:
+        app.config["WTF_CSRF_ENABLED"] = False
+
+
+def test_rotate_route_does_not_log_key_material(app, admin_client, caplog):
+    import logging
+
+    kid, _ = _key(app, "secretname", "read")
+    with caplog.at_level(logging.DEBUG):
+        r = admin_client.post(f"/settings/api-keys/{kid}/rotate")
+    full = re.search(r'id="new-api-key"[^>]*value="(std_[^"]+)"', r.get_data(as_text=True)).group(1)
+    assert f"id={kid}" in caplog.text
+    assert "secretname" not in caplog.text and full not in caplog.text and full.split("_")[1] not in caplog.text

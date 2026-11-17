@@ -3,7 +3,7 @@
 Owns the `dashboard` blueprint:
 - Read-only dashboard views: /, /tiled_dash, /compact_dash
 - Settings page: /settings (backup/restore, users list, groups, version)
-- Group CRUD: /update_group, /add_group, /delete_group
+- Groups: /settings/groups/save (one Save for the whole table)
 - Service CRUD: /add, /edit/<id>, /dbdump
 - Static assets: /images/<filename>
 
@@ -55,6 +55,8 @@ from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
     CHECK_MODES,
+    CHECK_TYPE_DNS,
+    CHECK_TYPE_HTTP,
     CHECK_TYPES,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
@@ -79,6 +81,7 @@ from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
     health_counts,
+    host_label_ids,
     normalize_axis,
     normalize_show_urlless,
     normalize_source_filter,
@@ -246,6 +249,12 @@ def _load_view_entries():
     )
 
 
+def _host_label_ids(entries):
+    """Entry ids that show a host, per `tile_show_host`. `entries` is every
+    active entry (unfiltered) so a filter can't hide a duplicate."""
+    return host_label_ids(entries, current_app.config.get('tile_show_host', 'duplicates'))
+
+
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
@@ -319,6 +328,7 @@ def tiled_dashboard():
         **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
+        host_label_ids=_host_label_ids(entries),
         widget_values=widget_values,
         widget_fields=widget_fields,
     )
@@ -351,9 +361,6 @@ def compact_dash():
             flattened_entries.append({'is_group_header': False, 'entry': entry})
             visible_total += 1
 
-    unique_hosts = {e.host for _, bucket in grouped_entries for e in bucket if e.host}
-    show_host = len(unique_hosts) > 1
-
     return render_template(
         "compact_dash.html",
         flattened_entries=flattened_entries,
@@ -362,7 +369,7 @@ def compact_dash():
         **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
-        show_host=show_host,
+        host_label_ids=_host_label_ids(entries),
         group_by=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
@@ -408,10 +415,7 @@ def _audit_change_lines(changes):
 def settings():
     BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
-    image_dir = current_app.config['IMAGE_DIR']
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
-
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -656,7 +660,25 @@ def settings():
 
             return redirect(url_for('dashboard.settings', section='backup'))
 
-    # GET request: List backup files for the restore dropdown
+    return _render_settings()
+
+
+def _render_settings(group_form=None, status=200):
+    """Render the Settings page. `group_form` (a failed Groups save) is shown in
+    place of the stored groups, with its per-row errors, on the Groups tab."""
+    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
+    image_dir = current_app.config['IMAGE_DIR']
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
+
+    if group_form:
+        group_rows = group_form['rows']
+    else:
+        group_rows = [{'id': g.id, 'name': g.group_name, 'icon': g.group_icon or '',
+                       'priority': '' if g.group_sort_priority is None else g.group_sort_priority,
+                       'services_count': g.services_count, 'delete': False} for g in groups]
+
+    # List backup files for the restore dropdown
     server_backup_files = []
     if os.path.exists(BACKUP_DIR):
         try:
@@ -689,14 +711,27 @@ def settings():
 
     audit_filter = (request.args.get('audit_key') or '').strip()
     audit_query = ApiAudit.query
-    if audit_filter:
-        audit_query = audit_query.filter(ApiAudit.key_name == audit_filter)
+    if audit_filter.startswith('id:') and audit_filter[3:].isdigit():
+        audit_query = audit_query.filter(ApiAudit.api_key_id == int(audit_filter[3:]))
+    elif audit_filter:
+        audit_query = audit_query.filter(ApiAudit.key_name == audit_filter, ApiAudit.api_key_id.is_(None))
     audit_rows = [
         {'row': r, 'changes': _audit_change_lines(r.changes)}
         for r in audit_query.order_by(ApiAudit.ts.desc(), ApiAudit.id.desc()).limit(AUDIT_VIEW_LIMIT).all()
     ]
-    audit_key_names = [n for (n,) in db.session.query(ApiAudit.key_name)
-                       .filter(ApiAudit.key_name.isnot(None)).distinct().order_by(ApiAudit.key_name).all()]
+    # Filter options: one per key id (a reused name is two different keys, the
+    # revoked one labelled), plus name-only options for rows whose key is gone.
+    audit_key_options = []
+    for kid, kname, revoked_at in (
+            db.session.query(ApiAudit.api_key_id, ApiAudit.key_name, ApiKey.revoked_at)
+            .outerjoin(ApiKey, ApiKey.id == ApiAudit.api_key_id)
+            .filter(ApiAudit.key_name.isnot(None)).distinct()
+            .order_by(ApiAudit.key_name, ApiAudit.api_key_id).all()):
+        if kid is None:
+            audit_key_options.append({'value': kname, 'label': kname})
+        else:
+            audit_key_options.append({'value': f'id:{kid}',
+                                      'label': f'{kname} (revoked)' if revoked_at else kname})
 
     return render_template(
         'settings.html',
@@ -708,6 +743,9 @@ def settings():
          widgets=widgets,
          missing_icons=missing_icons,
          groups=groups,
+         group_form=group_form,
+         group_rows=group_rows,
+         force_section='groups' if group_form else '',
          users=users,
          deleted_rows=_deleted_entry_rows(),
          detached_widgets=_detached_widget_rows(),
@@ -718,7 +756,7 @@ def settings():
          default_secret_key=current_app.config.get('DEFAULT_SECRET_KEY_IN_USE', False),
          default_admin_password=current_app.config.get('DEFAULT_ADMIN_PASSWORD_IN_USE', False),
          audit_rows=audit_rows,
-         audit_key_names=audit_key_names,
+         audit_key_options=audit_key_options,
          audit_filter=audit_filter,
          audit_limit=AUDIT_VIEW_LIMIT,
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
@@ -726,7 +764,7 @@ def settings():
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
          exposure_host_overrides=exposure_host_overrides,
-    )
+    ), status
 
 
 @dashboard_bp.route('/settings/exposure', methods=['POST'])
@@ -768,78 +806,132 @@ def save_exposure_settings():
     return redirect(url_for('dashboard.settings', section='exposure'))
 
 
-@dashboard_bp.route('/update_group', methods=['POST'])
-@login_required
-@is_admin_required
-def update_group():
-    group_id = request.form.get("group_id")
-    group = Group.query.get(group_id)
+def _parse_group_form(form, groups):
+    """Read the Groups table form into `(rows, new_row, errors)`.
 
-    if group:
-        group.group_name = request.form.get("group_name", group.group_name)
-        group.group_icon = request.form.get("group_icon", group.group_icon)
-        priority_val = request.form.get("group_sort_priority")
-        group.group_sort_priority = int(priority_val) if priority_val and priority_val.isdigit() else None
+    `rows` holds one dict per stored group, in `groups` order, with the
+    submitted values (`name`, `icon`, `priority` as typed, `delete`);
+    `new_row` is the optional added group or None; `errors` maps a row key
+    (the group id, or "new") to its messages. Nothing is written here."""
+    rows, errors = [], {}
 
-        db.session.commit()
-        flash(f"✅ Group {group.group_name} updated successfully.", "success")
-    else:
-        flash("❌ Group not found.", "danger")
+    def problem(key, message):
+        errors.setdefault(key, []).append(message)
 
-    return redirect(url_for("dashboard.settings", section="groups"))
-
-
-@dashboard_bp.route('/add_group', methods=['POST'])
-@login_required
-@is_admin_required
-def add_group():
-    name = request.form.get("group_name")
-    icon = request.form.get("group_icon")
-    priority = request.form.get("group_sort_priority")
-
-    if not name:
-        flash("❌ Group name is required.", "danger")
-        return redirect(url_for("dashboard.settings", section="groups"))
-
-    existing = Group.query.filter_by(group_name=name).first()
-    if existing:
-        flash("❌ Group with that name already exists.", "danger")
-        return redirect(url_for("dashboard.settings", section="groups"))
-
-    new_group = Group(
-        group_name=name,
-        group_icon=icon or None,
-        group_sort_priority=int(priority) if priority and priority.isdigit() else None
-    )
-
-    db.session.add(new_group)
-    db.session.commit()
-    flash(f"✅ Group '{name}' created.", "success")
-    return redirect(url_for("dashboard.settings", section="groups"))
-
-
-@dashboard_bp.route('/delete_group', methods=['POST'])
-@login_required
-@is_admin_required
-def delete_group():
-    group_id = request.form.get('group_id')
-    group = Group.query.get(group_id)
-
-    if group:
-        # Only active services block deletion; soft-deleted ones are detached
-        # from the group so no dangling group_id is left behind.
-        active_services = [e for e in group.services if e.deleted_at is None]
-        if len(active_services) == 0:
-            for e in group.services:
-                e.group_id = None
-            db.session.delete(group)
-            db.session.commit()
-            flash(f"🗑️ Group '{group.group_name}' deleted successfully.", "success")
+    for g in groups:
+        pre = f'group-{g.id}-'
+        if pre + 'name' not in form:
+            continue  # not in the submitted table (added after it loaded)
+        row = {'id': g.id, 'services_count': g.services_count,
+               'name': (form.get(pre + 'name') or '').strip(),
+               'icon': (form.get(pre + 'icon') or '').strip(),
+               'priority': (form.get(pre + 'priority') or '').strip(),
+               'delete': form.get(pre + 'delete') == '1',
+               'group': g}
+        row['priority_value'], priority_error = entry_rules.parse_sort_priority(row['priority'])
+        if row['delete']:
+            if g.services_count:
+                problem(g.id, 'Cannot delete a group that has entries. Move them first.')
         else:
-            flash("❌ Cannot delete group that has services.", "danger")
-    else:
-        flash("❌ Group not found.", "danger")
+            for e in entry_rules.validate_group(row['name'], row['icon']):
+                problem(g.id, e['message'])
+            if priority_error:
+                problem(g.id, priority_error)
+        rows.append(row)
 
+    new_row = None
+    new_name = (form.get('new-name') or '').strip()
+    if new_name:
+        new_row = {'name': new_name, 'icon': (form.get('new-icon') or '').strip(),
+                   'priority': (form.get('new-priority') or '').strip()}
+        new_row['priority_value'], priority_error = entry_rules.parse_sort_priority(new_row['priority'])
+        for e in entry_rules.validate_group(new_row['name'], new_row['icon']):
+            problem('new', e['message'])
+        if priority_error:
+            problem('new', priority_error)
+
+    # Names must be unique across the resulting set (deleted rows free theirs).
+    seen = {}
+    final = [(r['id'], r['name']) for r in rows if not r['delete']]
+    if new_row:
+        final.append(('new', new_row['name']))
+    for key, name in final:
+        if name:
+            seen.setdefault(name, []).append(key)
+    for name, keys in seen.items():
+        if len(keys) > 1:
+            for key in keys:
+                problem(key, f"Another group is already named '{name}'.")
+    return rows, new_row, errors
+
+
+@dashboard_bp.route('/settings/groups/save', methods=['POST'])
+@login_required
+@is_admin_required
+def save_groups():
+    """Apply the whole Settings -> Groups table at once, or nothing.
+
+    Row fields are `group-<id>-name|icon|priority|delete` plus the optional
+    `new-name|icon|priority`. Any validation error re-renders the page (400)
+    with what was typed and per-row messages; success redirects."""
+    groups = Group.query.all()
+    submitted_ids = {int(m.group(1)) for k in request.form
+                     if (m := re.match(r'group-(\d+)-name$', k))}
+    stale = submitted_ids - {g.id for g in groups}
+    rows, new_row, errors = _parse_group_form(request.form, groups)
+
+    if stale or len(submitted_ids) < len(groups):
+        # The table the operator saw is out of date (a group was removed, or one
+        # added elsewhere), so applying it could silently undo someone's change.
+        flash("The groups changed since this page loaded. Nothing was saved; "
+              "your edits are still in the table.", "danger")
+        errors.setdefault('page', []).append('stale')
+
+    if errors:
+        group_form = {'rows': rows, 'new': new_row, 'errors': errors}
+        flash("Nothing was saved. Fix the marked rows and save again.", "danger")
+        return _render_settings(group_form=group_form, status=400)
+
+    updated = added = deleted = 0
+    try:
+        # Group names are UNIQUE and SQLite checks per statement, so a swap
+        # (A<->B) or reusing a freed name needs the old names out of the way
+        # first: delete, park renamed rows on a placeholder, then set finals.
+        for r in rows:
+            if r['delete']:
+                # Only active entries block deletion; soft-deleted ones are
+                # detached so no dangling group_id is left behind.
+                for e in r['group'].services:
+                    e.group_id = None
+                db.session.delete(r['group'])
+                deleted += 1
+        changed = [r for r in rows if not r['delete'] and (
+            r['group'].group_name, r['group'].group_icon or '', r['group'].group_sort_priority) !=
+            (r['name'], r['icon'], r['priority_value'])]
+        renamed = [r for r in changed if r['group'].group_name != r['name']]
+        for r in renamed:
+            r['group'].group_name = f"\x00renaming-{r['id']}"
+        db.session.flush()
+        for r in changed:
+            g = r['group']
+            g.group_name = r['name']
+            g.group_icon = r['icon'] or None
+            g.group_sort_priority = r['priority_value']
+            updated += 1
+        if new_row:
+            db.session.flush()
+            db.session.add(Group(group_name=new_row['name'], group_icon=new_row['icon'] or None,
+                                 group_sort_priority=new_row['priority_value']))
+            added += 1
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Saving groups failed")
+        flash("Saving groups failed; nothing was changed.", "danger")
+        return redirect(url_for('dashboard.settings', section='groups'))
+
+    parts = [f'{n} {label}' for n, label in ((updated, 'updated'), (added, 'added'), (deleted, 'deleted')) if n]
+    flash(f"✅ Saved: {', '.join(parts)}." if parts else "No changes.", "success")
     return redirect(url_for('dashboard.settings', section='groups'))
 
 
@@ -985,6 +1077,11 @@ def _positive_int(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
+def _text_or_none(value):
+    value = value.strip() if isinstance(value, str) else ''
+    return value or None
+
+
 def _restore_checks(entry, item):
     """Apply a backup record's health-check configuration to `entry`.
 
@@ -1029,6 +1126,21 @@ def _restore_checks(entry, item):
             check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
             check.verify_tls = cfg.get('verify_tls') is not False
             check.enabled = bool(cfg.get('enabled'))
+            # DNS settings (v0.9.0); absent in older backups, so they stay NULL.
+            is_dns = check.check_type == CHECK_TYPE_DNS and kind == CHECK_KIND_SERVICE
+            check.dns_name = _text_or_none(cfg.get('dns_name')) if is_dns else None
+            rtype = _text_or_none(cfg.get('dns_record_type'))
+            check.dns_record_type = rtype.upper() if is_dns and rtype else None
+            rcode = _text_or_none(cfg.get('dns_expected_rcode'))
+            check.dns_expected_rcode = rcode.upper() if is_dns and rcode else None
+            check.dns_expected_answer = _text_or_none(cfg.get('dns_expected_answer')) if is_dns else None
+            # Certificate-expiry minimum (v0.9.0); absent in older backups. Only
+            # http checks use it, and the cached expiry is never restored.
+            days = cfg.get('cert_min_days')
+            is_http = check.check_type == CHECK_TYPE_HTTP
+            valid = isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= 365
+            check.cert_min_days = days if is_http and valid else None
+            check.last_cert_expires_at = None
         return
 
     timeout = _positive_int(item.get('health_check_timeout'))
@@ -1374,6 +1486,27 @@ def create_api_key():
     logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
     response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
     response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@dashboard_bp.route('/settings/api-keys/<int:id>/rotate', methods=['POST'])
+@login_required
+@is_admin_required
+def rotate_api_key(id):
+    """Issue a new secret for an active key; shown once, like creation.
+
+    Logs the key id only (never the name, prefix or secret).
+    """
+    key = db.session.get(ApiKey, id)
+    if key is None or key.revoked_at is not None:
+        flash("That API key doesn't exist or is revoked, so it can't be rotated.", "danger")
+        return redirect(url_for('dashboard.settings', section='api'))
+    full_key = api_keys.rotate_key(key)
+    logger.info(f"Rotated API key id={key.id} by {current_user.username}.")
+    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key,
+                                             rotated=True))
+    response.headers['Cache-Control'] = 'no-store, no-cache'
+    response.headers['Pragma'] = 'no-cache'
     return response
 
 

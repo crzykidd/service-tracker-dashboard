@@ -48,7 +48,9 @@
           </tbody>
           <tbody>
             {% for entry in group_entries %}
-            <tr class="border-b border-gray-700 group-entry"
+            {% set _h = entry_health(entry) %}
+            {% set _tint = ' entry-health-' ~ _h.state if _h.state in ('degraded', 'down') else '' %}
+            <tr class="border-b border-gray-700 group-entry{{ _tint }}"
                 data-group-id="{{ group_index }}"
                 data-entry data-group="{{ entry.group.group_name if entry.group else 'Ungrouped' }}"
                 data-container="{{ entry.container_name }}"
@@ -244,7 +246,7 @@
               </div>
             </td>
           </tr>
-          <tr class="health-expand-row border-b border-gray-700" id="health-row-{{ entry.id }}"
+          <tr class="health-expand-row border-b border-gray-700{{ _tint }}" id="health-row-{{ entry.id }}"
               data-group-id="{{ group_index }}" hidden>
             <td colspan="13" class="px-4 py-3">
               <div class="health-expand-inner">{% include "partials/health_detail.html" %}</div>

@@ -77,7 +77,8 @@ def test_body_unexpected_response_truncated():
 def test_body_status_400_handling():
     assert _body(503, b"Error: maintenance").message == "maintenance"
     out = _body(500, b"some html")
-    assert out.ok is False and out.message == "500" and out.status_code == 500
+    assert out.ok is False and out.message == "500: some html" and out.status_code == 500
+    assert _body(500, b"").message == "500"
     # An OK body does not rescue a failing status.
     assert _body(500, b"OK").ok is False
 
@@ -89,12 +90,76 @@ def test_body_read_capped_at_4kb():
     assert out.ok is True  # junk past 4 KB was never read
 
 
-def test_status_mode_does_not_stream_and_closes():
-    resp = _resp(200)
+def test_status_mode_streams_closes_and_skips_body_on_success():
+    resp = _resp(200, b"some body")
     with patch("checker.requests.get", return_value=resp) as get:
         out = checker.probe_http("http://x", "status", 5, True)
-    assert out.ok and get.call_args.kwargs["stream"] is False
+    assert out.ok and out.message is None and get.call_args.kwargs["stream"] is True
+    resp.iter_content.assert_not_called()  # codes below 400: body not read
     resp.close.assert_called()
+
+
+# --- HTTP status mode failure message (v0.9.0 step 8) -----------------------------
+
+
+def _status(code, body):
+    resp = _resp(code, body)
+    with patch("checker.requests.get", return_value=resp):
+        out = checker.probe_http("http://x", "status", 5, True)
+    resp.close.assert_called()
+    assert out.ok is False and out.status_code == code
+    return out.message
+
+
+def test_status_failure_emmett_json():
+    body = (b'{"status":"Error","last_error":"Mgmt1: Scope \'Mgmt1\' not found on destination ...",'
+            b'"failing_scopes":["Mgmt","Mgmt1"]}')
+    assert _status(503, body) == "503: Mgmt1: Scope 'Mgmt1' not found on destination ..."
+
+
+@pytest.mark.parametrize("body,expected", [
+    (b'{"error": "boom"}', "503: boom"),
+    (b'{"error": {"message": "nested"}}', "503: nested"),
+    (b'{"detail": "x"}', "503: x"),
+    (b'{"message": "m", "detail": "d"}', "503: m"),
+    (b'{"last_error": "", "error": "e"}', "503: e"),            # empty skipped
+    (b'{"error": 5, "message": "m"}', "503: m"),                # non-string skipped
+    (b'{"status": "Error", "n": 1}', '503: {"status": "Error", "n": 1}'),  # raw fallback
+    (b"\n\n  first line  \nsecond\n", "503: first line"),
+    (b"a   b \t c", "503: a b c"),
+    (b"", "503"),
+    (b"   \n ", "503"),
+    (b"\x89PNG\xff\xfe\x00\x01", "503"),                      # not UTF-8
+    (b"\x01\x02\x03\x04abc", "503"),                           # control characters
+])
+def test_status_failure_messages(body, expected):
+    assert _status(503, body) == expected
+
+
+def test_status_failure_long_body_capped_and_never_over_read():
+    resp = _resp(500, b"x" * 20000)
+    with patch("checker.requests.get", return_value=resp):
+        out = checker.probe_http("http://x", "status", 5, True)
+    assert len(out.message) <= 200 and out.message.endswith("…") and out.message.startswith("500: xxx")
+    assert resp.iter_content.side_effect  # chunks are lazy; stop at the limit
+    consumed = []
+    def gen(chunk_size=1024):
+        for _ in range(100):
+            consumed.append(1)
+            yield b"y" * chunk_size
+    resp2 = _resp(500)
+    resp2.iter_content.side_effect = gen
+    with patch("checker.requests.get", return_value=resp2):
+        checker.probe_http("http://x", "status", 5, True)
+    assert len(consumed) * 1024 <= checker.BODY_READ_LIMIT + 1024
+
+
+def test_status_failure_with_cert_condition_keeps_http_message():
+    resp = _resp(503, b'{"error": "boom"}')
+    with patch("checker.requests.get", return_value=resp), \
+            patch("checker._apply_cert_condition", side_effect=lambda r, *a: r):
+        out = checker.probe_http("https://x", "status", 5, True, cert_min_days=14)
+    assert out.message == "503: boom"
 
 
 def test_http_exception_never_raises():
@@ -181,7 +246,7 @@ def test_run_probe_dispatch_never_raises():
                            "timeout": 3, "verify": False})
     tcp.assert_called_once_with("h:1", 3)
     ping.assert_called_once_with("h", 3)
-    http.assert_called_once_with("http://h", "body", 3, False)
+    http.assert_called_once_with("http://h", "body", 3, False, None)  # cert_min_days off
     assert checker.run_probe({"check_type": "tcp"}).ok is False  # missing keys
 
 
@@ -554,3 +619,30 @@ def test_check_now_request_cleared_once_submitted(app):
     with patch("checker.run_probe", return_value=checker.ProbeResult(True, 1, 200, "200")):
         sched.tick()
     assert cid not in jobs._pending_run_requests()
+
+
+def test_body_mode_status_failure_uses_json_reason():
+    body = (b'{"status":"Error","last_error":"Mgmt1: Scope \'Mgmt1\' not found on destination ...",'
+            b'"failing_scopes":["Mgmt","Mgmt1"]}')
+    out = _body(503, body)
+    assert out.ok is False and out.status_code == 503
+    assert out.message == "503: Mgmt1: Scope 'Mgmt1' not found on destination ..."
+
+
+_HEALTHZ_503 = (
+    b'{"status": "Error", "last_sync": "2026-11-17T03:32:17+00:00", "last_error": "Mgmt1: Scope '
+    b"'Mgmt1' not found on destination 10.100.16.17.; Mgmt: Scope 'Mgmt' exists on destination "
+    b"10.100.16.17 but not on source 10.100.16.16.\", \"failing_scopes\": [\"Mgmt\", \"Mgmt1\"]}"
+)
+_HEALTHZ_MSG = (
+    "503: Mgmt1: Scope 'Mgmt1' not found on destination 10.100.16.17.; Mgmt: Scope 'Mgmt' "
+    "exists on destination 10.100.16.17 but not on source 10.100.16.16."
+)
+
+
+@pytest.mark.parametrize("mode", ["status", "body"])
+def test_operator_healthz_503_gives_last_error_in_both_modes(mode):
+    with patch("checker.requests.get", return_value=_resp(503, _HEALTHZ_503)):
+        out = checker.probe_http("http://x/healthz", mode, 5, True)
+    assert out.ok is False and out.status_code == 503
+    assert out.message == _HEALTHZ_MSG

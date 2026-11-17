@@ -348,7 +348,9 @@ def test_config_masks_secrets_and_is_read_only(app, client, rkey, wkey):
     assert body["settings"]["backup_days_to_keep"] == 7
     assert body["version"] and body["sources"]["api_token"] == "env"
     assert body["sources"]["backup_days_to_keep"] == "default"
-    assert set(body["settings"]) >= {"stale_after_minutes", "api_audit_retention_days", "display_tools"}
+    assert set(body["settings"]) >= {"stale_after_minutes", "api_audit_retention_days", "display_tools", "tile_show_host"}
+    assert body["settings"]["tile_show_host"] == "duplicates"
+    assert body["sources"]["tile_show_host"] == "default"
     assert client.put("/api/v1/config", json={}, headers=wkey).status_code == 405
     assert client.post("/api/v1/config", json={}, headers=wkey).status_code == 405
 

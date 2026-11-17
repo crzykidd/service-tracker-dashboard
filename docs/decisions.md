@@ -5,6 +5,260 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-11 health-tinted entries
+
+- Tint is a plain `entry-health-<state>` class set in the templates, CSS-only
+  (no `!important`: the Dashboard rows carry no Tailwind background or hover
+  class, so a `tr.group-entry.entry-health-*` selector wins). Auto-refresh
+  reloads the page, so no JS patching was needed. Only degraded/down are
+  classed; up/unknown/none stay untouched.
+
+
+## 2026-11-16 — v090-10 (B) v2 tile layout adopted as the Tiled view
+
+- The operator chose the preview layout. `tile_layout` plumbing, the notice,
+  `.tile-layout-v2` scoping, the old two-row `.tile-status-row` column layout
+  and `/tiled_preview` were removed; v2 is the only markup/CSS path (the
+  `exposure_inline` flag stays: the Dashboard view includes the same partial
+  non-inline). `_render_tiled` folded back into `tiled_dashboard`.
+
+---
+
+## 2026-11-16 — v090-10 (A) detail panel "503" vs the API's full message: Body-mode gap
+
+- Root cause (confirmed by the operator: Status mode showed the full text,
+  Body mode only `503`): `probe_http`'s body branch returned
+  `error_text or str(code)` for status >= 400, never extracting the JSON
+  reason added to Status mode in v090-08. The panel and API were fine. Fix:
+  body mode reuses `_code_with_reason` (an `Error:` prefix still wins; 2xx
+  handling unchanged). Tests use the operator's exact `/healthz` body in
+  both modes, plus probe -> rows -> panel JSON and Check now.
+- Hardening: a down check always renders its message line, falling back to
+  `status N (empty reply)` / `no reply`; static CSS/JS get `?v=<file mtime>`
+  via a `static_v()` template helper (mtime, not app version, so dev edits
+  bust the cache too).
+
+---
+
+## 2026-11-16 — v090-09 MCP: PEP 723 install, version check, `MCP_VERSION` test
+
+- Install is `uv run` with the dependencies in a PEP 723 header, duplicated
+  from `mcp/requirements.in` (kept for CI and the venv path). A test parses
+  the header and compares it with `requirements.in` so they cannot drift.
+- `MCP_VERSION` is a constant in `std_mcp.py` (the script must work from a raw
+  URL with no `VERSION` file beside it). The prompt asked for a test that it
+  equals `VERSION`, but on `dev` `VERSION` is still the last release (0.8.0)
+  while `MCP_VERSION` is already 0.9.0, so strict equality fails until
+  `/release-prep` bumps `VERSION`. The test asserts `MCP_VERSION >= VERSION`:
+  a release that bumps `VERSION` without `MCP_VERSION` fails, and
+  `/release-prep` Step 1 now sets both (and stages `mcp/std_mcp.py`).
+- Comparison uses major.minor only; patch differences are `match`. A missing
+  `whoami.version` is `std_older` (STD < 0.9.0); non-semver is `unknown`.
+  `unknown` also adds a (softer) notice to the instructions; `build_server`
+  without version info (older callers/tests) adds none.
+- The 3.11-only `tomllib` is used by the header test; CI runs 3.11.
+
+---
+
+## 2026-11-16 — v090-08 roll-up: Container fails alone, URL/service checks judged as a group
+
+- Container failing is always `down`; URL/service checks (http, tcp, ping,
+  dns) all failing is `down` even when the container passes (the Emmett
+  negative test showed Degraded for a 503 `/healthz`). Container-only entries
+  unchanged. `routes_mgmt_api.health_summary` had its own copy of the
+  down/degraded rule; replaced by `entry_health` so there is one rule.
+- Status-mode HTTP checks now always pass `stream=True` and read the body
+  only when the code is >= 400 (threshold unchanged), so the failure reason
+  surfaces; message capped at 200 chars (`ERROR_MESSAGE_LIMIT`), under the
+  255 column limit. A JSON object with none of the known keys falls back to
+  the raw body text, per the prompt.
+
+---
+
+## 2026-11-16 — v090-06 temporary Tiled layout preview (`/tiled_preview`) — ADOPTED in v090-10
+
+- **Why it exists:** to compare a proposed Tiled tile layout (name across the
+  full width, host tight under it, one status/action icon row along the tile
+  bottom) against the current one with real data. It is unlinked (no nav
+  entry) and not a shipped feature; no CHANGELOG entry.
+- **Decision required before `/release-prep 0.9.0`:** either *adopt* v2 (it
+  becomes the Tiled layout; remove the `/tiled_preview` route, the
+  `tile_layout` plumbing, the notice, the `.tile-layout-v2` scoping and the old
+  tile CSS; add a CHANGELOG entry) or *delete* the preview (route, template
+  branches, `.tile-layout-v2` / `.tile-preview-notice` CSS, the three
+  `test_preview_*` tests).
+- **CSS-only, scoped:** all new rules sit under `.tile-layout-v2`; the template
+  changes are only `{% if tile_layout == 'v2' %}` wrappers (notice + one
+  `<div>`), so `/tiled_dash` renders byte-identical (checked against HEAD,
+  modulo the per-request CSRF token). The handler body was factored into
+  `_render_tiled(**extra)`.
+- **No JS change needed:** the controls use `window.location.search` and the
+  edit link uses `request.full_path`, so the operator stays on the preview.
+- **Exposure badges (v090-07):** one badge per layer (`view_helpers.exposure_layers`,
+  registered as a Jinja filter) in all views; no `×N` count beside the logo
+  (operator call). Hover says `<layer> — N routes` (raw row count) then the
+  routes de-duplicated by hostname+path only, so web/websecure routers on one
+  host give one line; TLS/auth aggregate as "any". In v2 the badges render
+  inside the bottom status row (after the status icons, thin separator),
+  nowrap and clipped rather than pushing the action icons off; the v2 status
+  row gap was tightened to 2px so three badges plus `+N` fit at 390px.
+
+---
+
+## 2026-11-16 — v090-05 implementation calls (host on tiles)
+
+- **Compact's `always` is not identical to the old rule.** The old rule showed
+  the host on every row only when more than one host existed; `always` shows it
+  on every entry that has a host, even with a single host. Close enough, and
+  the default `duplicates` is the intended new behavior. Noted in CHANGELOG.
+- **Normalization in `settings_loader`, not `app.py`.** Unlike
+  `register_field_ownership` (validated in `app.py`), the value is lower-cased,
+  trimmed and validated inside `load_settings()` so it is correct wherever the
+  loader is used and testable without building the app.
+- **Id set computed in Python and passed to templates**, over all active
+  entries (the unfiltered list), so a status/source filter can't make a
+  duplicate look unique. Rejected: computing in Jinja or over the visible set.
+- **Host-less entries are neutral.** They are never marked and a NULL host is
+  not "a different host" for hosted entries, so a manual twin doesn't label a
+  notifier entry.
+
+---
+
+## 2026-11-16 — v090-04 implementation calls (Groups: one Save, unsaved guard)
+
+- **Group name/icon rules live in `entry_rules.validate_group`.** The
+  management API had its own copy (`_group_problems`); it now delegates, so the
+  Settings form and the API share one rule set. Priority reuses
+  `entry_rules.parse_sort_priority` (negatives and 0 allowed; the dashboard
+  sorts on plain ints with NULL as 9999).
+- **Swap-safe apply.** `group_name` is UNIQUE and SQLite checks per statement,
+  so an A<->B swap would fail mid-flush. Renamed rows are first parked on a
+  placeholder name (flushed), then given final values. Rejected: dropping the
+  unique constraint (a migration for a UI nicety).
+- **Stale table is refused, not merged.** A submitted id that no longer exists,
+  or an existing group missing from the form (added elsewhere after load), is a
+  400 with nothing written; the operator reloads with Discard. Applying a
+  partial table could silently undo someone else's change.
+- **Re-render after a 400 starts dirty via `data-unsaved-start-dirty`**, not by
+  diffing against DB values: simpler, and the failed submission is by
+  definition unsaved. `_render_settings()` was split out of `settings()` so the
+  400 path renders the full page without a redirect.
+- **The guard's snapshot is order-independent** (sorted `name=value` pairs), so
+  `sortTable` re-ordering rows is not an edit. `sortTable` now skips the "new"
+  row (`data-no-sort`) and reads only text/number inputs (the hidden delete flag
+  sits in the Controls cell).
+- **The Groups table always renders**, even with no groups, because the new row
+  is now the only way to add the first group.
+- **JS verified with a throwaway headless Playwright script, not a committed
+  test**: the repo has no JS test setup and CI has no browser. Server behaviour
+  is covered by `tests/test_groups_save.py`.
+
+---
+
+## 2026-11-16 — v090-03 implementation calls (API key rotation, name reuse)
+
+- **Key management stays out of the management API.** Rotate, like create and
+  revoke, is Settings-UI only (admin + CSRF). §14.8 keeps users and keys out of
+  `/api/v1`, so a leaked key could never mint or rotate keys. No OpenAPI or MCP
+  change.
+- **Rotate replaces the prefix too.** It reuses `generate_key()`, so the new key
+  is a different prefix and secret on the same row. Rejected: keeping the
+  prefix (the displayed prefix would no longer tell old from new key).
+- **`rotate_key` raises `ValueError` on a revoked key**, matching the module's
+  guard style; the route checks `revoked_at` first and flashes instead.
+- **Name uniqueness moved to a partial index.** `uq_api_key_name` is dropped
+  (batch mode) and `ux_api_key_name_active` (`name WHERE revoked_at IS NULL`)
+  added in the same migration as `rotated_at`. Rotation keeps the name and the
+  row, so it never trips the index. The downgrade raises a `RuntimeError`
+  naming the duplicated names rather than silently dropping rows.
+- **Audit filter switched from name to key id** (`audit_key=id:<n>`), because a
+  reused name would otherwise merge two different keys. Audit rows whose key row
+  was deleted (`api_key_id` NULL) still get a name-only option; the old
+  `?audit_key=<name>` URLs keep working for those.
+
+---
+
+## 2026-11-16 — v090-02 implementation calls (certificate expiry)
+
+- **`cryptography` to parse the certificate.** The stdlib cannot decode a
+  certificate from an unverified handshake: `getpeercert()` returns an empty
+  dict when `verify_mode` is `CERT_NONE`, and only the DER form is available.
+  Rejected: a hand-rolled ASN.1 walker (more code than the feature, easy to get
+  wrong on odd validity encodings) and the private
+  `ssl._ssl._test_decode_cert` (undocumented, can change or vanish between
+  Python releases). `cryptography` was already in the MCP server's pins (via
+  PyJWT), now a direct app dependency at the same pin (50.0.2); it ships
+  manylinux wheels, and `docker build .` on `python:3.11-slim` still works.
+  `requirements.txt` was regenerated with `--upgrade-package cryptography`
+  only (new pins: `cryptography`, `cffi`, `pycparser`).
+- **The handshake is a separate connection** (`checker._read_cert_expiry`):
+  `requests` does not expose the peer certificate, and with Verify TLS on a
+  failing certificate would never reach us. Consequence: it connects straight
+  to the target host and ignores an `HTTPS_PROXY` / `NO_PROXY` that `requests`
+  would honour. A proxied setup would therefore read a different path (or fail
+  with `cert check failed`). Accepted; documented in the README and CHANGELOG.
+- **A failed HTTP result is attempted for its expiry too**, and keeps its HTTP
+  message: the panel still shows the date when the service is down. When both
+  fail, the HTTP failure wins and no date is recorded.
+- **`record_check_result` always overwrites `last_cert_expires_at`** from the
+  result instead of the job deciding when to clear it. No condition, plain
+  http, or an unreadable certificate all produce None, which is the "never
+  show a stale date" rule in one line. Editing the minimum to blank also clears
+  it at once (the form/API assign path), so the panel does not wait for the next
+  run.
+- **Validator value is `cert_days_value`** (like `interval_value` /
+  `timeout_value`), while the API/DB field is `cert_min_days`. The form parses
+  the hidden input of a non-HTTP service row as blank rather than erroring
+  ("the form never submits it"), while the API rejects it with a 400. A PATCH
+  that switches a service check away from http drops a stored minimum unless
+  the request sends one (which is then a 400), so retyping a check does not need
+  an extra `cert_min_days: null`.
+- **`last_cert_expires_at` is not in `to_config()`** (a cache, like the other
+  `last_*` columns); `cert_min_days` is, and restore range-checks it.
+- **The detail panel date uses the browser's locale** (`toLocaleDateString`
+  with the year), like the panel's other times, rather than a fixed
+  `YYYY-MM-DD`; the day count is floored client-side so it matches the probe's
+  message.
+
+---
+
+## 2026-11-16 — v090-01 implementation calls (DNS check)
+
+- **The server must be an IP literal.** The check exists to ask one specific
+  server, and a hostname would need the system resolver to find it. Bare IPv6
+  without a port (`2001:db8::1`) is accepted because it is unambiguous; with a
+  port it must be bracketed (`[2001:db8::1]:53`), so `2001:db8::1:53` reads as
+  an address, not as an address plus a port.
+- **`dns.resolver` is not used anywhere**; `udp_with_fallback` talks to the
+  given server (TCP only on truncation). A test patches the resolver (and
+  `socket.getaddrinfo`) to explode while a probe runs.
+- **Answer comparison is exact-match-on-any after normalizing**, not a
+  substring or regex match: case-insensitive, trailing dot stripped,
+  whitespace collapsed, IPs compared in canonical form (so `2001:0DB8::1`
+  equals `2001:db8::1`), TXT as joined strings without quotes. MX and SRV
+  compare the full presentation form (`10 mail.example.com`). The IP
+  canonicalization goes beyond the written rules; it only removes false
+  mismatches.
+- **` | ` joins several answers in the failure message** (readable in the
+  tooltip and unlikely to occur inside a record).
+- **Numeric rcodes are rejected** (`dns.rcode.from_text("3")` would accept
+  them) so the stored value is always the name that the probe compares with.
+- **The expected rcode is stored explicitly as `NOERROR`** when left blank
+  (blank means NOERROR per the spec); `dns_expected_answer` blank is stored
+  NULL. The probe still treats a NULL/blank rcode as NOERROR, for rows from
+  older backups or direct writes.
+- **`dns_*` fields on a non-DNS service check are silently dropped** (stored
+  NULL) rather than rejected, matching how mode/verify are handled for
+  non-HTTP types. On URL and container checks, PATCH rejects them with 400
+  like `target`.
+- **`CheckOut` carries the four fields always** (null for other types),
+  matching how it already carries `mode` and `verify_tls` for every type.
+- **Downgrade drops the four columns but leaves `check_type='dns'` rows**;
+  they would fail as unknown types on an older version. Documented in the
+  migration; remove DNS checks before a real downgrade.
+
+---
+
 ## 2026-11-15 — v080-05 implementation calls (MCP server)
 
 - **Pinned `mcp==1.30.0` (the v1 line), not 2.x.** 2.x (latest 2.3.0, October)

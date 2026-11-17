@@ -33,7 +33,12 @@ CHECK_KINDS = URL_CHECK_KINDS + (CHECK_KIND_SERVICE, CHECK_KIND_CONTAINER)
 CHECK_TYPE_HTTP = 'http'
 CHECK_TYPE_TCP = 'tcp'
 CHECK_TYPE_PING = 'ping'
-CHECK_TYPES = (CHECK_TYPE_HTTP, CHECK_TYPE_TCP, CHECK_TYPE_PING)
+CHECK_TYPE_DNS = 'dns'
+CHECK_TYPES = (CHECK_TYPE_HTTP, CHECK_TYPE_TCP, CHECK_TYPE_PING, CHECK_TYPE_DNS)
+# DNS check (v0.9.0): record types a query can ask for, and the default rcode.
+DNS_RECORD_TYPES = ('A', 'AAAA', 'CNAME', 'TXT', 'PTR', 'MX', 'NS', 'SRV')
+DNS_DEFAULT_RECORD_TYPE = 'A'
+DNS_DEFAULT_RCODE = 'NOERROR'
 # The container check's own type; not selectable on a service check.
 CHECK_TYPE_DOCKER = 'docker'
 CONTAINER_CHECK_NAME = 'Container'
@@ -403,6 +408,20 @@ class HealthCheck(db.Model):
     timeout_seconds = db.Column(db.Integer, nullable=True)
     verify_tls = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
     enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # DNS checks only (v0.9.0; NULL on every other type). `target` is the DNS
+    # server (an IP literal, optional port); these describe the query and the
+    # expected reply. A blank expected_rcode means NOERROR, a blank
+    # expected_answer means "judge by rcode only".
+    dns_name = db.Column(db.String(255), nullable=True)
+    dns_record_type = db.Column(db.String(8), nullable=True)
+    dns_expected_rcode = db.Column(db.String(16), nullable=True)
+    dns_expected_answer = db.Column(db.String(255), nullable=True)
+    # Certificate-expiry condition (v0.9.0; HTTPS checks only). `cert_min_days`
+    # is the operator's minimum days left (NULL = off); `last_cert_expires_at`
+    # is the leaf certificate's notAfter as the checker last saw it (naive UTC),
+    # cleared when the check has no condition or the target is plain http.
+    cert_min_days = db.Column(db.Integer, nullable=True)
+    last_cert_expires_at = db.Column(db.DateTime, nullable=True)
     # Cached latest state (naive UTC timestamp).
     last_ok = db.Column(db.Boolean, nullable=True)
     last_checked_at = db.Column(db.DateTime, nullable=True)
@@ -434,6 +453,11 @@ class HealthCheck(db.Model):
             'timeout_seconds': self.timeout_seconds,
             'verify_tls': self.verify_tls,
             'enabled': self.enabled,
+            'dns_name': self.dns_name,
+            'dns_record_type': self.dns_record_type,
+            'dns_expected_rcode': self.dns_expected_rcode,
+            'dns_expected_answer': self.dns_expected_answer,
+            'cert_min_days': self.cert_min_days,
         }
 
     def __repr__(self):
@@ -565,9 +589,15 @@ class ApiKey(db.Model):
     creation. `scope` is `read` or `write` (write includes read).
     """
     __tablename__ = 'api_key'
+    # Names are unique among active keys only, so a revoked key's name can be
+    # reused (v0.9.0). Mirrors the partial index in the v090-03 migration.
+    __table_args__ = (
+        db.Index('ux_api_key_name_active', 'name', unique=True,
+                 sqlite_where=db.text('revoked_at IS NULL')),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(64), nullable=False)
     prefix = db.Column(db.String(8), nullable=False, index=True)
     key_hash = db.Column(db.String(64), nullable=False)
     scope = db.Column(db.String(8), nullable=False)
@@ -576,6 +606,7 @@ class ApiKey(db.Model):
     last_used_at = db.Column(db.DateTime, nullable=True)
     last_used_ip = db.Column(db.String(64), nullable=True)
     revoked_at = db.Column(db.DateTime, nullable=True)
+    rotated_at = db.Column(db.DateTime, nullable=True)  # v0.9.0: last secret rotation
 
     @property
     def is_revoked(self):

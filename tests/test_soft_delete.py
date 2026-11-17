@@ -245,7 +245,9 @@ def test_group_count_and_delete_ignore_deleted_entries(app, admin_client):
         _make("svc1", group_id=g.id, deleted_at=datetime.now())
         gid = g.id
         assert Group.query.get(gid).services_count == 0
-    admin_client.post("/delete_group", data={"group_id": gid})
+    admin_client.post("/settings/groups/save", data={
+        f"group-{gid}-name": "G", f"group-{gid}-icon": "", f"group-{gid}-priority": "",
+        f"group-{gid}-delete": "1"})
     with app.app_context():
         assert Group.query.get(gid) is None
 

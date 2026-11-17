@@ -24,6 +24,9 @@ HOST_MAX = 100
 DESCRIPTION_MAX = 255
 URL_MAX = 255
 
+GROUP_NAME_MAX = 100
+GROUP_ICON_MAX = 255
+
 ICON_ERROR = "icon name may only use letters, numbers, dots, dashes and underscores"
 
 
@@ -39,6 +42,19 @@ def validate_basic(name, host, description):
     if description and len(description) > DESCRIPTION_MAX:
         errors.append({"field": "description",
                        "message": f"description is limited to {DESCRIPTION_MAX} characters"})
+    return errors
+
+
+def validate_group(name, icon, name_sent=True, icon_sent=True):
+    """Group name is required (and limited); the group icon is only limited."""
+    errors = []
+    if name_sent:
+        if not (name or "").strip():
+            errors.append({"field": "name", "message": "name is required"})
+        elif len(name.strip()) > GROUP_NAME_MAX:
+            errors.append({"field": "name", "message": f"name is limited to {GROUP_NAME_MAX} characters"})
+    if icon_sent and icon and len(icon) > GROUP_ICON_MAX:
+        errors.append({"field": "icon", "message": f"icon is limited to {GROUP_ICON_MAX} characters"})
     return errors
 
 
