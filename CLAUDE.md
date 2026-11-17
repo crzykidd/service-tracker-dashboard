@@ -208,8 +208,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.8.0** (latest tag on `main`).
-In flight: v0.9.0 — DNS check and cert-expiry condition (on `dev`).
+Current shipped release: **v0.9.0** (latest tag on `main`).
+In flight: nothing scoped (next: version in UI + MQTT notifications; see `prompts/startnewsession.md`).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.

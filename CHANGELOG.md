@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-16
+
 ### Added
 
 - **One-command MCP install, and a version check.** The MCP server installs
@@ -59,10 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Up, unknown and not-monitored entries look the same as before.
 - **An entry whose URL/service checks are all failing now shows Down even when its container is running (it used to show Degraded).** The Container check counts on its own: if it fails the entry is Down; otherwise the URL and service checks are judged as a group (all failing is Down, some failing is Degraded). The Status filter, the Failing count and `GET /api/v1/health/summary` follow.
 - **HTTP check failures now include the reason from the response, e.g. `503: Scope 'Mgmt1' not found`, instead of just the status code.** For a status of 400 or above in Status mode, STD reads the first 4 KB of the reply: a JSON `last_error`, `error`, `message` or `detail`, else the first line of text (at most about 200 characters). An empty or binary body still shows just the code.
-- **Tiled view: tiles show the icon on the left, the name across the full tile width (host underneath when shown), and all status, exposure and action icons in one row along the bottom.** The `/tiled_preview` page is gone.
+- **Tiled view: tiles show the icon on the left, the name across the full tile width (host underneath when shown), and all status, exposure and action icons in one row along the bottom.**
 - **The health detail panel always says why a check is down.** A down check shows its reason line under the status; when the probe left no text it reads `status 503 (empty reply)` (or `no reply`) instead of nothing.
 - **Upgrades no longer leave you on stale CSS/JS.** The stylesheet and scripts are now requested with a version (`?v=`) that changes when the file does, so a browser fetches the new copy after an upgrade.
-- **Exposure icons show once per proxy layer instead of once per route; hover shows the route count and lists them.** A traefik service with several routers used to show the same logo several times. The small lock and pencil marks are gone from the badge; TLS and hostnames are in the hover text. This applies to the Dashboard, Tiled and preview views.
+- **Exposure icons show once per proxy layer instead of once per route; hover shows the route count and lists them.** A traefik service with several routers used to show the same logo several times. The small lock and pencil marks are gone from the badge; TLS and hostnames are in the hover text. This applies to the Dashboard and Tiled views.
 - **Compact view shows the host only where the name isn't unique.** It now
   follows the new `tile_show_host` setting (default `duplicates`) instead of
   showing the host on every row whenever more than one host exists. Set
@@ -978,7 +980,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.6.9...v0.7.0

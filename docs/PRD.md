@@ -68,6 +68,7 @@
 | 0.58    | 2026-11-16 | §15.8 delivered on `dev` (v090-10 B): the v2 layout is the Tiled tile layout; `/tiled_preview` removed; §8.9 and §9.4 updated. No schema or register-contract change. |
 | 0.59    | 2026-11-16 | §15.9 delivered on `dev` (v090-10 A): Body-mode HTTP checks use the same reply-reason extraction as Status mode on 4xx/5xx; health detail panel always shows a reason line for a down check; static CSS/JS carry `?v=<mtime>`. §15.6 note corrected. No schema or register-contract change. |
 | 0.60    | 2026-11-16 | §15.10 delivered on `dev` (v090-11): degraded/down entries get a soft amber/red background on the Dashboard, Tiled and Compact views (`entry-health-<state>` class). §13.6 updated. No schema or register-contract change. |
+| 0.61    | 2026-11-16 | v0.9.0 released: §15 marked Delivered (DNS check, cert expiry, API key rotation, Groups single Save, host on tiles, roll-up and HTTP failure reasons, MCP uv install + version check, Tiled layout, health tints). |
 
 ---
 
@@ -87,7 +88,7 @@
 12. [v0.6.9 — Hardening and Safety Net (Delivered)](#12-v069--hardening-and-safety-net-delivered)
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
-15. [v0.9.0 — DNS and certificate-expiry checks (In progress)](#15-v090--dns-and-certificate-expiry-checks-in-progress)
+15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
 16. [Versioning, Branches, and Releases](#16-versioning-branches-and-releases)
 17. [Cross-Repo Coordination](#17-cross-repo-coordination)
 18. [Open Questions](#18-open-questions)
@@ -2045,12 +2046,12 @@ view of the log is not built yet.
 
 ---
 
-## 15. v0.9.0 — DNS and certificate-expiry checks (In progress)
+## 15. v0.9.0 — DNS and certificate-expiry checks (Delivered)
 
 Two new kinds of check, so STD can take over what Gatus checks at the Emmett
 site: a DNS check (§15.1) and certificate expiry on HTTPS checks (§15.2). Chunks are tracked as handoff prompts `v090-NN-*`.
 
-### 15.1 DNS check [`v090-01-dns-check`] — Delivered on `dev`
+### 15.1 DNS check [`v090-01-dns-check`] — Delivered in v0.9.0
 
 A fourth service-check type, `dns`, that asks a given DNS server a question
 and judges the reply. It goes through every place the other types do: model
@@ -2115,7 +2116,7 @@ the detail panel and rollup.
   `dns_name=em-pve01.crzynet.me`, `dns_record_type=A`,
   `dns_expected_answer=10.100.17.10`.
 
-### 15.2 Certificate expiry on HTTPS checks [`v090-02-cert-expiry`] — Delivered on `dev`
+### 15.2 Certificate expiry on HTTPS checks [`v090-02-cert-expiry`] — Delivered in v0.9.0
 
 An optional **minimum days left** on HTTPS checks, for URL checks (internal
 and external) and HTTP service checks. When set, a check fails with
@@ -2184,7 +2185,7 @@ expiry, even though the HTTP status is fine.
   with `cert_min_days=7`; Proxmox's self-signed certificate with Verify TLS off
   still reports its expiry.
 
-### 15.3 API key rotation [`v090-03-api-key-rotate`] — Delivered on `dev`
+### 15.3 API key rotation [`v090-03-api-key-rotate`] — Delivered in v0.9.0
 
 - **Rotate** on each active key in Settings → API (`POST
   /settings/api-keys/<id>/rotate`, admin and CSRF, like revoke). It keeps the
@@ -2210,7 +2211,7 @@ expiry, even though the HTTP status is fine.
   is shared by more than one row.
 - Migration `c2e8a5b3d917` (on top of `b7d3f1a94e26`) does both changes.
 - Not in the management API: users and keys stay UI-only (§14.8).
-### 15.4 Groups: one Save, unsaved-changes warning [`v090-04-groups-save-all`] — Delivered on `dev`
+### 15.4 Groups: one Save, unsaved-changes warning [`v090-04-groups-save-all`] — Delivered in v0.9.0
 
 - **One form, one route.** Settings → Groups is a single `<form>` posting to
   `POST /settings/groups/save` (admin and CSRF). Rows post
@@ -2238,7 +2239,7 @@ expiry, even though the HTTP status is fine.
   an "Unsaved changes" hint. Submit and Discard disarm it. A failed save
   re-renders with `data-unsaved-start-dirty`. Applied to the groups form only.
 
-### 15.5 Host on tiles when the name isn't unique [`v090-05-tile-show-host`] — Delivered on `dev`
+### 15.5 Host on tiles when the name isn't unique [`v090-05-tile-show-host`] — Delivered in v0.9.0
 
 - **Setting.** `tile_show_host` (`TILE_SHOW_HOST`): `duplicates` (default),
   `always`, `never`. Lower-cased and trimmed at startup in `settings_loader`;
@@ -2260,7 +2261,7 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-### 15.6 Roll-up and HTTP failure messages [`v090-08-rollup-and-http-messages`] — Delivered on `dev`
+### 15.6 Roll-up and HTTP failure messages [`v090-08-rollup-and-http-messages`] — Delivered in v0.9.0
 
 - **Roll-up.** `health_state.entry_health`: Container failing = `down`;
   otherwise URL and service checks that have run are judged as a group
@@ -2279,7 +2280,7 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-### 15.7 MCP easy install and version check [`v090-09-mcp-easy-install-and-version`] — Delivered on `dev`
+### 15.7 MCP easy install and version check [`v090-09-mcp-easy-install-and-version`] — Delivered in v0.9.0
 
 - **uv install.** `mcp/std_mcp.py` starts with a PEP 723 block
   (`requires-python >= 3.10`, `mcp==1.30.0`, `httpx==0.28.1`), so
@@ -2304,7 +2305,7 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-### 15.8 Tiled tile layout [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered on `dev`
+### 15.8 Tiled tile layout [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered in v0.9.0
 
 - Each Tiled tile is a two-row grid: the icon on the left and the name across
   the full remaining width (host in small text underneath when §15.5 shows
@@ -2319,7 +2320,7 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-### 15.9 Body-mode failure reason and panel message [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered on `dev`
+### 15.9 Body-mode failure reason and panel message [`v090-10-adopt-tile-v2-and-detail-message`] — Delivered in v0.9.0
 
 - **Body mode, status >= 400.** An `Error:`-prefixed body still gives that
   text; otherwise the message is `<code>: <reason>` using the §15.6
@@ -2332,7 +2333,7 @@ expiry, even though the HTTP status is fine.
   shared static CSS/JS with `?v=<file mtime>` (`static_v()` template helper).
 - No schema, register-contract or job change.
 
-### 15.10 Health-tinted entries [`v090-11-health-tinted-rows`] — Delivered on `dev`
+### 15.10 Health-tinted entries [`v090-11-health-tinted-rows`] — Delivered in v0.9.0
 
 - An entry whose rolled-up health (§13.6) is **degraded** or **down** gets
   the class `entry-health-degraded` / `entry-health-down` on its Dashboard

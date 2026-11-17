@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.8.0-blue)
+![Version](https://img.shields.io/badge/version-0.9.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -44,6 +44,31 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.9.0 (2026-11-16)
+
+New check types, clearer health, and a Tiled view that's easier to read.
+Three database migrations run on startup (DNS check columns, certificate
+columns, API key rotation); no notifier change is needed.
+
+- **DNS service check:** query a given DNS server for a name and record type,
+  expect an rcode and optionally an answer (`rcode NXDOMAIN`,
+  `answer 10.0.0.5, expected 10.100.17.10`).
+- **Certificate expiry on HTTPS checks:** optional **Min cert days**; works
+  with Verify TLS off, and the detail panel shows the expiry date.
+- **Clearer health:** a running container no longer softens failing URL or
+  service checks to Degraded; HTTP failures show the reply's reason
+  (`503: <last_error>`) in Status and Body mode; degraded and down entries get
+  a soft amber or red background on every view.
+- **Tiled view redesign:** names use the full tile width, the host shows under
+  the name when the name isn't unique (`tile_show_host`), and all icons sit in
+  one row along the bottom. Exposure icons show once per proxy.
+- **API keys:** rotate a key from Settings → API; a revoked key's name can be
+  reused.
+- **Settings → Groups:** one Save for the whole table, with a warning before
+  leaving unsaved changes. Fixes the per-row Save clearing a group's priority.
+- **MCP server:** installs with one `uv run` command and warns when it doesn't
+  match your STD version; `whoami` now reports the STD version.
 
 ### v0.8.0 (2026-11-15)
 
