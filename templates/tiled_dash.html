@@ -91,6 +91,7 @@
                             {# Details column: name + exposure badges #}
                             <div class="tile-details">
                                 <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
+                                {% if entry.id in host_label_ids %}<span class="tile-host" title="{{ entry.host }}">{{ entry.host }}</span>{% endif %}
                                 {% with exposures = entry.exposures %}
                                   {% include "partials/exposure_badges.html" %}
                                 {% endwith %}

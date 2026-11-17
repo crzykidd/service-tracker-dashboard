@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Host on Tiled tiles when a name isn't unique.** Entries with the same name
+  on different hosts (for example `technitium` on two DNS servers) used to
+  look identical on Tiled. The host now appears in small muted text under the
+  name for those entries only; other tiles are unchanged. A new
+  `tile_show_host` setting (`TILE_SHOW_HOST`) chooses `duplicates` (default),
+  `always` or `never`. Names compare ignoring case and surrounding spaces, and
+  deleted entries and entries without a host don't count. It shows in
+  Settings → Info and `GET /api/v1/config` like other startup settings.
 - **DNS service check.** A new service-check type, **DNS**, asks a DNS server
   for a name and checks the reply, for example to watch a site's resolver.
   Set the server (an IP address, optionally with a port), the query name, the
@@ -42,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Compact view shows the host only where the name isn't unique.** It now
+  follows the new `tile_show_host` setting (default `duplicates`) instead of
+  showing the host on every row whenever more than one host exists. Set
+  `tile_show_host: always` to get the old look back (the host on every entry
+  that has one).
 - **Settings → Groups has one Save.** Edit any number of groups (name, icon,
   priority), add a new one in the bottom row (left blank, it is ignored) and
   press **Save changes** once. **Delete** now marks the row (struck through,

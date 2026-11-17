@@ -240,6 +240,14 @@
   text-overflow: ellipsis;
   font-size: 0.95em;
 }
+.tile-host {
+  display: block;
+  font-size: 0.7rem;
+  color: #aaaaaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── Status icon block (two rows: status top, actions bottom) ─ */
 .tile-status-row {

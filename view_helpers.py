@@ -230,3 +230,35 @@ def safe_redirect_target(target, fallback=None):
     ):
         return target
     return fallback
+
+
+def duplicate_name_ids(entries):
+    """Ids of active entries whose name is shared by another active entry on a
+    different host. Names compare case-insensitively, trimmed. Soft-deleted
+    entries are ignored and entries with no host are never marked (and never
+    count as "a different host"). Pass ALL active entries, not a filtered
+    subset, so a filter can't make a duplicate look unique."""
+    hosts_by_name = defaultdict(set)
+    keyed = []
+    for e in entries:
+        host = (e.host or "").strip()
+        if getattr(e, "deleted_at", None) is not None or not host:
+            continue
+        name = (e.container_name or "").strip().lower()
+        hosts_by_name[name].add(host)
+        keyed.append((e.id, name))
+    return {i for i, name in keyed if len(hosts_by_name[name]) > 1}
+
+
+def host_label_ids(entries, mode):
+    """Ids that should show their host, per the `tile_show_host` mode:
+    `never` -> none, `always` -> every active entry with a host,
+    `duplicates` (default for any other value) -> `duplicate_name_ids`."""
+    if mode == "never":
+        return set()
+    if mode == "always":
+        return {
+            e.id for e in entries
+            if (e.host or "").strip() and getattr(e, "deleted_at", None) is None
+        }
+    return duplicate_name_ids(entries)

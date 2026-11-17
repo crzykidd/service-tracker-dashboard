@@ -81,6 +81,7 @@ from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
     health_counts,
+    host_label_ids,
     normalize_axis,
     normalize_show_urlless,
     normalize_source_filter,
@@ -248,6 +249,12 @@ def _load_view_entries():
     )
 
 
+def _host_label_ids(entries):
+    """Entry ids that show a host, per `tile_show_host`. `entries` is every
+    active entry (unfiltered) so a filter can't hide a duplicate."""
+    return host_label_ids(entries, current_app.config.get('tile_show_host', 'duplicates'))
+
+
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
@@ -321,6 +328,7 @@ def tiled_dashboard():
         **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
+        host_label_ids=_host_label_ids(entries),
         widget_values=widget_values,
         widget_fields=widget_fields,
     )
@@ -353,9 +361,6 @@ def compact_dash():
             flattened_entries.append({'is_group_header': False, 'entry': entry})
             visible_total += 1
 
-    unique_hosts = {e.host for _, bucket in grouped_entries for e in bucket if e.host}
-    show_host = len(unique_hosts) > 1
-
     return render_template(
         "compact_dash.html",
         flattened_entries=flattened_entries,
@@ -364,7 +369,7 @@ def compact_dash():
         **_health_count_context(entries, show_urlless, source, status),
         status_filter=status,
         source_filter=source,
-        show_host=show_host,
+        host_label_ids=_host_label_ids(entries),
         group_by=axis,
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,

@@ -60,6 +60,7 @@
 | 0.50    | 2026-11-16 | §15.2 delivered on `dev` (v090-02): optional certificate-expiry condition (`cert_min_days`, 1-365) on URL checks and HTTP service checks, failing with `cert expires in N days (min M)`; separate unverified TLS handshake parsed with `cryptography`; migration `b7d3f1a94e26` (`cert_min_days`, `last_cert_expires_at`); "Min cert days" field shown only for https targets, detail-panel expiry line, API/OpenAPI/MCP support. §5.6 `health_check` columns updated. Register wire contract unchanged. |
 | 0.51    | 2026-11-16 | §15.3 delivered on `dev` (v090-03): rotate an API key from Settings → API (`api_key.rotated_at`, new key shown once, old key invalid at once), and API key names unique among active keys only (partial index `ux_api_key_name_active`, migration `c2e8a5b3d917`). §14.2 updated. |
 | 0.52    | 2026-11-16 | §15.4 delivered on `dev` (v090-04): Settings → Groups saves the whole table with one `POST /settings/groups/save` (all-or-nothing, per-row errors, delete applies on Save) and warns before leaving with unsaved changes (`static/js/unsaved_guard.js`); `/update_group`, `/add_group`, `/delete_group` removed; per-row Save priority-wipe bug fixed. Group name/icon rules moved to `entry_rules.validate_group`, shared with the management API. No schema or register-contract change. |
+| 0.53    | 2026-11-16 | §15.5 delivered on `dev` (v090-05): `tile_show_host` setting (`duplicates` default, `always`, `never`) shows the host under the name on Tiled tiles, and after it on Compact rows, where the same name exists on another host (`view_helpers.duplicate_name_ids` / `host_label_ids`, computed over all active entries). Compact's old `more than one host` rule replaced. No schema or register-contract change. |
 
 ---
 
@@ -2214,6 +2215,26 @@ expiry, even though the HTTP status is fine.
   values differ from it, arms a `beforeunload` prompt, highlights Save and shows
   an "Unsaved changes" hint. Submit and Discard disarm it. A failed save
   re-renders with `data-unsaved-start-dirty`. Applied to the groups form only.
+
+### 15.5 Host on tiles when the name isn't unique [`v090-05-tile-show-host`] — Delivered on `dev`
+
+- **Setting.** `tile_show_host` (`TILE_SHOW_HOST`): `duplicates` (default),
+  `always`, `never`. Lower-cased and trimmed at startup in `settings_loader`;
+  an unknown value logs a warning and falls back to `duplicates`. Startup-only
+  like every `settings.yml` value; it appears in Settings → Info and in
+  `GET /api/v1/config` (not a secret) with no schema change.
+- **Detection.** `view_helpers.duplicate_name_ids(entries)` returns ids whose
+  name (case-insensitive, trimmed) is shared by another active entry on a
+  different host; soft-deleted and host-less entries are ignored.
+  `host_label_ids(entries, mode)` applies the mode (`always` = every entry with
+  a host). The handlers compute it over all active entries (not the filtered
+  view) and pass the id set to the templates.
+- **Views.** Tiled: a `.tile-host` line (small, muted, ellipsis, full host in
+  `title`) directly under the name, only for ids in the set; other tiles are
+  unchanged. Compact: replaces the old `more than one host` rule with the same
+  set (`always` approximates the old behavior). The Dashboard table already
+  has a Host column and is unchanged.
+- No schema, register-contract or job change.
 
 ---
 

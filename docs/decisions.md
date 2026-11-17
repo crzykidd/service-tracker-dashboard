@@ -5,6 +5,25 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-05 implementation calls (host on tiles)
+
+- **Compact's `always` is not identical to the old rule.** The old rule showed
+  the host on every row only when more than one host existed; `always` shows it
+  on every entry that has a host, even with a single host. Close enough, and
+  the default `duplicates` is the intended new behavior. Noted in CHANGELOG.
+- **Normalization in `settings_loader`, not `app.py`.** Unlike
+  `register_field_ownership` (validated in `app.py`), the value is lower-cased,
+  trimmed and validated inside `load_settings()` so it is correct wherever the
+  loader is used and testable without building the app.
+- **Id set computed in Python and passed to templates**, over all active
+  entries (the unfiltered list), so a status/source filter can't make a
+  duplicate look unique. Rejected: computing in Jinja or over the visible set.
+- **Host-less entries are neutral.** They are never marked and a NULL host is
+  not "a different host" for hosted entries, so a manual twin doesn't label a
+  notifier entry.
+
+---
+
 ## 2026-11-16 — v090-04 implementation calls (Groups: one Save, unsaved guard)
 
 - **Group name/icon rules live in `entry_rules.validate_group`.** The

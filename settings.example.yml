@@ -75,3 +75,9 @@ health_history_days: 7
 # Days of management-API write audit log to keep before it is deleted. A daily
 # job removes older rows. Can be set as API_AUDIT_RETENTION_DAYS in ENV.
 api_audit_retention_days: 90
+
+# Show the host under the service name on Tiled tiles and after it on Compact
+# rows. duplicates (default) = only where the same name exists on another
+# host; always = every entry that has a host; never = hide it. Can be set as
+# TILE_SHOW_HOST in ENV.
+tile_show_host: duplicates
