@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An entry whose URL/service checks are all failing now shows Down even when its container is running (it used to show Degraded).** The Container check counts on its own: if it fails the entry is Down; otherwise the URL and service checks are judged as a group (all failing is Down, some failing is Degraded). The Status filter, the Failing count and `GET /api/v1/health/summary` follow.
+- **HTTP check failures now include the reason from the response, e.g. `503: Scope 'Mgmt1' not found`, instead of just the status code.** For a status of 400 or above in Status mode, STD reads the first 4 KB of the reply: a JSON `last_error`, `error`, `message` or `detail`, else the first line of text (at most about 200 characters). An empty or binary body still shows just the code.
 - **Exposure icons show once per proxy layer instead of once per route; hover shows the route count and lists them.** A traefik service with several routers used to show the same logo several times. The small lock and pencil marks are gone from the badge; TLS and hostnames are in the hover text. This applies to the Dashboard, Tiled and preview views.
 - **Compact view shows the host only where the name isn't unique.** It now
   follows the new `tile_show_host` setting (default `duplicates`) instead of

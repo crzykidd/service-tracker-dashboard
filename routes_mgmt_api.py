@@ -39,7 +39,7 @@ import settings_store
 import synthesizer
 import widget_rules
 from extensions import csrf, db
-from health_state import STATE_DEGRADED, STATE_DOWN
+from health_state import entry_health
 from image_utils import fetch_icon_if_missing
 from mgmt_schemas import (
     NOTIFIER_OWNED_FIELDS,
@@ -917,9 +917,7 @@ def health_summary():
             {"check": c.name or c.kind, "kind": c.kind, "message": c.last_message, "since": _failing_since(c)}
             for c in e.checks if check_counts(e, c) and c.last_ok is False
         ]
-        state = STATE_DOWN if all(c.last_ok is False for c in e.checks
-                                  if check_counts(e, c) and c.last_ok is not None) else STATE_DEGRADED
-        failing.append({"id": e.id, "name": e.container_name, "host": e.host, "state": state,
+        failing.append({"id": e.id, "name": e.container_name, "host": e.host, "state": entry_health(e).state,
                         "failures": failures})
     return jsonify({"counts": counts, "failing": failing})
 

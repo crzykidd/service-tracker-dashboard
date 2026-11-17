@@ -763,10 +763,16 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
   than `health_history_days` (7) is deleted.
 - Internal and external URLs are pinged if their respective
   `*_health_check_enabled` flags are set.
+- When an HTTP check in status mode gets a reply of 400 or above, its message
+  is `<code>: <reason>` taken from the reply body (a JSON `last_error`,
+  `error`, `message` or `detail`, else the first line of text), for example
+  `503: Scope 'Mgmt1' not found`; an empty or binary body leaves just the code.
 - Status code, response time, and timestamp are recorded per check, as a
   result row in the database. An entry's badge rolls its enabled checks up:
-  **Up** (every check that has run passed), **Degraded** (some pass, some
-  fail), **Down** (every check that has run fails), **Unknown** (checks are
+  **Up** (every check that has run passed), **Degraded** (some URL/service
+  checks pass and some fail), **Down** (the Container check fails, or every
+  URL/service check that has run fails, even when the container is running),
+  **Unknown** (checks are
   enabled but none has run yet), **Not monitored** (no enabled checks). A URL
   check whose URL is empty does not count.
 - Each entry has an internal-URL and an external-URL check; the notifier's

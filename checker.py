@@ -7,6 +7,7 @@ scheduler thread, see jobs.py).
 """
 
 import ipaddress
+import json
 import socket
 import ssl
 import time
@@ -89,6 +90,67 @@ def _read_body(response):
         if len(raw) >= BODY_READ_LIMIT:
             break
     return raw[:BODY_READ_LIMIT].decode("utf-8", errors="replace").strip()
+
+
+def _is_binary(text):
+    """Undecodable (replacement chars) or mostly control characters."""
+    if not text:
+        return False
+    if "\ufffd" in text:
+        return True
+    ctrl = sum(1 for ch in text if ord(ch) < 32 and ch not in "\t\n\r")
+    return ctrl / len(text) > 0.1
+
+
+def _reply_reason(raw):
+    """The human-readable reason in a failing HTTP reply's body, or None.
+
+    JSON object: first non-empty string among last_error / error / message /
+    detail (`error` may be an object with a string `message`); no such key
+    falls back to the raw text. Otherwise the first non-empty line. None for
+    an empty, whitespace-only or binary body.
+    """
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text.strip() or _is_binary(text):
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        for key in ("last_error", "error", "message", "detail"):
+            value = data.get(key)
+            if isinstance(value, dict):
+                value = value.get("message")
+            if isinstance(value, str) and value.strip():
+                return value
+        return text
+    for line in text.splitlines():
+        if line.strip():
+            return line
+    return None
+
+
+def _status_failure_message(code, response):
+    """`<code>: <reason>` from the body of a failing status reply, else `<code>`.
+    Reads at most BODY_READ_LIMIT bytes; the whole message is at most
+    ERROR_MESSAGE_LIMIT characters (`…` when cut)."""
+    raw = b""
+    try:
+        for chunk in response.iter_content(chunk_size=1024):
+            raw += chunk
+            if len(raw) >= BODY_READ_LIMIT:
+                break
+    except Exception:
+        return str(code)
+    reason = _reply_reason(raw[:BODY_READ_LIMIT])
+    reason = " ".join(reason.split()) if reason else ""
+    if not reason:
+        return str(code)
+    return _clip(f"{code}: {reason}", min(ERROR_MESSAGE_LIMIT, MESSAGE_COLUMN_LIMIT))
 
 
 def _error_text(body):
@@ -181,7 +243,9 @@ def probe_http(target, mode="status", timeout=5, verify=True, cert_min_days=None
 def _probe_http_request(target, mode, timeout, verify):
     """GET `target` (redirects followed) and judge it by `mode`:
 
-    status: below 400 is ok; failures carry the code or exception text.
+    status: below 400 is ok (body not read); 400 and above fails with
+    `<code>: <reason from the body>` (see `_status_failure_message`), or just
+    the code when the body gives nothing; exceptions carry their text.
     body: reads at most 4 KB. `OK` (case-insensitive) is ok; an `Error:`
     prefix gives that text as the message; anything else is
     `Unexpected response: <first 60 chars>`; a status of 400 or above is
@@ -196,12 +260,13 @@ def _probe_http_request(target, mode, timeout, verify):
         with warnings.catch_warnings():
             if not verify:
                 warnings.simplefilter("ignore", InsecureRequestWarning)
-            response = requests.get(target, timeout=timeout, verify=verify, stream=body_mode)
+            response = requests.get(target, timeout=timeout, verify=verify, stream=True)
         try:
             code = int(response.status_code)
             if not body_mode:
                 ok = code < 400
-                return ProbeResult(ok, _elapsed_ms(started), code, None if ok else str(code))
+                message = None if ok else _status_failure_message(code, response)
+                return ProbeResult(ok, _elapsed_ms(started), code, message)
             body = _read_body(response)
         finally:
             close = getattr(response, "close", None)

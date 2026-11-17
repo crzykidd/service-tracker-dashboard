@@ -655,3 +655,19 @@ def test_summary_counts_match_the_filter_bar(app, client, rkey):
 def test_error_shape_is_json(client, wkey):
     resp = client.get("/api/v1/entries/9999", headers=wkey)
     assert resp.status_code == 404 and set(resp.get_json()) == {"error", "details"}
+
+
+def test_health_summary_container_up_url_failing_is_down(app, client, rkey):
+    from models import ensure_container_check
+    with app.app_context():
+        eid = _make("emmett")  # notifier entry, running
+        e = db.session.get(ServiceEntry, eid)
+        ensure_container_check(e)
+        e.container_check.last_ok = True
+        _svc_check(eid, name="Web", ok=False, failures=3, message="503: Scope not found")
+        db.session.commit()
+    body = client.get("/api/v1/health/summary", headers=rkey).get_json()
+    assert [(f["name"], f["state"]) for f in body["failing"]] == [("emmett", "down")]
+    assert body["failing"][0]["failures"][0]["message"] == "503: Scope not found"
+    entry = client.get(f"/api/v1/entries/{eid}", headers=rkey).get_json()
+    assert entry["health"]["state"] == "down"

@@ -5,6 +5,21 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-16 — v090-08 roll-up: Container fails alone, URL/service checks judged as a group
+
+- Container failing is always `down`; URL/service checks (http, tcp, ping,
+  dns) all failing is `down` even when the container passes (the Emmett
+  negative test showed Degraded for a 503 `/healthz`). Container-only entries
+  unchanged. `routes_mgmt_api.health_summary` had its own copy of the
+  down/degraded rule; replaced by `entry_health` so there is one rule.
+- Status-mode HTTP checks now always pass `stream=True` and read the body
+  only when the code is >= 400 (threshold unchanged), so the failure reason
+  surfaces; message capped at 200 chars (`ERROR_MESSAGE_LIMIT`), under the
+  255 column limit. A JSON object with none of the known keys falls back to
+  the raw body text, per the prompt.
+
+---
+
 ## 2026-11-16 — v090-06 temporary Tiled layout preview (`/tiled_preview`)
 
 - **Why it exists:** to compare a proposed Tiled tile layout (name across the

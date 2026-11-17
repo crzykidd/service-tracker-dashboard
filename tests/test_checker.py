@@ -89,12 +89,76 @@ def test_body_read_capped_at_4kb():
     assert out.ok is True  # junk past 4 KB was never read
 
 
-def test_status_mode_does_not_stream_and_closes():
-    resp = _resp(200)
+def test_status_mode_streams_closes_and_skips_body_on_success():
+    resp = _resp(200, b"some body")
     with patch("checker.requests.get", return_value=resp) as get:
         out = checker.probe_http("http://x", "status", 5, True)
-    assert out.ok and get.call_args.kwargs["stream"] is False
+    assert out.ok and out.message is None and get.call_args.kwargs["stream"] is True
+    resp.iter_content.assert_not_called()  # codes below 400: body not read
     resp.close.assert_called()
+
+
+# --- HTTP status mode failure message (v0.9.0 step 8) -----------------------------
+
+
+def _status(code, body):
+    resp = _resp(code, body)
+    with patch("checker.requests.get", return_value=resp):
+        out = checker.probe_http("http://x", "status", 5, True)
+    resp.close.assert_called()
+    assert out.ok is False and out.status_code == code
+    return out.message
+
+
+def test_status_failure_emmett_json():
+    body = (b'{"status":"Error","last_error":"Mgmt1: Scope \'Mgmt1\' not found on destination ...",'
+            b'"failing_scopes":["Mgmt","Mgmt1"]}')
+    assert _status(503, body) == "503: Mgmt1: Scope 'Mgmt1' not found on destination ..."
+
+
+@pytest.mark.parametrize("body,expected", [
+    (b'{"error": "boom"}', "503: boom"),
+    (b'{"error": {"message": "nested"}}', "503: nested"),
+    (b'{"detail": "x"}', "503: x"),
+    (b'{"message": "m", "detail": "d"}', "503: m"),
+    (b'{"last_error": "", "error": "e"}', "503: e"),            # empty skipped
+    (b'{"error": 5, "message": "m"}', "503: m"),                # non-string skipped
+    (b'{"status": "Error", "n": 1}', '503: {"status": "Error", "n": 1}'),  # raw fallback
+    (b"\n\n  first line  \nsecond\n", "503: first line"),
+    (b"a   b \t c", "503: a b c"),
+    (b"", "503"),
+    (b"   \n ", "503"),
+    (b"\x89PNG\xff\xfe\x00\x01", "503"),                      # not UTF-8
+    (b"\x01\x02\x03\x04abc", "503"),                           # control characters
+])
+def test_status_failure_messages(body, expected):
+    assert _status(503, body) == expected
+
+
+def test_status_failure_long_body_capped_and_never_over_read():
+    resp = _resp(500, b"x" * 20000)
+    with patch("checker.requests.get", return_value=resp):
+        out = checker.probe_http("http://x", "status", 5, True)
+    assert len(out.message) <= 200 and out.message.endswith("…") and out.message.startswith("500: xxx")
+    assert resp.iter_content.side_effect  # chunks are lazy; stop at the limit
+    consumed = []
+    def gen(chunk_size=1024):
+        for _ in range(100):
+            consumed.append(1)
+            yield b"y" * chunk_size
+    resp2 = _resp(500)
+    resp2.iter_content.side_effect = gen
+    with patch("checker.requests.get", return_value=resp2):
+        checker.probe_http("http://x", "status", 5, True)
+    assert len(consumed) * 1024 <= checker.BODY_READ_LIMIT + 1024
+
+
+def test_status_failure_with_cert_condition_keeps_http_message():
+    resp = _resp(503, b'{"error": "boom"}')
+    with patch("checker.requests.get", return_value=resp), \
+            patch("checker._apply_cert_condition", side_effect=lambda r, *a: r):
+        out = checker.probe_http("https://x", "status", 5, True, cert_min_days=14)
+    assert out.message == "503: boom"
 
 
 def test_http_exception_never_raises():

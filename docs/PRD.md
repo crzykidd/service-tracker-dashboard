@@ -63,6 +63,7 @@
 | 0.53    | 2026-11-16 | §15.5 delivered on `dev` (v090-05): `tile_show_host` setting (`duplicates` default, `always`, `never`) shows the host under the name on Tiled tiles, and after it on Compact rows, where the same name exists on another host (`view_helpers.duplicate_name_ids` / `host_label_ids`, computed over all active entries). Compact's old `more than one host` rule replaced. No schema or register-contract change. |
 | 0.54    | 2026-11-16 | §8.9 updated (v090-07, `dev`): exposure badges render once per layer instead of once per `ServiceExposure` row. No schema or register-contract change. |
 | 0.55    | 2026-11-16 | §8.9: exposure badges are the brand logo only; TLS and hostname overlays removed, details moved to the hover text. |
+| 0.56    | 2026-11-16 | §15.6 delivered on `dev` (v090-08): roll-up no longer lets a passing Container check soften failing URL/service checks (all failing = down); status-mode HTTP failures carry the reply's reason (`503: ...`). §13.1, §13.4, §13.6 updated. No schema or register-contract change. |
 
 ---
 
@@ -1349,14 +1350,15 @@ accepts the field and ships first.
 
   | State      | Meaning |
   |------------|---------|
-  | `up`       | every enabled check's last result is ok |
-  | `degraded` | at least one ok and at least one failing |
-  | `down`     | every enabled check that has run is failing |
+  | `up`       | nothing that has run is failing |
+  | `degraded` | some URL/service checks ok and some failing (Container passing) |
+  | `down`     | the Container check is failing, or every URL/service check that has run is failing (even with the container running) |
   | `unknown`  | checks are enabled but none has run yet |
   | `none`     | no enabled checks |
 
   Docker state counts: every notifier entry has an automatic **Container**
-  check (§13.8). The Docker pill and stale icon on the views stay as well.
+  check (§13.8). The Container check counts on its own; the other checks
+  (URL and service) are judged as a group (§13.6, v0.9.0 step 8). The Docker pill and stale icon on the views stay as well.
 
 ### 13.2 Entry sources and manual entries [`v070-01-entry-sources`] — Delivered in v0.7.0
 
@@ -1473,7 +1475,8 @@ both URL rows. The migration test and the interim loop are in
   - `http`: covers HTTP and HTTPS, chosen by the URL scheme. A GET that
     follows redirects, with verify-TLS per check. Two modes:
     - **`status`** (default): an HTTP status below 400 = ok. The
-      message is the status code, or the exception class and text.
+      message is the exception class and text, or for a failing code
+      (400+) `<code>: <reason>` from the body (§15.6), else the code.
     - **`body`**: reads at most 4 KB of the response.
       - Body (trimmed) equals `OK` (case-insensitive) → ok.
       - Body starts with `Error:` → failing, message = the text after
@@ -1597,7 +1600,11 @@ schema change.
 A check counts when it is enabled and has something to probe (a URL check
 whose URL is empty is skipped, since the scheduler never runs it). `none` =
 nothing counts; `unknown` = none has run; otherwise failing checks among those
-that have run decide `down` (all fail), `degraded` (some) or `up` (none).
+that have run decide the state. Since v0.9.0 step 8 (§15.6): a failing
+Container check = `down`; otherwise the URL/service checks form a group
+where all-failing = `down`, some = `degraded`, none = `up`. Every consumer
+(badge, `status` filter, count chips, `/health/summary`, `GET /entries`) goes
+through `entry_health`; `health_summary` no longer has its own rule.
 Checks still waiting for a first run do not hold `up` back. The three view
 handlers share `_load_view_entries()`, which `selectinload`s `checks`, so the
 page query count is flat in entry count (tested). `partials/health_badge.html`
@@ -2238,6 +2245,25 @@ expiry, even though the HTTP status is fine.
   unchanged. Compact: replaces the old `more than one host` rule with the same
   set (`always` approximates the old behavior). The Dashboard table already
   has a Host column and is unchanged.
+- No schema, register-contract or job change.
+
+---
+
+### 15.6 Roll-up and HTTP failure messages [`v090-08-rollup-and-http-messages`] — Delivered on `dev`
+
+- **Roll-up.** `health_state.entry_health`: Container failing = `down`;
+  otherwise URL and service checks that have run are judged as a group
+  (all failing = `down`, some = `degraded`). Container-only entries are
+  unchanged. The duplicate rule in `routes_mgmt_api.health_summary` was
+  replaced with `entry_health(e).state`.
+- **Status-mode message.** A status of 400 or above (threshold unchanged)
+  reads at most `BODY_READ_LIMIT` (4 KB) of the body (`stream=True` now in
+  status mode too; only read on failure; response always closed). JSON object:
+  first non-empty string among `last_error`, `error` (or `error.message`),
+  `message`, `detail`, else the raw text; text: first non-empty line.
+  Format `<code>: <text>`, whitespace collapsed, whole message at most 200
+  characters (`…`); empty, whitespace-only or binary bodies give just the code.
+  Body mode and the cert condition are unchanged.
 - No schema, register-contract or job change.
 
 ---

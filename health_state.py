@@ -8,7 +8,7 @@ dashboard signal.
 
 from dataclasses import dataclass
 
-from models import check_counts
+from models import CHECK_KIND_CONTAINER, check_counts
 
 STATE_UP = "up"
 STATE_DEGRADED = "degraded"
@@ -53,12 +53,17 @@ class EntryHealth:
 def entry_health(entry):
     """Roll `entry`'s checks up into an `EntryHealth`.
 
-    - none: no enabled checks.
-    - unknown: checks enabled, none has run yet.
-    - down: every check that has run is failing.
-    - degraded: at least one ok and at least one failing.
-    - up: no check that has run is failing (checks still waiting for their
-      first run do not hold the state back).
+    The Container check counts on its own; the URL and service checks
+    (http, tcp, ping, dns) are judged as a group. Among checks that count:
+
+    - none: no checks count.
+    - unknown: checks count, none has run yet.
+    - down: the Container check is failing, OR every URL/service check that
+      has run is failing (even when the container is running).
+    - degraded: some URL/service checks pass and some fail.
+    - up: nothing that has run is failing (checks still waiting for their
+      first run do not hold the state back). An entry with only a Container
+      check is up when it passes, down when it fails.
     """
     active = [c for c in entry.checks if check_counts(entry, c)]
     if not active:
@@ -68,9 +73,13 @@ def entry_health(entry):
         return EntryHealth(STATE_UNKNOWN, len(active), 0, ())
     failed = [c for c in ran if not c.last_ok]
     failures = tuple((c.name or c.kind, c.last_message) for c in failed)
-    if not failed:
+    group_ran = [c for c in ran if c.kind != CHECK_KIND_CONTAINER]
+    group_failed = [c for c in group_ran if not c.last_ok]
+    if any(c.kind == CHECK_KIND_CONTAINER and not c.last_ok for c in ran):
+        state = STATE_DOWN
+    elif not group_failed:
         state = STATE_UP
-    elif len(failed) == len(ran):
+    elif len(group_failed) == len(group_ran):
         state = STATE_DOWN
     else:
         state = STATE_DEGRADED

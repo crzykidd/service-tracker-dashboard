@@ -227,10 +227,12 @@ def test_rollup_with_container_check(app):
         up.container_check.last_ok = True
         down = _entry("down", status="exited")
         down.container_check.last_ok = False
-        deg = _entry("deg", internalurl="http://i")
+        deg = _entry("deg", internalurl="http://i", externalurl="http://e")
         deg.container_check.last_ok = True
         deg.url_check("internal").enabled = True
-        deg.url_check("internal").last_ok = False
+        deg.url_check("internal").last_ok = True
+        deg.url_check("external").enabled = True
+        deg.url_check("external").last_ok = False
         off = _entry("off")
         off.container_check.enabled = False
         db.session.commit()
@@ -239,6 +241,73 @@ def test_rollup_with_container_check(app):
         assert "Container" in entry_health(down).tooltip
         assert entry_health(deg).state == "degraded"
         assert entry_health(off).state == "none"
+
+
+def _svc(e, name, ok):
+    c = HealthCheck(service_entry_id=e.id, kind="service", name=name, check_type="tcp",
+                    target="h:1", enabled=True, last_ok=ok)
+    db.session.add(c)
+    db.session.commit()
+    db.session.refresh(e)
+    return c
+
+
+def _url(e, which, ok):
+    c = e.url_check(which)
+    c.enabled, c.last_ok = True, ok
+    db.session.commit()
+    return c
+
+
+def test_rollup_container_up_does_not_soften_failing_url_checks(app):
+    with app.app_context():
+        e = _entry("only-url", internalurl="http://i")
+        e.container_check.last_ok = True
+        _url(e, "internal", False)
+        assert entry_health(e).state == "down"          # used to be degraded
+        # Two group checks, one failing: degraded.
+        _svc(e, "db", True)
+        assert entry_health(e).state == "degraded"
+
+
+def test_rollup_container_down_is_down_whatever_the_urls_say(app):
+    with app.app_context():
+        e = _entry("cdown", internalurl="http://i", status="exited")
+        e.container_check.last_ok = False
+        _url(e, "internal", True)
+        assert entry_health(e).state == "down"
+        alone = _entry("cdown-alone", status="exited")
+        alone.container_check.last_ok = False
+        db.session.commit()
+        assert entry_health(alone).state == "down"
+        up_alone = _entry("cup-alone")
+        up_alone.container_check.last_ok = True
+        db.session.commit()
+        assert entry_health(up_alone).state == "up"
+
+
+def test_rollup_group_judged_only_on_checks_that_have_run(app):
+    with app.app_context():
+        e = _entry("waiting", internalurl="http://i")
+        e.container_check.last_ok = True
+        _url(e, "internal", False)
+        _svc(e, "pending", None)  # not run yet
+        assert entry_health(e).state == "down"
+
+
+def test_status_filter_and_counts_follow_the_new_rollup(app, admin_client):
+    with app.app_context():
+        e = _entry("emmett", internalurl="http://i")
+        e.container_check.last_ok = True
+        _url(e, "internal", False)
+        eid = e.id
+    body = admin_client.get("/?status=failing").get_data(as_text=True)
+    assert ">emmett<" in body and 'data-health="down"' in body
+    assert 'data-health="degraded"' not in body
+    import view_helpers
+    with app.app_context():
+        e = db.session.get(ServiceEntry, eid)
+        assert view_helpers.health_counts([e], True, "all") == {"total": 1, "passing": 0, "failing": 1}
 
 
 # --- edit page ---------------------------------------------------------------
