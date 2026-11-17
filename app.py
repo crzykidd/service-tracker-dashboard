@@ -31,7 +31,7 @@ from routes_dashboard import dashboard_bp
 from routes_mgmt_api import mgmt_bp
 from routes_widgets import widgets_bp
 from settings_loader import CONFIG_DIR, load_settings, mask_value
-from view_helpers import safe_redirect_target
+from view_helpers import exposure_layers, safe_redirect_target
 
 DATABASE_PATH = os.path.join(CONFIG_DIR, 'services.db')
 LOGFILE = os.path.join(CONFIG_DIR, 'std.log')
@@ -159,6 +159,8 @@ def create_app():
             'version_info': app.config['VERSION_INFO'],
             'entry_health': entry_health,
         }
+
+    app.add_template_filter(exposure_layers, 'exposure_layers')
 
     @app.template_filter('time_since')
     def time_since(dt):

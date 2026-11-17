@@ -262,3 +262,52 @@ def host_label_ids(entries, mode):
             if (e.host or "").strip() and getattr(e, "deleted_at", None) is None
         }
     return duplicate_name_ids(entries)
+
+
+def exposure_layers(exposures):
+    """Collapse ServiceExposure rows into one summary per layer, first-seen order.
+
+    Each item: layer, count (raw rows), tls / labeled / auth (true if ANY row),
+    routes (de-duplicated by hostname+path; dicts: route, tls, auth) and title
+    (hover text: "<layer> \u2014 N routes" with the raw row count, then one
+    distinct route per line).
+    """
+    layers = {}
+    for ex in exposures or []:
+        item = layers.setdefault(ex.layer, {
+            "layer": ex.layer, "count": 0, "tls": False, "labeled": False,
+            "auth": False, "routes": [], "_seen": {}})
+        item["count"] += 1
+        auth = ex.auth if ex.auth and ex.auth not in ("none", "") else None
+        tls = bool(ex.tls)
+        item["tls"] = item["tls"] or tls
+        item["labeled"] = item["labeled"] or bool(ex.hostname)
+        item["auth"] = item["auth"] or bool(auth)
+        route = f"{ex.hostname or ''}{ex.path_prefix or ''}"
+        # De-duplicate on the route alone (web + websecure routers share a
+        # hostname); TLS / auth aggregate as "any" across the duplicates.
+        if route in item["_seen"]:
+            existing = item["_seen"][route]
+            existing["tls"] = existing["tls"] or tls
+            existing["auth"] = existing["auth"] or auth
+        else:
+            entry = {"route": route, "tls": tls, "auth": auth}
+            item["_seen"][route] = entry
+            item["routes"].append(entry)
+    out = []
+    for item in layers.values():
+        item.pop("_seen")
+        n = item["count"]
+        lines = [f"{item['layer']} \u2014 {n} route{'s' if n != 1 else ''}"]
+        for r in item["routes"]:
+            if not r["route"]:
+                continue
+            line = r["route"]
+            if r["tls"]:
+                line += " (TLS)"
+            if r["auth"]:
+                line += f" (auth: {r['auth']})"
+            lines.append(line)
+        item["title"] = "\n".join(lines)
+        out.append(item)
+    return out

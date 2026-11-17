@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Exposure icons show once per proxy layer instead of once per route; hover shows the route count and lists them.** A traefik service with several routers used to show the same logo several times. The lock and pencil indicators now mean "any route"; the Settings, Dashboard, Tiled and preview views all use it.
 - **Compact view shows the host only where the name isn't unique.** It now
   follows the new `tile_show_host` setting (default `duplicates`) instead of
   showing the host on every row whenever more than one host exists. Set

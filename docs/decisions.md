@@ -24,6 +24,14 @@ workarounds — newest at top. One entry per decision.
   `_render_tiled(**extra)`.
 - **No JS change needed:** the controls use `window.location.search` and the
   edit link uses `request.full_path`, so the operator stays on the preview.
+- **Exposure badges (v090-07):** one badge per layer (`view_helpers.exposure_layers`,
+  registered as a Jinja filter) in all views; no `×N` count beside the logo
+  (operator call). Hover says `<layer> — N routes` (raw row count) then the
+  routes de-duplicated by hostname+path only, so web/websecure routers on one
+  host give one line; TLS/auth aggregate as "any". In v2 the badges render
+  inside the bottom status row (after the status icons, thin separator),
+  nowrap and clipped rather than pushing the action icons off; the v2 status
+  row gap was tightened to 2px so three badges plus `+N` fit at 390px.
 
 ---
 

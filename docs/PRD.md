@@ -61,6 +61,7 @@
 | 0.51    | 2026-11-16 | §15.3 delivered on `dev` (v090-03): rotate an API key from Settings → API (`api_key.rotated_at`, new key shown once, old key invalid at once), and API key names unique among active keys only (partial index `ux_api_key_name_active`, migration `c2e8a5b3d917`). §14.2 updated. |
 | 0.52    | 2026-11-16 | §15.4 delivered on `dev` (v090-04): Settings → Groups saves the whole table with one `POST /settings/groups/save` (all-or-nothing, per-row errors, delete applies on Save) and warns before leaving with unsaved changes (`static/js/unsaved_guard.js`); `/update_group`, `/add_group`, `/delete_group` removed; per-row Save priority-wipe bug fixed. Group name/icon rules moved to `entry_rules.validate_group`, shared with the management API. No schema or register-contract change. |
 | 0.53    | 2026-11-16 | §15.5 delivered on `dev` (v090-05): `tile_show_host` setting (`duplicates` default, `always`, `never`) shows the host under the name on Tiled tiles, and after it on Compact rows, where the same name exists on another host (`view_helpers.duplicate_name_ids` / `host_label_ids`, computed over all active entries). Compact's old `more than one host` rule replaced. No schema or register-contract change. |
+| 0.54    | 2026-11-16 | §8.9 updated (v090-07, `dev`): exposure badges render once per layer instead of once per `ServiceExposure` row. No schema or register-contract change. |
 
 ---
 
@@ -738,7 +739,10 @@ direction mapping immediately, not on the next register cycle.
 ### 8.9 Badges + headless rendering
 
 Each tile / table row renders up to three exposure badges, one per
-`ServiceExposure` row, capped with a `+N` overflow indicator.
+exposure **layer** (rows of the same layer collapse into one badge;
+`view_helpers.exposure_layers`), capped with a `+N` overflow indicator
+counted in layers. The hover title gives the route count and the distinct
+routes.
 Badge content:
 
 - Layer name (truncated to 8 chars).

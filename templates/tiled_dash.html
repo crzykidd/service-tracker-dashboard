@@ -99,9 +99,9 @@
                             <div class="tile-details">
                                 <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
                                 {% if entry.id in host_label_ids %}<span class="tile-host" title="{{ entry.host }}">{{ entry.host }}</span>{% endif %}
-                                {% with exposures = entry.exposures %}
+                                {% if tile_layout != 'v2' %}{% with exposures = entry.exposures %}
                                   {% include "partials/exposure_badges.html" %}
-                                {% endwith %}
+                                {% endwith %}{% endif %}
                             </div>
 
                             {# Status icon block: two rows (status top, actions bottom) #}
@@ -158,6 +158,11 @@
                                             <i class="ti ti-chart-line" aria-hidden="true"></i>
                                         </button>
                                     {% endif %}
+
+                                    {# v2 only: exposure badges live in the bottom row #}
+                                    {% if tile_layout == 'v2' %}{% with exposures = entry.exposures, exposure_inline = true %}
+                                      {% include "partials/exposure_badges.html" %}
+                                    {% endwith %}{% endif %}
                                 </div>{# /tile-icon-row-status #}
 
                                 <div class="tile-icon-row tile-icon-row-actions">

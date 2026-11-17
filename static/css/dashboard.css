@@ -340,13 +340,29 @@
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   align-self: stretch;
   border-top: 1px solid var(--color-border);
   padding-top: 4px;
 }
-.tile-layout-v2 .tile-icon-row-status { justify-content: flex-start; }
-.tile-layout-v2 .tile-icon-row-actions { justify-content: flex-end; }
+.tile-layout-v2 .tile-icon-row-status { justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
+.tile-layout-v2 .tile-icon-row-actions { justify-content: flex-end; flex: 0 0 auto; }
+/* Exposure badges in the bottom row: after the status icons, thin separator,
+   same 16px-icon baseline; shrinks (clips) rather than pushing actions off. */
+.tile-layout-v2 .exposure-icons-inline {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding-left: 5px;
+  border-left: 1px solid var(--color-border);
+}
+.tile-layout-v2 .exposure-icons-inline .exposure-icon-img { width: 16px; height: 16px; }
+.tile-layout-v2 .exposure-icons-inline .exposure-icon-layer { flex-shrink: 0; gap: 1px; }
+.tile-layout-v2 .exposure-icons-inline .exposure-icon-overflow { flex-shrink: 0; line-height: 1; }
 
 /* ── Tile drawer ──────────────────────────────────────────── */
 .tile-drawer {
