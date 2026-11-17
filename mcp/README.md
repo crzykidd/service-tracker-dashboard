@@ -111,7 +111,8 @@ versions of this script and of your STD, and whether they match).
 Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
 (soft by default), `restore_entry`, `add_check`, `update_check`, `delete_check`,
 `run_checks`, `upsert_group`, `set_widget`, `remove_widget`,
-`set_exposure_settings`, `test_notification_channel`.
+`set_exposure_settings`, `test_notification_channel`, `purge_notification_channel`,
+`purge_entry_notifications`.
 
 `update_entry` and `update_check` take a `fields` object: name only what should
 change, and send `null` to clear a value. Errors come back as tool errors that

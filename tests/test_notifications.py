@@ -48,11 +48,22 @@ class FakeInfo:
         return self.rc == 0
 
 
+def topic_matches(topic_filter, topic):
+    """MQTT wildcard matching (`+` one level, `#` the rest) for the fake broker."""
+    f, t = topic_filter.split("/"), topic.split("/")
+    for i, part in enumerate(f):
+        if part == "#":
+            return True
+        if i >= len(t) or (part != "+" and part != t[i]):
+            return False
+    return len(f) == len(t)
+
+
 class FakeClient:
     """Stands in for paho.mqtt.client.Client. `connect_async` answers at once
     (success, or the failure given by the factory) and records every call."""
 
-    def __init__(self, client_id, outcome="ok", publish_rc=0):
+    def __init__(self, client_id, outcome="ok", publish_rc=0, retained=None):
         self.client_id = client_id
         self.outcome = outcome
         self.publish_rc = publish_rc
@@ -69,17 +80,30 @@ class FakeClient:
         self.on_connect = self.on_disconnect = self.on_connect_fail = None
         self.on_message = None
         self.subscriptions = []
+        self.unsubscribed = []
+        # Messages the "broker" holds retained: [(topic, payload)]. Subscribing
+        # delivers the ones matching the filter, flagged retained (PRD 17.5).
+        self.retained = list(retained or [])
 
     def subscribe(self, topic, qos=0):
         self.subscriptions.append((topic, qos))
+        for stored_topic, stored_payload in list(self.retained):
+            if topic_matches(topic, stored_topic):
+                self.deliver(stored_topic, stored_payload, retain=True)
         return (0, 1)
 
-    def deliver(self, topic, payload):
-        """Simulate an incoming message (the Home Assistant birth message)."""
+    def unsubscribe(self, topic):
+        self.unsubscribed.append(topic)
+        return (0, 1)
+
+    def deliver(self, topic, payload, retain=False):
+        """Simulate an incoming message (the Home Assistant birth message, or a
+        retained message after a subscription)."""
         class Message:
             pass
         message = Message()
         message.topic, message.payload = topic, payload.encode() if isinstance(payload, str) else payload
+        message.retain = retain
         self.on_message(self, None, message)
 
     def username_pw_set(self, username, password=None):

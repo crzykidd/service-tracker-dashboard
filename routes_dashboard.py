@@ -79,6 +79,7 @@ from models import (
     ensure_url_checks,
     hard_delete_entry,
 )
+from notify_purge import PurgeError
 from routes_auth import is_admin_required
 from settings_loader import CONFIG_DIR
 from view_helpers import (
@@ -904,6 +905,34 @@ def test_notification_channel_form():
     return jsonify({'ok': ok, 'message': message})
 
 
+def _purge_response(call, *args):
+    try:
+        result = call(*args)
+    except PurgeError as exc:
+        return jsonify({'ok': False, 'message': exc.message}), exc.status
+    return jsonify({'ok': True, **result})
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/purge', methods=['POST'])
+@login_required
+@is_admin_required
+def purge_notification_channel(id):
+    """Clear every retained STD topic and discovery config on a channel's broker.
+    The Notifications tab posts this with fetch and shows the counts inline."""
+    channel = db.get_or_404(NotificationChannel, id)
+    republish = request.form.get('republish', '') not in ('', '0', 'false')
+    return _purge_response(notify.purge_channel, channel.id, republish)
+
+
+@dashboard_bp.route('/edit/<int:id>/purge-notifications', methods=['POST'])
+@login_required
+@is_admin_required
+def purge_entry_notifications(id):
+    """Purge this entry's MQTT topics and Home Assistant device, then republish it."""
+    entry = db.get_or_404(ServiceEntry, id)
+    return _purge_response(notify.purge_entry, entry.id)
+
+
 @dashboard_bp.route('/settings/notifications/status', methods=['GET'])
 @login_required
 @is_admin_required
@@ -1367,7 +1396,9 @@ def edit_entry(id):
                                form=form,
                                url_rows=url_rows,
                                svc_rows=svc_rows,
-                               container_row=container_row)
+                               container_row=container_row,
+                               notifications_enabled=NotificationChannel.query.filter_by(
+                                   enabled=True).first() is not None)
 
     # Handle form submission
     if request.method == 'POST':

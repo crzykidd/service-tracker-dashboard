@@ -20,6 +20,7 @@ import json
 import logging
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 from pydantic import (
@@ -186,6 +187,7 @@ class MqttSession:
         self._error = None
         self._since = datetime.now(timezone.utc)
         self._stopping = False
+        self._collector = None     # set while collect_retained() listens (see there)
 
     # -- state --------------------------------------------------------------
 
@@ -280,6 +282,11 @@ class MqttSession:
         """Home Assistant restarted (`<ha_prefix>/status` = `online`): ask for a
         full republish of configs, then states."""
         try:
+            collector = self._collector
+            if collector is not None and getattr(message, "retain", False):
+                with self._lock:
+                    collector["topics"].add(message.topic)
+                    collector["last"] = time.monotonic()
             if message.topic != self.ha_status_topic():
                 return
             payload = message.payload
@@ -288,6 +295,36 @@ class MqttSession:
                 self._on_ha_online(self)
         except Exception:
             logger.exception("MQTT message handler failed for channel '%s'", self.name)
+
+    def collect_retained(self, filters, settle, quiet, max_wait):
+        """Subscribe to `filters` and return the set of topics that arrive with the
+        retained flag (the broker's stored messages, delivered right after the
+        subscription). Waits at least `settle` seconds, then until `quiet` seconds
+        pass without a retained message, never longer than `max_wait`. Blocks the
+        caller (the publisher thread); unsubscribes before returning."""
+        client = self._client
+        start = time.monotonic()
+        collector = {"topics": set(), "last": start}
+        self._collector = collector
+        try:
+            for topic_filter in filters:
+                client.subscribe(topic_filter, qos=self.config["qos"])
+            while True:
+                time.sleep(0.05)
+                now = time.monotonic()
+                with self._lock:
+                    last = collector["last"]
+                if now - start >= max_wait or (now - start >= settle and now - last >= quiet):
+                    break
+        finally:
+            self._collector = None
+            for topic_filter in filters:
+                try:
+                    client.unsubscribe(topic_filter)
+                except Exception as exc:
+                    logger.debug("MQTT channel '%s': unsubscribe failed: %s", self.name, exc)
+        with self._lock:
+            return set(collector["topics"])
 
     def _handle_disconnect(self, client, userdata, disconnect_flags, reason_code=None, properties=None):
         if self._stopping:

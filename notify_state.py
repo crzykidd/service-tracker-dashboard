@@ -193,6 +193,9 @@ class PublishState:
         # the last text sent for each (in memory).
         self.ha_topics: dict = {}
         self.ha_payloads: dict = {}
+        # Channel ids purged without "republish" (PRD 17.5): skipped by every
+        # publish until something changes or the channel reconnects. In memory.
+        self.held: set = set()
 
     def load(self):
         """Read the persisted part once (needs an app context)."""
@@ -252,6 +255,8 @@ def publish_changes(publisher, check_ids):
         return 0
     state = publisher.state
     state.load()
+    if state.held:
+        publisher.request_sync()        # a change ends a purge hold (PRD 17.5)
     now = _now()
     checks = HealthCheck.query.filter(HealthCheck.id.in_(ids)).all()
     sent = 0
@@ -342,7 +347,7 @@ def sync_discovery(publisher, state, force):
     import notify_ha
     from models import NotificationChannel
 
-    sessions = publisher.sessions()
+    sessions = [(cid, s) for cid, s in publisher.sessions() if cid not in state.held]
     published = cleared = 0
     if sessions or state.ha_topics:
         known = {str(c.id) for c in NotificationChannel.query.all()}

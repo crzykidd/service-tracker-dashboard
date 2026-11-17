@@ -159,6 +159,50 @@
       </div>
     </form>
 
+    {% if notifications_enabled %}
+    {# ── Purge and republish to MQTT / Home Assistant (PRD 17.5) ── #}
+    <div id="notify-purge" class="bg-dashboard-info-box rounded-lg p-6 mt-8">
+      <h2 class="text-lg font-semibold text-dashboard-primary mb-1">MQTT and Home Assistant</h2>
+      <p class="text-xs text-dashboard-secondary mb-3">
+        Removes this entry's state and check topics and its Home Assistant device from every enabled channel,
+        waits a couple of seconds, then publishes them again. Home Assistant recreates the device with fresh
+        entity ids, which is the way to apply a rename. If the entry is not published to Home Assistant, only its
+        MQTT topics are cleared and republished.
+      </p>
+      <button type="button" id="notify-purge-btn"
+              data-url="{{ url_for('dashboard.purge_entry_notifications', id=entry.id) }}"
+              class="px-4 py-2 rounded bg-dashboard-accent hover:opacity-90 text-sm font-semibold">
+        <i class="ti ti-refresh" aria-hidden="true"></i> Purge and republish to MQTT/HA
+      </button>
+      <span id="notify-purge-result" class="ml-3 text-sm" role="status"></span>
+    </div>
+    <script>
+      (function () {
+        const btn = document.getElementById('notify-purge-btn');
+        const out = document.getElementById('notify-purge-result');
+        btn.addEventListener('click', async () => {
+          if (!confirm('Purge this entry from MQTT and Home Assistant and publish it again? Home Assistant will recreate its device and entities.')) return;
+          btn.disabled = true;
+          out.textContent = 'Purging...';
+          try {
+            const resp = await fetch(btn.dataset.url, {
+              method: 'POST', credentials: 'same-origin',
+              headers: { 'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+            });
+            const data = await resp.json();
+            out.textContent = data.ok
+              ? 'Cleared ' + data.topics_cleared + ' topics on ' + data.channels.length + ' channel(s) and republished.'
+              : 'Failed: ' + data.message;
+          } catch (err) {
+            out.textContent = 'Failed: could not reach STD (' + err + ').';
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      })();
+    </script>
+    {% endif %}
+
     {# ── Health history (PRD 13.7) ─────────────────────────── #}
     <hr class="my-10 border-dashboard-accent">
     <div id="health-history" class="bg-dashboard-info-box rounded-lg p-6">

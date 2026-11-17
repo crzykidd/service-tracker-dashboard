@@ -51,6 +51,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `binary_sensor.std_*`; the group, host, source, check type and target are
   attributes. Unticked, deleted or disabled entries and checks are cleared from
   Home Assistant, and everything is republished when Home Assistant restarts.
+- **Notifications: purge MQTT and Home Assistant.** A clean-slate tool for when
+  retained messages or Home Assistant devices have piled up or gone stale.
+  **Settings → Notifications → Purge MQTT and Home Assistant** (per channel,
+  with a confirm dialog and a **Republish afterwards** box, on by default)
+  removes every retained STD message under the channel's base topic and every
+  STD discovery config (Home Assistant devices and entities) from that broker,
+  then shows how many topics it cleared. Only this STD install's Home Assistant
+  devices are touched, and `<base>/status` is left alone. With republish on, STD
+  publishes everything again after about 2 seconds, so Home Assistant recreates
+  the devices; with it off the broker stays empty until something changes or the
+  channel reconnects. On an entry's edit page, **Purge and republish to
+  MQTT/HA** does the same for just that entry on every channel, which gives it
+  fresh entity ids in Home Assistant (for example after a rename). Both are in
+  the management API (`POST /api/v1/notifications/channels/<id>/purge`,
+  `POST /api/v1/entries/<id>/notifications/purge`) and the MCP server
+  (`purge_notification_channel`, `purge_entry_notifications`).
 - **More attributes on published state.** The entry state topic adds
   `std_entry_id`; the check topic adds `std_entry_id`, `entry_name`, `host`,
   `group`, `source` and `dashboard_url`.

@@ -75,6 +75,7 @@
 | 0.65    | 2026-11-16 | §17.3 delivered on `dev` (notif-02): retained state publishing. The topic and payload contract (`<base>/entry/<entry_id>/state`, `.../check/<check_id>`, `<base>/summary`) is public and documented in §17.3; change detection at `jobs.record_check_result()`, the `full_sync()` reconcile in new `notify_state.py` (connect, debounced mutation requests via a commit listener, a 10-minute forced safety net), published set persisted in the `setting` key `notify_publish_state` (§5.8); §3.1 and §3.2 updated. §17.4 remains planned. No register-contract change. |
 | 0.66    | 2026-11-16 | §17.4 delivered on `dev` (notif-03): Home Assistant MQTT discovery. New `notify_ha.py`; discovery configs reconcile through `notify_state.full_sync()` (configs before states, per-channel published set in `notify_publish_state.ha`, cleared on opt-out/delete/purge/discovery off), birth-message subscription `<ha_prefix>/status` in `MqttSession`, additive state-payload attributes (`std_entry_id`, and `entry_name`/`host`/`group`/`source`/`dashboard_url` on checks), `ha_exclude` on `service_entry` and `health_check` (migration `d8e2a6f4b915`, new §5.9), Settings/edit-page controls, management API and MCP fields. §17 marked Delivered on `dev`. No register-contract change. |
 | 0.67    | 2026-11-17 | §17.1/§17.4/§5.9 (notif-04, on `dev`): Home Assistant entries become opt-in (`service_entry.ha_publish`, default false; migration `e3b7c1d9a204` drops `service_entry.ha_exclude`, every entry starts unpublished; checks keep `ha_exclude`). Device names and `default_entity_id` include the host (`<prefix> <name> (<host>)`). Settings → Notifications "Home Assistant entries" bulk picker, `ha_publish` on the Add page, management API (`ha_publish` on entries) and MCP, `ha_publish`/check `ha_exclude` in backups. No register-contract change. |
+| 0.68    | 2026-11-17 | §17.5 delivered on `dev` (notif-05): purge. New `notify_purge.py` (§3.1); channel purge (subscribe to `<base>/#` and this instance's `<ha_prefix>/+/std_<inst>/#`, clear retained + tracked topics except `<base>/status`, optional republish with a hold when off) and per-entry purge-and-republish on every channel, run on the publisher thread via `Publisher.call()`; Settings → Notifications button with confirm dialog, entry edit page button, management API `POST /notifications/channels/{id}/purge` and `POST /entries/{id}/notifications/purge`, MCP tools. The periodic safety net no longer releases a held channel. No schema or register-contract change. |
 
 ---
 
@@ -211,6 +212,8 @@ notify_state.py     ← retained state publishing: topic/payload builders,
 notify_mqtt.py      ← MQTT channel type: pydantic config, paho session
                       (LWT/availability, HA birth subscription), test message
 notify_ha.py        ← Home Assistant discovery config builders (§17.4)
+notify_purge.py     ← channel-wide and per-entry purge of retained topics and
+                      HA devices, run on the publisher thread (§17.5)
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
                       /settings/exposure, /add, /edit/<id>, group CRUD,
                       /images/<filename>
@@ -2631,6 +2634,50 @@ check) and the three `ha_*` channel config keys; the MCP `create_manual_entry`
 
 Out of scope, parked in FUTURE.md: a "Check now" button entity (needs a
 security review) and per-result latency sensors.
+
+### 17.5 Purge [`notif-05-purge`] — Delivered on `dev`
+
+Two clean-slate tools, implemented in `notify_purge.py` and run on the publisher
+thread (`Publisher.call()`): the request thread only queues the job and waits up
+to 15 s for the counts (409 when the publisher is not running, 504 on timeout).
+No new table, setting or migration.
+
+**Channel purge.** For one enabled, connected channel the session subscribes
+briefly (at least 1 s, until 0.6 s pass without a retained message, at most 6 s)
+to `<base>/#` and `<ha_prefix>/+/<node>/#`, where `<node>` is this instance's
+`std_<8 hex>` id (§17.4), so another STD install's devices are never touched.
+Every topic that arrives with the retained flag, plus every topic in the
+persisted published set for that channel, gets an empty retained payload,
+**except `<base>/status`** (the last will). The channel's discovery bookkeeping
+(`notify_publish_state.ha`) is cleared; the state-topic set (`topics`,
+`payloads`) is one set shared by all channels and is emptied only when this is
+the only live channel. Result: `topics_cleared`, `state_topics`,
+`discovery_topics`, `republished`. Option `republish` (default true): true waits
+2 s for Home Assistant, then runs a forced `full_sync()`; false puts the channel
+on a **hold** (`PublishState.held`, in memory): every publish skips it until
+something changes (any sync request from a commit or a health change releases it
+and forces a full republish) or it reconnects. The 10-minute safety net runs
+with `keep_held` and does not release it.
+
+**Entry purge.** For one entry, on every live session: its state topic, every
+check topic (all checks of the entry, enabled or not, plus any remembered) and
+its discovery configs (`entry_<id>_state`, `check_<id>`) get an empty retained
+payload and are dropped from the published sets; after 2 s a non-forced
+`full_sync()` publishes whatever is still desired, so Home Assistant recreates
+the device with fresh entity ids. An entry that is not opted in (`ha_publish`)
+or is soft-deleted gets no discovery configs back; an opted-in active entry
+gets state topics and configs. Result: `entry_id`, `topics_cleared`,
+`channels[{id, name, state_topics, discovery_topics}]`, `republished`.
+
+**UI, API, MCP.** Settings → Notifications has **Purge MQTT and Home
+Assistant** per channel (confirm dialog with **Republish afterwards**, counts
+inline); the entry edit page has **Purge and republish to MQTT/HA** when a
+channel is enabled. Both are POST, CSRF-protected and admin only
+(`/settings/notifications/<id>/purge`, `/edit/<id>/purge-notifications`).
+Management API (write scope; error shape as elsewhere, 404/409/504):
+`POST /api/v1/notifications/channels/<id>/purge` (body optional,
+`{republish: bool}`) and `POST /api/v1/entries/<id>/notifications/purge`; MCP
+tools `purge_notification_channel` and `purge_entry_notifications`.
 
 ---
 

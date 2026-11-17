@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
+import notify_purge
 import notify_state
 import settings_store
 from extensions import db
@@ -44,6 +45,7 @@ SYNC_DEBOUNCE_SECONDS = 2
 SYNC_SAFETY_NET_MINUTES = 10
 NAME_MAX = 64
 SECRET_MAX = 256
+JOB_TIMEOUT_SECONDS = 15   # how long a request waits for the publisher to finish a purge
 
 CHANNEL_TYPES = {MqttChannelType.type: MqttChannelType}
 
@@ -85,7 +87,9 @@ def client_factory():
 def _on_connected(session):
     # Runs on the paho network thread: only ask the publisher thread for a full
     # republish (state publishing, PRD 17.3); it does the database work.
-    request_sync(force=True)
+    # A (re)connect ends a "purge without republish" hold on this channel.
+    _publisher.state.held.discard(session.channel_id)
+    request_sync(force=True, keep_held=True)
     for hook in list(on_connect_hooks):
         try:
             hook(session)
@@ -117,6 +121,7 @@ class Publisher:
         self._sync_lock = threading.Lock()
         self._sync_due = None            # monotonic time the pending sync may run
         self._sync_force = False
+        self._jobs = queue.Queue()       # purge jobs, run by the publisher thread
 
     # producers ----------------------------------------------------------------
 
@@ -176,11 +181,19 @@ class Publisher:
         if self.running:
             self._reload.set()
 
-    def request_sync(self, force=False):
+    def request_sync(self, force=False, keep_held=False):
         """Ask for a reconcile of the retained state topics (PRD 17.3). Cheap and
         non-blocking; requests inside the debounce window collapse into one run.
-        `force` republishes every topic instead of only what changed."""
+        `force` republishes every topic instead of only what changed.
+
+        A channel purged without republishing (PRD 17.5) is held empty until
+        something changes: any request releases it, and releasing forces a full
+        republish. The periodic safety net passes `keep_held=True` so it does not
+        undo a purge."""
         with self._sync_lock:
+            if not keep_held and self.state.held:
+                self.state.held.clear()
+                force = True
             self._sync_force = self._sync_force or force
             if self._sync_due is None:
                 self._sync_due = time.monotonic() + SYNC_DEBOUNCE_SECONDS
@@ -205,6 +218,33 @@ class Publisher:
                 logger.exception("Notification state sync failed")
                 return None
 
+    def call(self, fn, timeout=None):
+        """Run `fn(publisher)` on the publisher thread (inside an app context) and
+        wait for its result. For the purge requests: the request thread only queues
+        the job and waits up to `timeout` seconds (default JOB_TIMEOUT_SECONDS).
+        Raises `notify_purge.PurgeError`."""
+        if not self.running:
+            raise notify_purge.PurgeError(409, "The notification publisher is not running.")
+        job = notify_purge.Job(fn)
+        self._jobs.put(job)
+        wait = JOB_TIMEOUT_SECONDS if timeout is None else timeout
+        if not job.done.wait(wait):
+            raise notify_purge.PurgeError(
+                504, f"The publisher did not finish within {wait:g} seconds; the purge may still complete.")
+        if job.error is not None:
+            raise job.error
+        return job.result
+
+    def run_jobs_now(self, app=None):
+        """Run every queued job (publisher thread; tests call it directly)."""
+        app = app or self._app
+        while True:
+            try:
+                job = self._jobs.get_nowait()
+            except queue.Empty:
+                return
+            job.run(self, app)
+
     def has_sessions(self) -> bool:
         with self._lock:
             return bool(self._sessions)
@@ -228,6 +268,7 @@ class Publisher:
                     self.reload_now(self._app)
                 except Exception:
                     logger.exception("Notification channel reload failed")
+            self.run_jobs_now(self._app)
             due = self._sync_due
             if due is not None and time.monotonic() >= due:
                 self.run_sync_now(self._app)
@@ -252,8 +293,9 @@ class Publisher:
 
     def dispatch(self, event):
         """Hand one event to every live session (publisher thread)."""
+        held = self.state.held
         with self._lock:
-            sessions = [s for _, s in self._sessions.values()]
+            sessions = [s for cid, (_, s) in self._sessions.items() if cid not in held]
         for session in sessions:
             try:
                 CHANNEL_TYPES[session.type].publish(session, event)
@@ -338,9 +380,27 @@ def request_reload():
     _publisher.request_reload()
 
 
-def request_sync(force=False):
+def request_sync(force=False, keep_held=False):
     """Mutation paths and the periodic safety net call this; see Publisher.request_sync."""
-    _publisher.request_sync(force)
+    _publisher.request_sync(force, keep_held)
+
+
+def safety_net_sync():
+    """The periodic forced reconcile; leaves a purged-and-held channel empty."""
+    _publisher.request_sync(True, keep_held=True)
+
+
+def purge_channel(channel_id, republish=True):
+    """Clear every retained STD topic and discovery config on one channel's broker
+    (PRD 17.5). Queues the work for the publisher thread and waits for the counts.
+    Raises `notify_purge.PurgeError`."""
+    return _publisher.call(lambda pub: notify_purge.purge_channel(pub, channel_id, republish))
+
+
+def purge_entry(entry_id):
+    """Purge one entry's topics and Home Assistant device on every channel, then
+    republish it. Raises `notify_purge.PurgeError`."""
+    return _publisher.call(lambda pub: notify_purge.purge_entry(pub, entry_id))
 
 
 def publish_changes(check_ids):

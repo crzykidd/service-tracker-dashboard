@@ -5,6 +5,48 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — notif-05 purge MQTT and Home Assistant
+
+- **"Republish: false" holds the channel, it does not untick `ha_discovery`.**
+  Unticking would change the operator's config behind their back and covers
+  only discovery, not the state topics. Instead `PublishState.held` (a set of
+  channel ids, in memory) makes every publish skip that channel until
+  something changes: any `request_sync()` (commit listener, health change via
+  `publish_changes`) releases it, and a (re)connect releases that channel.
+  Releasing forces a full republish, because the payload cache is shared and
+  would otherwise make a non-forced sync think the channel is current. A restart
+  also ends the hold (connect republishes), which is the unsurprising outcome.
+- **The 10-minute safety net must not undo a purge.** It was a forced sync
+  that would have republished within minutes, defeating "leave the broker
+  empty". It now calls `notify.safety_net_sync()` (`keep_held=True`), which
+  syncs the other channels and leaves held ones alone.
+- **State-topic bookkeeping is shared across channels.** `topics` and
+  `payloads` have no per-channel key (state events go to every session), so a
+  channel purge empties them only when it is the only live channel; with
+  several, they stay (the other brokers still have those topics) and the forced
+  or release-time sync republishes to the purged one. Splitting the set per
+  channel was rejected as a larger change than this feature needs.
+- **Waits.** Collecting the retained burst waits at least 1 s, until 0.6 s of
+  quiet, at most 6 s (the broker gives no end-of-burst marker). The 2 s
+  pause before republishing is Home Assistant's processing time, per the task.
+  Worst case for a channel purge is about 6 + 2 s, under the request's 15 s
+  wait. A timeout is a 504 and the job still finishes on the publisher thread.
+- **Channel purge reaches the whole base topic.** Everything under
+  `<base>/#` is cleared, not only STD's known topics: the base topic carries no
+  instance id, so two STD installs sharing a base topic would clear each other
+  (they would already fight over `<base>/status`). Home Assistant configs, which do
+  carry the instance node id, are filtered to this instance only.
+- **Entry purge clears every check of the entry**, enabled or not, plus
+  remembered topics, because a disabled or opted-out check may still have a
+  retained topic or config. It also clears the entry's discovery topics
+  defensively when the entry is not opted in (nothing is republished).
+- **API scope.** The management API has only `read` and `write` scopes (an
+  "admin API key" is the write scope), so both routes are `write`.
+- **Purge UI uses fetch + JSON** (inline counts, no page reload) and a native
+  `<dialog>` for the confirm so the Republish checkbox can sit in it.
+
+---
+
 ## 2026-11-17 — notif-04 Home Assistant entries are opt-in; host in device names
 
 - **Opt-in, not opt-out.** notif-03 published every entry once "Add to Home

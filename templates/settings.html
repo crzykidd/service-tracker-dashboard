@@ -684,6 +684,7 @@
             <td class="py-2 px-3">
               <span class="notification-state font-semibold" data-state="{{ ch.status.state }}">{{ ch.status.state }}</span>
               <div class="notification-error text-xs text-red-300">{{ ch.status.last_error or '' }}</div>
+              <div class="notification-purge-result text-xs text-gray-300" role="status"></div>
             </td>
             <td class="py-2 px-3 text-right whitespace-nowrap">
               <button type="button" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
@@ -692,6 +693,10 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">{{ 'Disable' if ch.enabled else 'Enable' }}</button>
               </form>
+              <button type="button" class="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-white text-xs"
+                      data-notification-purge="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+                      data-purge-url="{{ url_for('dashboard.purge_notification_channel', id=ch.id) }}"
+                      title="Remove every retained STD message and Home Assistant discovery config from this broker">Purge MQTT and Home Assistant</button>
               <form method="POST" action="{{ url_for('dashboard.delete_notification_channel', id=ch.id) }}" class="inline"
                     onsubmit="return confirm('Delete notification channel {{ ch.name|e }}?');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -705,6 +710,20 @@
       {% else %}
         <p class="text-gray-400 mb-6" id="notification-empty">No notification channels yet. Add an MQTT broker below.</p>
       {% endif %}
+
+      <dialog id="purge-dialog" class="bg-gray-800 text-gray-200 rounded shadow p-6 max-w-lg">
+        <h3 class="text-lg font-semibold text-white mb-2">Purge MQTT and Home Assistant: <span id="purge-name"></span></h3>
+        <p class="text-sm mb-3">Removes every retained STD message under this channel's base topic and every STD discovery config
+          (Home Assistant devices and entities) from the broker. Other STD installs and the availability topic
+          (<code>&lt;base&gt;/status</code>) are left alone. Use it to start clean; to redo a single entry use the button on its edit page.</p>
+        <label class="flex items-center text-sm mb-4"><input type="checkbox" id="purge-republish" class="mr-2" checked>
+          Republish afterwards (after about 2 seconds, so Home Assistant recreates the devices with fresh entity ids)</label>
+        <p class="text-xs text-gray-400 mb-4">Unticked, the broker stays empty until something changes or the channel reconnects.</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" id="purge-cancel" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">Cancel</button>
+          <button type="button" id="purge-confirm" class="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-white text-sm">Purge</button>
+        </div>
+      </dialog>
 
       {% set nf = notification_form or {} %}
       <form method="POST" action="{{ url_for('dashboard.save_notification_channel') }}" id="notification-form"
@@ -1084,6 +1103,45 @@
       }
     });
     $('nf-reset').addEventListener('click', () => fill(null));
+
+    // Purge MQTT and Home Assistant (PRD 17.5): a confirm dialog with a
+    // "republish afterwards" box (default on), then the counts inline.
+    const purgeDialog = $('purge-dialog');
+    let purgeBtn = null;
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-notification-purge]');
+      if (!btn) return;
+      purgeBtn = btn;
+      $('purge-name').textContent = btn.dataset.channelName;
+      $('purge-republish').checked = true;
+      purgeDialog.showModal();
+    });
+    $('purge-cancel').addEventListener('click', () => purgeDialog.close());
+    $('purge-confirm').addEventListener('click', async () => {
+      const btn = purgeBtn;
+      const republish = $('purge-republish').checked;
+      purgeDialog.close();
+      if (!btn) return;
+      const out = btn.closest('tr').querySelector('.notification-purge-result');
+      btn.disabled = true;
+      out.textContent = 'Purging... (up to 15 seconds)';
+      try {
+        const body = new FormData();
+        body.append('republish', republish ? '1' : '0');
+        const resp = await fetch(btn.dataset.purgeUrl, {
+          method: 'POST', headers: { 'X-CSRFToken': csrf() }, body, credentials: 'same-origin',
+        });
+        const data = await resp.json();
+        out.textContent = data.ok
+          ? 'Cleared ' + data.topics_cleared + ' topics (' + data.state_topics + ' state, ' +
+            data.discovery_topics + ' discovery); ' + (data.republished ? 'republished.' : 'not republished.')
+          : 'Purge failed: ' + data.message;
+      } catch (err) {
+        out.textContent = 'Purge failed: could not reach STD (' + err + ').';
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     // Re-render after a failed save keeps the typed values; only show the password hint.
     const savedId = $('nf-channel-id').value;

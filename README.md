@@ -652,6 +652,8 @@ token.
 | PATCH | `/api/v1/notifications/channels/{id}` | write | Edit a notification channel |
 | DELETE | `/api/v1/notifications/channels/{id}` | write | Delete a notification channel |
 | POST | `/api/v1/notifications/channels/{id}/test` | write | Send a test message through a channel |
+| POST | `/api/v1/notifications/channels/{id}/purge` | write | Purge a channel's retained MQTT topics and Home Assistant devices |
+| POST | `/api/v1/entries/{id}/notifications/purge` | write | Purge an entry's MQTT topics and Home Assistant device, then republish it |
 | GET | `/api/v1/config` | read | Effective configuration (read-only) |
 
 Ids are the numeric ids shown in the API output. Write endpoints that create
@@ -859,6 +861,36 @@ and checks are removed from Home Assistant, as is everything when you untick
 **Add to Home Assistant** is on. Delete
 a channel only after unticking it, or its devices stay behind. When Home
 Assistant restarts, STD republishes everything.
+
+#### Purge and republish
+
+Two clean-slate tools, both admin only, for when Home Assistant shows stale
+devices or old entity ids:
+
+- **Settings → Notifications → Purge MQTT and Home Assistant** (per channel)
+  empties the broker of STD: every retained message under the channel's base
+  topic and every STD discovery config (this STD install's devices only;
+  other STD installs and other Home Assistant devices are left alone, and so is
+  `<base topic>/status`). The confirm dialog has **Republish afterwards**, on
+  by default: STD waits about 2 seconds for Home Assistant to process the
+  removals and publishes everything again, so devices come back as new. Turn it
+  off to leave the broker empty (for example before removing STD); it stays
+  empty until something changes or the channel reconnects, and the periodic
+  10-minute republish does not undo it. The result (topics cleared, state and
+  discovery) shows next to the channel. The channel must be enabled and
+  connected.
+- **Purge and republish to MQTT/HA** on an **entry's edit page** (shown when a
+  channel is enabled) does this for one entry on every channel: its state
+  topic, check topics and device are removed, then published again. Use it
+  after renaming an entry, since Home Assistant keeps entity ids it has
+  already registered; the recreated device gets fresh ones. An entry that is
+  not published to Home Assistant only has its state topics cleared and
+  republished.
+
+The same actions are `POST /api/v1/notifications/channels/<id>/purge`
+(`{"republish": true}`) and `POST /api/v1/entries/<id>/notifications/purge` in
+the management API, and the `purge_notification_channel` and
+`purge_entry_notifications` MCP tools (write key). They take several seconds.
 
 Example [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
 cards:

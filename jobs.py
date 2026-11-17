@@ -723,7 +723,7 @@ def start_background_workers(app):
         replace_existing=True
     )
     scheduler.add_job(
-        partial(notify.request_sync, True),
+        notify.safety_net_sync,
         IntervalTrigger(minutes=notify.SYNC_SAFETY_NET_MINUTES),
         id='notify_state_sync_job',
         name='Republish retained notification state (safety net)',

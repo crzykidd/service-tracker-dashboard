@@ -179,6 +179,14 @@ class NotificationChannelPatch(_Request):
     secret: str | None = None
 
 
+class NotificationPurgeRequest(_Request):
+    """Purge a channel's broker. `republish` (default true) publishes the current
+    state and discovery configs again after about 2 seconds; false leaves the
+    broker empty until something changes or the channel reconnects."""
+
+    republish: bool = True
+
+
 class ExposureSettingsPut(_Request):
     layer_directions: dict[str, str]
     host_overrides: dict[str, dict[str, str]] = {}
@@ -507,6 +515,28 @@ class NotificationChannelOut(TypedDict):
 class NotificationTestOut(TypedDict):
     ok: bool
     message: str                     # what happened; never contains the secret
+
+
+class NotificationPurgeOut(TypedDict):
+    channel_id: int
+    topics_cleared: int
+    state_topics: int                # under the channel's base topic
+    discovery_topics: int            # Home Assistant discovery configs
+    republished: bool
+
+
+class PurgeChannelCountOut(TypedDict):
+    id: int
+    name: str
+    state_topics: int
+    discovery_topics: int
+
+
+class EntryPurgeOut(TypedDict):
+    entry_id: int
+    topics_cleared: int
+    channels: list[PurgeChannelCountOut]
+    republished: bool
 
 
 class NotificationChannelDeleteOut(TypedDict):

@@ -53,6 +53,7 @@ from mgmt_schemas import (
     GroupPatch,
     NotificationChannelCreate,
     NotificationChannelPatch,
+    NotificationPurgeRequest,
     ServiceCheckCreate,
     UpdateCheckSettingsPut,
     WidgetPut,
@@ -84,6 +85,7 @@ from models import (
     ensure_url_checks,
     hard_delete_entry,
 )
+from notify_purge import PurgeError
 from view_helpers import VALID_STATUS_FILTERS, matches_status
 
 logger = logging.getLogger(__name__)
@@ -1357,6 +1359,43 @@ def test_notification_channel(id):
     ok, message = notify.test_channel(channel.type, dict(channel.config or {}), channel.secret)
     audit("notification_channel", id, {"test": [None, "ok" if ok else "failed"]})
     return jsonify({"ok": ok, "message": message})
+
+
+def _purge_error(exc):
+    return json_error(exc.status, exc.message)
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/purge", methods=["POST"])
+@require_api_key("write")
+def purge_notification_channel(id):
+    """Clean slate for one channel's broker (PRD 17.5). The body is optional."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    raw = request.get_json(silent=True) if request.data else {}
+    if not isinstance(raw, dict):
+        abort(400, "Send a JSON object as the request body.")
+    data = NotificationPurgeRequest.model_validate(raw)
+    try:
+        result = notify.purge_channel(channel.id, data.republish)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"purge": [None, {"topics_cleared": result["topics_cleared"],
+                                                         "republish": data.republish}]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/entries/<int:id>/notifications/purge", methods=["POST"])
+@require_api_key("write")
+def purge_entry_notifications(id):
+    """Purge one entry's topics and Home Assistant device, then republish it."""
+    entry = _load_entry(id)
+    audit("entry", id)
+    try:
+        result = notify.purge_entry(entry.id)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("entry", id, {"notification_purge": [None, {"topics_cleared": result["topics_cleared"]}]})
+    return jsonify(result)
 
 
 _SECRET_SUFFIXES = ("_key", "_token", "_password", "_secret")

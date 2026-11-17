@@ -37,6 +37,7 @@ WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
     "update_check", "delete_check", "run_checks", "upsert_group", "set_widget",
     "remove_widget", "set_exposure_settings", "test_notification_channel",
+    "purge_notification_channel", "purge_entry_notifications",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -55,6 +56,10 @@ CALLS = {
                                    {"limit": "200", "offset": "0"}, None),
     "get_notification_channel": ({"channel_id": 4}, "GET", "/api/v1/notifications/channels/4", {}, None),
     "test_notification_channel": ({"channel_id": 4}, "POST", "/api/v1/notifications/channels/4/test", {}, None),
+    "purge_notification_channel": ({"channel_id": 4, "republish": False}, "POST",
+                                   "/api/v1/notifications/channels/4/purge", {}, {"republish": False}),
+    "purge_entry_notifications": ({"entry_id": 7}, "POST", "/api/v1/entries/7/notifications/purge",
+                                  {}, None),
     "create_manual_entry": (
         {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000",
          "checks": [{"target": "nas.lan", "check_type": "ping"}]},

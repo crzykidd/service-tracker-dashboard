@@ -188,6 +188,24 @@ OPERATIONS: tuple = (
        description="Connects with the stored settings and publishes a non-retained JSON message to "
                    "`<base_topic>/test`. Takes up to about 13 seconds. A failed test is a 200 with "
                    "`ok: false` and the reason in `message`."),
+    Op("POST", "/notifications/channels/{id}/purge", "write",
+       "Purge a channel's retained MQTT topics and Home Assistant devices", S.NotificationPurgeOut,
+       request=S.NotificationPurgeRequest, errors=(404, 409, 504),
+       description="Clean slate: publishes an empty retained payload to every retained topic under the "
+                   "channel's `base_topic` and to every discovery config of this STD instance under "
+                   "`ha_prefix`, plus everything STD remembers publishing. `<base_topic>/status` is "
+                   "left alone. The body is optional; `republish` (default true) publishes everything "
+                   "again after about 2 seconds, false leaves the broker empty until something changes "
+                   "or the channel reconnects. 409 when the channel is disabled or not connected; "
+                   "takes several seconds."),
+    Op("POST", "/entries/{id}/notifications/purge", "write",
+       "Purge an entry's MQTT topics and Home Assistant device, then republish it", S.EntryPurgeOut,
+       errors=(404, 409, 504),
+       description="Clears the entry's state topic, its check topics and its Home Assistant discovery "
+                   "configs on every enabled channel, waits about 2 seconds for Home Assistant, then "
+                   "republishes what is still desired so the device is recreated with fresh entity "
+                   "ids (use it after a rename). An entry that is not opted in to Home Assistant only "
+                   "has its state topics cleared and republished. 409 when no channel is enabled."),
     Op("GET", "/config", "read", "Effective configuration (read-only)", S.ConfigOut,
        description="Secrets are masked as `***`. `sources` says where each value came from."),
 )
@@ -198,6 +216,7 @@ _ERROR_TEXT = {
     403: "The key's scope is too low for this endpoint.",
     404: "No such object.",
     409: "The request conflicts with the current state.",
+    504: "The background worker did not finish in time; the operation may still complete.",
 }
 
 

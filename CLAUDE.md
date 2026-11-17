@@ -376,6 +376,8 @@ notify_state.py     ← retained state publishing (PRD 17.3): topic/payload buil
                       `full_sync()` reconcile, commit listener that requests a sync
 notify_ha.py        ← Home Assistant discovery config builders (PRD 17.4); reconciled by
                       `notify_state.full_sync()`, never published from anywhere else
+notify_purge.py     ← channel/entry purge of retained topics + HA devices (PRD 17.5); runs on the
+                      publisher thread via `Publisher.call()`, never on a request thread
 notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, test message);
                       the password (`NotificationChannel.secret`) is write-only everywhere
 widget_rules.py     ← widget plugin discovery + validation for the management API

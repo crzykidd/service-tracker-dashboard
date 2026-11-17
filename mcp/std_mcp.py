@@ -472,6 +472,20 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("POST", f"/notifications/channels/{channel_id}/test")
 
     @write_tool
+    def purge_notification_channel(channel_id: int, republish: bool = True) -> dict:
+        """Clean slate for one notification channel's MQTT broker: removes every retained STD message under its base_topic and every STD Home Assistant discovery config (devices and entities) of this STD instance. `<base_topic>/status` is left alone.
+
+        republish=true (default) publishes the current state and configs again after about 2 seconds, so Home Assistant recreates the devices with fresh entity ids. republish=false leaves the broker empty until something changes or the channel reconnects. Returns the counts {topics_cleared, state_topics, discovery_topics, republished}. Takes several seconds; 409 if the channel is disabled or not connected.
+        """
+        return client.request("POST", f"/notifications/channels/{channel_id}/purge",
+                              json={"republish": republish})
+
+    @write_tool
+    def purge_entry_notifications(entry_id: int) -> dict:
+        """Purge one entry's MQTT topics and Home Assistant device on every enabled channel, wait about 2 seconds, then republish it, so Home Assistant recreates the device with fresh entity ids (use it after renaming an entry). An entry not published to Home Assistant only has its state topics cleared and republished. Returns {entry_id, topics_cleared, channels, republished}; 409 if no channel is enabled."""
+        return client.request("POST", f"/entries/{entry_id}/notifications/purge")
+
+    @write_tool
     def set_exposure_settings(layer_directions: dict[str, str],
                               host_overrides: dict[str, dict[str, str]] | None = None) -> dict:
         """Replace the exposure direction settings, then recompute every service's synthesized URLs (UI edits and explicit labels are never overwritten).
