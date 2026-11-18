@@ -1,50 +1,65 @@
-# Start a new session: review the network-inventory design, then plan the next work
+# Start a new session: verify 0.10.0 on `:dev`, fix what's found, release
 
 Paste this into a fresh Claude Code session in this repo, or say "read
 prompts/startnewsession.md and start".
 
-## Where things stand (2026-11-17)
+## Where things stand (2026-11-18)
 
 - **Shipped:** v0.9.0 is the latest tag on `main`.
-- **On `dev`, unreleased** (all under CHANGELOG `[Unreleased]`; release
-  number **not decided**, 0.10.0 is likely given the scope):
-  - Version in the UI (PRD §16): header version + What's New link,
-    dev-build SHA, GitHub update-available check, `BUILD_CHANNEL` build
-    arg.
-  - Notifications (PRD §17):
-    - MQTT channel framework and Settings → Notifications (§17.2);
-    - retained state publishing (§17.3);
-    - Home Assistant discovery, opt-in per entry with a bulk picker and
-      `STD <name> (<host>)` device names (§17.4);
-    - channel and entry purge (§17.5).
+- **On `dev`, unreleased, all going out as 0.10.0** (decided). Everything is
+  under CHANGELOG `[Unreleased]`. CI and the `:dev` image are green at
+  `8ce1ad8`.
+  - Version in the UI (PRD §16).
+  - Notifications: MQTT channels, retained state, HA discovery (opt-in per
+    entry), purge (PRD §17). The operator tested these on `:dev` and
+    reported them good.
   - Fix: auto-refresh only on the dashboard views.
-- **Handoff prompts:** all done (`prompts/done/2026-11-16-version-in-ui.md`,
-  `2026-11-16-notif-01..03`, `2026-11-17-notif-04..05`).
+  - Inventory streams and API revision (PRD §18, all delivered on `dev`):
+    - §18.1 API revision 2: `X-STD-API-Revision` / `X-STD-Version` headers,
+      public `GET /api/v1/meta` (`c61166d`);
+    - §18.2 HA "Since" sensor and nightly SQLite snapshot (`1ef0be0`);
+    - §18.3 `is_docker` refactor (`b93245b`);
+    - §18.4–§18.7 stream ingest backend, `ingest` key scope, apply engine,
+      lifecycle, block list, link offers, management API + MCP (`81852a6`);
+    - §18.8 Settings → Streams UI, stream pill, edit-page flows (`8ce1ad8`).
+- **Handoff prompts:** inv-01..05 all in `prompts/done/`. The queue is empty.
+- **Sidecar:** `std-source-technitium` is being built in a separate session
+  in `~/projects/technitium-sync` (its own repo, its own copy of the kickoff
+  prompt). It doesn't report back here. Its live test needs STD `:dev`,
+  which now has everything it needs.
 
-## Not yet verified for real (do this before `/release-prep`)
+## This session's job
 
-Every notification test used a fake paho client. Nothing has been checked
-against a real broker or Home Assistant, and no UI has been checked in a
-browser. Ask the operator what they have checked on the `:dev` image.
-
-The checklist:
-- **Header:** the version label opens What's New; the hourly update poll
-  works.
-- **Settings → Notifications:**
-  - Send test message;
-  - live status;
-  - the HA entries bulk picker (filter, Select all/none, Save);
-  - the Purge dialog.
-- **Retained messages:** `mosquitto_sub -t 'std/#' -v` shows status, entry,
-  check and summary messages.
-- **HA:** devices appear only for opted-in entries, with good names and
-  `std_…` entity ids. Unticking an entry removes its device. A HA restart
-  triggers a republish.
-- **Purge timing:** the retained-collect timing (1 s settle, 0.6 s quiet,
-  6 s cap) is a guess. Check a channel purge on a broker with many topics.
+1. **Ask the operator what they've checked on `:dev`** and what the sidecar
+   live test turned up. Fix anything found (handoff prompt if it's more than
+   a small change).
+2. **Browser checks still owed** (the tests used the Flask test client only;
+   the JS was never run in a browser):
+   - Settings → API: create an "Ingest (sidecars)" key.
+   - Settings → Streams: pending highlight + nav count, Preview, Enable,
+     Ignore; the Disable…/Delete… dialog (mode switch, counts, customised
+     entries, "Also clear the block list" only for disable + purge); inline
+     edit of display name and network filters; Unblock; offer Accept/Decline.
+   - Dashboard / Tiled / Compact: blue stream pill, "missing from latest
+     snapshot" marker, Source filter `stream:<id>`.
+   - Delete popover on a stream entry: Allow re-adding vs Don't re-add.
+   - Edit page: read-only stream fields, Convert / Keep separate banner,
+     "Link to stream item…" on a host-less manual entry.
+   - HA: the "Since" sensor shows a timestamp, and unknown when `since` is
+     null.
+   - Backups: a `<date>-std_backup.sqlite3` appears next to the YAML and is
+     pruned with it.
+3. **Contract feedback from the sidecar** (PRD §18.5): the operator relays
+   it. STD owns the contract; change it here first, then the sidecar
+   follows. Any additive `/api/v1` change bumps `API_REVISION` (rule in
+   CLAUDE.md), but a fix inside 0.10.0 before release stays revision 2.
+4. **Release:** when the operator is happy, `/release-prep 0.10.0`, then the
+   human merges the PR, then `/release-cut 0.10.0`. Update the CLAUDE.md
+   Build Status lines and this file as part of that.
 
 ## Known gaps (decide: fix, park in FUTURE.md, or accept)
 
+From notifications (carried over, not yet decided):
 - Deleting or disabling a channel while HA discovery is on leaves its configs
   on that broker. Untick discovery or use Purge first.
 - Changing the base topic leaves the old retained topics behind. Purge covers
@@ -52,42 +67,43 @@ The checklist:
 - The test button can block up to about 13 s against a broker that doesn't
   answer.
 - The "republish: false" purge hold is in memory only, so a restart ends it.
-- The published-state set is shared across channels (multi-broker edge
-  cases; see `docs/decisions.md`).
+- The published-state set is shared across channels (see
+  `docs/decisions.md`).
 
-## This session's job
+From streams (as built; see PRD §18 "As built" notes and `docs/decisions.md`):
+- Deleting a stream drops its blocks and offers; `clear_blocks` only matters
+  for disable + purge.
+- A stream's display name is set at creation; snapshots never change it.
+- UI stream actions go to the app log, not `api_audit` (API actions still
+  audit).
+- `container_name` is `String(100)` while the contract allows 128-char names
+  (SQLite doesn't enforce it).
+- `meta` advertises `std_version` from `VERSION`, so it reads 0.9.0 until
+  release prep bumps it.
 
-1. **Review the operator's draft design**
-   `docs/design/2026-11-17-network-inventory-and-profiles.md`: network
-   inventory beyond containers, tags/views, monitor profiles and alert
-   policies, and an `STD Health` value in HA.
-   - Do what its §12 reviewer checklist asks: read it against the code and
-     list gotchas, wrong assumptions and cheaper alternatives.
-   - It was written against `8bd2233`. Since then, notif-04 changed HA to
-     opt-in per entry (`service_entry.ha_publish`) with host in device names,
-     and notif-05 added purge. Check the draft's HA assumptions against
-     that.
-2. Discuss the open questions with the operator, then scope the first slice
-   in the PRD and write handoff prompts (the same flow as v0.9.0 and the
-   notifications work).
-3. Separately, with the operator: pick the release number for what is on
-   `dev`, once the real-world checks above pass, and run `/release-prep`.
+## Later (parked)
+
+- docker-api-notifier: send its own `User-Agent`, log STD's API revision,
+  optional `meta` at startup. In `docs/FUTURE.md` ("Notifier: log STD's API
+  revision"); nothing breaks without it.
+- The rest of the network-inventory design (tags/views, thresholds, monitor
+  profiles, HA merge mode, alerting) stays in
+  `docs/design/2026-11-17-network-inventory-and-profiles.md` and
+  `docs/FUTURE.md`.
 
 ## Before starting
 
-- Read `CLAUDE.md`, `standards.md`, `docs/PRD.md` (§13 monitoring, §16, §17)
-  and `docs/decisions.md` (newest first).
+- Read `CLAUDE.md`, `standards.md`, `docs/PRD.md` §18 and
+  `docs/decisions.md` (newest first).
 
 ## Housekeeping to remember
 
 - Lint with CI's pinned ruff: `uvx ruff@0.15.17 check .`. Other versions
   disagree on import sorting.
-- A Docker container `std-mosq-test`, bound to `127.0.0.1:18830`, was stuck
-  on the dev host (docker exec, rm and kill all hung). Ask the operator
-  whether it has been cleared; don't rely on Docker for broker tests until it
-  is.
-- Check what subagents report about docs against `git diff`. One claimed PRD
-  edits it hadn't made.
+- System python has no pytest: `uvx --with-requirements requirements-dev.txt pytest -q`.
+- Check what subagents report about docs against `git diff`.
+- Spawned agents move untracked prompts with plain `mv`, not `git mv`; stage
+  the `prompts/done/` file as a new path.
 - The CHANGELOG archive step is skipped at release-prep (memory:
   no-changelog-archive).
 - No `Co-authored-by:` trailers (CLAUDE.md wins over the harness reminder).
