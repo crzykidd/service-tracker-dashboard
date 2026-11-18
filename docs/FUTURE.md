@@ -337,6 +337,75 @@ Locking the entry is the workaround.
 
 ---
 
+## UniFi inventory source and discovered-device inbox
+
+**Parked:** 2026-11-17, during the network-inventory design review
+(`docs/design/2026-11-17-network-inventory-and-profiles.md`).
+
+### Context
+
+The first draft of the network-inventory design had two sources:
+Technitium DHCP reservations ("what should exist") and the UniFi
+Integration API ("what is actually on the wire"). UniFi also fed a
+discovered-device inbox (MACs seen but not reserved, with Adopt /
+Attach to entry / Ignore) and link facts (AP or switch port, SSID,
+RSSI, uplink).
+
+### Why parked
+
+Every IoT device the operator cares about gets a Technitium static
+reservation, which already gives hostname, MAC, IP and scope. UniFi
+would import phones, laptops and other end-user devices the operator
+doesn't want in STD. Hosts with hard-coded IPs (VMs, hypervisors, the
+UDM) are added by hand as manual entries. The unknown-device detector
+is a security feature nobody asked for.
+
+### If picked up
+
+- UniFi as a sidecar on the stream ingest API (design doc §6), like
+  the Technitium one. A filter would be needed to keep end-user
+  devices out (e.g. only wired, only named, only certain networks).
+  An "inbox" is then just a pending stream's Preview.
+- Link facts are volatile (RSSI changes constantly). Keep them off the
+  MQTT entry attributes watched by `notify_state._ENTRY_ATTRS`, or
+  every sync triggers a full republish. A separate throttled
+  attributes topic would work.
+- Multi-NIC entries would then need an interfaces table.
+
+---
+
+## Backup contents and format
+
+**Parked:** 2026-11-17, during the network-inventory design review.
+
+### Context
+
+The nightly backup is a YAML list of entries with nested checks
+(`jobs.py` `run_scheduled_backup`). It isn't a table dump: groups
+are carried only by name, notification channels aren't included, and
+restore skips host-less entries unless `source = manual`. Tags,
+saved views, monitor profiles, assignment rules, alert policies,
+inventory sources and the inventory block list would all be missing.
+
+### Open questions
+
+- Back up everything, or only operator-set state (overrides, tags,
+  views, profiles, rules, the block list)? Observed data rebuilds
+  from the notifier and the DHCP sync.
+- A versioned top-level format (`format_version`, `entries`, `tags`,
+  `profiles`, ...) and how older backups map onto it.
+- Whether channel and source secrets belong in a backup file.
+
+### Interim
+
+A nightly SQLite snapshot via `sqlite3.Connection.backup()` (WAL-safe,
+per CLAUDE.md), stored next to the YAML backups with the same
+retention, and restored manually (stop the container, swap the file).
+It covers every table with no format work. A candidate for 0.10.0;
+see the design doc, sections 11 and 12.8.
+
+---
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

@@ -5,6 +5,57 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — Network-inventory design review: stream ingest API, Technitium sidecar
+
+- **Inventory arrives through a generic stream ingest API, pushed by
+  sidecars, not pulled by STD.** STD owns the contract
+  (`PUT /api/v1/streams/<id>/snapshot`, `ingest` key scope, strict core
+  fields plus a free-form `attributes` dict). Producers follow it, the
+  same split as the Docker notifier. Rejected: a Technitium source
+  inside STD (the first revision). It saved a repo, but every new feed
+  (Pi-hole, Kea, Zigbee) would have been a change to STD, and source
+  credentials would have lived in STD.
+- **Full snapshots, not per-item upserts.** "Reservation gone" is then
+  just "absent from the latest snapshot", with no TTLs or heartbeats.
+- **New streams arrive pending; enabling is per stream.** This replaces
+  a global `inventory_enabled` switch. A key holder can create a
+  stream, but nothing is applied until the operator previews and
+  enables it.
+- **The Technitium producer is a new repo (`std-source-technitium`),
+  not a mode in docker-api-notifier**, even though the notifier already
+  talks to Technitium DNS. A small standalone sidecar is the reference
+  others copy, and the notifier's job stays unchanged.
+- **The Docker notifier stays on `/api/v1/register`.** Moving the
+  most-used contract onto streams would gain little.
+- **`stream` is a third `source` value; the pill shows the stream's
+  display name.** Docker containers never have DHCP reservations (their
+  DNS is a CNAME to the parent host), and hard-coded-IP hosts
+  (em-pve01, em-dockha01) have static A records and stay manual. So
+  the sources never overlap. The cost is a small refactor first: about
+  12 branches use `is_manual` to mean "not Docker" and switch to a new
+  `is_docker`. Rejected: `source = manual` + a `kind` flag. It needed
+  no refactor, but it hides where an entry came from.
+- **UniFi dropped.** It would import phones and end-user devices. The
+  discovered-device inbox and the `entry_interface` table went with it
+  (FUTURE.md). A stream entry is one item, and the multi-NIC hosts are
+  manual.
+- **A manual entry matching a new stream item is offered for linking,
+  never auto-converted**, so its history, checks and HA settings
+  survive. Name matching isn't reliable enough to do it silently.
+- **Deleting a stream entry asks "allow re-adding" or "don't re-add".**
+  "Don't re-add" puts the stream key on a permanent, visible block list.
+  This replaces tracking why an entry was deleted. Without it, a
+  snapshot would resurrect a device the operator had deliberately
+  deleted.
+- **Thresholds store `health_check.state`** instead of each reader
+  deriving it from `last_ok`. Change detection keys on `last_ok`
+  flipping, so `pending` → `down` (still failing) would never publish.
+- **Backup format change parked; nightly SQLite snapshot instead.**
+  The YAML export is entries-only. Deciding what a backup should hold
+  is a separate discussion (FUTURE.md).
+
+---
+
 ## 2026-11-17 — notif-05 purge MQTT and Home Assistant
 
 - **"Republish: false" holds the channel, it does not untick `ha_discovery`.**
