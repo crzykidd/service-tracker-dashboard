@@ -26,6 +26,7 @@ import requests
 import yaml
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     jsonify,
@@ -72,8 +73,11 @@ from models import (
     ApiKey,
     Group,
     HealthCheck,
+    InventoryBlock,
+    InventoryStream,
     NotificationChannel,
     ServiceEntry,
+    StreamLinkOffer,
     User,
     Widget,
     WidgetValue,
@@ -242,7 +246,8 @@ def _health_count_context(entries, show_urlless, source, status):
     for key, value in (("total", "all"), ("passing", "healthy"), ("failing", "failing")):
         links[key] = url_for(request.endpoint, **{**base, "status": value})
     active = {"all": "total", "healthy": "passing", "failing": "failing"}.get(status)
-    return {"health_counts": counts, "health_links": links, "health_active": active}
+    return {"health_counts": counts, "health_links": links, "health_active": active,
+            "source_streams": InventoryStream.query.order_by(InventoryStream.display_name).all()}
 
 
 def _load_view_entries():
@@ -251,6 +256,7 @@ def _load_view_entries():
     return (
         ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
+        .options(joinedload(ServiceEntry.stream))
         .options(selectinload(ServiceEntry.exposures))
         .options(selectinload(ServiceEntry.checks))
         .all()
@@ -749,6 +755,7 @@ def _render_settings(group_form=None, status=200, notification_form=None):
             audit_key_options.append({'value': f'id:{kid}',
                                       'label': f'{kname} (revoked)' if revoked_at else kname})
 
+    stream_ctx = _streams_context(request.args.get('preview'))
     notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
                                  NotificationChannel.query.order_by(NotificationChannel.id).all()]
     return render_template(
@@ -765,7 +772,8 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          groups=groups,
          group_form=group_form,
          group_rows=group_rows,
-         force_section='groups' if group_form else ('notifications' if notification_form else ''),
+         force_section='groups' if group_form else ('notifications' if notification_form else ('streams' if stream_ctx['preview'] else '')),
+         **stream_ctx,
          users=users,
          deleted_rows=_deleted_entry_rows(),
          detached_widgets=_detached_widget_rows(),
@@ -1408,6 +1416,7 @@ def edit_entry(id):
                                url_rows=url_rows,
                                svc_rows=svc_rows,
                                container_row=container_row,
+                               **_edit_stream_context(entry),
                                notifications_enabled=NotificationChannel.query.filter_by(
                                    enabled=True).first() is not None)
 
@@ -1705,7 +1714,7 @@ def create_api_key():
     scope = request.form.get('scope') or ''
     error = api_keys.validate_name(name)
     if not error and scope not in api_keys.SCOPES:
-        error = "Choose a scope: read or write."
+        error = "Choose a scope: read, write or ingest."
     if error:
         flash(error, "danger")
         return redirect(url_for('dashboard.settings', section='api'))
@@ -1782,6 +1791,225 @@ def purge_deleted_entry(id):
     logger.info(f"Permanently deleted entry '{name}'.")
     flash(f"🗑️ Permanently deleted '{name}'.", "success")
     return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+# --- Settings -> Streams (PRD 18.8) ------------------------------------------------
+# Thin wrappers over streams.py: the lifecycle rules live there, these routes only
+# read the form, call one function and flash the outcome.
+
+PREVIEW_ROW_LIMIT = 1000
+
+
+def _streams_context(preview_slug=None):
+    """Everything the Streams tab renders: one dict per stream (counts, cleanup
+    dialog data, blocks, offers), the read-only Docker row and the optional Preview."""
+    rows = []
+    for stream in InventoryStream.query.order_by(InventoryStream.display_name, InventoryStream.id).all():
+        offers = StreamLinkOffer.query.filter_by(stream_id=stream.id).order_by(StreamLinkOffer.id).all()
+        entry_ids = {o.entry_id for o in offers}
+        names = {e.id: e.container_name for e in
+                 ServiceEntry.query.filter(ServiceEntry.id.in_(entry_ids)).all()} if entry_ids else {}
+        rows.append({
+            'stream': stream,
+            'stats': streams.entry_stats(stream),
+            'customised': streams.customised_entries(stream),
+            'blocks': InventoryBlock.query.filter_by(stream_id=stream.id).order_by(InventoryBlock.id).all(),
+            'offers': [{'offer': o, 'entry_name': names.get(o.entry_id, '?')} for o in offers],
+            'item_count': len(stream.snapshot) if stream.snapshot is not None else None,
+        })
+    docker_q = ServiceEntry.active().filter(ServiceEntry.source == SOURCE_NOTIFIER)
+    docker_row = {'count': docker_q.count(),
+                  'last_register': docker_q.with_entities(func.max(ServiceEntry.last_api_update)).scalar()}
+    preview = None
+    if preview_slug:
+        stream = streams.find_stream(preview_slug)
+        if stream is None:
+            flash("That stream doesn't exist.", "danger")
+        else:
+            try:
+                data = streams.preview(stream)
+                preview = {'stream': stream, 'data': data, 'items': data['items'][:PREVIEW_ROW_LIMIT],
+                           'truncated': max(0, len(data['items']) - PREVIEW_ROW_LIMIT)}
+            except streams.StreamError as exc:
+                flash(exc.message, "danger")
+    return {'stream_rows': rows, 'docker_row': docker_row, 'preview': preview,
+            'pending_streams': sum(1 for r in rows if r['stream'].status == 'pending')}
+
+
+def _streams_redirect():
+    return redirect(url_for('dashboard.settings', section='streams'))
+
+
+def _stream_or_404(slug):
+    stream = streams.find_stream(slug)
+    if stream is None:
+        abort(404)
+    return stream
+
+
+def _stream_action(slug, fn, success, **kwargs):
+    """Run one lifecycle call; flash its message, or the StreamError's. `success`
+    is a callable of the result returning the message."""
+    stream = _stream_or_404(slug)
+    name = stream.display_name
+    try:
+        result = fn(stream, **kwargs)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return False
+    flash(success(name, result), "success")
+    return True
+
+
+def _counts_text(counts):
+    parts = [f"{v} {k.replace('_', ' ')}" for k, v in (counts or {}).items() if v]
+    return ", ".join(parts) or "nothing to change"
+
+
+@dashboard_bp.route('/settings/streams/<slug>/enable', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_enable(slug):
+    if _stream_action(slug, streams.enable, lambda n, r: (
+            f"Enabled stream '{n}': {_counts_text(r['counts'])}." if r['applied']
+            else f"Enabled stream '{n}'. The next snapshot will import its items.")):
+        logger.info(f"Stream '{slug}' enabled by {current_user.username}.")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/ignore', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_ignore(slug):
+    if _stream_action(slug, streams.ignore, lambda n, r: f"Ignoring stream '{n}'. Its snapshots are dropped."):
+        logger.info(f"Stream '{slug}' ignored by {current_user.username}.")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/disable', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_disable(slug):
+    cleanup = request.form.get('cleanup') or streams.CLEANUP_KEEP
+    clear_blocks = _truthy(request.form.get('clear_blocks'))
+    if _stream_action(
+            slug, streams.disable, lambda n, r: f"Disabled stream '{n}' ({cleanup}): {_counts_text(r)}.",
+            cleanup=cleanup, clear_blocks=clear_blocks):
+        logger.info(f"Stream '{slug}' disabled ({cleanup}) by {current_user.username}.")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_delete(slug):
+    cleanup = request.form.get('cleanup') or streams.CLEANUP_KEEP
+    if _stream_action(
+            slug, streams.delete, lambda n, r: f"Deleted stream '{n}' ({cleanup}): {_counts_text(r)}.",
+            cleanup=cleanup):
+        logger.info(f"Stream '{slug}' deleted ({cleanup}) by {current_user.username}.")
+    return _streams_redirect()
+
+
+def _filter_lines(text):
+    """A textarea of filters (one per line, commas also split) -> list."""
+    return [p.strip() for p in re.split(r'[\n,]', text or '') if p.strip()]
+
+
+@dashboard_bp.route('/settings/streams/<slug>/update', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_update(slug):
+    stream = _stream_or_404(slug)
+    try:
+        changes = streams.update(
+            stream, request.form.get('display_name'),
+            _filter_lines(request.form.get('network_include')),
+            _filter_lines(request.form.get('network_exclude')),
+            sent=('display_name', 'network_include', 'network_exclude'))
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' updated by {current_user.username}: {', '.join(changes) or 'no changes'}.")
+    flash(f"Saved stream '{stream.display_name}'." if changes else "Nothing changed.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/blocks/<int:block_id>/unblock', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_unblock(slug, block_id):
+    stream = _stream_or_404(slug)
+    try:
+        key = streams.unblock(stream, block_id)
+    except streams.StreamError as exc:
+        flash(exc.message, "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' key {key} unblocked by {current_user.username}.")
+    flash(f"Unblocked {key}. The next snapshot will bring it back.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/offers/<int:offer_id>/<answer>', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_answer_offer(slug, offer_id, answer):
+    """Accept (the manual entry joins the stream) or decline (a new stream entry is
+    created). Posted from the Streams tab and from the manual entry's edit page."""
+    if answer not in ('accept', 'decline'):
+        abort(404)
+    stream = _stream_or_404(slug)
+    target = safe_redirect_target(request.form.get('next'), url_for('dashboard.settings', section='streams'))
+    try:
+        offer = streams.get_offer(stream, offer_id)
+        entry = (streams.accept_offer if answer == 'accept' else streams.decline_offer)(stream, offer)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return redirect(target)
+    logger.info(f"Stream '{slug}' link offer {offer_id} {answer}ed by {current_user.username}.")
+    flash(f"Converted '{entry.container_name}' to a stream entry." if answer == 'accept'
+          else f"Kept '{entry.container_name}' separate from the manual entry.", "success")
+    return redirect(target)
+
+
+@dashboard_bp.route('/edit/<int:id>/stream-link', methods=['POST'])
+@login_required
+@is_admin_required
+def link_entry_to_stream(id):
+    """Link a manual entry to an unmatched item of a stream (`target` is `slug:key`)."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    back = url_for('dashboard.edit_entry', id=id, ref=request.form.get('ref') or None)
+    slug, _, key = (request.form.get('target') or '').partition(':')
+    stream = streams.find_stream(slug) if slug and key else None
+    if stream is None:
+        flash("Choose a stream item to link to.", "danger")
+        return redirect(back)
+    try:
+        streams.link_entry(stream, entry, key)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return redirect(back)
+    logger.info(f"Entry {id} linked to stream '{slug}' by {current_user.username}.")
+    flash(f"Linked '{entry.container_name}' to stream '{stream.display_name}'.", "success")
+    return redirect(back)
+
+
+def _edit_stream_context(entry):
+    """Edit page extras for a manual entry: its open link offers, and the stream
+    items it could be linked to by hand."""
+    offers, choices = [], []
+    if entry.source == SOURCE_MANUAL:
+        offers = StreamLinkOffer.query.filter_by(entry_id=entry.id).order_by(StreamLinkOffer.id).all()
+        if not offers and entry.host is None:
+            for stream in InventoryStream.query.order_by(InventoryStream.display_name).all():
+                items = streams.unmatched_items(stream)
+                if items:
+                    choices.append({'stream': stream, 'items': items})
+    return {'link_offers': offers, 'link_choices': choices}
 
 
 @dashboard_bp.route('/api/update-status')

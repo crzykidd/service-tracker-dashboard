@@ -6,6 +6,28 @@
   <div class="w-full max-w-3xl">
     <h1 class="text-3xl font-bold text-center mb-8">Edit Service Entry</h1>
     {% include "partials/flash_messages.html" %}
+
+    {# ── Link offers (PRD 18.8): a new stream item matches this manual entry ── #}
+    {% for offer in link_offers %}
+    <div class="mb-6 p-4 rounded-lg border border-blue-700 bg-blue-900/30 text-sm" data-link-offer="{{ offer.id }}">
+      <p class="mb-3">
+        Stream <strong>{{ offer.stream.display_name }}</strong> item <code>{{ offer.item.get('name') or offer.key }}</code>
+        ({{ offer.key }}{% if offer.item.get('ip') %}, {{ offer.item.get('ip') }}{% endif %}) matches this entry.
+        <strong>Convert</strong> makes this entry a stream entry (it keeps its history, checks and Home Assistant setting);
+        <strong>Keep separate</strong> adds the stream item as its own entry.
+      </p>
+      <div class="flex gap-3">
+        {% for answer, label, cls in [('accept', 'Convert', 'bg-blue-600 hover:bg-blue-500'), ('decline', 'Keep separate', 'bg-gray-600 hover:bg-gray-500')] %}
+        <form method="POST" action="{{ url_for('dashboard.stream_answer_offer', slug=offer.stream.stream_id, offer_id=offer.id, answer=answer) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}">
+          <button type="submit" class="px-4 py-1.5 rounded text-white {{ cls }}">{{ label }}</button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
     <form action="{{ url_for('dashboard.edit_entry', id=entry.id, ref=ref) }}" method="POST">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="force_update_icon" value="true">
@@ -13,14 +35,17 @@
       {# ── Identity ────────────────────────────────────────── #}
       <h3 class="edit-section-heading">Identity</h3>
       <div class="edit-section-fields">
+        {% if not entry.is_stream %}
         <div>
           <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
           <input type="text" name="host" id="host" class="form-input" value="{{ fv('host', entry.host or '') }}">
         </div>
+        {% endif %}
 
         <div>
           <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">{% if not entry.is_docker %}Name{% else %}Application (Container Name){% endif %}</label>
           <input type="text" name="container_name" id="application" class="form-input" value="{{ fv('container_name', entry.container_name) }}">
+          {% if entry.is_stream %}<p class="edit-helper">{% if entry.name_source == 'ui_edit' %}You renamed this entry, so snapshots no longer change its name.{% else %}Renaming this entry stops snapshots from changing its name.{% endif %}</p>{% endif %}
         </div>
 
         {% if not entry.is_docker %}
@@ -153,6 +178,7 @@
                 class="edit-delete-btn ml-auto"
                 data-entry-id="{{ entry.id }}"
                 data-container-name="{{ entry.container_name }}"
+data-stream="{{ 1 if entry.is_stream else 0 }}"
                 data-redirect="{{ ref }}">
           <i class="ti ti-trash" aria-hidden="true"></i> Delete
         </button>
@@ -212,6 +238,61 @@
       </p>
       {% with autoload=true %}{% include "partials/health_detail.html" %}{% endwith %}
     </div>
+
+    {% if entry.is_stream %}
+    <hr class="my-10 border-dashboard-accent">
+
+    {# ── Reported by the inventory stream (read-only) ───────── #}
+    <div class="bg-dashboard-info-box rounded-lg p-6" id="stream-info">
+      <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Reported by stream</h2>
+      <p class="text-xs text-dashboard-secondary mb-4">
+        Observed facts from the latest snapshot of
+        <strong>{{ entry.stream.display_name if entry.stream else 'its stream' }}</strong>. Read-only.
+        {% if entry.inventory_missing %}<span class="text-amber-300">This item is missing from the latest snapshot.</span>{% endif %}
+      </p>
+      <dl class="text-sm text-gray-100 grid grid-cols-[8rem_1fr] gap-y-2">
+        <dt class="text-dashboard-secondary">Stream</dt>
+        <dd>{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.stream %} <code class="text-gray-400">{{ entry.stream.stream_id }}</code>{% endif %}</dd>
+        <dt class="text-dashboard-secondary">Key</dt><dd class="font-mono">{{ entry.stream_key }}</dd>
+        <dt class="text-dashboard-secondary">MAC</dt><dd class="font-mono">{{ entry.mac or '—' }}</dd>
+        <dt class="text-dashboard-secondary">IP</dt><dd class="font-mono">{{ entry.ip or '—' }}</dd>
+        <dt class="text-dashboard-secondary">Network</dt><dd>{{ entry.network or '—' }}</dd>
+        <dt class="text-dashboard-secondary">Attributes</dt>
+        <dd>
+          {% if entry.attributes %}
+          <ul class="space-y-1">
+            {% for k, v in entry.attributes.items() %}<li><span class="font-mono text-blue-300">{{ k }}</span> {{ v }}</li>{% endfor %}
+          </ul>
+          {% else %}<span class="text-xs italic text-dashboard-secondary">None.</span>{% endif %}
+        </dd>
+      </dl>
+    </div>
+    {% endif %}
+
+    {% if link_choices %}
+    <hr class="my-10 border-dashboard-accent">
+    <div class="bg-dashboard-info-box rounded-lg p-6" id="stream-link">
+      <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Link to stream item</h2>
+      <p class="text-xs text-dashboard-secondary mb-4">
+        Make this entry the stream's entry for one item that has none yet. It keeps its history, checks and Home Assistant setting.
+      </p>
+      <form method="POST" action="{{ url_for('dashboard.link_entry_to_stream', id=entry.id) }}" class="flex flex-wrap items-end gap-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="ref" value="{{ ref }}">
+        <select name="target" required class="form-input" style="max-width: 28rem">
+          <option value="">Link to stream item…</option>
+          {% for choice in link_choices %}
+          <optgroup label="{{ choice.stream.display_name }}">
+            {% for item in choice['items'] %}
+            <option value="{{ choice.stream.stream_id }}:{{ item.key }}">{{ item.get('name') or item.key }} — {{ item.key }}{% if item.get('ip') %} ({{ item.get('ip') }}){% endif %}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-secondary px-4 py-2 rounded-lg text-sm">Link</button>
+      </form>
+    </div>
+    {% endif %}
 
     {% if entry.is_docker %}
     <hr class="my-10 border-dashboard-accent">
@@ -372,11 +453,14 @@
         const containerName = this.dataset.containerName;
         const redirectUrl   = this.dataset.redirect || '/';
         if (typeof showDeletePopover === 'function') {
-          showDeletePopover(this, containerName, () => {
-            stdPost(`/api/v1/entries/${entryId}/delete`)
+          showDeletePopover(this, containerName, (block) => {
+            stdPost(`/api/v1/entries/${entryId}/delete`, block ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ block: true })
+            } : {})
               .then(r => { if (r.ok) window.location.href = redirectUrl; })
               .catch(() => alert('Delete failed. Please try again.'));
-          });
+          }, { stream: this.dataset.stream === '1' });
         }
       });
     }

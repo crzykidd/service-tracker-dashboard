@@ -1093,3 +1093,12 @@ tr.group-entry.entry-health-degraded > td:first-child { border-left: 3px solid v
 .tile.entry-health-down:not(.tile-open),
 .compact-tile.entry-health-down,
 tr.group-entry.entry-health-down > td:first-child { border-left: 3px solid var(--color-status-bad); }
+
+/* ── Inventory streams (PRD 18.8) ───────────────────────── */
+.stream-pill { background-color: #1d4ed8; max-width: 9rem; }
+.stream-pill-name { overflow: hidden; text-overflow: ellipsis; }
+.stream-pill-missing { opacity: 0.6; }
+.stream-missing { color: #9ca3af; font-size: 0.72rem; font-style: italic; white-space: nowrap; }
+.compact-end .stream-missing-text { display: none; }
+.delete-popover-block { display: none; }
+.delete-popover-block.visible { display: inline-block; }

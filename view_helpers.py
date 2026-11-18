@@ -11,6 +11,7 @@ so each route handler only has to read the query params and hand them
 off.
 """
 
+import re
 from collections import defaultdict
 from urllib.parse import urlparse
 
@@ -69,9 +70,16 @@ def normalize_status_filter(value):
     return value if value in VALID_STATUS_FILTERS else "all"
 
 
+STREAM_FILTER_PREFIX = "stream:"
+_STREAM_FILTER_RE = re.compile(r"^stream:[a-z0-9][a-z0-9_-]{0,62}$")
+
+
 def normalize_source_filter(value):
+    """`all`, a source, or `stream:<stream_id>` for one inventory stream."""
     value = value.strip().lower() if isinstance(value, str) else ""
-    return value if value in VALID_SOURCE_FILTERS else "all"
+    if value in VALID_SOURCE_FILTERS or _STREAM_FILTER_RE.match(value):
+        return value
+    return "all"
 
 
 def matches_status(entry, status):
@@ -85,6 +93,9 @@ def matches_status(entry, status):
 def matches_source(entry, source):
     if source == "all":
         return True
+    if source.startswith(STREAM_FILTER_PREFIX):
+        return (entry.source == "stream" and entry.stream is not None
+                and entry.stream.stream_id == source[len(STREAM_FILTER_PREFIX):])
     return entry.source == source
 
 

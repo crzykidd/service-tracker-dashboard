@@ -81,6 +81,7 @@
 | 0.71    | 2026-11-17 | §18.2 delivered on `dev`: Home Assistant "Since" timestamp sensor per published entry (§17.4 entity table); the daily backup job also writes `<date>-std_backup.sqlite3` via `sqlite3.Connection.backup()`, pruned by `backup_days_to_keep`. No register-contract change. |
 | 0.72    | 2026-11-17 | §18.3 delivered on `dev`: `ServiceEntry.is_docker`; "not Docker" branches (tiled/dashboard/edit templates, stale guard, HA model) moved off `is_manual`; source filters and restore generalised over `VALID_SOURCES`. No operator-visible change. |
 | 0.73    | 2026-11-17 | §18.4–§18.7 delivered on `dev` (inv-04): inventory streams backend. Migration `f4c8a2e6d173` (new §5.10: `inventory_stream`, `inventory_block`, `stream_link_offer`, stream columns and a partial unique index on `service_entry`; `source = stream`); `ingest` API key scope; the sidecar ingest contract `PUT /api/v1/streams/<stream_id>/snapshot` and `GET .../status` (§18.5, as specified); new `streams.py` apply engine and lifecycle (§18.6, §18.7); management routes under `/api/v1/streams`, `inventory` on entries, `block` on entry delete, MCP tools; MQTT payload `ip`/`mac`/`network`/`stream` and the HA device model. §3.1 and §3.2 updated. §18.8 (Settings → Streams UI) remains planned. |
+| 0.74    | 2026-11-17 | §18.8 delivered on `dev` (inv-05): Settings → Streams tab (rows, pending highlight, read-only Docker row, Preview, Enable / Ignore, Disable… / Delete… cleanup dialog, inline name and network-filter edit, Blocked and Link offers lists), **Ingest (sidecars)** in the API key scope picker, stream pill and "missing" marker on Dashboard / Tiled / Compact, per-stream Source filter (`stream:<stream_id>`), stream edit page (read-only observations, Allow re-adding / Don't re-add), manual edit page (Convert / Keep separate banner, Link to stream item…). New session routes under `/settings/streams/` and `/edit/<id>/stream-link`. §18 retitled Delivered on `dev`; §18.8 "As built" notes; §13.6 `source` filter updated. No schema, register-contract or `/api/v1` change. |
 
 ---
 
@@ -103,7 +104,7 @@
 15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
 16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
 17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
-18. [Next release — Inventory streams and API revision (Planned)](#18-next-release--inventory-streams-and-api-revision-planned)
+18. [Next release — Inventory streams and API revision (Delivered on `dev`)](#18-next-release--inventory-streams-and-api-revision-delivered-on-dev)
 19. [Versioning, Branches, and Releases](#19-versioning-branches-and-releases)
 20. [Cross-Repo Coordination](#20-cross-repo-coordination)
 21. [Open Questions](#21-open-questions)
@@ -1678,7 +1679,8 @@ schema change.
   - `status` = `all` (default) / `failing` (degraded or down) /
     `healthy` (up) / `unknown` (unknown or none) / `stale` (notifier
     entries that are stale).
-  - `source` = `all` / `notifier` / `manual`.
+  - `source` = `all` / `notifier` / `manual` / `stream` / `stream:<stream_id>`
+    (one inventory stream, §18.8).
 - The filter bar shows **Total / Passing / Failing** count chips (v0.7.1), each a link
   that sets `status` to `all` / `healthy` / `failing`. They count entries
   after `source` and `show_urlless` but ignoring `status`, so each number
@@ -2714,9 +2716,9 @@ tools `purge_notification_channel` and `purge_entry_notifications`.
 
 ---
 
-## 18. Next release — Inventory streams and API revision (Planned)
+## 18. Next release — Inventory streams and API revision (Delivered on `dev`)
 
-Planned for **0.10.0**, together with §16 and §17. The goal is an STD that is
+For **0.10.0** (every subsection is delivered on `dev`, unreleased), together with §16 and §17. The goal is an STD that is
 ready for the first inventory sidecar (`std-source-technitium`, a new repo,
 §20.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
 fully tested end to end yet, but nothing happens until an operator creates an
@@ -3025,7 +3027,39 @@ Every new management route is registered in `mgmt_openapi.OPERATIONS` (tests
 enforce it). Stream status changes, cleanups, unblocks and link answers are
 audited.
 
-### 18.8 Streams UI [`inv-05`]
+### 18.8 Streams UI [`inv-05`] — Delivered on `dev`
+
+**As built:** server-rendered, no new JSON endpoints. The lifecycle rules stay in
+`streams.py`; the session routes in `routes_dashboard.py` (admin, CSRF-protected,
+POST) read the form, call one function and flash the outcome (a `StreamError`
+becomes a flash, never a 500). Deviations and details:
+
+- **Routes:** `POST /settings/streams/<stream_id>/{enable,ignore,disable,delete,update}`,
+  `.../blocks/<id>/unblock`, `.../offers/<id>/{accept,decline}` (takes a same-site
+  `next`, so the edit page's banner returns to the edit page), and
+  `POST /edit/<id>/stream-link` (`target` = `<stream_id>:<key>`).
+- **Preview** is the same page with `?section=streams&preview=<stream_id>` (a GET):
+  a table of the items with their would-be action plus the entries that would go
+  missing, capped at 1,000 rows.
+- **One cleanup dialog per stream** serves both Disable… and Delete…; `clear_blocks`
+  shows only for disable with purge. Deleting a stream always drops its blocks and
+  offers, and the dialog says so.
+- **Network filters** are two textareas (one per line, commas also split); empty
+  clears.
+- **Source filter** value for one stream is `stream:<stream_id>` (`all`, `notifier`,
+  `manual` and `stream` still work). An unknown stream id matches nothing; text that
+  is not a stream id falls back to `all`.
+- **Views:** the pill is `partials/stream_pill.html`. Compact shows only the pill
+  (a muted ghost icon marks a missing item); Tiled replaces the link icon and adds
+  Stream/Network rows to the drawer; Dashboard replaces the grey "Manual" pill.
+- **Delete popover:** the trash popover on Dashboard and Tiled and the edit page's
+  Delete button show **Allow re-adding** / **Don't re-add** for stream entries
+  (`data-stream="1"`) and send `block` to `POST /api/v1/entries/<id>/delete`.
+- **Edit page:** a stream entry has no Host field. The "Link to stream item…"
+  picker lists unmatched items of every stream and shows for host-less manual
+  entries with no open offer.
+- The UI actions are logged, not written to `api_audit` (that log is for API keys).
+
 
 - **Settings → API:** the key scope select gains **Ingest (sidecars)**, with a
   one-line explanation.
@@ -3055,9 +3089,9 @@ audited.
   - with an open offer, a banner: "Stream DHCP item `shelly-pump` (aa:bb:…)
     matches this entry. **Convert** / **Keep separate**";
   - otherwise **Link to stream item…**, which picks from unmatched items.
-- README: a "Inventory streams and sidecars" section (what a stream is, the
+- README: an "Inventory streams and sidecars" section (what a stream is, the
   `ingest` key, the pending → enable flow, cleanup, the block list, a link to
-  §18.5 for sidecar authors).
+  §18.5 for sidecar authors) — delivered.
 
 ---
 

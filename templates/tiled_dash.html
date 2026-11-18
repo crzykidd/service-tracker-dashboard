@@ -135,6 +135,8 @@
                                         <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
                                             <i class="ti ti-brand-docker" aria-hidden="true"></i>
                                         </span>
+                                    {% elif entry.is_stream %}
+                                        {% include "partials/stream_pill.html" %}
                                     {% else %}
                                         <span class="status-icon status-icon-muted" title="{{ _docker_tooltip }}{% if entry.description %} — {{ entry.description }}{% endif %}">
                                             <i class="ti ti-link" aria-hidden="true"></i>
@@ -187,6 +189,7 @@
                                         <button class="status-icon status-icon-trash tile-trash-btn"
                                                 data-entry-id="{{ entry.id }}"
                                                 data-container-name="{{ entry.container_name }}"
+data-stream="{{ 1 if entry.is_stream else 0 }}"
                                                 title="Delete {{ entry.container_name }}">
                                             <i class="ti ti-trash" aria-hidden="true"></i>
                                         </button>
@@ -273,6 +276,18 @@
                                       <span class="text-gray-400 text-xs ml-1">— <code>{{ entry.image_tag }}</code></span>
                                     {% endif %}
                                 </span>
+                            </div>
+                            {% endif %}
+
+                            {# Inventory stream facts (stream entries only) #}
+                            {% if entry.is_stream %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Stream</span>
+                                <span class="drawer-value">{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.inventory_missing %} <span class="text-gray-400 text-xs">(missing from latest snapshot)</span>{% endif %}</span>
+                            </div>
+                            <div class="drawer-row">
+                                <span class="drawer-label">Network</span>
+                                <span class="drawer-value">{{ entry.ip or '—' }}{% if entry.mac %} <code class="text-gray-400 text-xs">{{ entry.mac }}</code>{% endif %}{% if entry.network %} <span class="text-gray-400 text-xs">— {{ entry.network }}</span>{% endif %}</span>
                             </div>
                             {% endif %}
 
@@ -390,7 +405,8 @@
                                 {% if not entry.is_static %}
                                 <button class="drawer-btn drawer-btn-delete"
                                         data-entry-id="{{ entry.id }}"
-                                        data-container-name="{{ entry.container_name }}">
+                                        data-container-name="{{ entry.container_name }}"
+data-stream="{{ 1 if entry.is_stream else 0 }}">
                                     <i class="ti ti-trash" aria-hidden="true"></i> Delete
                                 </button>
                                 {% endif %}

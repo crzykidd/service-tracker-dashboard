@@ -27,8 +27,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries (keep, soft delete or purge). Manage streams, blocks and link offers
   with the management API (`/api/v1/streams`) or the MCP tools. MQTT entry
   payloads gain `ip`, `mac`, `network` and `stream`, and the Home Assistant
-  device model is the stream's name. The Settings → Streams page comes next;
-  until then create the key with the `write` scope. See the README.
+  device model is the stream's name. Manage it all from the new Settings →
+  Streams tab (next entry). See the README.
+- **Settings → Streams tab.** Manage inventory streams without the API. The
+  API key form gains an **Ingest (sidecars)** scope. A new stream shows as
+  "New stream waiting: enable it to import N items", with **Preview** (every
+  item and what enabling would do, nothing written), **Enable** and **Ignore**.
+  **Disable…** and **Delete…** show counts first, then offer keep, soft delete
+  or purge for the entries (customised ones are listed by name, and disable
+  with purge can clear the block list too). You can edit a stream's display
+  name and network include / exclude lists, unblock keys on the **Blocked**
+  list, and accept or decline **Link offers**. A read-only **Docker (register)**
+  row shows the notifier's entry count and last register.
+- **Stream entries in the views and on the edit page.** A stream entry shows a
+  pill with the stream's name where Docker entries show their Docker status
+  (Dashboard, Tiled and Compact), replacing the grey "Manual" pill, and an item
+  that dropped out of the latest snapshot is dimmed with a "missing" marker.
+  The **Source** filter lists each stream. On the edit page the MAC, IP, network,
+  attributes and stream are read-only and the name stays editable; deleting asks
+  **Allow re-adding** or **Don't re-add** (also in the delete popover on the
+  views). A manual entry with an open link offer shows **Convert** /
+  **Keep separate**, and one without offers **Link to stream item…**.
 - **Home Assistant "Since" sensor.** Every entry published to Home Assistant
   gets a **Since** timestamp sensor showing when it last changed state, so the
   device page reads "Up, since 3 days ago". It is unknown until STD has a

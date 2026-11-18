@@ -612,9 +612,9 @@ producer a `User-Agent: name/version`.
    - Use a read key for dashboards and monitoring, and a write key only for
      things that should change STD.
    - **ingest** (for inventory sidecars) opens only the two
-     [stream ingest](#inventory-streams-sidecars) routes. It cannot read or
-     change anything else. The scope picker for it arrives with the Settings →
-     Streams page; until then a `write` key also works for testing.
+     [stream ingest](#inventory-streams-and-sidecars) routes. It cannot read or
+     change anything else. Pick **Ingest (sidecars)** in the scope list and
+     create one key per sidecar.
 2. Copy the key now. It is shown **once** (`std_<prefix>_<secret>`); only a
    hash is stored. A lost key is revoked and replaced.
 3. Send it on every request:
@@ -727,7 +727,7 @@ curl -s -X PUT "${H[@]}" "$STD/api/v1/entries/1/widget" -d '{
 }'
 ```
 
-### Inventory streams (sidecars)
+### Inventory streams and sidecars
 
 An inventory stream is a list of devices that a sidecar keeps current, for
 example every static DHCP reservation. The sidecar posts the **whole** list
@@ -735,6 +735,44 @@ every few minutes; STD never pulls from your DHCP server. The first stream
 sidecar is `std-source-technitium` (its own repo). Anyone can write one for
 another source: the contract is [PRD §18.5](docs/PRD.md) and the OpenAPI
 document.
+
+**In the UI (Settings → Streams).**
+
+1. Settings → **API**: create a key with the scope **Ingest (sidecars)** and
+   give it to the sidecar.
+2. The sidecar's first snapshot creates the stream as **pending**. The tab
+   shows "New stream waiting: enable it to import N items" and nothing appears
+   on the dashboard yet. **Preview** lists every item with what enabling would
+   do (create, link offer, filtered, ...) and writes nothing.
+3. **Enable** imports the items; later snapshots update them. **Ignore** drops
+   a stream you don't want. The list also shows a read-only **Docker
+   (register)** row with the number of notifier entries and the last register.
+4. Each stream row has an **Edit** panel for its display name and its network
+   include / exclude lists (applied from the next snapshot; entries already
+   imported are not removed).
+5. **Disable…** and **Delete…** open a dialog that shows the counts first, then
+   asks what happens to the entries: **keep** (disable: they stay but stop
+   updating; delete: they become manual entries), **soft delete** (restorable
+   from Settings → Deleted) or **purge** (gone for good). Entries you
+   customised (renamed, grouped, described, with an icon, checks or Home
+   Assistant) are listed by name. Disable with purge can also clear the block
+   list; deleting a stream always removes its blocks and link offers.
+6. **Blocked** lists items you deleted with "Don't re-add", with **Unblock**.
+   **Link offers** lists manual entries that match a new item, with **Accept**
+   and **Decline**.
+
+Stream entries show a blue pill with the stream's name where a Docker entry
+shows its Docker status (Dashboard, Tiled and Compact). An item that dropped
+out of the latest snapshot is dimmed with a "missing" marker, never deleted.
+The **Source** filter lists each stream by name (`?source=stream:dhcp`). On a
+stream entry's edit page the MAC, IP, network, attributes and stream are
+read-only and the name stays editable (your name then wins over the sidecar's).
+Deleting one asks **Allow re-adding** (the next snapshot may bring it back) or
+**Don't re-add** (it is blocked). A manual entry with an open link offer shows a
+**Convert** / **Keep separate** banner on its edit page; one without an offer
+(and no host) offers **Link to stream item…** to pick an unmatched item by hand.
+
+**Over the API.** The same operations, with an example:
 
 ```bash
 # KEY is an `ingest` (or, for testing, a `write`) key. "dhcp" is the stream id.
@@ -1175,7 +1213,9 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
 | `/health/strips?ids=1,2,3` | 24h uptime strips for up to 500 entries (JSON, login). |
 | `/service/<id>/checks/run` | Check now (POST, login). |
-| `/settings`          | Settings + backup/restore UI (incl. Exposure and Notifications tabs). |
+| `/settings`          | Settings + backup/restore UI (incl. Exposure, Notifications and Streams tabs; `?section=streams&preview=<stream_id>` shows a stream preview). |
+| `/settings/streams/<stream_id>/...` | Streams tab: `enable`, `ignore`, `disable`, `delete`, `update`, `blocks/<id>/unblock`, `offers/<id>/accept\|decline` (admin POST). |
+| `/edit/<id>/stream-link` | Link a manual entry to a stream item (admin POST). |
 | `/settings/notifications/...` | Notifications tab: `save`, `<id>/toggle`, `<id>/delete`, `test` (admin POST), `status` (admin GET). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |

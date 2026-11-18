@@ -290,13 +290,18 @@ window.stdPost = function (url, options) {
     }
   }
 
-  function showDeletePopover(triggerEl, containerName, onConfirm) {
+  /* `opts.stream` (an inventory-stream entry) adds the choice "Allow re-adding" /
+     "Don't re-add"; onConfirm then receives block (true = "Don't re-add"). */
+  function showDeletePopover(triggerEl, containerName, onConfirm, opts) {
     hideDeletePopover();
 
     const pop = document.getElementById('delete-popover');
     if (!pop) return;
+    const isStream = !!(opts && opts.stream);
 
     pop.querySelector('.delete-popover-target').textContent = containerName;
+    const streamHint = pop.querySelector('.delete-popover-stream-hint');
+    if (streamHint) streamHint.classList.toggle('hidden', !isStream);
     pop.classList.remove('hidden');
 
     // Position: fixed, relative to viewport
@@ -322,12 +327,18 @@ window.stdPost = function (url, options) {
     // Wire buttons (clone to drop any previous listeners)
     const oldConfirm = pop.querySelector('.delete-popover-confirm');
     const oldCancel  = pop.querySelector('.delete-popover-cancel');
+    const oldBlock   = pop.querySelector('.delete-popover-block');
     const newConfirm = oldConfirm.cloneNode(true);
     const newCancel  = oldCancel.cloneNode(true);
+    const newBlock   = oldBlock.cloneNode(true);
     oldConfirm.replaceWith(newConfirm);
     oldCancel.replaceWith(newCancel);
+    oldBlock.replaceWith(newBlock);
+    newConfirm.textContent = isStream ? 'Allow re-adding' : 'Confirm';
+    newBlock.classList.toggle('visible', isStream);
 
-    newConfirm.addEventListener('click', () => { hideDeletePopover(); onConfirm(); });
+    newConfirm.addEventListener('click', () => { hideDeletePopover(); onConfirm(false); });
+    newBlock.addEventListener('click', () => { hideDeletePopover(); onConfirm(true); });
     newCancel.addEventListener('click',  hideDeletePopover);
 
     // Click-outside (capture phase so it fires before other handlers)
@@ -343,8 +354,12 @@ window.stdPost = function (url, options) {
   }
 
   /* Shared fetch-delete helper used by tile, drawer, and dashboard row. */
-  function fetchDelete(entryId, onSuccess, onError) {
-    stdPost(`/api/v1/entries/${entryId}/delete`)
+  function fetchDelete(entryId, onSuccess, onError, block) {
+    const opts = block ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ block: true })
+    } : {};
+    stdPost(`/api/v1/entries/${entryId}/delete`, opts)
       .then(r => r.ok ? onSuccess() : onError())
       .catch(onError);
   }
@@ -356,15 +371,15 @@ window.stdPost = function (url, options) {
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        showDeletePopover(this, containerName, () => {
+        showDeletePopover(this, containerName, (block) => {
           fetchDelete(entryId, () => {
             // Remove the tile-wrapper from the DOM
             const drawer  = document.getElementById(`drawer-${entryId}`);
             const wrapper = drawer ? drawer.closest('.tile-wrapper') : null;
             if (wrapper) wrapper.remove();
             closeCurrentDrawer();
-          }, () => alert('Delete failed. Please try again.'));
-        });
+          }, () => alert('Delete failed. Please try again.'), block);
+        }, { stream: this.dataset.stream === '1' });
       });
     });
   }
@@ -376,12 +391,12 @@ window.stdPost = function (url, options) {
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        showDeletePopover(this, containerName, () => {
+        showDeletePopover(this, containerName, (block) => {
           fetchDelete(entryId, () => {
             const wrapper = this.closest('.tile-wrapper');
             if (wrapper) wrapper.remove();
-          }, () => alert('Delete failed. Please try again.'));
-        });
+          }, () => alert('Delete failed. Please try again.'), block);
+        }, { stream: this.dataset.stream === '1' });
       });
     });
   }
@@ -393,12 +408,12 @@ window.stdPost = function (url, options) {
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        showDeletePopover(this, containerName, () => {
+        showDeletePopover(this, containerName, (block) => {
           fetchDelete(entryId, () => {
             const row = this.closest('tr');
             if (row) row.remove();
-          }, () => alert('Delete failed. Please try again.'));
-        });
+          }, () => alert('Delete failed. Please try again.'), block);
+        }, { stream: this.dataset.stream === '1' });
       });
     });
   }

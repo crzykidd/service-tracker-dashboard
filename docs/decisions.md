@@ -5,6 +5,35 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — Streams UI (inv-05)
+
+Calls made while implementing PRD 18.8 (also recorded as "As built" notes there):
+
+- **Server-rendered, no new JSON endpoints.** Preview is a GET on the settings page
+  (`?section=streams&preview=<id>`), not a fetch; every action is a plain form POST
+  to a thin route that calls `streams.py` and flashes. Matches the Notifications
+  and Deleted tabs, keeps CSRF to the usual hidden field, and needs no JS beyond
+  opening the dialog.
+- **One cleanup dialog per stream, two modes.** Disable… and Delete… share it; JS
+  swaps the form action and wording. The counts and customised entries are rendered
+  server-side from `streams.entry_stats()` / `customised_entries()`, so the dialog
+  never goes stale relative to the page load and no extra endpoint is needed.
+  `clear_blocks` only shows for disable + purge, because deleting a stream drops
+  its blocks and offers through the FK anyway.
+- **Source filter value `stream:<stream_id>`** rather than a numeric id: bookmarks
+  survive a stream being recreated, and the value is validated against the stream-id
+  pattern. The bare `stream` value is kept.
+- **Delete popover grew a second button** instead of a new modal, so the same
+  popover serves Dashboard, Tiled and the edit page: `showDeletePopover(..., {stream})`
+  calls back with `block`.
+- **Offer answers take a same-site `next`** (checked with `safe_redirect_target`) so
+  the banner on a manual entry's edit page returns there, while the Streams tab uses
+  the same routes.
+- **UI stream actions are logged, not audited.** `api_audit` is keyed to API keys;
+  a session has none. The API's audit stays the record for API-driven changes.
+
+---
+
 ## 2026-11-17 — Inventory streams backend (inv-04)
 
 Calls made while implementing PRD 18.4-18.7 (also recorded as "As built" notes there):

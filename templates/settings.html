@@ -16,6 +16,7 @@
     <button onclick="showSection('users')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-users">Users</button>
     <button onclick="showSection('exposure')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-exposure">Exposure</button>
     <button onclick="showSection('notifications')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-notifications">Notifications</button>
+    <button onclick="showSection('streams')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-streams">Streams{% if pending_streams %} <span class="text-amber-400">({{ pending_streams }} new)</span>{% endif %}</button>
     <button onclick="showSection('api')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-api">API</button>
     <button onclick="showSection('deleted')" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700" id="nav-deleted">Deleted{% if deleted_rows %} ({{ deleted_rows|length }}){% endif %}</button>
 
@@ -25,6 +26,8 @@
   <div class="flex-1 space-y-10">
     {% include "partials/flash_messages.html" %}
     
+    {% include "partials/settings_streams.html" %}
+
     <!-- === Info Section === -->
     <section id="section-info" class="section">
       <h2 class="text-2xl font-semibold mb-4">Service Info</h2>
@@ -540,7 +543,8 @@
       <p class="text-gray-400 mb-4 text-sm">
         Admin keys for the management API (<code>Authorization: Bearer &lt;key&gt;</code>).
         They are separate from the notifier's <code>api_token</code>, which only registers services.
-        A <strong>read</strong> key can read; a <strong>write</strong> key can read and change.
+        A <strong>read</strong> key can read; a <strong>write</strong> key can read and change;
+        an <strong>ingest</strong> key can only send inventory snapshots (for sidecars, see the Streams tab).
       </p>
 
       <form method="POST" action="{{ url_for('dashboard.create_api_key') }}" class="flex flex-wrap items-end gap-3 mb-6 bg-gray-800 p-4 rounded shadow">
@@ -552,7 +556,9 @@
           <select name="scope" class="block mt-1 px-2 py-1 rounded bg-gray-900 border border-gray-600 text-white">
             <option value="read">read</option>
             <option value="write">write</option>
+            <option value="ingest">Ingest (sidecars)</option>
           </select>
+          <span class="block text-xs text-gray-500 mt-1 max-w-xs">Ingest keys can only send inventory snapshots to <code>/api/v1/streams</code>; use one per sidecar.</span>
         </label>
         <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white">Create key</button>
       </form>
