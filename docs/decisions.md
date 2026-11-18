@@ -5,6 +5,17 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — "Since" sensor reads the existing state topic; snapshot via tmp + rename
+
+- The Since sensor reuses `<base>/entry/<id>/state` (`since` is already there), so
+  §17.1 "publish changes only" holds and nothing new is published. A null
+  `since` renders the string `None`, which HA's MQTT sensor treats as unknown.
+- The SQLite snapshot backs up from SQLAlchemy's raw connection (the live,
+  WAL-aware handle) into `<name>.tmp`, then `os.replace`s it, so an interrupted
+  run never leaves a partial `.sqlite3` that looks like a valid backup.
+
+---
+
 ## 2026-11-17 — API revision headers set app-wide, `meta` public
 
 - The `X-STD-API-Revision` / `X-STD-Version` headers come from one app-level

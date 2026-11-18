@@ -78,6 +78,7 @@
 | 0.68    | 2026-11-17 | §17.5 delivered on `dev` (notif-05): purge. New `notify_purge.py` (§3.1); channel purge (subscribe to `<base>/#` and this instance's `<ha_prefix>/+/std_<inst>/#`, clear retained + tracked topics except `<base>/status`, optional republish with a hold when off) and per-entry purge-and-republish on every channel, run on the publisher thread via `Publisher.call()`; Settings → Notifications button with confirm dialog, entry edit page button, management API `POST /notifications/channels/{id}/purge` and `POST /entries/{id}/notifications/purge`, MCP tools. The periodic safety net no longer releases a held channel. No schema or register-contract change. |
 | 0.69    | 2026-11-17 | Added §18 (Next release — Inventory streams and API revision, planned for 0.10.0): `/api/v1` API revision (`X-STD-API-Revision` header, `GET /api/v1/meta`, revision history), HA "Since" sensor, nightly SQLite snapshot, source refactor (`is_docker`), inventory streams (schema, the `ingest` key scope, the snapshot ingest contract for sidecars, apply rules, lifecycle, blocks, link offers, Settings → Streams). Added §20.3 (inventory stream producers; std-source-technitium). Former §18–§20 renumbered §19–§21 and cross-references updated. No code changes yet. |
 | 0.70    | 2026-11-17 | §18.1 delivered on `dev`: `api_version.py`, `X-STD-API-Revision` / `X-STD-Version` headers on every `/api/` response, public `GET /api/v1/meta`, `api_revision` in `whoami` / OpenAPI / MCP `server_info`, once-per-User-Agent register logging. |
+| 0.71    | 2026-11-17 | §18.2 delivered on `dev`: Home Assistant "Since" timestamp sensor per published entry (§17.4 entity table); the daily backup job also writes `<date>-std_backup.sqlite3` via `sqlite3.Connection.backup()`, pruned by `backup_days_to_keep`. No register-contract change. |
 
 ---
 
@@ -2585,6 +2586,7 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 |--------|--------|
 | Hub `binary_sensor` connectivity | object id `hub_connectivity`, unique id `<node>_hub_connectivity`; state topic `<base>/status`, on `online` / off `offline`. No separate availability topic (it would turn "off" into "unavailable"). |
 | Hub `sensor`s `up`, `degraded`, `down`, `unknown` | object ids `hub_<state>`, unique ids `<node>_hub_<state>`; state topic `<base>/summary`, `value_template` `{{ value_json.<state> }}`. |
+| Entry `sensor` "Since" | object id `entry_<id>_since`, unique id `<node>_entry_<id>_since`, `device_class: timestamp`; state topic `<base>/entry/<id>/state` with `value_template` `{{ value_json.since if value_json.since else None }}` (ISO 8601 UTC; null renders `None`, which MQTT sensors read as unknown). |
 | Entry `sensor` "State" | object id `entry_<id>_state`, unique id `<node>_entry_<id>_state`, `device_class: enum`, `options: [up, degraded, down, unknown, none]`; state and `json_attributes_topic` = `<base>/entry/<id>/state`. |
 | Check `binary_sensor` | object id `check_<check_id>`, unique id `<node>_check_<check_id>`, `device_class: problem`, ON when the check's `state` is `down`; state and `json_attributes_topic` = `<base>/entry/<id>/check/<check_id>`. Name is the check's label (`HTTP`, `TCP 443`, `Container`, ...). |
 
@@ -2745,7 +2747,11 @@ server supports and log it.
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge (§17); `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 
-### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`]
+### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered on `dev`
+
+*As built:* the snapshot is written to `<name>.tmp` and renamed into place, so
+a half-written file never carries the `.sqlite3` name; the prune matches only
+`-std_backup.yml` and `-std_backup.sqlite3`.
 
 - **"Since" sensor.** Every published entry device (`ha_publish`) gains a
   `sensor` entity:

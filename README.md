@@ -222,7 +222,7 @@ compose file; your config, database, and settings carry over unchanged. See
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
-- Daily YAML backups with retention.
+- Daily YAML backups and SQLite snapshots with retention.
 - Manual entries: the Add page creates non-Docker entries (Name, optional Host, Description, URLs, group, icon). They show a link icon (Tiled) or "Manual" pill (Dashboard) instead of Docker status and are never stale. If the notifier later registers the same host and name, it takes the entry over. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Locked entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
@@ -285,7 +285,7 @@ credentials or personal data. Change it in **Settings → Info** (or
 |----------------------------|--------|------------------------------|--------------------|--------------|
 | `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. If unset, register returns 503 until it is set. The token is masked in logs. |
 | `std_dozzle_url`           | string | `STD_DOZZLE_URL`             | —                  | Optional link to a Dozzle instance; enables a Tools section in the UI. |
-| `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where YAML backups are written. |
+| `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where backups (YAML and SQLite snapshots) are written. |
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
@@ -855,7 +855,8 @@ What gets created:
   host tells apart same-named entries on different hosts), linked to the hub, with a **State** sensor (`up`, `degraded`,
   `down`, `unknown`, `none`) and one **problem** binary sensor per check named
   after the check (`HTTP`, `TCP 443`, `Container`, ...). The sensor is on when
-  the check is failing. Docker entries show the image tag as the software
+  the check is failing, plus a **Since** timestamp sensor (when the entry
+  last changed state). Docker entries show the image tag as the software
   version.
 - Entity ids start with `std_` and include the host (for example
   `binary_sensor.std_plex_nas1_http`), so
@@ -977,7 +978,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/config/services.db`    | SQLite database (WAL mode).      |
 | `/config/std.log`        | Main app log (rotated).          |
 | `/config/images/`        | Cached service icons.            |
-| `/config/backups/`       | YAML backups (manual + nightly). |
+| `/config/backups/`       | YAML backups (manual + nightly) and nightly SQLite snapshots. |
 | `/config/settings.yml`   | Optional config file.            |
 
 ---
@@ -1181,8 +1182,14 @@ restored.
 - Entries with **Lock (ignore notifier updates)** ticked are not touched by API register calls. An unlocked manual entry that matches a register call (same host and name) is adopted by the notifier and becomes a notifier entry.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.
-- Nightly backups run shortly after midnight; old backups are pruned
-  per `backup_days_to_keep`.
+- Nightly backups run shortly after midnight and write two files to
+  `backup_path`: `<date>-std_backup.yml` and `<date>-std_backup.sqlite3` (a
+  full database snapshot). Old files of both kinds are pruned per
+  `backup_days_to_keep`; nothing else in the folder is touched.
+- To restore from a snapshot: stop the container, replace
+  `/config/services.db` in the config volume with the snapshot (delete any
+  `services.db-wal` / `services.db-shm` beside it), and start the container.
+  The YAML backup is restored from Settings as before.
 - Version metadata is shown in `/settings`.
 - All UI forms and in-page delete requests are CSRF-protected. If a form
   was left open past a session expiry, submitting it shows a "please retry"

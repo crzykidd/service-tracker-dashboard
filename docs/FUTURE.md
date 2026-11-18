@@ -406,6 +406,38 @@ see the design doc, sections 11 and 12.8.
 
 ---
 
+## Notifier: log STD's API revision
+
+**Parked:** 2026-11-17, after the API revision landed on `dev` (PRD 18.1).
+This is work in the docker-api-notifier repo, not STD.
+
+### Context
+
+STD 0.10.0 sends `X-STD-API-Revision` and `X-STD-Version` on every
+`/api/...` response and serves a public `GET /api/v1/meta`. Today's
+notifier ignores both and still works, because the change is additive:
+the register contract and its responses are unchanged. STD logs each
+new `User-Agent` once, so a notifier that sends the library default
+(e.g. `python-requests/2.x`) shows up under that name.
+
+### Sketched shape
+
+- Send `User-Agent: docker-api-notifier/<version>`.
+- Read `X-STD-API-Revision` on each register response and log at INFO
+  when it differs from the last value seen.
+- Optionally call `GET /api/v1/meta` at startup and log `std_version`
+  and `api_revision`. Treat a 404 as "STD older than 0.10.0", not an
+  error.
+
+### Why parked
+
+Nothing breaks without it, and it needs no STD change. Pick it up the
+next time the notifier gets a release. The sidecar
+(`std-source-technitium`) does the same thing and can serve as the
+model.
+
+---
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

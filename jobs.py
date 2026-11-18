@@ -20,6 +20,7 @@ import importlib
 import json
 import logging
 import os
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -541,6 +542,38 @@ def purge_api_audit(app, now_utc=None):
     return deleted
 
 
+BACKUP_SUFFIXES = ("-std_backup.yml", "-std_backup.sqlite3")
+
+
+def _write_sqlite_snapshot(backup_dir):
+    """Consistent copy of the live database via sqlite3's online backup API
+    (WAL-safe; never a file copy). Failures are logged, never raised."""
+    path = os.path.join(backup_dir, datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3"))
+    tmp = path + ".tmp"
+    src = dst = None
+    try:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raw = db.engine.raw_connection()
+        try:
+            src = raw.driver_connection
+            dst = sqlite3.connect(tmp)
+            src.backup(dst)
+        finally:
+            if dst is not None:
+                dst.close()
+            raw.close()
+        os.replace(tmp, path)
+        logger.info(f"🌙 Scheduled database snapshot saved to {path}")
+    except Exception as e:
+        logger.error(f"❌ Scheduled database snapshot failed: {e}")
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+
+
 def run_scheduled_backup(app):
     with app.app_context():
         backup_dir = app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
@@ -561,12 +594,14 @@ def run_scheduled_backup(app):
         except Exception as e:
             logger.error(f"❌ Scheduled backup failed: {e}")
 
+        _write_sqlite_snapshot(backup_dir)
+
         # Cleanup
         now = time.time()
         cutoff = now - (days_to_keep * 86400)
         removed = 0
         for fname in os.listdir(backup_dir):
-            if fname.endswith("-std_backup.yml"):
+            if fname.endswith(BACKUP_SUFFIXES):
                 fpath = os.path.join(backup_dir, fname)
                 if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
                     try:

@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime
 
 import pytest
+from jinja2 import Template
 
 import notify
 import notify_ha
@@ -98,6 +99,16 @@ def test_config_payload_shape(app, factory):
     assert device["name"] == "STD web" and device["manufacturer"] == "Service Tracker Dashboard"
     assert device["model"] == "Manual" and device["sw_version"] == "1.2.3"
     assert "suggested_area" not in device
+
+    since = _cfg(client, node, "sensor", f"entry_{eid}_since")
+    assert since["name"] == "Since" and since["device_class"] == "timestamp"
+    assert since["unique_id"] == f"{node}_entry_{eid}_since"
+    assert since["default_entity_id"] == "sensor.std_web_since"
+    assert since["state_topic"] == f"std/entry/{eid}/state" and since["availability_topic"] == "std/status"
+    assert since["device"] == device and "json_attributes_topic" not in since
+    tpl = Template(since["value_template"])
+    assert tpl.render(value_json={"since": "2026-11-17T01:02:03Z"}) == "2026-11-17T01:02:03Z"
+    assert tpl.render(value_json={"since": None}) == "None"       # MQTT sensors read "None" as unknown
 
     check = _cfg(client, node, "binary_sensor", f"check_{cid}")
     assert check["unique_id"] == f"{node}_check_{cid}"
@@ -206,7 +217,8 @@ def test_entry_opt_out_clears_its_configs(app, factory):
         assert pub.sync_pending()
         pub.run_sync_now(app)
     pfx = f"homeassistant/%s/{node}/%s/config"
-    assert _cleared(client) == {pfx % ("sensor", f"entry_{eid}_state"), pfx % ("binary_sensor", f"check_{cid}")}
+    assert _cleared(client) == {pfx % ("sensor", f"entry_{eid}_state"), pfx % ("sensor", f"entry_{eid}_since"),
+                                pfx % ("binary_sensor", f"check_{cid}")}
     # the state topics are still published: ha_publish only affects discovery
     assert not any(t.startswith("std/") and p == "" for t, p, *_x in client.published)
 
@@ -254,7 +266,7 @@ def test_turning_discovery_off_clears_everything(app, factory):
         _entry("web")
         _sync(pub, app)
         published = set(_configs(client))
-        assert len(published) == 7          # hub (1 + 4), entry state, one check
+        assert len(published) == 8          # hub (1 + 4), entry state and since, one check
         client.published.clear()
         from models import NotificationChannel
         channel = NotificationChannel.query.one()

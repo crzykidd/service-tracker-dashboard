@@ -230,7 +230,8 @@ def test_entry_purge_clears_and_republishes_only_that_entry_on_every_channel(app
     assert a_check in a_checks and len(a_checks) >= 2           # a purge clears disabled checks too
 
     def topics(base):
-        out = {f"{base}/entry/{a}/state", f"homeassistant/sensor/{node}/entry_{a}_state/config"}
+        out = {f"{base}/entry/{a}/state", f"homeassistant/sensor/{node}/entry_{a}_state/config",
+               f"homeassistant/sensor/{node}/entry_{a}_since/config"}
         for c in a_checks:
             out |= {f"{base}/entry/{a}/check/{c}", f"homeassistant/binary_sensor/{node}/check_{c}/config"}
         return out
@@ -252,7 +253,7 @@ def test_entry_purge_clears_and_republishes_only_that_entry_on_every_channel(app
                        for t, *_ in c.published)
     assert result["topics_cleared"] == len(mine["std"]) + len(mine["other"]) and result["republished"] is True
     assert sorted(c["name"] for c in result["channels"]) == ["ha", "second"]
-    assert all(c["state_topics"] == 1 + len(a_checks) and c["discovery_topics"] == 1 + len(a_checks)
+    assert all(c["state_topics"] == 1 + len(a_checks) and c["discovery_topics"] == 2 + len(a_checks)
                for c in result["channels"])
 
 

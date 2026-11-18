@@ -24,6 +24,7 @@ from models import CHECK_KIND_CONTAINER, SOURCE_MANUAL
 MANUFACTURER = "Service Tracker Dashboard"
 ENTRY_STATES = ["up", "degraded", "down", "unknown", "none"]
 HUB_COUNTS = ("up", "degraded", "down", "unknown")
+SINCE_TEMPLATE = "{{ value_json.since if value_json.since else None }}"
 AVAILABLE, NOT_AVAILABLE = "online", "offline"
 
 
@@ -107,7 +108,7 @@ def hub_configs(base, prefix, node, device_prefix, version):
 
 
 def entry_configs(base, prefix, node, device_prefix, entry):
-    """The entry device's entities: roll-up state and one problem sensor per
+    """The entry device's entities: roll-up state, since, and one problem sensor per
     counted check that is not opted out."""
     device = entry_device(node, device_prefix, entry)
     device_slug = slug(device["name"])
@@ -122,6 +123,18 @@ def entry_configs(base, prefix, node, device_prefix, entry):
         "state_topic": f"{base}/{state_topic}",
         "value_template": "{{ value_json.state }}",
         "json_attributes_topic": f"{base}/{state_topic}",
+        **_availability(base),
+        "device": device,
+    }
+    out[config_topic(prefix, "sensor", node, f"entry_{entry.id}_since")] = {
+        "name": "Since",
+        "unique_id": f"{node}_entry_{entry.id}_since",
+        "default_entity_id": f"sensor.{device_slug}_since",
+        "device_class": "timestamp",
+        "state_topic": f"{base}/{state_topic}",
+        # `since` is ISO 8601 UTC (`...Z`); null renders "None", which MQTT
+        # sensors treat as unknown instead of an invalid timestamp.
+        "value_template": SINCE_TEMPLATE,
         **_availability(base),
         "device": device,
     }

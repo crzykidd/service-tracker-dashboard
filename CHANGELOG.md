@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Home Assistant "Since" sensor.** Every entry published to Home Assistant
+  gets a **Since** timestamp sensor showing when it last changed state, so the
+  device page reads "Up, since 3 days ago". It is unknown until STD has a
+  value. It appears on the next sync; nothing to configure.
+- **Nightly database snapshot.** The daily backup now also writes
+  `<date>-std_backup.sqlite3` (a consistent copy of the database) next to the
+  YAML file in `backup_path`, and `backup_days_to_keep` prunes both. A failed
+  snapshot is logged and does not stop the YAML backup. See the README for
+  restoring from it.
 - **API revision.** The `/api/v1` contract now has a revision number (2),
   separate from the STD version. Every `/api/...` response, errors included,
   carries `X-STD-API-Revision` and `X-STD-Version` headers. New public
