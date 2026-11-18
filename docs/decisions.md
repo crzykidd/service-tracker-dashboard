@@ -5,6 +5,15 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — API revision headers set app-wide, `meta` public
+
+- The `X-STD-API-Revision` / `X-STD-Version` headers come from one app-level
+  `after_request` keyed on `request.path.startswith("/api/")`, not a blueprint
+  hook, so register, the management API, and unrouted 404/405 all get them.
+- `GET /api/v1/meta` is public and reads only in-memory state. It reveals no
+  more than the headers do.
+
+
 ## 2026-11-17 — Network-inventory design review: stream ingest API, Technitium sidecar
 
 - **Inventory arrives through a generic stream ingest API, pushed by

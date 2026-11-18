@@ -19,6 +19,7 @@ from typing import Any, get_args, get_origin
 from pydantic import TypeAdapter
 
 import mgmt_schemas as S
+from api_version import API_REVISION
 from view_helpers import VALID_STATUS_FILTERS
 
 API_PREFIX = "/api/v1"
@@ -66,6 +67,10 @@ OPERATIONS: tuple = (
     Op("GET", "/openapi.json", None, "This OpenAPI document", dict,
        description="The machine-readable description of the management API (OpenAPI 3.1). "
                    "It describes shapes only, never data. `/api/v1/register` is not part of it."),
+    Op("GET", "/meta", None, "STD version, API revision and supported features", S.MetaOut,
+       description="Producers call it at startup to log what this STD speaks. No key needed and no "
+                   "database access. Every `/api/...` response, errors included, also carries "
+                   "`X-STD-API-Revision` and `X-STD-Version` headers."),
     Op("GET", "/whoami", "read", "Name, prefix and scope of the calling key, and the STD version", S.WhoamiOut,
        description="Handy to check that a key works and what it may do. `version` is the STD "
                    "version; the MCP server compares it with its own. `commit`, `channel` and `build_time` "
@@ -314,6 +319,7 @@ def build_spec(version: str = "") -> dict:
         "info": {
             "title": "Service Tracker Dashboard management API",
             "version": version or "unknown",
+            "x-api-revision": API_REVISION,
             "description": (
                 "Everything an operator can do in the UI, over JSON. Authenticate with an admin API key "
                 "(Settings -> API) sent as `Authorization: Bearer <key>`. A `read` key can read; a "

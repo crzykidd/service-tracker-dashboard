@@ -21,6 +21,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, url
 from flask_wtf.csrf import CSRFError
 
 import version_check
+from api_version import API_REVISION
 from extensions import csrf, db, login_manager
 from health import health_bp
 from health_state import entry_health
@@ -240,6 +241,15 @@ def create_app():
                 response.headers["Allow"] = ", ".join(error.valid_methods)
             return response
         return error
+
+    @app.after_request
+    def _api_revision_headers(response):
+        """Every `/api/...` response, errors included, names the contract revision
+        and the STD version so producers can log them (PRD 18.1)."""
+        if request.path.startswith("/api/"):
+            response.headers["X-STD-API-Revision"] = str(API_REVISION)
+            response.headers["X-STD-Version"] = str(app.config["VERSION_INFO"].get("version") or "unknown")
+        return response
 
     app.register_error_handler(404, _api_v1_json_error)
     app.register_error_handler(405, _api_v1_json_error)

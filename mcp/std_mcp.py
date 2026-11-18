@@ -241,7 +241,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def server_info() -> dict:
         """Versions of this MCP server and of the STD it talks to, and whether they match. Call it when a tool seems missing or returns 404, or when the operator asks about versions.
 
-        Returns {mcp_version, std_version, status: match | std_newer | std_older | unknown, advice}, plus std_commit, std_channel (release | main | dev | pr | local) and std_update ({enabled, latest_version, update_available, release_url, checked_at}) when STD reports them. Answered from what was checked at startup; no request is made.
+        Returns {mcp_version, std_version, status: match | std_newer | std_older | unknown, advice}, plus std_commit, std_channel (release | main | dev | pr | local) and std_update ({enabled, latest_version, update_available, release_url, checked_at}) and std_api_revision (the /api/v1 contract revision) when STD reports them. Answered from what was checked at startup; no request is made.
         """
         return dict(version_info)
 
@@ -516,7 +516,8 @@ def main() -> None:
     std_version = who.get("version")
     info = compare_versions(MCP_VERSION, std_version)
     # Build facts and the update check are reported as-is; they never affect the comparison.
-    for field, name in (("commit", "std_commit"), ("channel", "std_channel"), ("update", "std_update")):
+    for field, name in (("commit", "std_commit"), ("channel", "std_channel"), ("update", "std_update"),
+                         ("api_revision", "std_api_revision")):
         if who.get(field) is not None:
             info[name] = who[field]
     channel = who.get("channel")

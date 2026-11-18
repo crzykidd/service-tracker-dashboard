@@ -333,6 +333,8 @@ A newer STD with an older notifier must keep working:
   `exposure_observations`) use dedicated pydantic models with
   `extra="forbid"` so malformed payloads are caught at the schema
   boundary.
+- **Any additive `/api/v1` change bumps `API_REVISION`** in `api_version.py`
+  plus a row in the PRD §18.1 table. Breaking changes need `/api/v2`.
 - **Network and port capture columns are pure observation** —
   overwritten on every register, no ownership semantics. The
   notifier owns them. Don't add UI editing for these columns.
@@ -364,6 +366,7 @@ routes_mgmt_api.py  ← management API blueprint (/api/v1, admin API key only, C
                       entries, checks, health, groups, widgets, settings, config, openapi.json
 mgmt_openapi.py     ← management API route registry (OPERATIONS) + OpenAPI 3.1 generator;
                       add every new management route here (tests enforce it)
+api_version.py      ← API_REVISION, revision history, FEATURES; headers + GET /api/v1/meta use it
 api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
 mgmt_schemas.py     ← management API pydantic requests (extra=forbid) + response TypedDicts
 mgmt_serializers.py ← model -> response-dict functions for the management API

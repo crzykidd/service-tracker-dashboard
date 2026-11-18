@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **API revision.** The `/api/v1` contract now has a revision number (2),
+  separate from the STD version. Every `/api/...` response, errors included,
+  carries `X-STD-API-Revision` and `X-STD-Version` headers. New public
+  `GET /api/v1/meta` returns the STD version, API revision and supported
+  features, so producers can log them at startup. `whoami`, the OpenAPI
+  document and the MCP `server_info` tool report the revision too. STD logs
+  each distinct `User-Agent` seen on `/api/v1/register` once per restart.
 - **Notifications: MQTT channels.** New Settings → Notifications tab (admins):
   add an MQTT broker (host, port, TLS, username, password, client id, base
   topic, QoS, keepalive), enable or disable it, and see its live connection

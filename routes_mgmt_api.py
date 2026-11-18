@@ -40,6 +40,7 @@ import settings_store
 import synthesizer
 import version_check
 import widget_rules
+from api_version import API_REVISION, FEATURES
 from extensions import csrf, db
 from health_state import entry_health
 from image_utils import fetch_icon_if_missing
@@ -325,13 +326,21 @@ def _build_facts():
             "update": version_check.api_update(running)}
 
 
+@mgmt_bp.route("/meta", methods=["GET"])
+def meta():
+    """Contract revision and features. Public, no DB access: no more than the headers say."""
+    version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
+    return jsonify({"std_version": str(version), "api_revision": API_REVISION,
+                    "features": list(FEATURES)})
+
+
 @mgmt_bp.route("/whoami", methods=["GET"])
 @require_api_key("read")
 def whoami():
     key = g.api_key
     version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
     return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope,
-                    "version": str(version), **_build_facts()})
+                    "version": str(version), "api_revision": API_REVISION, **_build_facts()})
 
 
 # --- shared helpers --------------------------------------------------------------

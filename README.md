@@ -589,6 +589,19 @@ The machine-readable description is an OpenAPI 3.1 document at
 is generated from the same declarations the tests check against the routes, so
 it always matches the code.
 
+### API revision
+
+The `/api/v1` contract has its own revision number, separate from the STD
+version. Every response under `/api/` (errors included) carries
+`X-STD-API-Revision: <n>` and `X-STD-Version: <x.y.z>` headers.
+`GET /api/v1/meta` needs no key and returns
+`{"std_version", "api_revision", "features"}`; scripts and producers can call
+it at startup to log what this STD speaks. `whoami` also reports
+`api_revision`, the OpenAPI `info` has `x-api-revision`, and the MCP
+`server_info` tool reports `std_api_revision`. STD logs each distinct
+`User-Agent` it sees on `/api/v1/register` once per restart, so give your
+producer a `User-Agent: name/version`.
+
 ### Create a key and send it
 
 1. Open **Settings → API**, enter a name and pick a scope, and press
@@ -619,6 +632,7 @@ token.
 | Method | Path | Scope | What it does |
 |---|---|---|---|
 | GET | `/api/v1/openapi.json` | none | This OpenAPI document |
+| GET | `/api/v1/meta` | none | STD version, API revision and supported features |
 | GET | `/api/v1/whoami` | read | Name, prefix and scope of the calling key |
 | GET | `/api/v1/entries` | read | List entries |
 | POST | `/api/v1/entries` | write | Add a manual entry |
@@ -1099,6 +1113,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/images/<file>`     | Serve cached icon files.                 |
 | `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
 | `/api/v1/openapi.json` | OpenAPI 3.1 description of the management API (public). |
+| `/api/v1/meta`       | STD version, API revision and features (public). |
 | `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope, plus the STD version, build commit/channel and update status (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
 | `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |

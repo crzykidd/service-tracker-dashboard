@@ -51,6 +51,22 @@ unauthorized_log_tracker = {}
 failed_icon_cache = {}  # image_icon -> last_failed_time
 RETRY_INTERVAL = timedelta(minutes=60)
 
+# User-Agents already logged on register: log each distinct one once per
+# restart, never per request. Capped so a hostile client can't grow it.
+_SEEN_UAS = set()
+_SEEN_UAS_LOCK = threading.Lock()
+_SEEN_UAS_MAX = 100
+
+
+def _log_new_user_agent():
+    ua = (request.headers.get("User-Agent") or "")[:200] or "(none)"
+    with _SEEN_UAS_LOCK:
+        if ua in _SEEN_UAS or len(_SEEN_UAS) >= _SEEN_UAS_MAX:
+            return
+        _SEEN_UAS.add(ua)
+    logger.info("Register client seen: User-Agent %r", ua)
+
+
 # Serializes the upsert critical section across all register calls.
 # See upsert_service docstring for the rationale.
 _UPSERT_LOCK = threading.Lock()
@@ -372,6 +388,8 @@ def api_v1_register():
     auth_failure = _check_bearer_auth("/api/v1/register")
     if auth_failure is not None:
         return auth_failure
+
+    _log_new_user_agent()
 
     raw = request.get_json(silent=True)
     if not isinstance(raw, dict):

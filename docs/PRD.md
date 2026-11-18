@@ -76,6 +76,8 @@
 | 0.66    | 2026-11-16 | §17.4 delivered on `dev` (notif-03): Home Assistant MQTT discovery. New `notify_ha.py`; discovery configs reconcile through `notify_state.full_sync()` (configs before states, per-channel published set in `notify_publish_state.ha`, cleared on opt-out/delete/purge/discovery off), birth-message subscription `<ha_prefix>/status` in `MqttSession`, additive state-payload attributes (`std_entry_id`, and `entry_name`/`host`/`group`/`source`/`dashboard_url` on checks), `ha_exclude` on `service_entry` and `health_check` (migration `d8e2a6f4b915`, new §5.9), Settings/edit-page controls, management API and MCP fields. §17 marked Delivered on `dev`. No register-contract change. |
 | 0.67    | 2026-11-17 | §17.1/§17.4/§5.9 (notif-04, on `dev`): Home Assistant entries become opt-in (`service_entry.ha_publish`, default false; migration `e3b7c1d9a204` drops `service_entry.ha_exclude`, every entry starts unpublished; checks keep `ha_exclude`). Device names and `default_entity_id` include the host (`<prefix> <name> (<host>)`). Settings → Notifications "Home Assistant entries" bulk picker, `ha_publish` on the Add page, management API (`ha_publish` on entries) and MCP, `ha_publish`/check `ha_exclude` in backups. No register-contract change. |
 | 0.68    | 2026-11-17 | §17.5 delivered on `dev` (notif-05): purge. New `notify_purge.py` (§3.1); channel purge (subscribe to `<base>/#` and this instance's `<ha_prefix>/+/std_<inst>/#`, clear retained + tracked topics except `<base>/status`, optional republish with a hold when off) and per-entry purge-and-republish on every channel, run on the publisher thread via `Publisher.call()`; Settings → Notifications button with confirm dialog, entry edit page button, management API `POST /notifications/channels/{id}/purge` and `POST /entries/{id}/notifications/purge`, MCP tools. The periodic safety net no longer releases a held channel. No schema or register-contract change. |
+| 0.69    | 2026-11-17 | Added §18 (Next release — Inventory streams and API revision, planned for 0.10.0): `/api/v1` API revision (`X-STD-API-Revision` header, `GET /api/v1/meta`, revision history), HA "Since" sensor, nightly SQLite snapshot, source refactor (`is_docker`), inventory streams (schema, the `ingest` key scope, the snapshot ingest contract for sidecars, apply rules, lifecycle, blocks, link offers, Settings → Streams). Added §20.3 (inventory stream producers; std-source-technitium). Former §18–§20 renumbered §19–§21 and cross-references updated. No code changes yet. |
+| 0.70    | 2026-11-17 | §18.1 delivered on `dev`: `api_version.py`, `X-STD-API-Revision` / `X-STD-Version` headers on every `/api/` response, public `GET /api/v1/meta`, `api_revision` in `whoami` / OpenAPI / MCP `server_info`, once-per-User-Agent register logging. |
 
 ---
 
@@ -98,9 +100,10 @@
 15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
 16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
 17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
-18. [Versioning, Branches, and Releases](#18-versioning-branches-and-releases)
-19. [Cross-Repo Coordination](#19-cross-repo-coordination)
-20. [Open Questions](#20-open-questions)
+18. [Next release — Inventory streams and API revision (Planned)](#18-next-release--inventory-streams-and-api-revision-planned)
+19. [Versioning, Branches, and Releases](#19-versioning-branches-and-releases)
+20. [Cross-Repo Coordination](#20-cross-repo-coordination)
+21. [Open Questions](#21-open-questions)
 
 ---
 
@@ -1026,7 +1029,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §18 (Versioning, Branches, and Releases); this section
+release mechanics is §19 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -1048,7 +1051,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§18).
+  checks (§19).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1073,7 +1076,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§19) is not engaged and every notifier
+consumer-leads ordering rule (§20) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1258,7 +1261,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§20).
+Resolves the Open Question on health-check timeouts (§21).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1379,7 +1382,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§19) is not engaged. Every notifier version that works
+ordering rule (§20) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -2086,7 +2089,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§20), users and passwords through the API, and
+- Per-host notifier tokens (§21), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2681,7 +2684,304 @@ tools `purge_notification_channel` and `purge_entry_notifications`.
 
 ---
 
-## 18. Versioning, Branches, and Releases
+## 18. Next release — Inventory streams and API revision (Planned)
+
+Planned for **0.10.0**, together with §16 and §17. The goal is an STD that is
+ready for the first inventory sidecar (`std-source-technitium`, a new repo,
+§20.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
+fully tested end to end yet, but nothing happens until an operator creates an
+`ingest` key and enables a stream, so general users never touch it. Fixes found
+while building the sidecar land in 0.10.x.
+
+Design and rationale: `docs/design/2026-11-17-network-inventory-and-profiles.md`
+(§5, §6, §10.2, §12) and `docs/decisions.md` (2026-11-17). Not in this release:
+tags and saved views, thresholds and stored check state, monitor profiles,
+HA merge mode, alert policies (design doc §11, slices 1, 2a, 2b, 4 and 5).
+
+Prompts, run in order (each one depends on the one before):
+
+| Prompt | Section |
+|---|---|
+| `inv-01-api-revision` | §18.1 |
+| `inv-02-ha-since-and-db-snapshot` | §18.2 |
+| `inv-03-source-refactor` | §18.3 |
+| `inv-04-stream-ingest-backend` | §18.4–§18.7 |
+| `inv-05-streams-ui` | §18.8 |
+
+### 18.1 API revision [`inv-01-api-revision`]
+
+**Delivered on `dev`.** As built: `meta` is registered in `mgmt_openapi.OPERATIONS` with no security requirement; the register User-Agent set is capped at 100 entries and each value is truncated to 200 characters; `std_version` comes from the build's version info (the `VERSION` file until the 0.10.0 prep).
+
+The `/api/v1` surface gets a real contract version, separate from the STD app
+version, so producers (the notifier, sidecars, the MCP server) can tell what the
+server supports and log it.
+
+- **`api_version.py`** holds `API_REVISION` (an integer) and
+  `API_REVISION_HISTORY`, the table below in code.
+- **Rule:** an additive change to any `/api/v1` contract (register, management,
+  ingest) bumps the revision by one in the release that ships it, plus one row
+  here. Breaking changes don't happen under `/api/v1`. They'd need `/api/v2`,
+  with `/api/v1` kept for at least one release. CLAUDE.md's contract rules get
+  the same line.
+- **Header on every `/api/...` response**, errors included: `X-STD-API-Revision:
+  <n>` and `X-STD-Version: <bare semver>`. It's set by one app-level
+  `after_request` that checks `request.path.startswith("/api/")`.
+- **`GET /api/v1/meta`**, unauthenticated, cheap, no DB access:
+  `{"std_version": "0.10.0", "api_revision": 2, "features": ["register",
+  "management", "notifications", "streams"]}`. Producers call it at startup.
+  It reveals no more than the response headers do.
+- `GET /api/v1/whoami` adds `api_revision`. The OpenAPI `info` adds
+  `x-api-revision`. MCP `server_info` adds `std_api_revision`.
+- **Producers** (documented in §20): send `User-Agent: <producer>/<version>`;
+  log STD's version and API revision at startup and whenever the header value
+  changes; when a feature they need is missing from `features`, log it clearly and
+  keep retrying rather than exiting.
+- **Register logging:** STD logs at INFO the first time it sees each distinct
+  `User-Agent` on `/api/v1/register` (an in-memory set, so the log is once per
+  restart and never per request).
+
+| Revision | STD release | Adds |
+|---|---|---|
+| 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
+| 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge (§17); `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
+
+### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`]
+
+- **"Since" sensor.** Every published entry device (`ha_publish`) gains a
+  `sensor` entity:
+  - name "Since", `device_class: timestamp`, unique id `<node>_entry_<id>_since`,
+    `default_entity_id` `sensor.<device slug>_since`;
+  - it reads `value_json.since` from the entry state topic, which already carries
+    it, so nothing new is published and PRD §17.1 (changes only) holds;
+  - a null `since` must render as unknown, not as an invalid timestamp;
+  - the device page then reads "Up · since 3 days ago".
+- The "STD Health" naming from the design doc applies only to merge mode, which is
+  not in this release.
+- **Nightly SQLite snapshot.** The daily backup job also writes
+  `<date>-std_backup.sqlite3` next to the YAML file in `backup_path`, made with
+  `sqlite3.Connection.backup()` (WAL-safe, CLAUDE.md). It's pruned by the same
+  `backup_days_to_keep`. A failure is logged and never stops the YAML backup.
+  README documents the manual restore: stop the container, replace the database
+  file, start it. The YAML format question stays in FUTURE.md.
+
+### 18.3 Source refactor [`inv-03-source-refactor`]
+
+No operator-visible change. `refactor:` commit, no CHANGELOG entry (recorded in
+`docs/decisions.md`). It prepares the code for a third source value.
+
+- Add `ServiceEntry.is_docker` (`source == notifier`).
+- Switch every branch that uses `is_manual` / `!= manual` to mean "not Docker"
+  over to `is_docker`: the Docker pill and container fields
+  (`tiled_dash.html`, `edit_entry.html`, `dashboard.html`), `models.py`
+  (`is_docker_status_stale` guard), and the HA `model` string.
+- Keep `is_manual` where it really means "operator-made" (the Name label, the
+  editable name and host rule in the management API).
+- Generalise the two-value source filters (`view_helpers.normalize_source_filter`
+  / `matches_source`, the `source` query on `GET /api/v1/entries`) to match any
+  value in `VALID_SOURCES`.
+- Make restore's source fallback (`routes_dashboard.py` restore loop) handle an
+  unknown source by restoring as manual.
+- Behaviour is identical. The existing suite must pass unchanged, plus tests
+  for `is_docker` and the generalised filters.
+
+### 18.4 Schema [`inv-04`]
+
+One Alembic migration, FK indexes in the same migration. §5.10 is written when it
+ships.
+
+- **`inventory_stream`:**
+  - `id`, `stream_id` (unique, the slug in the URL), `display_name`, `producer`,
+    `producer_version`, `key_type`;
+  - `status` (`pending` | `enabled` | `disabled` | `ignored`);
+  - `api_key_id` (FK `api_key`, nullable, indexed), the key that created the
+    stream;
+  - `network_include` / `network_exclude` (JSON lists, NULL = no filter);
+  - `snapshot` (JSON, the latest accepted items);
+  - `first_seen_at`, `last_snapshot_at`, `last_applied_at`, `last_item_count`,
+    `last_counts` (JSON), `last_error`, `created_at`, `updated_at`.
+- **`service_entry`:**
+  - `stream_id` (FK `inventory_stream.id`, nullable, indexed), `stream_key`;
+  - `mac`, `ip`, `network`, `attributes` (JSON), `inventory_missing`
+    (bool, default false);
+  - `name_source` (NULL | `stream` | `ui_edit`).
+  - Partial unique index on `(stream_id, stream_key)` where `stream_id IS NOT
+    NULL`, soft-deleted rows included.
+  - `source` gains the value `stream` (`VALID_SOURCES`).
+- **`inventory_block`:** `id`, `stream_id` (FK, indexed), `key`, `name`, `ip`,
+  `blocked_at`, `blocked_by`; unique `(stream_id, key)`. Kept when the entry is
+  hard-deleted.
+- **`stream_link_offer`:** `id`, `stream_id` (FK, indexed), `key`, `entry_id`
+  (FK `service_entry`, indexed, cascade on delete), `item` (JSON),
+  `created_at`; unique `(stream_id, key)`.
+- **`api_key.scope`** gains `ingest`.
+
+### 18.5 Ingest contract [`inv-04`] — the contract sidecars code against
+
+**Auth.** `Authorization: Bearer std_<prefix>_<secret>`, an admin API key with
+scope **`ingest`** (or `write`, for testing with curl).
+- An `ingest` key can call only the two routes below. It fails `read` and
+  `write` checks everywhere else.
+- A stream is bound to the key that created it. A later snapshot from a
+  different `ingest` key gets 403. A `write` key may post to any stream.
+- Rotating the key keeps the binding, because the key id is unchanged.
+
+**`PUT /api/v1/streams/<stream_id>/snapshot`**
+
+- `stream_id`: `^[a-z0-9][a-z0-9_-]{0,62}$`.
+- Body (pydantic, `extra="forbid"` at every level):
+
+| Field | Type | Rules |
+|---|---|---|
+| `display_name` | string | 1–32 chars. Used when the stream is created; later the operator may rename it in STD, and the producer's value is then ignored |
+| `producer` | string | 1–64 chars, e.g. `std-source-technitium` |
+| `producer_version` | string | 1–32 chars, bare semver recommended |
+| `key_type` | string | `^[a-z0-9_]{1,16}$`. `mac` means every `key` must be a MAC. Can't change for an existing stream (409) |
+| `items` | list | 0–5000 items. Keys must be unique within the snapshot (400 on a duplicate). `[]` is valid: everything goes missing |
+| `items[].key` | string | 1–128 chars. For `key_type: mac`, any common MAC form (`aa:bb:..`, `AA-BB-..`, `aabb.ccdd.eeff`, `aabbccddeeff`), normalised to lower-case colon form |
+| `items[].name` | string | 1–128 chars, the entry name (e.g. the reservation hostname) |
+| `items[].ip` | string? | an IPv4 or IPv6 address |
+| `items[].mac` | string? | as `key` for MAC forms. With `key_type: mac` and no `mac`, STD copies the key |
+| `items[].network` | string? | 1–64 chars (for DHCP, the scope name). The stream's network filter matches on it |
+| `items[].attributes` | object? | ≤ 32 keys matching `^[A-Za-z0-9_.-]{1,64}$`. Values are string (≤ 256 chars), number, boolean or null. Shown in STD, never interpreted |
+
+- Request body ≤ 2 MiB (413 above that). A snapshot is applied whole or not at
+  all.
+
+**Responses** (JSON; every response carries the §18.1 headers):
+
+| Status | When | Body |
+|---|---|---|
+| 200 | stream `enabled`, snapshot applied | `{"stream_id", "stream_status": "enabled", "applied": true, "item_count", "counts": {"created", "updated", "unchanged", "restored", "missing", "blocked", "link_offers", "filtered"}}` |
+| 202 | stream new (now `pending`) or `pending` / `disabled`: stored, not applied | `{"stream_id", "stream_status", "applied": false, "item_count", "message"}`. The message tells the operator to enable it in Settings → Streams |
+| 202 | stream `ignored`: discarded, not stored | `{"stream_id", "stream_status": "ignored", "applied": false}` |
+| 400 | validation failed | the management API error shape, with field errors |
+| 401 / 403 | no or invalid key / wrong scope or another key's stream | the management API error shape |
+| 409 | `key_type` differs from the stream's | the management API error shape |
+| 413 | body too large | the management API error shape |
+
+**`GET /api/v1/streams/<stream_id>/status`** (same auth): `{"stream_id",
+"stream_status", "display_name", "last_snapshot_at", "last_applied_at",
+"last_item_count", "last_counts"}`, or 404 if the stream doesn't exist yet. A
+sidecar may log it at startup.
+
+**Producer expectations** (the reference sidecar does all of these):
+- post a full snapshot at startup, then every N minutes (default 5);
+- retry with backoff on 5xx and network errors, and never exit on a failed post;
+- log the response counts and `stream_status`;
+- follow §18.1 (User-Agent, revision logging, `meta` at startup).
+
+Snapshot PUTs aren't written to the API audit log, because they'd flood it every
+few minutes. The stream row keeps the last counts. Stream status changes made by
+the operator are audited.
+
+### 18.6 Applying a snapshot [`inv-04`]
+
+Applied in the ingest request, in one transaction, under an in-process lock (the
+`upsert_service` pattern). STD makes no outbound calls here. For an `enabled`
+stream:
+
+1. **Filter.** Drop items whose `network` fails the stream's include/exclude
+   lists (`filtered`).
+2. **Blocked.** Skip keys in `inventory_block` (`blocked`).
+3. **Known key** (an entry of this stream with this key):
+   - overwrite `ip`, `mac`, `network`, `attributes`; clear `inventory_missing`;
+   - `container_name` follows `name_source`: overwritten unless `ui_edit`;
+   - a soft-deleted row is **restored** (`deleted_at` cleared; `restored`);
+   - group, description, icon, checks and `ha_publish` are never written.
+4. **New key:**
+   - if exactly one active manual entry with no host has the item's name (ignoring
+     case) and no open offer exists, record a `stream_link_offer` (`link_offers`)
+     and create nothing;
+   - with an open offer for the key, keep waiting;
+   - otherwise create an entry: `source = stream`, `host` NULL, `container_name` =
+     name, `name_source = stream` (`created`).
+5. **Missing.** Every entry of this stream whose key isn't in the snapshot, and
+   isn't soft-deleted, gets `inventory_missing = true` (`missing`). Nothing is
+   deleted.
+
+Also:
+- **Enable** applies the stored snapshot immediately, with the same rules.
+- **Stream entries get no health checks automatically** in this release. The URL
+  rows exist but stay dormant. The operator adds a ping or TCP check by hand.
+  Templates come with monitor profiles (design doc §7).
+- The MQTT entry payload adds `ip`, `mac`, `network` and `stream` (the display
+  name). `notify_state._ENTRY_ATTRS` adds `ip`, `mac`, `network`, `stream_id` and
+  `inventory_missing`. `attributes` isn't published in this release. The HA
+  `model` string for a stream entry is the stream's display name.
+
+### 18.7 Stream lifecycle, blocks and link offers [`inv-04`]
+
+**Operator actions.** The same functions sit behind the UI (§18.8), the management
+API (read / write scope) and MCP:
+
+- **List / get streams:** status, producer and version, counts, filters, last
+  error.
+- **Preview** a stream's stored snapshot: what an apply would do (counts plus the
+  per-item action), with no writes.
+- **Enable** (applies now), **Disable**, **Ignore**.
+  - Disable takes `cleanup`: `keep` (entries stay, no longer updated) |
+    `soft_delete` | `purge` (hard delete through `hard_delete_entry`, plus the
+    stored snapshot and link offers). Purge also takes `clear_blocks` (default
+    false).
+  - The response gives counts.
+- **Delete a stream** takes the same `cleanup` options. With `keep`, its entries
+  become manual (`source = manual`, `stream_id`/`stream_key` cleared, `mac`/`ip`
+  kept).
+- **Update a stream:** `display_name`, `network_include`, `network_exclude`.
+- **Blocks:** list, unblock (the next snapshot restores the row or creates a new
+  one).
+- **Link offers:** list, accept, decline.
+  - **Accept:** the manual entry becomes `source = stream` with the key and
+    observation fields, keeping its id, history, checks and `ha_publish`.
+  - **Decline:** a new stream entry is created from the stored item.
+  - **Link by hand:** the operator links a manual entry to an unmatched item of the
+    stream's latest snapshot.
+- **Delete a stream entry:** the entry delete (UI and `POST
+  /api/v1/entries/<id>/delete`) takes `block` (default false). True also writes an
+  `inventory_block` row for `(stream_id, key)`.
+- **Rename a stream entry** in the UI or API: `name_source = ui_edit`.
+
+Every new management route is registered in `mgmt_openapi.OPERATIONS` (tests
+enforce it). Stream status changes, cleanups, unblocks and link answers are
+audited.
+
+### 18.8 Streams UI [`inv-05`]
+
+- **Settings → API:** the key scope select gains **Ingest (sidecars)**, with a
+  one-line explanation.
+- **Settings → Streams** (new tab):
+  - one row per stream: display name, `stream_id`, producer and version, status,
+    last snapshot (relative time), item count, last counts, last error;
+  - actions: **Preview** (a table of items with their would-be action), **Enable**,
+    **Disable…** / **Delete…** (a dialog with counts first, the three cleanup
+    choices, and the customised entries listed by name), **Ignore**;
+  - inline edit of the display name and the network include/exclude lists;
+  - a read-only **Docker (register)** row: the number of notifier entries and the
+    last register time;
+  - a pending stream is highlighted with "New stream waiting: enable it to import
+    N items";
+  - **Blocked** sub-list with **Unblock**; **Link offers** sub-list with
+    **Accept** / **Decline**.
+- **Entries:**
+  - stream entries show a pill with the stream's display name where Docker
+    entries show the Docker pill (Dashboard, Tiled, Compact);
+  - "missing from the latest snapshot" shows as a muted marker;
+  - the source filter lists each stream.
+- **Edit page** for a stream entry:
+  - read-only MAC, IP, network, attributes and stream;
+  - the name is editable, and editing it sets `ui_edit`;
+  - deleting asks **Allow re-adding** / **Don't re-add**.
+- **Edit page for a manual entry:**
+  - with an open offer, a banner: "Stream DHCP item `shelly-pump` (aa:bb:…)
+    matches this entry. **Convert** / **Keep separate**";
+  - otherwise **Link to stream item…**, which picks from unmatched items.
+- README: a "Inventory streams and sidecars" section (what a stream is, the
+  `ingest` key, the pending → enable flow, cleanup, the block list, a link to
+  §18.5 for sidecar authors).
+
+---
+
+## 19. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -2720,12 +3020,12 @@ tools `purge_notification_channel` and `purge_entry_notifications`.
 
 ---
 
-## 19. Cross-Repo Coordination
+## 20. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 19.1 Contract ownership
+### 20.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -2738,7 +3038,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 19.2 Release history
+### 20.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -2763,7 +3063,27 @@ not lead.
 
 ---
 
-## 20. Open Questions
+### 20.3 Inventory stream producers (planned, §18)
+
+From 0.10.0 STD also owns the **ingest contract** (§18.5), and inventory
+sidecars are its producers. The first is
+[std-source-technitium](https://github.com/crzykidd/std-source-technitium)
+(new repo; Technitium DHCP static reservations), with its own version line,
+image and release cadence. The same rules apply as for the notifier:
+
+- **STD leads, producers follow.** The ingest schema uses `extra="forbid"`, so a
+  new core field ships in STD first. New facts that STD doesn't interpret go in
+  `items[].attributes`, which needs no STD release.
+- **Safe degradation.** A newer STD must keep accepting an older sidecar's
+  snapshots: new core fields are optional.
+- **API revision** (§18.1): every producer (notifier and sidecars) logs STD's
+  `X-STD-API-Revision` at startup and on change, and sends
+  `User-Agent: <producer>/<version>`. The notifier picks this up in its next
+  release. Until then STD works with it unchanged.
+
+---
+
+## 21. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)

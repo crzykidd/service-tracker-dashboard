@@ -228,6 +228,13 @@ class WhoamiOut(TypedDict):
     channel: str                     # release | main | dev | pr | local
     build_time: str                  # UTC ISO build time, or "unknown"
     update: UpdateInfoOut            # GitHub update check (additive; older STDs omit it)
+    api_revision: int                # /api/v1 contract revision (additive; older STDs omit it)
+
+
+class MetaOut(TypedDict):
+    std_version: str                 # bare semver, e.g. "0.10.0"
+    api_revision: int                # /api/v1 contract revision
+    features: list[str]              # register | management | notifications | streams
 
 
 class CheckDeleteOut(TypedDict):
