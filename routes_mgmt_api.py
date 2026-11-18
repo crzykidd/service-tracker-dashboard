@@ -72,8 +72,8 @@ from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
     SOURCE_MANUAL,
-    SOURCE_NOTIFIER,
     URL_CHECK_KINDS,
+    VALID_SOURCES,
     ApiAudit,
     Group,
     HealthCheck,
@@ -508,8 +508,8 @@ def list_entries():
     if status not in VALID_STATUS_FILTERS:
         abort(400, f"'status' must be one of: {', '.join(VALID_STATUS_FILTERS)}.")
     source = (request.args.get("source") or "all").strip().lower()
-    if source not in ("all", "notifier", "manual"):
-        abort(400, "'source' must be one of: all, notifier, manual.")
+    if source != "all" and source not in VALID_SOURCES:
+        abort(400, f"'source' must be one of: all, {', '.join(VALID_SOURCES)}.")
     include_deleted, deleted_only = _bool_arg("include_deleted"), _bool_arg("deleted_only")
 
     query = _entry_query()
@@ -518,7 +518,7 @@ def list_entries():
     elif not include_deleted:
         query = query.filter(ServiceEntry.deleted_at.is_(None))
     if source != "all":
-        query = query.filter(ServiceEntry.source == (SOURCE_MANUAL if source == "manual" else SOURCE_NOTIFIER))
+        query = query.filter(ServiceEntry.source == source)
     if request.args.get("host"):
         query = query.filter(ServiceEntry.host == request.args["host"])
     if request.args.get("group"):

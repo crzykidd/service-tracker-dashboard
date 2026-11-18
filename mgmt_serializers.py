@@ -18,7 +18,7 @@ from mgmt_schemas import (
     WidgetInstanceOut,
     WidgetOut,
 )
-from models import SOURCE_NOTIFIER, HealthCheck, ServiceEntry, check_counts
+from models import HealthCheck, ServiceEntry, check_counts
 
 
 def _local_iso(dt):
@@ -91,7 +91,7 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
         "ha_publish": bool(entry.ha_publish),
-        "stale": entry.source == SOURCE_NOTIFIER and entry.is_docker_status_stale,
+        "stale": entry.is_docker and entry.is_docker_status_stale,
         "last_updated": _local_iso(entry.last_updated),
         "deleted_at": _local_iso(entry.deleted_at),
         "health": health_out(entry),

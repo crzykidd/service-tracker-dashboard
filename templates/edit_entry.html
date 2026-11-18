@@ -213,7 +213,7 @@
       {% with autoload=true %}{% include "partials/health_detail.html" %}{% endwith %}
     </div>
 
-    {% if not entry.is_manual %}
+    {% if entry.is_docker %}
     <hr class="my-10 border-dashboard-accent">
 
     {# ── Reported by notifier (read-only) ─────────────────── #}

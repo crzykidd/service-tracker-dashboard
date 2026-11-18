@@ -20,6 +20,7 @@ from pydantic import TypeAdapter
 
 import mgmt_schemas as S
 from api_version import API_REVISION
+from models import VALID_SOURCES
 from view_helpers import VALID_STATUS_FILTERS
 
 API_PREFIX = "/api/v1"
@@ -79,7 +80,7 @@ OPERATIONS: tuple = (
     Op("GET", "/entries", "read", "List entries", S.Page[S.EntryOut], params=_PAGE + (
         Param("status", {"type": "string", "enum": list(VALID_STATUS_FILTERS), "default": "all"},
               "Filter by derived health state."),
-        Param("source", {"type": "string", "enum": ["all", "notifier", "manual"], "default": "all"},
+        Param("source", {"type": "string", "enum": ["all", *VALID_SOURCES], "default": "all"},
               "Where the entry came from."),
         Param("host", {"type": "string"}, "Exact host name."),
         Param("group", {"type": "string"}, "Exact group name."),

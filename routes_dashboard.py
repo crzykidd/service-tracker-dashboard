@@ -532,8 +532,11 @@ def settings():
                     # Source: backups from before v0.7.0 have none; use the
                     # migration's backfill rule (never registered -> manual).
                     item_source = item.get('source')
-                    if item_source not in VALID_SOURCES:
+                    if item_source is None:
                         item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
+                    elif item_source not in VALID_SOURCES:
+                        # Unknown (e.g. a source from a newer STD): operator-made.
+                        item_source = SOURCE_MANUAL
                     item_host = (item.get('host') or '').strip() or None
 
                     # Host is optional for manual entries only.

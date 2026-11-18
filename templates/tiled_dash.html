@@ -46,7 +46,7 @@
                     {% set _is_good_docker = ('running' in _docker_status_lower and 'unhealthy' not in _docker_status_lower) or 'healthy' in _docker_status_lower %}
                     {% set _is_bad_docker  = 'exited' in _docker_status_lower or 'dead' in _docker_status_lower or 'unhealthy' in _docker_status_lower or 'restarting' in _docker_status_lower or 'removing' in _docker_status_lower or 'paused' in _docker_status_lower %}
 
-                    {% if entry.is_manual %}
+                    {% if not entry.is_docker %}
                       {% set _docker_class   = 'status-icon-muted' %}
                       {% set _docker_tooltip = 'Manual entry' %}
                     {% elif not entry.last_api_update %}
@@ -131,7 +131,7 @@
                                     {% endif %}
 
                                     {# Source icon: Docker status for notifier entries, a link icon for manual ones #}
-                                    {% if not entry.is_manual %}
+                                    {% if entry.is_docker %}
                                         <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
                                             <i class="ti ti-brand-docker" aria-hidden="true"></i>
                                         </span>
@@ -261,7 +261,7 @@
                             {% endif %}
 
                             {# Docker status (notifier entries only) #}
-                            {% if not entry.is_manual %}
+                            {% if entry.is_docker %}
                             <div class="drawer-row">
                                 <span class="drawer-label">Docker</span>
                                 <span class="drawer-value">

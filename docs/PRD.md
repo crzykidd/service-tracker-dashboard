@@ -79,6 +79,7 @@
 | 0.69    | 2026-11-17 | Added §18 (Next release — Inventory streams and API revision, planned for 0.10.0): `/api/v1` API revision (`X-STD-API-Revision` header, `GET /api/v1/meta`, revision history), HA "Since" sensor, nightly SQLite snapshot, source refactor (`is_docker`), inventory streams (schema, the `ingest` key scope, the snapshot ingest contract for sidecars, apply rules, lifecycle, blocks, link offers, Settings → Streams). Added §20.3 (inventory stream producers; std-source-technitium). Former §18–§20 renumbered §19–§21 and cross-references updated. No code changes yet. |
 | 0.70    | 2026-11-17 | §18.1 delivered on `dev`: `api_version.py`, `X-STD-API-Revision` / `X-STD-Version` headers on every `/api/` response, public `GET /api/v1/meta`, `api_revision` in `whoami` / OpenAPI / MCP `server_info`, once-per-User-Agent register logging. |
 | 0.71    | 2026-11-17 | §18.2 delivered on `dev`: Home Assistant "Since" timestamp sensor per published entry (§17.4 entity table); the daily backup job also writes `<date>-std_backup.sqlite3` via `sqlite3.Connection.backup()`, pruned by `backup_days_to_keep`. No register-contract change. |
+| 0.72    | 2026-11-17 | §18.3 delivered on `dev`: `ServiceEntry.is_docker`; "not Docker" branches (tiled/dashboard/edit templates, stale guard, HA model) moved off `is_manual`; source filters and restore generalised over `VALID_SOURCES`. No operator-visible change. |
 
 ---
 
@@ -2772,7 +2773,7 @@ a half-written file never carries the `.sqlite3` name; the prune matches only
 
 ### 18.3 Source refactor [`inv-03-source-refactor`]
 
-No operator-visible change. `refactor:` commit, no CHANGELOG entry (recorded in
+**Delivered on `dev`.** No operator-visible change. `refactor:` commit, no CHANGELOG entry (recorded in
 `docs/decisions.md`). It prepares the code for a third source value.
 
 - Add `ServiceEntry.is_docker` (`source == notifier`).
@@ -2789,6 +2790,12 @@ No operator-visible change. `refactor:` commit, no CHANGELOG entry (recorded in
   unknown source by restoring as manual.
 - Behaviour is identical. The existing suite must pass unchanged, plus tests
   for `is_docker` and the generalised filters.
+- **As built:** `is_docker` treats an unflushed instance (`source` None) as
+  Docker, matching the column default. Restore keeps the pre-0.7 backfill rule
+  (never registered -> manual) for a backup with no `source` key at all; only a
+  present-but-unknown value restores as manual. The HA `model` string comes from
+  a `SOURCE_MODELS` map in `notify_ha.py` that inv-04 extends. The API `source`
+  filter enum is built from `VALID_SOURCES`. Decision log entry 2026-11-17.
 
 ### 18.4 Schema [`inv-04`]
 

@@ -24,7 +24,7 @@ from health_state import (
     STATE_UP,
     entry_health,
 )
-from models import SOURCE_MANUAL, SOURCE_NOTIFIER, Group
+from models import VALID_SOURCES, Group
 
 VALID_AXES = ("group", "stack", "host")
 DEFAULT_AXIS = "group"
@@ -54,7 +54,7 @@ def normalize_show_urlless(value):
 
 
 VALID_STATUS_FILTERS = ("all", "failing", "healthy", "unknown", "stale")
-VALID_SOURCE_FILTERS = ("all", "notifier", "manual")
+VALID_SOURCE_FILTERS = ("all", *VALID_SOURCES)
 
 _STATUS_STATES = {
     "failing": (STATE_DEGRADED, STATE_DOWN),
@@ -78,14 +78,14 @@ def matches_status(entry, status):
     if status == "all":
         return True
     if status == "stale":
-        return entry.source == SOURCE_NOTIFIER and entry.is_docker_status_stale
+        return entry.is_docker and entry.is_docker_status_stale
     return entry_health(entry).state in _STATUS_STATES[status]
 
 
 def matches_source(entry, source):
     if source == "all":
         return True
-    return entry.source == (SOURCE_MANUAL if source == "manual" else SOURCE_NOTIFIER)
+    return entry.source == source
 
 
 def health_counts(services, show_urlless=True, source="all"):

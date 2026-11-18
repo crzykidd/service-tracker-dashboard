@@ -266,6 +266,12 @@ class ServiceEntry(db.Model):
         return self.source == SOURCE_MANUAL
 
     @property
+    def is_docker(self):
+        """True for entries owned by the Docker notifier (`source == notifier`)."""
+        # A not-yet-flushed instance has source None; the column default is notifier.
+        return (self.source or SOURCE_NOTIFIER) == SOURCE_NOTIFIER
+
+    @property
     def is_docker_status_stale(self):
         """True when the notifier hasn't reported in within `stale_after_minutes`.
 
@@ -273,7 +279,7 @@ class ServiceEntry(db.Model):
         `last_api_update` (never registered) counts as stale; the Tiled view
         shows that case separately as "no update received".
         """
-        if self.is_manual or self.is_static:
+        if not self.is_docker or self.is_static:
             return False
         if self.last_api_update:
             return (datetime.now() - self.last_api_update) > timedelta(minutes=_stale_after_minutes())
@@ -327,7 +333,7 @@ def ensure_container_check(entry):
 
     Manual entries get none. Idempotent. Caller commits.
     """
-    if entry.source == SOURCE_NOTIFIER and entry.container_check is None:
+    if entry.is_docker and entry.container_check is None:
         entry.checks.append(HealthCheck(
             kind=CHECK_KIND_CONTAINER,
             name=CONTAINER_CHECK_NAME,
@@ -363,7 +369,7 @@ def check_counts(entry, check):
     if not check.enabled:
         return False
     if check.kind == CHECK_KIND_CONTAINER:
-        return entry.source == SOURCE_NOTIFIER and not entry.is_static
+        return entry.is_docker and not entry.is_static
     if check.kind == CHECK_KIND_INTERNAL:
         target = entry.internalurl
     elif check.kind == CHECK_KIND_EXTERNAL:

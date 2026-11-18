@@ -5,6 +5,29 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — Source refactor: `is_manual` vs `is_docker` (inv-03)
+
+Added `ServiceEntry.is_docker` (`source == notifier`; an unflushed instance with
+`source` None counts as Docker, matching the column default). Each branch:
+
+- Means "not Docker" -> `is_docker`: `tiled_dash.html` (docker status classes,
+  source icon, Docker drawer row), `dashboard.html` (status pill),
+  `edit_entry.html` (container section), `models.py` stale guard,
+  `ensure_container_check`, container-check eligibility, `view_helpers`
+  stale filter, `mgmt_serializers` `stale`.
+- Means "operator-made" -> kept `is_manual`: Name label and name field in
+  `edit_entry.html`, host editable only for manual in the `/edit` handler,
+  management API name/host rule and `POST /entries` source, register's
+  adopt-manual-entry branch (`routes_api.py`).
+- Filters: `normalize_source_filter`, `matches_source` and the `source` query on
+  `GET /api/v1/entries` match any `VALID_SOURCES` value exactly (OpenAPI enum
+  built from it).
+- Restore: a present-but-unknown `source` restores as manual (host optional);
+  a missing key keeps the pre-0.7 backfill rule.
+- HA `model`: `SOURCE_MODELS` map in `notify_ha.py`, defaulting to "Manual".
+
+---
+
 ## 2026-11-17 — "Since" sensor reads the existing state topic; snapshot via tmp + rename
 
 - The Since sensor reuses `<base>/entry/<id>/state` (`since` is already there), so

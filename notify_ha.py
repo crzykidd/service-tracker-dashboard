@@ -19,9 +19,11 @@ retained topics of PRD 17.3 and use `<base>/status` for availability.
 import re
 
 import notify_state
-from models import CHECK_KIND_CONTAINER, SOURCE_MANUAL
+from models import CHECK_KIND_CONTAINER, SOURCE_MANUAL, SOURCE_NOTIFIER
 
 MANUFACTURER = "Service Tracker Dashboard"
+# HA device model per entry source; inv-04 adds the stream display name here.
+SOURCE_MODELS = {SOURCE_MANUAL: "Manual", SOURCE_NOTIFIER: "Docker container"}
 ENTRY_STATES = ["up", "degraded", "down", "unknown", "none"]
 HUB_COUNTS = ("up", "degraded", "down", "unknown")
 SINCE_TEMPLATE = "{{ value_json.since if value_json.since else None }}"
@@ -65,7 +67,7 @@ def entry_device(node, device_prefix, entry):
         "identifiers": [f"{node}_entry_{entry.id}"],
         "name": device_name(device_prefix, entry),
         "manufacturer": MANUFACTURER,
-        "model": "Manual" if entry.source == SOURCE_MANUAL else "Docker container",
+        "model": SOURCE_MODELS.get(entry.source, "Manual"),
         "via_device": node,
     }
     if entry.image_tag:
