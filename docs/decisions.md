@@ -5,6 +5,43 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-17 — Inventory streams backend (inv-04)
+
+Calls made while implementing PRD 18.4-18.7 (also recorded as "As built" notes there):
+
+- **Ingest routes live on the management blueprint** (scope `ingest`), not a
+  sibling blueprint. `require_api_key("ingest")` reuses the auth, last-used and
+  JSON-error code; `scope_allows` makes `ingest` satisfy only `ingest` (and
+  `write` satisfies it), so an ingest key fails every read/write route. The
+  audit hook skips the snapshot endpoint by name instead of a per-request flag,
+  so 4xx answers to snapshots are not audited either.
+- **`ignored` is answered before the body is read.** Cheap, and a producer for a
+  stream the operator ignored can't get 400/413.
+- **`display_name` is creation-only.** The contract says the producer's value is
+  ignored once the operator renames; with no column to record "renamed", the
+  simple rule is that a snapshot never touches it.
+- **Deleting a stream removes its blocks and offers** (FK to the stream row, so
+  they can't outlive it). `clear_blocks` therefore only matters for `disable` +
+  `purge`. A sidecar that keeps posting recreates the stream as pending.
+- **Delete + `soft_delete` turns the entries manual** (still soft-deleted), since
+  a `source = stream` row can't outlive its stream; they restore from Settings -> Deleted.
+- **Accepting an offer sets `name_source = ui_edit`**: the manual name is the
+  operator's, so the next snapshot must not rename it to the producer's casing.
+- **A stream entry restores from a YAML backup as manual**, and a backup record
+  never overwrites a live stream entry. `stream` is in `VALID_SOURCES` now, so
+  without this a restore would create `source = stream` rows with no stream.
+- **Edit page / `is_manual` -> `not is_docker`** for the Name label, Description
+  field and host handling in `edit_entry.html` and the `/edit` handler (stream
+  entries are operator-nameable but not Docker); `host` stays NULL for them, and
+  Description is only written when the form carries it.
+- **`name` is VARCHAR(100) in `service_entry`** but the contract allows 128. SQLite
+  doesn't enforce the length, so names are stored whole rather than widening a
+  column through a table rebuild.
+- **`ingest` is not in the Settings key picker yet** (inv-05 owns the UI); the
+  API accepts it, so a `write` key serves for testing until then.
+
+---
+
 ## 2026-11-17 — Source refactor: `is_manual` vs `is_docker` (inv-03)
 
 Added `ServiceEntry.is_docker` (`source == notifier`; an unflushed instance with

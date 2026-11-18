@@ -19,11 +19,11 @@
         </div>
 
         <div>
-          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">{% if entry.is_manual %}Name{% else %}Application (Container Name){% endif %}</label>
+          <label for="application" class="block text-sm font-medium text-dashboard-secondary mb-1">{% if not entry.is_docker %}Name{% else %}Application (Container Name){% endif %}</label>
           <input type="text" name="container_name" id="application" class="form-input" value="{{ fv('container_name', entry.container_name) }}">
         </div>
 
-        {% if entry.is_manual %}
+        {% if not entry.is_docker %}
         <div>
           <label for="description" class="block text-sm font-medium text-dashboard-secondary mb-1">Description</label>
           <input type="text" name="description" id="description" maxlength="255" class="form-input" value="{{ fv('description', entry.description or '') }}">

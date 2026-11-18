@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Inventory streams: sidecars can push device lists into STD.** A small
+  separate service (a "sidecar", for example one that reads your DHCP static
+  reservations) can post a full list of devices to
+  `PUT /api/v1/streams/<stream_id>/snapshot` with an API key of the new
+  **`ingest`** scope. That key opens only the two stream routes (snapshot and
+  status) and is bound to the streams it creates. **A new stream waits for your
+  approval**: STD stores what it sent, and nothing appears on the dashboard
+  until you enable the stream. Enabling creates one entry per device (no host,
+  source `stream`, with its IP, MAC and network); later snapshots update them,
+  and a device that drops out of the list is flagged missing, never deleted.
+  Renaming an entry in STD keeps your name; group, icon, description, checks and
+  Home Assistant settings are never overwritten. A device whose name matches one
+  of your manual entries is not created: STD offers to link them, and you
+  accept or decline. Deleting a stream entry can block its key so it does not
+  come back, and disabling or deleting a stream asks what to do with its
+  entries (keep, soft delete or purge). Manage streams, blocks and link offers
+  with the management API (`/api/v1/streams`) or the MCP tools. MQTT entry
+  payloads gain `ip`, `mac`, `network` and `stream`, and the Home Assistant
+  device model is the stream's name. The Settings → Streams page comes next;
+  until then create the key with the `write` scope. See the README.
 - **Home Assistant "Since" sensor.** Every entry published to Home Assistant
   gets a **Since** timestamp sensor showing when it last changed state, so the
   device page reads "Up, since 3 days ago". It is unknown until STD has a

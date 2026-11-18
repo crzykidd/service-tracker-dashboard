@@ -221,7 +221,8 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         instructions=(
             "Tools for a Service Tracker Dashboard (STD). Entries are the dashboard's services: "
             "'notifier' entries come from Docker containers (their Docker-owned fields cannot be "
-            "edited), 'manual' entries are added by hand. Each entry has checks (internal URL, "
+            "edited), 'manual' entries are added by hand, 'stream' entries are pushed by inventory sidecars "
+            "(see list_streams). Each entry has checks (internal URL, "
             "external URL, container, and any number of service checks) that roll up to a health "
             "state. Start with health_summary to see what is broken."
             + ("" if scope == "write" else " This key is read-only: no change tools are available.")
@@ -253,7 +254,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         """List dashboard entries with their health summary and checks (paged, ordered by id).
 
         status: all | failing | healthy | unknown | stale (derived health state; use `failing` to see what is broken).
-        source: all | notifier (Docker containers) | manual (added by hand).
+        source: all | notifier (Docker containers) | manual (added by hand) | stream (pushed by an inventory sidecar).
         q: case-insensitive search of name, host, stack and description.
         Returns {items, total, limit, offset}.
         """
@@ -308,6 +309,36 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("GET", f"/notifications/channels/{channel_id}")
 
     @read_tool
+    def list_streams(limit: int = 200, offset: int = 0) -> dict:
+        """List inventory streams: sidecars (e.g. a DHCP reservation reader) that push device lists into STD. Each has a status (pending = waiting for approval, enabled, disabled, ignored), producer and version, last counts, network filters, entry counts and the last error. Returns {items, total, limit, offset}."""
+        return client.request("GET", "/streams", params=dict(limit=limit, offset=offset))
+
+    @read_tool
+    def get_stream(stream_id: str) -> dict:
+        """Get one inventory stream by its stream_id (the slug, e.g. "dhcp")."""
+        return client.request("GET", f"/streams/{stream_id}")
+
+    @read_tool
+    def preview_stream(stream_id: str) -> dict:
+        """What applying a stream's stored snapshot would do, with no changes: counts plus the per-item action (created, updated, unchanged, restored, blocked, link_offer, filtered) and the entries that would be flagged missing. Use it before enable_stream on a pending stream."""
+        return client.request("GET", f"/streams/{stream_id}/preview")
+
+    @read_tool
+    def list_stream_blocks(stream_id: str, limit: int = 200, offset: int = 0) -> dict:
+        """List the keys blocked on a stream (deleted entries the stream must not bring back). Returns {items, total, limit, offset}."""
+        return client.request("GET", f"/streams/{stream_id}/blocks", params=dict(limit=limit, offset=offset))
+
+    @read_tool
+    def list_stream_offers(stream_id: str, limit: int = 200, offset: int = 0) -> dict:
+        """List open link offers: new stream items whose name matches one manual entry and wait for accept or decline (answer_link_offer). Returns {items, total, limit, offset}."""
+        return client.request("GET", f"/streams/{stream_id}/offers", params=dict(limit=limit, offset=offset))
+
+    @read_tool
+    def list_stream_unmatched_items(stream_id: str, limit: int = 200, offset: int = 0) -> dict:
+        """List items of a stream's latest snapshot that have no entry and are not blocked: what link_entry_to_stream_item can link a manual entry to. Returns {items, total, limit, offset}."""
+        return client.request("GET", f"/streams/{stream_id}/unmatched", params=dict(limit=limit, offset=offset))
+
+    @read_tool
     def get_config() -> dict:
         """The effective STD configuration, read-only. Secrets appear as `***`; `sources` says whether each value came from env, file or default."""
         return client.request("GET", "/config")
@@ -353,10 +384,10 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
                               json=_check_fields(fields, ENTRY_PATCH_FIELDS, "entry"))
 
     @write_tool
-    def delete_entry(entry_id: int, permanent: bool = False) -> dict:
-        """Delete an entry. By default it is soft-deleted and can be brought back with restore_entry. permanent=true removes an already deleted entry for good (irreversible)."""
+    def delete_entry(entry_id: int, permanent: bool = False, block: bool = False) -> dict:
+        """Delete an entry. By default it is soft-deleted and can be brought back with restore_entry. permanent=true removes an already deleted entry for good (irreversible). block=true (entries that belong to an inventory stream) also blocks the entry's key so a later snapshot cannot bring it back; unblock it with unblock_stream_key."""
         return client.request("DELETE", f"/entries/{entry_id}",
-                              params={"permanent": permanent or None})
+                              params={"permanent": permanent or None, "block": block or None})
 
     @write_tool
     def restore_entry(entry_id: int) -> dict:
@@ -484,6 +515,50 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def purge_entry_notifications(entry_id: int) -> dict:
         """Purge one entry's MQTT topics and Home Assistant device on every enabled channel, wait about 2 seconds, then republish it, so Home Assistant recreates the device with fresh entity ids (use it after renaming an entry). An entry not published to Home Assistant only has its state topics cleared and republished. Returns {entry_id, topics_cleared, channels, republished}; 409 if no channel is enabled."""
         return client.request("POST", f"/entries/{entry_id}/notifications/purge")
+
+    @write_tool
+    def update_stream(stream_id: str, fields: dict) -> dict:
+        """Rename an inventory stream or change its network filters. `fields` names only what changes: display_name (1-32 characters), network_include and network_exclude (lists of network names; null or [] clears). Items outside the include list or inside the exclude list are dropped from the next snapshot on.
+        Example fields: {"network_exclude": ["Guest"]}
+        """
+        allowed = {"display_name", "network_include", "network_exclude"}
+        return client.request("PATCH", f"/streams/{stream_id}", json=_check_fields(fields, allowed, "stream"))
+
+    @write_tool
+    def enable_stream(stream_id: str) -> dict:
+        """Enable a pending, disabled or ignored inventory stream and apply its stored snapshot now (creates entries). Run preview_stream first. Returns {stream, applied, counts}."""
+        return client.request("POST", f"/streams/{stream_id}/enable")
+
+    @write_tool
+    def disable_stream(stream_id: str, cleanup: str = "keep", clear_blocks: bool = False) -> dict:
+        """Disable an enabled stream: it stops applying snapshots (they are still stored). cleanup decides what happens to its entries: keep (they stay, no longer updated), soft_delete (all soft-deleted; re-enabling restores them) or purge (hard delete, plus the stored snapshot and link offers; irreversible). clear_blocks=true (purge only) also empties the block list. Returns {stream, cleanup, result}."""
+        return client.request("POST", f"/streams/{stream_id}/disable",
+                              json={"cleanup": cleanup, "clear_blocks": clear_blocks})
+
+    @write_tool
+    def ignore_stream(stream_id: str) -> dict:
+        """Ignore a pending or disabled stream: its stored snapshot is discarded and later snapshots are dropped."""
+        return client.request("POST", f"/streams/{stream_id}/ignore")
+
+    @write_tool
+    def delete_stream(stream_id: str, cleanup: str = "keep") -> dict:
+        """Delete an inventory stream and its blocks and link offers. cleanup: keep (entries become manual entries), soft_delete (entries are soft-deleted and become manual, restorable) or purge (hard delete; irreversible). A sidecar that keeps posting recreates the stream as pending."""
+        return client.request("DELETE", f"/streams/{stream_id}", params={"cleanup": cleanup})
+
+    @write_tool
+    def unblock_stream_key(stream_id: str, block_id: int) -> dict:
+        """Remove a block (ids from list_stream_blocks). The next snapshot restores the entry or creates a new one."""
+        return client.request("DELETE", f"/streams/{stream_id}/blocks/{block_id}")
+
+    @write_tool
+    def answer_link_offer(stream_id: str, offer_id: int, accept: bool) -> dict:
+        """Answer a link offer (ids from list_stream_offers). accept=true: the manual entry becomes a stream entry and keeps its id, history, checks and Home Assistant setting. accept=false: a new stream entry is created and the manual entry is left alone."""
+        return client.request("POST", f"/streams/{stream_id}/offers/{offer_id}/{'accept' if accept else 'decline'}")
+
+    @write_tool
+    def link_entry_to_stream_item(stream_id: str, entry_id: int, key: str) -> dict:
+        """Link a manual entry (no host) to an unmatched item of a stream's latest snapshot (keys from list_stream_unmatched_items)."""
+        return client.request("POST", f"/streams/{stream_id}/link", json={"entry_id": entry_id, "key": key})
 
     @write_tool
     def set_exposure_settings(layer_directions: dict[str, str],

@@ -19,11 +19,12 @@ retained topics of PRD 17.3 and use `<base>/status` for availability.
 import re
 
 import notify_state
-from models import CHECK_KIND_CONTAINER, SOURCE_MANUAL, SOURCE_NOTIFIER
+from models import CHECK_KIND_CONTAINER, SOURCE_MANUAL, SOURCE_NOTIFIER, SOURCE_STREAM
 
 MANUFACTURER = "Service Tracker Dashboard"
-# HA device model per entry source; inv-04 adds the stream display name here.
-SOURCE_MODELS = {SOURCE_MANUAL: "Manual", SOURCE_NOTIFIER: "Docker container"}
+# HA device model per entry source. A stream entry's model is its stream's display name
+# (see `source_model`); "Stream" is only the fallback.
+SOURCE_MODELS = {SOURCE_MANUAL: "Manual", SOURCE_NOTIFIER: "Docker container", SOURCE_STREAM: "Stream"}
 ENTRY_STATES = ["up", "degraded", "down", "unknown", "none"]
 HUB_COUNTS = ("up", "degraded", "down", "unknown")
 SINCE_TEMPLATE = "{{ value_json.since if value_json.since else None }}"
@@ -62,12 +63,19 @@ def device_name(device_prefix, entry):
     return f"{name} ({host})" if host else name
 
 
+def source_model(entry):
+    """The device model: the stream's display name for a stream entry, else per source."""
+    if entry.source == SOURCE_STREAM and entry.stream is not None:
+        return entry.stream.display_name
+    return SOURCE_MODELS.get(entry.source, "Manual")
+
+
 def entry_device(node, device_prefix, entry):
     device = {
         "identifiers": [f"{node}_entry_{entry.id}"],
         "name": device_name(device_prefix, entry),
         "manufacturer": MANUFACTURER,
-        "model": SOURCE_MODELS.get(entry.source, "Manual"),
+        "model": source_model(entry),
         "via_device": node,
     }
     if entry.image_tag:

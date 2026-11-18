@@ -34,6 +34,7 @@ from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
 from models import (
     SOURCE_NOTIFIER,
+    SOURCE_STREAM,
     Group,
     ServiceEntry,
     ensure_container_check,
@@ -171,7 +172,7 @@ def upsert_service(canonical, app):
 
     Entry source (v0.7.0): a matching `manual` row that is not locked is
     adopted (source -> "notifier") and then updated as usual. New rows are
-    created as "notifier".
+    created as "notifier". Rows with source "stream" are never matched.
 
     Locked (is_static) rows short-circuit with a 200 + skipped body — that
     behavior is unchanged from v0.4.x.
@@ -207,11 +208,14 @@ def upsert_service(canonical, app):
         # deleted (host, container_name) resurrects it. Prefer an active
         # row if both an active and a deleted one exist (deleted_at NULL
         # sorts first via the IS NOT NULL ordering key).
+        # Stream entries (source 'stream', PRD 18) belong to an inventory stream and are
+        # never matched, adopted or updated by register.
         entry = (
             ServiceEntry.query.filter_by(
                 host=canonical['host'],
                 container_name=canonical['container_name'],
             )
+            .filter(ServiceEntry.source != SOURCE_STREAM)
             .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
             .first()
         )

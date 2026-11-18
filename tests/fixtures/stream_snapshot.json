@@ -1,0 +1,19 @@
+{
+  "display_name": "DHCP",
+  "producer": "std-source-technitium",
+  "producer_version": "0.1.0",
+  "key_type": "mac",
+  "items": [
+    {"key": "aa:bb:cc:00:00:01", "name": "shelly-pump", "ip": "10.0.40.21", "mac": "aa:bb:cc:00:00:01",
+     "network": "CrzyIoT", "attributes": {"scope": "CrzyIoT", "reservation_comment": "boiler room", "lease_hours": 24, "static": true, "note": null}},
+    {"key": "AA-BB-CC-00-00-02", "name": "plug-kitchen", "ip": "10.0.40.22", "network": "CrzyIoT"},
+    {"key": "aabb.cc00.0003", "name": "tv-lounge", "ip": "10.0.10.30", "network": "CrzyMedia"},
+    {"key": "aabbcc000004", "name": "printer", "ip": "10.0.10.31", "network": "CrzyMedia"},
+    {"key": "aa:bb:cc:00:00:05", "name": "dup-name", "ip": "10.0.40.50", "network": "CrzyIoT"},
+    {"key": "aa:bb:cc:00:00:06", "name": "dup-name", "ip": "10.0.40.51", "network": "CrzyIoT"},
+    {"key": "aa:bb:cc:00:00:07", "name": "NAS", "ip": "10.0.10.5", "network": "CrzyMedia"},
+    {"key": "aa:bb:cc:00:00:08", "name": "guest-phone", "ip": "10.0.99.9", "network": "Guest"},
+    {"key": "aa:bb:cc:00:00:09", "name": "v6-thing", "ip": "fd00::9", "network": "CrzyIoT"},
+    {"key": "aa:bb:cc:00:00:0a", "name": "no-network", "ip": "10.0.0.9"}
+  ]
+}

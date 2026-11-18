@@ -28,6 +28,9 @@ SCOPE_NOTE = {
     None: "No authentication needed.",
     "read": "Needs an API key with the `read` or `write` scope.",
     "write": "Needs an API key with the `write` scope. The request is recorded in the audit log.",
+    "ingest": "Needs an API key with the `ingest` or `write` scope. An `ingest` key opens only the "
+              "stream ingest routes; a stream is bound to the key that created it. Not recorded in "
+              "the audit log.",
 }
 
 
@@ -42,7 +45,7 @@ class Param:
 class Op:
     method: str
     path: str                      # OpenAPI style, relative to /api/v1
-    scope: str | None              # None (public), "read" or "write"
+    scope: str | None              # None (public), "read", "write" or "ingest"
     summary: str
     response: Any                  # a TypedDict, a Page[...] or a union of them
     request: Any = None            # pydantic model for the JSON body
@@ -50,6 +53,7 @@ class Op:
     status: int = 200
     errors: tuple = ()             # extra error statuses beyond 401/403 (+400 when input is read)
     description: str = ""
+    also: tuple = ()               # more success statuses: (status, response model, description)
 
 
 _BOOL = {"type": "boolean", "default": False}
@@ -57,6 +61,8 @@ _LIMIT = Param("limit", {"type": "integer", "minimum": 1, "maximum": 1000, "defa
                "Page size (values above 1000 are clamped to 1000).")
 _OFFSET = Param("offset", {"type": "integer", "minimum": 0, "default": 0}, "Rows to skip.")
 _PAGE = (_LIMIT, _OFFSET)
+_CLEANUP = ("`keep` (entries stay and are no longer updated), `soft_delete` (every entry is soft-deleted "
+            "and can be restored) or `purge` (hard delete, plus the stored snapshot and link offers)")
 
 _PATCH_NOTE = (
     "Every field is optional. A field that is **absent** is left alone; a field sent as "
@@ -101,10 +107,13 @@ OPERATIONS: tuple = (
        "entry's device to Home Assistant discovery (default false)."),
     Op("DELETE", "/entries/{id}", "write", "Delete an entry (soft) or remove it for good",
        S.EntryOut | S.PermanentDeleteOut,
-       params=(Param("permanent", _BOOL, "Permanently remove an entry that is already deleted."),),
+       params=(Param("permanent", _BOOL, "Permanently remove an entry that is already deleted."),
+               Param("block", _BOOL, "Stream entries only: also put the entry's stream key on the "
+                                     "stream's block list so a later snapshot cannot bring it back.")),
        errors=(404, 409),
        description="By default the entry is soft-deleted and can be restored. "
-                   "`?permanent=true` removes an already deleted entry for good."),
+                   "`?permanent=true` removes an already deleted entry for good. "
+                   "`?block=true` (a stream entry, first delete only) also blocks its key."),
     Op("POST", "/entries/{id}/restore", "write", "Restore a deleted entry", S.EntryOut,
        errors=(404, 409)),
 
@@ -212,6 +221,76 @@ OPERATIONS: tuple = (
                    "republishes what is still desired so the device is recreated with fresh entity "
                    "ids (use it after a rename). An entry that is not opted in to Home Assistant only "
                    "has its state topics cleared and republished. 409 when no channel is enabled."),
+    Op("PUT", "/streams/{stream_id}/snapshot", "ingest", "Push a full inventory snapshot", S.SnapshotAppliedOut,
+       request=S.StreamSnapshotPut, errors=(409, 413),
+       also=((202, S.SnapshotStoredOut | S.SnapshotIgnoredOut,
+              "Accepted but not applied: a new or `pending`/`disabled` stream stores the snapshot "
+              "(`message` tells the operator to enable it); an `ignored` stream discards it."),),
+       description="The contract inventory sidecars code against (PRD 18.5). The body is the stream's "
+                   "complete current item list; items that are missing from it are flagged missing, "
+                   "never deleted. `stream_id` matches `^[a-z0-9][a-z0-9_-]{0,62}$`. A stream is created "
+                   "`pending` by its first snapshot and applies nothing until the operator enables it "
+                   "(200 once enabled, 202 before). `key_type: mac` means every `key` is a MAC (any "
+                   "common form, normalised to lower-case colon form). Up to 5000 items and 2 MiB; a "
+                   "snapshot is applied whole or not at all. 403 when the stream belongs to another "
+                   "`ingest` key, 409 when `key_type` differs from the stream's, 413 over the size limit."),
+    Op("GET", "/streams/{stream_id}/status", "ingest", "A stream's status, for a sidecar to log", S.StreamStatusOut,
+       errors=(404,), description="404 until the first snapshot has created the stream."),
+
+    Op("GET", "/streams", "read", "List inventory streams", S.Page[S.StreamOut], params=_PAGE,
+       description="Status, producer, last counts, filters, entry counts and the last error of every stream."),
+    Op("GET", "/streams/{stream_id}", "read", "Get one stream", S.StreamOut, errors=(404,)),
+    Op("PATCH", "/streams/{stream_id}", "write", "Rename a stream or change its network filters", S.StreamOut,
+       request=S.StreamPatch, errors=(404,),
+       description=_PATCH_NOTE + " `network_include` / `network_exclude` are lists of network names "
+                   "(null or an empty list clears the filter); items whose `network` is not in the include "
+                   "list, or is in the exclude list, are dropped (`filtered`). Takes effect at the next "
+                   "snapshot."),
+    Op("GET", "/streams/{stream_id}/preview", "read", "What applying the stored snapshot would do",
+       S.StreamPreviewOut, errors=(404, 409),
+       description="The per-item action and the counts, with no writes. 409 when no snapshot is stored."),
+    Op("POST", "/streams/{stream_id}/enable", "write", "Enable a stream and apply its stored snapshot",
+       S.StreamEnableOut, errors=(404, 409),
+       description="From `pending`, `disabled` or `ignored`. Applies the stored snapshot at once and every "
+                   "later one as it arrives."),
+    Op("POST", "/streams/{stream_id}/disable", "write", "Disable a stream", S.StreamDisableOut,
+       request=S.StreamDisableRequest, errors=(404, 409),
+       description="From `enabled`. The body is optional. `cleanup` is " + _CLEANUP + ". "
+                   "`clear_blocks` (purge only, default false) also empties the block list. Later "
+                   "snapshots are still accepted and stored."),
+    Op("POST", "/streams/{stream_id}/ignore", "write", "Ignore a stream", S.StreamOut, errors=(404, 409),
+       description="From `pending` or `disabled`. The stored snapshot is discarded and later snapshots "
+                   "are answered 202 and dropped."),
+    Op("DELETE", "/streams/{stream_id}", "write", "Delete a stream", S.StreamDeleteOut,
+       params=(Param("cleanup", {"type": "string", "enum": ["keep", "soft_delete", "purge"], "default": "keep"},
+                     "What happens to the stream's entries."),),
+       errors=(404,),
+       description="`cleanup`: " + _CLEANUP.replace("(entries stay and are no longer updated)",
+                                                    "(entries become manual entries, keeping mac and ip)")
+                   + ". Soft-deleted entries also become manual entries so they can be restored. The "
+                   "stream's blocks and link offers are removed with it. A sidecar that keeps posting "
+                   "recreates the stream as `pending`."),
+    Op("GET", "/streams/{stream_id}/blocks", "read", "List a stream's blocked keys", S.Page[S.BlockOut],
+       params=_PAGE, errors=(404,)),
+    Op("DELETE", "/streams/{stream_id}/blocks/{block_id}", "write", "Unblock a key", S.UnblockOut,
+       errors=(404,), description="The next snapshot restores the entry or creates a new one."),
+    Op("GET", "/streams/{stream_id}/offers", "read", "List open link offers", S.Page[S.OfferOut],
+       params=_PAGE, errors=(404,),
+       description="A new item whose name matches one manual entry with no host waits here instead of "
+                   "being created."),
+    Op("POST", "/streams/{stream_id}/offers/{offer_id}/accept", "write", "Accept a link offer", S.OfferAnswerOut,
+       errors=(404, 409), description="The manual entry becomes a stream entry, keeping its id, history, "
+                                      "checks and Home Assistant setting."),
+    Op("POST", "/streams/{stream_id}/offers/{offer_id}/decline", "write", "Decline a link offer",
+       S.OfferAnswerOut, errors=(404, 409),
+       description="A new stream entry is created from the item; the manual entry is left alone."),
+    Op("GET", "/streams/{stream_id}/unmatched", "read", "Items of the latest snapshot with no entry",
+       S.Page[S.StreamItemOut], params=_PAGE, errors=(404,),
+       description="Not blocked and not yet an entry: what a manual entry can be linked to by hand."),
+    Op("POST", "/streams/{stream_id}/link", "write", "Link a manual entry to a snapshot item", S.OfferAnswerOut,
+       request=S.StreamLinkRequest, errors=(404, 409),
+       description="`entry_id` is an active manual entry with no host; `key` an unmatched item."),
+
     Op("GET", "/config", "read", "Effective configuration (read-only)", S.ConfigOut,
        description="Secrets are masked as `***`. `sources` says where each value came from."),
 )
@@ -222,11 +301,17 @@ _ERROR_TEXT = {
     403: "The key's scope is too low for this endpoint.",
     404: "No such object.",
     409: "The request conflicts with the current state.",
+    413: "The request body is larger than the limit (2 MiB for a snapshot).",
     504: "The background worker did not finish in time; the operation may still complete.",
 }
 
 
 # --- generation ----------------------------------------------------------------
+
+# Path parameters are integer ids unless named here.
+_PATH_PARAM_SCHEMAS = {
+    "stream_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"},
+}
 
 
 def flask_rule_to_path(rule: str) -> str:
@@ -271,7 +356,7 @@ def build_spec(version: str = "") -> dict:
     for op in OPERATIONS:
         item = paths.setdefault(op.path, {})
         parameters = [
-            {"name": n, "in": "path", "required": True, "schema": {"type": "integer"}}
+            {"name": n, "in": "path", "required": True, "schema": _PATH_PARAM_SCHEMAS.get(n, {"type": "integer"})}
             for n in re.findall(r"{(\w+)}", op.path)
         ]
         parameters += [
@@ -300,6 +385,11 @@ def build_spec(version: str = "") -> dict:
                 "content": {"application/json": {"schema": comp.schema_for(op.response)}},
             }
         }
+        for status, model, text in op.also:
+            responses[str(status)] = {
+                "description": text,
+                "content": {"application/json": {"schema": comp.schema_for(model)}},
+            }
         statuses = set(op.errors)
         if op.request is not None or op.params:
             statuses.add(400)
@@ -324,7 +414,8 @@ def build_spec(version: str = "") -> dict:
             "description": (
                 "Everything an operator can do in the UI, over JSON. Authenticate with an admin API key "
                 "(Settings -> API) sent as `Authorization: Bearer <key>`. A `read` key can read; a "
-                "`write` key can read and change. Errors are `{\"error\": str, \"details\": ...}`; "
+                "`write` key can read and change; an `ingest` key (for inventory sidecars) can use only the two stream "
+                "ingest routes. Errors are `{\"error\": str, \"details\": ...}`; "
                 "validation `details` is a list of `{loc, msg, type}`. Lists are "
                 "`{items, total, limit, offset}`. The notifier's `api_token` only works on "
                 "`/api/v1/register`, which is not described here."

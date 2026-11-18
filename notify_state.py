@@ -40,6 +40,7 @@ from models import (
     CHECK_KIND_INTERNAL,
     Group,
     HealthCheck,
+    InventoryStream,
     ServiceEntry,
     check_counts,
 )
@@ -52,7 +53,9 @@ SUMMARY_TOPIC = "summary"
 # What changes a topic's payload. Cached `last_*` result columns are left out
 # on purpose: every health tick writes those, and a sync per tick is wasteful.
 _ENTRY_ATTRS = ("container_name", "host", "group_id", "source", "deleted_at",
-                "internalurl", "externalurl", "is_static", "image_tag", "ha_publish")
+                "internalurl", "externalurl", "is_static", "image_tag", "ha_publish",
+                "ip", "mac", "network", "stream_id", "inventory_missing")
+_STREAM_ATTRS = ("display_name",)      # the `stream` field of a stream entry's payload (PRD 18.6)
 _CHECK_ATTRS = ("enabled", "kind", "name", "check_type", "target", "ha_exclude")
 _GROUP_ATTRS = ("group_name",)
 
@@ -114,6 +117,12 @@ def check_payload(entry, check, last_change):
         "host": entry.host,
         "group": entry.group.group_name if entry.group is not None else None,
         "source": entry.source,
+        # Inventory stream entries (PRD 18.6); null for every other source. The
+        # producer's `attributes` are not published.
+        "ip": entry.ip,
+        "mac": entry.mac,
+        "network": entry.network,
+        "stream": entry.stream.display_name if entry.stream_id is not None and entry.stream else None,
         "dashboard_url": dashboard_url(entry.id),
         "check_id": check.id,
         "name": check.name or check.kind,
@@ -138,6 +147,12 @@ def entry_payload(entry, health, since):
         "host": entry.host,
         "group": entry.group.group_name if entry.group is not None else None,
         "source": entry.source,
+        # Inventory stream entries (PRD 18.6); null for every other source. The
+        # producer's `attributes` are not published.
+        "ip": entry.ip,
+        "mac": entry.mac,
+        "network": entry.network,
+        "stream": entry.stream.display_name if entry.stream_id is not None and entry.stream else None,
         "dashboard_url": dashboard_url(entry.id),
         "since": _iso(since),
         "checks": check_counts_by_state(entry),
@@ -166,7 +181,8 @@ def _text(payload):
 
 def _active_entries():
     return (ServiceEntry.active()
-            .options(selectinload(ServiceEntry.checks), joinedload(ServiceEntry.group))
+            .options(selectinload(ServiceEntry.checks), joinedload(ServiceEntry.group),
+                     joinedload(ServiceEntry.stream))
             .order_by(ServiceEntry.id).all())
 
 
@@ -427,6 +443,8 @@ def _touches(obj):
         attrs = _CHECK_ATTRS
     elif isinstance(obj, Group):
         attrs = _GROUP_ATTRS
+    elif isinstance(obj, InventoryStream):
+        attrs = _STREAM_ATTRS
     else:
         return False
     return any(state.attrs[a].history.has_changes() for a in attrs)

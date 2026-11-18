@@ -19,7 +19,19 @@ DEFAULT_STALE_AFTER_MINUTES = 5
 
 SOURCE_NOTIFIER = 'notifier'
 SOURCE_MANUAL = 'manual'
-VALID_SOURCES = (SOURCE_NOTIFIER, SOURCE_MANUAL)
+# Entries pushed by an inventory stream sidecar (v0.10.0, PRD 18).
+SOURCE_STREAM = 'stream'
+VALID_SOURCES = (SOURCE_NOTIFIER, SOURCE_MANUAL, SOURCE_STREAM)
+
+# Inventory streams (PRD 18.4).
+STREAM_PENDING = 'pending'
+STREAM_ENABLED = 'enabled'
+STREAM_DISABLED = 'disabled'
+STREAM_IGNORED = 'ignored'
+STREAM_STATUSES = (STREAM_PENDING, STREAM_ENABLED, STREAM_DISABLED, STREAM_IGNORED)
+# Who owns a stream entry's name: the producer ('stream') or the operator ('ui_edit').
+NAME_SOURCE_STREAM = 'stream'
+NAME_SOURCE_UI_EDIT = 'ui_edit'
 
 # Health checks (v0.7.0). URL kinds follow the entry's internal/external URL
 # (target is NULL); 'service' checks are separate rows (added in a later chunk).
@@ -150,8 +162,32 @@ class ServiceEntry(db.Model):
     # it. True publishes this entry's device to Home Assistant discovery.
     ha_publish = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
 
+    # Inventory streams (v0.10.0, PRD 18.4). NULL for notifier and manual entries.
+    # `stream_id` + `stream_key` identify the item in its stream (unique, soft-deleted
+    # rows included); mac/ip/network/attributes are pure observation overwritten by
+    # every snapshot; `inventory_missing` means the key was absent from the latest
+    # snapshot; `name_source` is 'stream' until the operator renames the entry
+    # ('ui_edit'), after which snapshots no longer write the name.
+    stream_id = db.Column(db.Integer, db.ForeignKey('inventory_stream.id'), nullable=True, index=True)
+    stream_key = db.Column(db.String(128), nullable=True)
+    mac = db.Column(db.String(17), nullable=True)
+    ip = db.Column(db.String(64), nullable=True)
+    network = db.Column(db.String(64), nullable=True)
+    attributes = db.Column(db.JSON, nullable=True)
+    inventory_missing = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    name_source = db.Column(db.String(16), nullable=True)
+    stream = db.relationship('InventoryStream', backref=db.backref('entries', lazy=True))
+    link_offers = db.relationship(
+        'StreamLinkOffer',
+        backref='entry',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+
     __table_args__ = (
         db.Index('ix_service_entry_host_container_name', 'host', 'container_name'),
+        db.Index('ux_service_entry_stream_key', 'stream_id', 'stream_key', unique=True,
+                 sqlite_where=db.text('stream_id IS NOT NULL')),
     )
 
     @classmethod
@@ -198,6 +234,10 @@ class ServiceEntry(db.Model):
             'networks': self.networks,
             'exposed_ports': self.exposed_ports,
             'published_ports': self.published_ports,
+            'mac': self.mac,
+            'ip': self.ip,
+            'network': self.network,
+            'attributes': self.attributes,
             'internalurl_source': self.internalurl_source,
             'externalurl_source': self.externalurl_source,
             'health_check_timeout': self.url_check_timeout,
@@ -264,6 +304,11 @@ class ServiceEntry(db.Model):
     def is_manual(self):
         """True for entries created on the Add page (no notifier behind them)."""
         return self.source == SOURCE_MANUAL
+
+    @property
+    def is_stream(self):
+        """True for entries kept current by an inventory stream."""
+        return self.source == SOURCE_STREAM
 
     @property
     def is_docker(self):
@@ -730,3 +775,82 @@ class NotificationChannel(db.Model):
 
     def __repr__(self):
         return f'<NotificationChannel {self.id} {self.type} {self.name!r}>'
+
+
+class InventoryStream(db.Model):
+    """One producer stream of inventory items (v0.10.0, PRD 18.4).
+
+    Created `pending` by the first snapshot PUT. `snapshot` holds the latest
+    accepted items (normalised) so Enable and Preview work without the sidecar.
+    `api_key_id` is the key that created the stream: an `ingest` key may only
+    post to its own streams. Counts and times are bookkeeping for the UI/API.
+    """
+    __tablename__ = 'inventory_stream'
+
+    id = db.Column(db.Integer, primary_key=True)
+    stream_id = db.Column(db.String(63), nullable=False, unique=True)
+    display_name = db.Column(db.String(32), nullable=False)
+    producer = db.Column(db.String(64), nullable=False)
+    producer_version = db.Column(db.String(32), nullable=False)
+    key_type = db.Column(db.String(16), nullable=False)
+    status = db.Column(db.String(16), nullable=False, default=STREAM_PENDING,
+                       server_default=STREAM_PENDING)
+    api_key_id = db.Column(db.Integer, db.ForeignKey('api_key.id', ondelete='SET NULL'),
+                           nullable=True, index=True)
+    network_include = db.Column(db.JSON, nullable=True)
+    network_exclude = db.Column(db.JSON, nullable=True)
+    snapshot = db.Column(db.JSON, nullable=True)
+    first_seen_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    last_snapshot_at = db.Column(db.DateTime, nullable=True)
+    last_applied_at = db.Column(db.DateTime, nullable=True)
+    last_item_count = db.Column(db.Integer, nullable=True)
+    last_counts = db.Column(db.JSON, nullable=True)
+    last_error = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<InventoryStream {self.stream_id} {self.status}>'
+
+
+class InventoryBlock(db.Model):
+    """A stream key the operator chose not to re-add (PRD 18.7). Kept when the
+    entry is hard-deleted; removed with its stream."""
+    __tablename__ = 'inventory_block'
+    __table_args__ = (
+        db.Index('ux_inventory_block_stream_key', 'stream_id', 'key', unique=True),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    stream_id = db.Column(db.Integer, db.ForeignKey('inventory_stream.id', ondelete='CASCADE'),
+                          nullable=False, index=True)
+    key = db.Column(db.String(128), nullable=False)
+    name = db.Column(db.String(128), nullable=True)
+    ip = db.Column(db.String(64), nullable=True)
+    blocked_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    blocked_by = db.Column(db.String(80), nullable=True)
+
+    stream = db.relationship(
+        'InventoryStream', backref=db.backref('blocks', lazy=True, cascade='all, delete-orphan'))
+
+
+class StreamLinkOffer(db.Model):
+    """A new stream item whose name matches one manual entry (PRD 18.6): nothing
+    is created until the operator accepts (the manual entry joins the stream) or
+    declines (a new stream entry is created). `item` is the stored snapshot item."""
+    __tablename__ = 'stream_link_offer'
+    __table_args__ = (
+        db.Index('ux_stream_link_offer_stream_key', 'stream_id', 'key', unique=True),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    stream_id = db.Column(db.Integer, db.ForeignKey('inventory_stream.id', ondelete='CASCADE'),
+                          nullable=False, index=True)
+    key = db.Column(db.String(128), nullable=False)
+    entry_id = db.Column(db.Integer, db.ForeignKey('service_entry.id', ondelete='CASCADE'),
+                         nullable=False, index=True)
+    item = db.Column(db.JSON, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    stream = db.relationship(
+        'InventoryStream', backref=db.backref('offers', lazy=True, cascade='all, delete-orphan'))

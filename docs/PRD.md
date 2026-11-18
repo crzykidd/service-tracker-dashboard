@@ -80,6 +80,7 @@
 | 0.70    | 2026-11-17 | §18.1 delivered on `dev`: `api_version.py`, `X-STD-API-Revision` / `X-STD-Version` headers on every `/api/` response, public `GET /api/v1/meta`, `api_revision` in `whoami` / OpenAPI / MCP `server_info`, once-per-User-Agent register logging. |
 | 0.71    | 2026-11-17 | §18.2 delivered on `dev`: Home Assistant "Since" timestamp sensor per published entry (§17.4 entity table); the daily backup job also writes `<date>-std_backup.sqlite3` via `sqlite3.Connection.backup()`, pruned by `backup_days_to_keep`. No register-contract change. |
 | 0.72    | 2026-11-17 | §18.3 delivered on `dev`: `ServiceEntry.is_docker`; "not Docker" branches (tiled/dashboard/edit templates, stale guard, HA model) moved off `is_manual`; source filters and restore generalised over `VALID_SOURCES`. No operator-visible change. |
+| 0.73    | 2026-11-17 | §18.4–§18.7 delivered on `dev` (inv-04): inventory streams backend. Migration `f4c8a2e6d173` (new §5.10: `inventory_stream`, `inventory_block`, `stream_link_offer`, stream columns and a partial unique index on `service_entry`; `source = stream`); `ingest` API key scope; the sidecar ingest contract `PUT /api/v1/streams/<stream_id>/snapshot` and `GET .../status` (§18.5, as specified); new `streams.py` apply engine and lifecycle (§18.6, §18.7); management routes under `/api/v1/streams`, `inventory` on entries, `block` on entry delete, MCP tools; MQTT payload `ip`/`mac`/`network`/`stream` and the HA device model. §3.1 and §3.2 updated. §18.8 (Settings → Streams UI) remains planned. |
 
 ---
 
@@ -219,6 +220,9 @@ notify_mqtt.py      ← MQTT channel type: pydantic config, paho session
 notify_ha.py        ← Home Assistant discovery config builders (§17.4)
 notify_purge.py     ← channel-wide and per-entry purge of retained topics and
                       HA devices, run on the publisher thread (§17.5)
+streams.py          ← inventory streams: ingest helpers, apply engine
+                      (`plan` / `apply`), lifecycle, blocks, link offers
+                      (§18.4–§18.7)
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /dbdump, /settings,
                       /settings/exposure, /add, /edit/<id>, group CRUD,
                       /images/<filename>
@@ -298,6 +302,14 @@ docs/               ← PRD.md, HISTORY.md, FUTURE.md, decisions.md, screenshots
   `notify_mqtt.py` is the MQTT channel type (paho 2.x `loop_start()`
   threading, `connect_async`, an injectable client factory for tests).
   Started from `start_background_workers`; never started under pytest.
+- **`streams.py`** — inventory streams (§18). Plain functions over the
+  `inventory_stream` / `inventory_block` / `stream_link_offer` tables and
+  `service_entry` rows with `source = stream`: value rules for the ingest
+  contract (`normalize_mac`, `normalize_items`), `plan()` (what a snapshot
+  would do, no writes, also behind Preview), `apply()` (one transaction under a
+  module lock), and the lifecycle (enable, disable, ignore, delete, update,
+  blocks, link offers). It raises `StreamError`; the management API maps it to
+  the error shape and the Settings UI (§18.8) will call the same functions.
 - **`synthesizer.py`** — exposure interpreter logic. Combines
   `ServiceExposure` rows + per-interpreter settings + URL
   provenance to produce synthesized `internalurl` / `externalurl`
@@ -450,6 +462,21 @@ Migrations `d8e2a6f4b915` and `e3b7c1d9a204` (§17.4). No foreign keys, no new i
 | Column | `service_entry.ha_publish` (Boolean, NOT NULL, default false). Opt-in to Home Assistant discovery. Operator-owned: register never writes it. Added by `e3b7c1d9a204`, which dropped the interim `ha_exclude` on entries; every existing entry is false after it (clean slate). Part of `to_dict()` (backups). |
 | Column | `health_check.ha_exclude` (Boolean, NOT NULL, default false). Per-check opt-out. Part of `to_config()` (backups). |
 | Setting key | `notify_publish_state` gains `ha`: `{channel id: [discovery config topics]}` (§17.4). |
+
+### 5.10 Inventory stream schema changes
+
+Migration `f4c8a2e6d173` (§18.4). Every FK column has its index in the same migration.
+
+| Change | Detail |
+|--------|--------|
+| Table | `inventory_stream`: `id`, `stream_id` (`String(63)`, unique: the slug in the URL), `display_name` (`String(32)`), `producer` (`String(64)`), `producer_version` (`String(32)`), `key_type` (`String(16)`), `status` (`pending` / `enabled` / `disabled` / `ignored`, default `pending`), `api_key_id` (FK `api_key.id` ON DELETE SET NULL, indexed `ix_inventory_stream_api_key_id`), `network_include` / `network_exclude` (JSON lists, NULL = no filter), `snapshot` (JSON, the latest accepted items), `first_seen_at`, `last_snapshot_at`, `last_applied_at`, `last_item_count`, `last_counts` (JSON), `last_error` (`String(255)`), `created_at`, `updated_at`. |
+| Table | `inventory_block`: `id`, `stream_id` (FK `inventory_stream.id` ON DELETE CASCADE, indexed), `key` (`String(128)`), `name`, `ip`, `blocked_at`, `blocked_by`; unique `ux_inventory_block_stream_key` on `(stream_id, key)`. Not tied to the entry, so it outlives the entry's hard delete. |
+| Table | `stream_link_offer`: `id`, `stream_id` (FK ON DELETE CASCADE, indexed), `key`, `entry_id` (FK `service_entry.id` ON DELETE CASCADE, indexed), `item` (JSON, the stored snapshot item), `created_at`; unique `ux_stream_link_offer_stream_key` on `(stream_id, key)`. |
+| Columns | `service_entry.stream_id` (FK `inventory_stream.id`, nullable, indexed `ix_service_entry_stream_id`), `stream_key` (`String(128)`), `mac` (`String(17)`), `ip` (`String(64)`), `network` (`String(64)`), `attributes` (JSON), `inventory_missing` (Boolean, NOT NULL, default false), `name_source` (`String(16)`: NULL, `stream` or `ui_edit`). NULL for notifier and manual entries. |
+| Index | `ux_service_entry_stream_key`: partial unique index on `(stream_id, stream_key)` where `stream_id IS NOT NULL`. Soft-deleted rows count. |
+| Value | `service_entry.source` gains `stream` (`VALID_SOURCES`). The downgrade turns `stream` entries into `manual` ones. |
+| Value | `api_key.scope` gains `ingest` (the column was already wide enough; no DDL). |
+| Backups | `to_dict()` carries `mac`, `ip`, `network` and `attributes`. A stream entry restores as a manual entry (it has no stream to rejoin); a backup record never overwrites a live stream entry. |
 
 ---
 
@@ -2797,7 +2824,9 @@ a half-written file never carries the `.sqlite3` name; the prune matches only
   a `SOURCE_MODELS` map in `notify_ha.py` that inv-04 extends. The API `source`
   filter enum is built from `VALID_SOURCES`. Decision log entry 2026-11-17.
 
-### 18.4 Schema [`inv-04`]
+### 18.4 Schema [`inv-04`] — Delivered on `dev`
+
+**As built:** migration `f4c8a2e6d173`, documented in §5.10. Deviations from the list below: `inventory_stream.api_key_id` and the two `ON DELETE CASCADE` FKs are enforced by the ORM (`cascade="all, delete-orphan"`), because SQLite runs without foreign-key enforcement. `service_entry.container_name` stays `String(100)`; SQLite doesn't enforce VARCHAR length, so an item name of up to 128 characters (the contract limit) is stored whole.
 
 One Alembic migration, FK indexes in the same migration. §5.10 is written when it
 ships.
@@ -2828,7 +2857,17 @@ ships.
   `created_at`; unique `(stream_id, key)`.
 - **`api_key.scope`** gains `ingest`.
 
-### 18.5 Ingest contract [`inv-04`] — the contract sidecars code against
+### 18.5 Ingest contract [`inv-04`] — the contract sidecars code against — Delivered on `dev`
+
+**As built:** wire shapes, status codes and field names are as specified below. Details the text leaves open:
+- **Order of checks:** key (401) → `stream_id` pattern (400) → binding (403) → ignored (202) → body size (413) → JSON and pydantic validation (400) → `key_type` (409). An `ignored` stream is answered before the body is read, so it never returns 400 or 413.
+- **Binding:** an `ingest` key may use a stream only when it is the key that created it. A stream whose creating key row is gone (`api_key_id` NULL) can only be used with a `write` key.
+- **400 `details`** is the management list of `{loc, msg, type}`. A duplicate key, or a key that isn't a MAC when `key_type` is `mac`, reports `loc: ["items", "<index>", "key"]`.
+- **Normalisation:** `key`, `name`, `network`, `display_name`, `producer` and `producer_version` are trimmed. `ip` is stored in canonical form (`str(ipaddress.ip_address(...))`). `mac` is always normalised, whatever the `key_type`.
+- **`display_name`** is read only when the stream is created. A later snapshot never renames it.
+- **Timestamps** in `GET .../status` are UTC ISO strings ending in `Z`; `last_counts` is null until the first apply.
+- **The 202 `message`** reads `Snapshot stored, not applied. Enable the stream in Settings → Streams to import its N items.`
+- The route is registered in `mgmt_openapi.OPERATIONS` (scope `ingest`) with the 200/202/400/401/403/409/413 responses; it is not audited (the after_request hook skips it by endpoint).
 
 **Auth.** `Authorization: Bearer std_<prefix>_<secret>`, an admin API key with
 scope **`ingest`** (or `write`, for testing with curl).
@@ -2887,7 +2926,17 @@ Snapshot PUTs aren't written to the API audit log, because they'd flood it every
 few minutes. The stream row keeps the last counts. Stream status changes made by
 the operator are audited.
 
-### 18.6 Applying a snapshot [`inv-04`]
+### 18.6 Applying a snapshot [`inv-04`] — Delivered on `dev`
+
+**As built:** `streams.plan()` / `streams.apply()`. `plan()` loads the stream's entries, blocks and open offers and the host-less manual entries once each (four queries) and diffs in Python; a test pins an apply of 5,000 items to at most 15 SELECTs. Details the text leaves open:
+- **Filter:** matching is exact and case-insensitive. When `network_include` is set, an item with no `network` is filtered. An empty list means no filter. A filter change takes effect with the next snapshot (or Enable); nothing is re-applied when it is saved.
+- **Counts** partition the items: `created + updated + unchanged + restored + blocked + link_offers + filtered = item_count`. `link_offers` counts items held back for an offer, new or still waiting. `missing` counts entries (not deleted) now flagged missing, not only the newly flagged ones.
+- A key that is in the snapshot but filtered or blocked is not "missing", and its entry is left untouched.
+- **Link offers:** an offer whose manual entry is gone, deleted or already converted is dropped at the next apply, and the item is processed as a new key. Accepting an offer, or linking by hand, removes the entry's other offers. The linked entry gets `name_source = ui_edit`, so a snapshot never renames the operator's entry.
+- Register never matches, adopts or updates a `source = stream` row (a `source != stream` filter in `upsert_service`).
+- **Entry edit:** the management API and the Edit page let the operator rename a stream entry (`name_source` becomes `ui_edit` when the name actually changes). `host` stays NULL, and a rename skips `find_duplicate`. The restore clash checks (Settings → Deleted, `POST /entries/{id}/restore`) skip stream entries.
+- **MQTT:** `ip`, `mac`, `network` and `stream` are always present in an entry's payload (null for notifier and manual entries). `InventoryStream.display_name` is watched too, so renaming a stream republishes its entries and updates the HA device `model`.
+- A failed apply rolls back, records `last_error` on the stream and answers 500.
 
 Applied in the ingest request, in one transaction, under an in-process lock (the
 `upsert_service` pattern). STD makes no outbound calls here. For an `enabled`
@@ -2922,7 +2971,25 @@ Also:
   `inventory_missing`. `attributes` isn't published in this release. The HA
   `model` string for a stream entry is the stream's display name.
 
-### 18.7 Stream lifecycle, blocks and link offers [`inv-04`]
+### 18.7 Stream lifecycle, blocks and link offers [`inv-04`] — Delivered on `dev`
+
+**As built:** the lifecycle is plain functions in `streams.py` (each commits once); the management routes below wrap them. All are in `mgmt_openapi.OPERATIONS`, with an MCP tool each. They take the stream's slug, not its numeric id.
+
+| Route | Scope | What it does |
+|---|---|---|
+| `GET /streams`, `GET /streams/{stream_id}` | read | status, producer and version, counts, filters, last error, entry counts, blocks and offers |
+| `PATCH /streams/{stream_id}` | write | `display_name`, `network_include`, `network_exclude` |
+| `GET /streams/{stream_id}/preview` | read | counts plus the per-item action, and the entries that would go missing (409 with no stored snapshot) |
+| `POST .../enable`, `.../disable`, `.../ignore` | write | `enable`: pending, disabled or ignored, applies the stored snapshot. `disable` (body `cleanup`, `clear_blocks`): enabled only. `ignore`: pending or disabled; discards the stored snapshot. Any other state is 409 |
+| `DELETE /streams/{stream_id}?cleanup=` | write | delete a stream |
+| `GET .../blocks`, `DELETE .../blocks/{block_id}` | read / write | list, unblock |
+| `GET .../offers`, `POST .../offers/{offer_id}/accept`, `.../decline` | read / write | list, answer (enabled streams only) |
+| `GET .../unmatched`, `POST .../link` (`entry_id`, `key`) | read / write | items with no entry yet; link a host-less manual entry by hand |
+
+- `DELETE /api/v1/entries/{id}` takes `block=true` (a stream entry, first delete only; 400 otherwise or with `permanent`). The session routes (`POST /api/v1/entries/<id>/delete` and the Edit page delete) take a `block` flag too; the dialog that sets it is §18.8.
+- **Delete a stream** removes its blocks and link offers with it, so `clear_blocks` only means something for `disable` with `purge`; `disable` ignores it for the other cleanups. With `keep`, `mac`, `ip`, `network` and `attributes` stay on the entries that become manual. `soft_delete` also turns the soft-deleted entries into manual ones, so they stay restorable from Settings → Deleted.
+- `streams.customised_entries()` and `streams.entry_stats()` back the cleanup dialog's counts and its list of customised entries (renamed, grouped, described, with an icon, checks or Home Assistant).
+- Audited: status changes (with the counts), cleanups, unblocks, link answers and the entry delete's `stream_block`. Snapshot PUTs are not.
 
 **Operator actions.** The same functions sit behind the UI (§18.8), the management
 API (read / write scope) and MCP:

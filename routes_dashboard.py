@@ -50,6 +50,7 @@ import jobs
 import mgmt_serializers
 import notify
 import settings_store
+import streams
 import synthesizer
 import version_check
 from extensions import db
@@ -61,8 +62,10 @@ from models import (
     CHECK_TYPE_DNS,
     CHECK_TYPE_HTTP,
     CHECK_TYPES,
+    NAME_SOURCE_UI_EDIT,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
+    SOURCE_STREAM,
     URL_CHECK_KINDS,
     VALID_SOURCES,
     ApiAudit,
@@ -534,8 +537,9 @@ def settings():
                     item_source = item.get('source')
                     if item_source is None:
                         item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
-                    elif item_source not in VALID_SOURCES:
-                        # Unknown (e.g. a source from a newer STD): operator-made.
+                    elif item_source not in VALID_SOURCES or item_source == SOURCE_STREAM:
+                        # Unknown (e.g. a source from a newer STD): operator-made. A stream
+                        # entry has no stream to rejoin on restore, so it comes back manual.
                         item_source = SOURCE_MANUAL
                     item_host = (item.get('host') or '').strip() or None
 
@@ -603,6 +607,10 @@ def settings():
                     if not entry:
                         entry = ServiceEntry(host=item_host, container_name=item['container_name'])
                         db.session.add(entry)
+                    elif entry.stream_id is not None:
+                        # A live stream entry is owned by its stream; a backup never overwrites it.
+                        skipped_count += 1
+                        continue
 
                     # Assign group_id only now (after entry exists)
                     entry.group_id = group_obj.id if group_obj else None
@@ -1411,8 +1419,11 @@ def edit_entry(id):
 
 
                 # Soft delete: recoverable from Settings -> Deleted. The widget
-                # stays attached; nothing else is removed.
-                entry.deleted_at = datetime.now()
+                # stays attached; nothing else is removed. "Don't re-add" (stream
+                # entries) also blocks the key.
+                streams.soft_delete_entry(
+                    entry, _truthy(request.form.get('block')) and entry.stream_id is not None,
+                    actor=current_user.username)
                 db.session.commit()
                 flash(
                     f"Deleted entry: {entry.container_name}. "
@@ -1441,13 +1452,17 @@ def edit_entry(id):
 
         # === BASIC FIELDS ===
         new_host = request.form.get('host', '').strip()
-        if entry.is_manual:
-            # Host is optional for manual entries.
-            entry.host = new_host or None
-            entry.description = request.form.get('description', '').strip()[:255] or None
+        if not entry.is_docker:
+            # Host is optional for manual entries (stream entries never have one).
+            entry.host = None if entry.is_stream else (new_host or None)
+            if 'description' in request.form:
+                entry.description = request.form.get('description', '').strip()[:255] or None
         else:
             entry.host = new_host
-        entry.container_name = request.form.get('container_name', '').strip()
+        new_name = request.form.get('container_name', '').strip()
+        if entry.is_stream and new_name and new_name != entry.container_name:
+            entry.name_source = NAME_SOURCE_UI_EDIT     # snapshots no longer write the name
+        entry.container_name = new_name
 
         # URL provenance: setting a URL via UI marks it ui_edit (highest
         # precedence, the synthesizer won't touch it). Clearing the URL
@@ -1653,6 +1668,11 @@ def health_strips():
     return jsonify({str(k): v for k, v in health_history.strips(entries).items()})
 
 
+def _truthy(value):
+    """A form/JSON flag: True, 1, "true", "yes" or "on"."""
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required
@@ -1664,7 +1684,10 @@ def delete_entry_json(id):
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
     # Soft delete: recoverable from Settings -> Deleted. Widget stays attached.
-    entry.deleted_at = datetime.now()
+    # `block` (stream entries): also keep the stream from bringing the entry back.
+    body = request.get_json(silent=True)
+    block = _truthy((body.get('block') if isinstance(body, dict) else None) or request.values.get('block'))
+    streams.soft_delete_entry(entry, block and entry.stream_id is not None, actor=current_user.username)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -1730,7 +1753,8 @@ def revoke_api_key(id):
 @is_admin_required
 def restore_deleted_entry(id):
     entry = ServiceEntry.deleted().filter(ServiceEntry.id == id).first_or_404()
-    clash = ServiceEntry.active().filter_by(
+    # Stream entries are unique by stream key, not by (host, name) (PRD 18.6).
+    clash = None if entry.stream_id is not None else ServiceEntry.active().filter_by(
         host=entry.host, container_name=entry.container_name
     ).first()
     if clash:

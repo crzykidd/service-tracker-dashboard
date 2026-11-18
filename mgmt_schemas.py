@@ -13,18 +13,106 @@ are plain functions returning these dicts, and the OpenAPI generator
 `pydantic.TypeAdapter(SomeTypedDict).json_schema()`.
 """
 
-from typing import Any, Generic, TypeVar
+from typing import Annotated, Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    StringConstraints,
+    field_validator,
+)
 
 # pydantic refuses `typing.TypedDict` before Python 3.12, and CI runs 3.11.
 from typing_extensions import TypedDict
+
+from streams import check_attributes, normalize_ip, normalize_mac
 
 # --- requests ------------------------------------------------------------------
 
 
 class _Request(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+def _text(max_length):
+    """A trimmed string of 1..max_length characters."""
+    return Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=max_length)]
+
+
+class StreamSnapshotItem(_Request):
+    """One inventory item (PRD 18.5). `key` is the item's identity in the stream;
+    for `key_type: mac` it and `mac` accept any common MAC form."""
+
+    key: _text(128)
+    name: _text(128)                      # the entry name, e.g. the reservation hostname
+    ip: str | None = None                 # an IPv4 or IPv6 address
+    mac: str | None = None
+    network: _text(64) | None = None      # e.g. the DHCP scope; the stream's network filter matches it
+    # <= 32 keys matching ^[A-Za-z0-9_.-]{1,64}$; string (<= 256 chars), number, boolean or null.
+    attributes: dict[str, StrictStr | StrictInt | StrictFloat | StrictBool | None] | None = None
+
+    @field_validator("ip")
+    @classmethod
+    def _ip(cls, value):
+        if value is None:
+            return None
+        normalised = normalize_ip(value)
+        if normalised is None:
+            raise ValueError("ip must be an IPv4 or IPv6 address")
+        return normalised
+
+    @field_validator("mac")
+    @classmethod
+    def _mac(cls, value):
+        if value is None:
+            return None
+        normalised = normalize_mac(value)
+        if normalised is None:
+            raise ValueError("mac must be a MAC address (aa:bb:cc:dd:ee:ff, AA-BB-..., aabb.ccdd.eeff or aabbccddeeff)")
+        return normalised
+
+    @field_validator("attributes")
+    @classmethod
+    def _attributes(cls, value):
+        if value is None:
+            return None
+        problem = check_attributes(value)
+        if problem:
+            raise ValueError(problem)
+        return value
+
+
+class StreamSnapshotPut(_Request):
+    """The body of `PUT /api/v1/streams/<stream_id>/snapshot`: a full snapshot."""
+
+    display_name: _text(32)               # used when the stream is created; the operator may rename it
+    producer: _text(64)                   # e.g. std-source-technitium
+    producer_version: _text(32)
+    key_type: Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]{1,16}$")]   # `mac`: every key is a MAC
+    items: Annotated[list[StreamSnapshotItem], Field(max_length=5000)]
+
+
+class StreamPatch(_Request):
+    """Every field is optional; null (or an empty list) clears a network filter."""
+
+    display_name: str | None = None
+    network_include: list[str] | None = None
+    network_exclude: list[str] | None = None
+
+
+class StreamDisableRequest(_Request):
+    cleanup: str = "keep"                 # keep | soft_delete | purge
+    clear_blocks: bool = False            # purge only: also empty the block list
+
+
+class StreamLinkRequest(_Request):
+    entry_id: int                         # an active manual entry with no host
+    key: str                              # an unmatched key of the stream's latest snapshot
 
 
 class UrlCheckSettings(_Request):
@@ -231,6 +319,49 @@ class WhoamiOut(TypedDict):
     api_revision: int                # /api/v1 contract revision (additive; older STDs omit it)
 
 
+class StreamCountsOut(TypedDict):
+    created: int
+    updated: int
+    unchanged: int
+    restored: int
+    missing: int                     # entries of the stream absent from this snapshot
+    blocked: int
+    link_offers: int                 # items held back for a manual-entry link offer
+    filtered: int                    # dropped by the stream's network filter
+
+
+class SnapshotAppliedOut(TypedDict):
+    stream_id: str
+    stream_status: str               # "enabled"
+    applied: bool                    # true
+    item_count: int
+    counts: StreamCountsOut
+
+
+class SnapshotStoredOut(TypedDict):
+    stream_id: str
+    stream_status: str               # "pending" | "disabled"
+    applied: bool                    # false
+    item_count: int
+    message: str
+
+
+class SnapshotIgnoredOut(TypedDict):
+    stream_id: str
+    stream_status: str               # "ignored": discarded, not stored
+    applied: bool                    # false
+
+
+class StreamStatusOut(TypedDict):
+    stream_id: str
+    stream_status: str               # pending | enabled | disabled | ignored
+    display_name: str
+    last_snapshot_at: str | None
+    last_applied_at: str | None
+    last_item_count: int | None
+    last_counts: StreamCountsOut | None
+
+
 class MetaOut(TypedDict):
     std_version: str                 # bare semver, e.g. "0.10.0"
     api_revision: int                # /api/v1 contract revision
@@ -326,12 +457,24 @@ class WidgetOut(TypedDict):
     widget_api_key_set: bool         # the key itself is never returned
 
 
+class InventoryOut(TypedDict):
+    stream_id: str                   # the stream's slug
+    stream: str                      # the stream's display name
+    key: str
+    mac: str | None
+    ip: str | None
+    network: str | None
+    attributes: Any
+    missing: bool                    # absent from the stream's latest snapshot
+    name_source: str | None          # "stream" | "ui_edit" (renamed in STD)
+
+
 class EntryOut(TypedDict):
     id: int
     name: str
     host: str | None
     description: str | None
-    source: str                      # "manual" | "notifier"
+    source: str                      # "manual" | "notifier" | "stream"
     group: GroupRefOut | None
     internalurl: str | None
     externalurl: str | None
@@ -344,6 +487,7 @@ class EntryOut(TypedDict):
     stale: bool
     last_updated: str | None
     deleted_at: str | None
+    inventory: InventoryOut | None   # set for source "stream" (additive; older STDs omit it)
     health: EntryHealthOut
     checks: list[CheckOut]
 
@@ -549,3 +693,125 @@ class EntryPurgeOut(TypedDict):
 class NotificationChannelDeleteOut(TypedDict):
     id: int
     deleted: bool
+
+
+class StreamEntryStatsOut(TypedDict):
+    total: int
+    active: int
+    deleted: int
+    missing: int                     # active entries absent from the latest snapshot
+
+
+class StreamOut(TypedDict):
+    stream_id: str
+    display_name: str
+    producer: str
+    producer_version: str
+    key_type: str
+    status: str                      # pending | enabled | disabled | ignored
+    api_key: str | None              # name of the key that created the stream
+    network_include: list[str] | None
+    network_exclude: list[str] | None
+    first_seen_at: str | None
+    last_snapshot_at: str | None
+    last_applied_at: str | None
+    last_item_count: int | None
+    last_counts: StreamCountsOut | None
+    last_error: str | None
+    entries: StreamEntryStatsOut
+    blocks: int
+    link_offers: int
+
+
+class StreamEnableOut(TypedDict):
+    stream: StreamOut
+    applied: bool                    # false when no snapshot was stored yet
+    counts: StreamCountsOut | None
+
+
+class StreamCleanupOut(TypedDict):
+    entries: int                     # entries the stream had
+    kept: int
+    soft_deleted: int
+    purged: int
+    offers_removed: int
+    blocks_cleared: int
+
+
+class StreamDisableOut(TypedDict):
+    stream: StreamOut
+    cleanup: str
+    result: StreamCleanupOut
+
+
+class StreamDeleteOut(TypedDict):
+    stream_id: str
+    deleted: bool
+    cleanup: str
+    result: StreamCleanupOut
+
+
+class StreamPreviewItemOut(TypedDict):
+    key: str
+    name: str
+    action: str                      # created | updated | unchanged | restored | blocked | link_offer | filtered
+    ip: str | None
+    network: str | None
+    entry_id: int | None             # the existing entry (or the manual entry an offer points at)
+
+
+class StreamPreviewMissingOut(TypedDict):
+    entry_id: int
+    key: str
+    name: str
+
+
+class StreamPreviewOut(TypedDict):
+    stream_id: str
+    stream_status: str
+    item_count: int
+    counts: StreamCountsOut
+    items: list[StreamPreviewItemOut]
+    missing: list[StreamPreviewMissingOut]
+
+
+class StreamItemOut(TypedDict):
+    key: str
+    name: str
+    ip: str | None
+    mac: str | None
+    network: str | None
+    attributes: Any
+
+
+class BlockOut(TypedDict):
+    id: int
+    stream_id: str
+    key: str
+    name: str | None
+    ip: str | None
+    blocked_at: str | None
+    blocked_by: str | None
+
+
+class UnblockOut(TypedDict):
+    stream_id: str
+    key: str
+    unblocked: bool
+
+
+class OfferOut(TypedDict):
+    id: int
+    stream_id: str
+    key: str
+    entry_id: int                    # the manual entry that would join the stream
+    entry_name: str | None
+    item: StreamItemOut
+    created_at: str | None
+
+
+class OfferAnswerOut(TypedDict):
+    stream_id: str
+    key: str
+    answer: str                      # accepted | declined
+    entry: EntryOut                  # the entry that now carries the key

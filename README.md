@@ -611,6 +611,10 @@ producer a `User-Agent: name/version`.
    - **write** can read and change.
    - Use a read key for dashboards and monitoring, and a write key only for
      things that should change STD.
+   - **ingest** (for inventory sidecars) opens only the two
+     [stream ingest](#inventory-streams-sidecars) routes. It cannot read or
+     change anything else. The scope picker for it arrives with the Settings →
+     Streams page; until then a `write` key also works for testing.
 2. Copy the key now. It is shown **once** (`std_<prefix>_<secret>`); only a
    hash is stored. A lost key is revoked and replaced.
 3. Send it on every request:
@@ -668,6 +672,23 @@ token.
 | POST | `/api/v1/notifications/channels/{id}/test` | write | Send a test message through a channel |
 | POST | `/api/v1/notifications/channels/{id}/purge` | write | Purge a channel's retained MQTT topics and Home Assistant devices |
 | POST | `/api/v1/entries/{id}/notifications/purge` | write | Purge an entry's MQTT topics and Home Assistant device, then republish it |
+| PUT | `/api/v1/streams/{stream_id}/snapshot` | ingest | Push a full inventory snapshot (sidecars) |
+| GET | `/api/v1/streams/{stream_id}/status` | ingest | A stream's status, for a sidecar to log |
+| GET | `/api/v1/streams` | read | List inventory streams |
+| GET | `/api/v1/streams/{stream_id}` | read | Get one stream |
+| PATCH | `/api/v1/streams/{stream_id}` | write | Rename a stream or change its network filters |
+| GET | `/api/v1/streams/{stream_id}/preview` | read | What applying the stored snapshot would do |
+| POST | `/api/v1/streams/{stream_id}/enable` | write | Enable a stream and apply its stored snapshot |
+| POST | `/api/v1/streams/{stream_id}/disable` | write | Disable a stream (`cleanup`: keep, soft_delete, purge) |
+| POST | `/api/v1/streams/{stream_id}/ignore` | write | Ignore a pending or disabled stream |
+| DELETE | `/api/v1/streams/{stream_id}` | write | Delete a stream (`?cleanup=`) |
+| GET | `/api/v1/streams/{stream_id}/blocks` | read | List a stream's blocked keys |
+| DELETE | `/api/v1/streams/{stream_id}/blocks/{block_id}` | write | Unblock a key |
+| GET | `/api/v1/streams/{stream_id}/offers` | read | List open link offers |
+| POST | `/api/v1/streams/{stream_id}/offers/{offer_id}/accept` | write | Accept a link offer |
+| POST | `/api/v1/streams/{stream_id}/offers/{offer_id}/decline` | write | Decline a link offer |
+| GET | `/api/v1/streams/{stream_id}/unmatched` | read | Items of the latest snapshot with no entry |
+| POST | `/api/v1/streams/{stream_id}/link` | write | Link a manual entry to a snapshot item |
 | GET | `/api/v1/config` | read | Effective configuration (read-only) |
 
 Ids are the numeric ids shown in the API output. Write endpoints that create
@@ -705,6 +726,58 @@ curl -s -X PUT "${H[@]}" "$STD/api/v1/entries/1/widget" -d '{
   "fields": ["wanted", "queued"], "widget_api_key": "<sonarr key>"
 }'
 ```
+
+### Inventory streams (sidecars)
+
+An inventory stream is a list of devices that a sidecar keeps current, for
+example every static DHCP reservation. The sidecar posts the **whole** list
+every few minutes; STD never pulls from your DHCP server. The first stream
+sidecar is `std-source-technitium` (its own repo). Anyone can write one for
+another source: the contract is [PRD §18.5](docs/PRD.md) and the OpenAPI
+document.
+
+```bash
+# KEY is an `ingest` (or, for testing, a `write`) key. "dhcp" is the stream id.
+curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  "$STD/api/v1/streams/dhcp/snapshot" -d '{
+  "display_name": "DHCP", "producer": "my-sidecar", "producer_version": "0.1.0",
+  "key_type": "mac",
+  "items": [
+    {"key": "AA-BB-CC-00-00-01", "name": "shelly-pump", "ip": "10.0.40.21",
+     "network": "IoT", "attributes": {"reservation_comment": "boiler room"}}
+  ]
+}'
+# 202 {"stream_id":"dhcp","stream_status":"pending","applied":false,"item_count":1,"message":"..."}
+```
+
+- **A new stream is `pending`.** STD stores the snapshot (answering `202`) and
+  applies nothing. Look at what it would do with
+  `GET /api/v1/streams/dhcp/preview`, then
+  `POST /api/v1/streams/dhcp/enable` applies the stored snapshot at once, and
+  every later one as it arrives (`200` with counts of created, updated,
+  unchanged, restored, missing, blocked, link offers and filtered items).
+  `ignore` drops a stream you don't want.
+- **What a snapshot does.** Each item becomes an entry (no host, source
+  `stream`) with its IP, MAC and network. A device missing from a later
+  snapshot is flagged missing, never deleted. Your edits stay: a rename of the
+  entry wins over the sidecar's name, and group, icon, description, checks and
+  Home Assistant settings are never written. `network_include` and
+  `network_exclude` (set with `PATCH /api/v1/streams/dhcp`) leave networks out.
+  Stream entries get no health checks by default; add a ping or TCP check by
+  hand.
+- **Link offers.** A new item named like one of your manual entries (no host,
+  same name ignoring case) is not created. It waits as a link offer: accept it
+  and your entry joins the stream, keeping its id, history and checks; decline
+  it and a new entry is created.
+- **Deleting a stream entry** (`DELETE /api/v1/entries/{id}?block=true`) can
+  also put its key on the stream's block list, so a snapshot does not bring it
+  back; unblock it with `DELETE .../blocks/{block_id}`. Without `block` the next
+  snapshot that still holds the key restores it.
+- **Disabling or deleting a stream** takes `cleanup`: `keep` (entries stay, no
+  longer updated; deleting the stream turns them into manual entries),
+  `soft_delete` (restorable from Settings → Deleted) or `purge` (gone for good).
+- Snapshot posts are not written to the audit log; changes you make to a
+  stream are. Limits: 5,000 items and 2 MiB per snapshot.
 
 ### Errors, pagination and the audit log
 
@@ -1129,7 +1202,8 @@ management key is rejected by `/api/v1/register`.
 
 - Pick a name (unique among active keys, up to 64 characters; a revoked key's
   name can be reused) and a scope: **read** or **write**
-  (write includes read). The full key (`std_<prefix>_<secret>`) is shown
+  (write includes read). An **ingest** key (inventory sidecars) is accepted by
+  the API; its picker arrives with the Settings → Streams page. The full key (`std_<prefix>_<secret>`) is shown
   **once** with a Copy button; only a hash is stored, so a lost key means
   revoking it and creating another.
 - Send it as `Authorization: Bearer <key>`. Browser sessions do not

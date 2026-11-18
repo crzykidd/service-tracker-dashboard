@@ -3,9 +3,11 @@
 except `entry_detail_out` (exposures, widget)."""
 
 import notify
+from extensions import db
 from health_history import effective_target, iso_z
 from health_state import entry_health
 from mgmt_schemas import (
+    BlockOut,
     CheckLastOut,
     CheckOut,
     EntryDetailOut,
@@ -13,12 +15,24 @@ from mgmt_schemas import (
     EntryOut,
     ExposureOut,
     GroupOut,
+    InventoryOut,
     NotificationChannelOut,
     NotifierOut,
+    OfferOut,
+    StreamOut,
     WidgetInstanceOut,
     WidgetOut,
 )
-from models import HealthCheck, ServiceEntry, check_counts
+from models import (
+    ApiKey,
+    HealthCheck,
+    InventoryBlock,
+    InventoryStream,
+    ServiceEntry,
+    StreamLinkOffer,
+    check_counts,
+)
+from streams import entry_stats
 
 
 def _local_iso(dt):
@@ -74,6 +88,23 @@ def health_out(entry: ServiceEntry) -> EntryHealthOut:
     }
 
 
+def inventory_out(entry: ServiceEntry) -> InventoryOut | None:
+    if entry.stream_id is None:
+        return None
+    stream = entry.stream
+    return {
+        "stream_id": stream.stream_id,
+        "stream": stream.display_name,
+        "key": entry.stream_key,
+        "mac": entry.mac,
+        "ip": entry.ip,
+        "network": entry.network,
+        "attributes": entry.attributes,
+        "missing": bool(entry.inventory_missing),
+        "name_source": entry.name_source,
+    }
+
+
 def entry_out(entry: ServiceEntry) -> EntryOut:
     group = entry.group
     return {
@@ -94,6 +125,7 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "stale": entry.is_docker and entry.is_docker_status_stale,
         "last_updated": _local_iso(entry.last_updated),
         "deleted_at": _local_iso(entry.deleted_at),
+        "inventory": inventory_out(entry),
         "health": health_out(entry),
         "checks": [check_out(entry, c) for c in entry.checks],
     }
@@ -173,4 +205,54 @@ def notification_channel_out(channel) -> NotificationChannelOut:
         "status": notify.channel_status(channel),
         "created_at": iso_z(channel.created_at),
         "updated_at": iso_z(channel.updated_at),
+    }
+
+
+def stream_out(stream: InventoryStream) -> StreamOut:
+    row = db.session.get(ApiKey, stream.api_key_id) if stream.api_key_id is not None else None
+    key = row.name if row is not None else None
+    return {
+        "stream_id": stream.stream_id,
+        "display_name": stream.display_name,
+        "producer": stream.producer,
+        "producer_version": stream.producer_version,
+        "key_type": stream.key_type,
+        "status": stream.status,
+        "api_key": key,
+        "network_include": stream.network_include,
+        "network_exclude": stream.network_exclude,
+        "first_seen_at": iso_z(stream.first_seen_at),
+        "last_snapshot_at": iso_z(stream.last_snapshot_at),
+        "last_applied_at": iso_z(stream.last_applied_at),
+        "last_item_count": stream.last_item_count,
+        "last_counts": stream.last_counts,
+        "last_error": stream.last_error,
+        "entries": entry_stats(stream),
+        "blocks": InventoryBlock.query.filter_by(stream_id=stream.id).count(),
+        "link_offers": StreamLinkOffer.query.filter_by(stream_id=stream.id).count(),
+    }
+
+
+def block_out(block: InventoryBlock) -> BlockOut:
+    return {
+        "id": block.id,
+        "stream_id": block.stream.stream_id,
+        "key": block.key,
+        "name": block.name,
+        "ip": block.ip,
+        "blocked_at": iso_z(block.blocked_at),
+        "blocked_by": block.blocked_by,
+    }
+
+
+def offer_out(offer: StreamLinkOffer) -> OfferOut:
+    entry = db.session.get(ServiceEntry, offer.entry_id)
+    return {
+        "id": offer.id,
+        "stream_id": offer.stream.stream_id,
+        "key": offer.key,
+        "entry_id": offer.entry_id,
+        "entry_name": entry.container_name if entry is not None else None,
+        "item": offer.item,
+        "created_at": iso_z(offer.created_at),
     }
