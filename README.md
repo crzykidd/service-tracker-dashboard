@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.9.0-blue)
+![Version](https://img.shields.io/badge/version-0.10.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -45,6 +45,41 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.10.0 (2026-11-19)
+
+Notifications to MQTT and Home Assistant, inventory streams that push device
+lists into STD, and the running version in the header. Five database
+migrations run on startup (notification channels, Home Assistant opt-outs,
+inventory streams, stream default checks, linked stream entries); no notifier
+change is needed.
+
+- **Version in the header:** the running version next to the page title, with
+  a What's New link and an **Update available** link when GitHub has a newer
+  release (the check can be turned off in Settings → Info).
+- **MQTT notifications:** Settings → Notifications adds MQTT channels that
+  publish retained entry, check and summary state, with a test message button.
+  Deleting, disabling or re-basing a channel can clean its broker, and **Scan
+  for orphans** finds leftover topics.
+- **Home Assistant discovery:** tick **Add to Home Assistant** on a channel and
+  pick entries; each gets a device with State, Since and per-check sensors.
+  Purge tools give a clean slate per channel, entry or stream.
+- **Inventory streams:** a sidecar (such as `std-source-technitium` for DHCP
+  reservations) pushes a full device list with an `ingest` API key. New streams
+  wait for review in Settings → Streams (flagged on the Settings link), with
+  Preview, Enable, network filters, a block list, and offers to link items to
+  your existing manual entries. Linked entries are never deleted by stream
+  cleanup, and a stream can give its entries default ping / TCP checks.
+- **Stream entries in the views:** a stream pill on the Dashboard, a small
+  router icon on Tiled and Compact (Compact now shows a source icon on every
+  row), a "missing from latest snapshot" marker, and IP, MAC and network in
+  the expanded detail.
+- **API revision 2:** `X-STD-API-Revision` and `X-STD-Version` headers and a
+  public `GET /api/v1/meta`; every new feature is in the management API and
+  the MCP server.
+- **Nightly database snapshot** next to the YAML backup, pruned with it.
+- **Fixed:** auto-refresh now runs only on the Dashboard, Tiled and Compact
+  views.
 
 ### v0.9.0 (2026-11-16)
 
@@ -922,7 +957,7 @@ claude mcp add std -s user \
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script itself,
 so there is no virtualenv to set up. Without a checkout, point `uv run` at a
 release tag instead (updating means changing the tag):
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.9.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.0/mcp/std_mcp.py`.
 The server warns Claude when it is older or newer than your STD, and Claude can
 check with the `server_info` tool. A venv-based install and a Claude Desktop
 example are in [`mcp/README.md`](mcp/README.md).

@@ -310,7 +310,7 @@ def test_release_header_has_no_sha_link(app, admin_client):
         html = admin_client.get("/").get_data(as_text=True)
     finally:
         app.config["VERSION_INFO"] = saved
-    assert ">v0.9.0</button>" in html and "/commit/" not in html
+    assert f">v{saved['version']}</button>" in html and "/commit/" not in html
 
 
 # --- endpoints ------------------------------------------------------------------
@@ -320,7 +320,9 @@ def test_status_endpoint_requires_login(client):
     assert r.status_code in (302, 401)
 
 
-def test_status_endpoint_returns_cached_status(app, admin_client, http, spawned):
+def test_status_endpoint_returns_cached_status(app, admin_client, http, spawned, monkeypatch):
+    # The fake release (0.9.5) must be newer than the running version.
+    monkeypatch.setitem(app.config, "VERSION_INFO", {**app.config["VERSION_INFO"], "version": "0.9.0"})
     with app.app_context():
         version_check.refresh_now("0.9.0")
     r = admin_client.get("/api/update-status")
@@ -359,7 +361,9 @@ def test_settings_defaults(app):
 
 # --- management API -------------------------------------------------------------
 
-def test_whoami_and_config_carry_build_and_update_fields(app, client, http):
+def test_whoami_and_config_carry_build_and_update_fields(app, client, http, monkeypatch):
+    # The fake release (0.9.5) must be newer than the running version.
+    monkeypatch.setitem(app.config, "VERSION_INFO", {**app.config["VERSION_INFO"], "version": "0.9.0"})
     with app.app_context():
         version_check.refresh_now("0.9.0")
     _, full = _key(app, "reader", "read")

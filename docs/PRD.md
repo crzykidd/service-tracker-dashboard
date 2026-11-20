@@ -85,6 +85,7 @@
 | 0.75    | 2026-11-19 | §18 follow-ups from the first live test (inv-06), still API revision 2: link-offer matching widened (any active manual entry; name, host or host's first label; convert clears `host`); disable + purge keeps the stored snapshot; dry-run counts for pending/disabled streams; pending-stream flag in the header; per-stream `default_checks` (migration `a9d3c5e7f102`, `PATCH /streams/{id}`, `POST /streams/{id}/default-checks/apply`, MCP `apply_stream_default_checks`); `pending` in `GET /streams`; IP/MAC/network in the detail panel; Tiled and Compact stream icon and Compact source icon; HA entries table Source column; Add page "Docker host" wording. §5.10, §18.6–§18.8 updated. |
 | 0.76    | 2026-11-19 | Notification cleanup (notif-06), still API revision 2: §17.5 channel delete cleans the broker first (default on; `cleanup` on `DELETE`/`PATCH`), disable offers it (default off), a base topic / discovery prefix change clears the old one and remembers the last 5 bases (`setting` key `notify_previous_bases`, §5.8), per-stream purge (`POST /streams/{id}/notifications/purge`), orphan scan and clear (`/notifications/channels/{id}/orphans/scan` and `/clear`, `GET .../previous-bases`), MCP tools for all; §17.3/§18.6 per-stream retained status topic `<base>/stream/<stream_id>` (part of the desired set, so `full_sync` reconciles and clears it); §17.4 one HA hub device per stream with a published entry (status and active / missing count sensors; its entry devices use `via_device` the stream device). The "channel delete/disable leaves its configs" caveat is gone. No schema migration, no register-contract change. |
 | 0.77    | 2026-11-19 | Linked stream entries are unlinked, never deleted (inv-07), still API revision 2: §5.10 migration `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, backfill heuristic); §18.7 `POST /entries/{id}/unlink`, `unlinked` in disable/delete results, `inventory.linked`, `linked` in the stream entry counts, MCP `unlink_entry`; §18.8 dialog linked box, edit page Unlink from stream…. |
+| 0.78    | 2026-11-19 | v0.10.0 release prep: §16, §17 and §18 (version in the UI, MQTT and Home Assistant notifications, inventory streams and API revision 2) marked Delivered in v0.10.0. No content change. |
 
 ---
 
@@ -2439,7 +2440,7 @@ expiry, even though the HTTP status is fine.
 
 ---
 
-## 16. Next release — Version in the UI (Delivered on `dev`)
+## 16. v0.10.0 — Version in the UI (Delivered)
 
 Prompt: `prompts/done/2026-11-16-version-in-ui.md`. No schema or
 register-contract change.
@@ -2487,7 +2488,7 @@ register-contract change.
 
 ---
 
-## 17. Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)
+## 17. v0.10.0 — Notifications: MQTT and Home Assistant (Delivered)
 
 The FUTURE.md item "Alerting / notifications on failure", scoped down to
 **state publishing**: STD publishes check and roll-up state to an external
@@ -2518,7 +2519,7 @@ No register-contract change: the notifier is not involved.
 - **No command entities** (no "Check now" button from HA); parked in
   FUTURE.md pending a security review.
 
-### 17.2 Channel framework and MQTT [`notif-01-channel-framework-and-mqtt`] — Delivered on `dev`
+### 17.2 Channel framework and MQTT [`notif-01-channel-framework-and-mqtt`] — Delivered
 
 - `notification_channel` table (§5.8: `type`, unique `name`, `enabled`, JSON
   `config`, write-only `secret`). Channel types register a pydantic config
@@ -2558,7 +2559,7 @@ No register-contract change: the notifier is not involved.
   carry the live `status`. MCP: `list_notification_channels`,
   `get_notification_channel`, `test_notification_channel`.
 
-### 17.3 State publishing [`notif-02-state-publishing`] — Delivered on `dev`
+### 17.3 State publishing [`notif-02-state-publishing`] — Delivered
 
 Retained messages only (except `<base>/test`), QoS from the channel config.
 `<base>` is the channel's base topic (default `std`). Topics use database ids,
@@ -2607,7 +2608,7 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
   retained on that broker.
 - Out of scope: publishing every result (parked in FUTURE.md).
 
-### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Delivered on `dev`
+### 17.4 Home Assistant discovery [`notif-03-home-assistant-discovery`] — Delivered
 
 Per channel, **Add to Home Assistant** (`ha_discovery`, default off) publishes
 MQTT discovery so Home Assistant creates one device per STD entry that is
@@ -2691,7 +2692,7 @@ check) and the three `ha_*` channel config keys; the MCP `create_manual_entry`
 Out of scope, parked in FUTURE.md: a "Check now" button entity (needs a
 security review) and per-result latency sensors.
 
-### 17.5 Purge [`notif-05-purge`] — Delivered on `dev`
+### 17.5 Purge [`notif-05-purge`] — Delivered
 
 Two clean-slate tools, implemented in `notify_purge.py` and run on the publisher
 thread (`Publisher.call()`): the request thread only queues the job and waits up
@@ -2798,7 +2799,7 @@ noted; 404/409/504): `POST /streams/{stream_id}/notifications/purge`,
 
 ---
 
-## 18. Next release — Inventory streams and API revision (Delivered on `dev`)
+## 18. v0.10.0 — Inventory streams and API revision (Delivered)
 
 For **0.10.0** (every subsection is delivered on `dev`, unreleased), together with §16 and §17. The goal is an STD that is
 ready for the first inventory sidecar (`std-source-technitium`, a new repo,
@@ -2859,7 +2860,7 @@ server supports and log it.
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 
-### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered on `dev`
+### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
 *As built:* the snapshot is written to `<name>.tmp` and renamed into place, so
 a half-written file never carries the `.sqlite3` name; the prune matches only
@@ -2908,7 +2909,7 @@ a half-written file never carries the `.sqlite3` name; the prune matches only
   a `SOURCE_MODELS` map in `notify_ha.py` that inv-04 extends. The API `source`
   filter enum is built from `VALID_SOURCES`. Decision log entry 2026-11-17.
 
-### 18.4 Schema [`inv-04`] — Delivered on `dev`
+### 18.4 Schema [`inv-04`] — Delivered
 
 **As built:** migration `f4c8a2e6d173`, documented in §5.10. Deviations from the list below: `inventory_stream.api_key_id` and the two `ON DELETE CASCADE` FKs are enforced by the ORM (`cascade="all, delete-orphan"`), because SQLite runs without foreign-key enforcement. `service_entry.container_name` stays `String(100)`; SQLite doesn't enforce VARCHAR length, so an item name of up to 128 characters (the contract limit) is stored whole.
 
@@ -2941,7 +2942,7 @@ ships.
   `created_at`; unique `(stream_id, key)`.
 - **`api_key.scope`** gains `ingest`.
 
-### 18.5 Ingest contract [`inv-04`] — the contract sidecars code against — Delivered on `dev`
+### 18.5 Ingest contract [`inv-04`] — the contract sidecars code against — Delivered
 
 **As built:** wire shapes, status codes and field names are as specified below. Details the text leaves open:
 - **Order of checks:** key (401) → `stream_id` pattern (400) → binding (403) → ignored (202) → body size (413) → JSON and pydantic validation (400) → `key_type` (409). An `ignored` stream is answered before the body is read, so it never returns 400 or 413.
@@ -3010,7 +3011,7 @@ Snapshot PUTs aren't written to the API audit log, because they'd flood it every
 few minutes. The stream row keeps the last counts. Stream status changes made by
 the operator are audited.
 
-### 18.6 Applying a snapshot [`inv-04`] — Delivered on `dev`
+### 18.6 Applying a snapshot [`inv-04`] — Delivered
 
 **As built:** `streams.plan()` / `streams.apply()`. `plan()` loads the stream's entries, blocks and open offers and the active manual entries once each (four queries) and diffs in Python; a test pins an apply of 5,000 items to at most 15 SELECTs. Details the text leaves open:
 - **Filter:** matching is exact and case-insensitive. When `network_include` is set, an item with no `network` is filtered. An empty list means no filter. A filter change takes effect with the next snapshot (or Enable); nothing is re-applied when it is saved.
@@ -3064,7 +3065,7 @@ Also:
   `inventory_missing`. `attributes` isn't published in this release. The HA
   `model` string for a stream entry is the stream's display name.
 
-### 18.7 Stream lifecycle, blocks and link offers [`inv-04`] — Delivered on `dev`
+### 18.7 Stream lifecycle, blocks and link offers [`inv-04`] — Delivered
 
 **As built:** the lifecycle is plain functions in `streams.py` (each commits once); the management routes below wrap them. All are in `mgmt_openapi.OPERATIONS`, with an MCP tool each. They take the stream's slug, not its numeric id.
 
@@ -3122,7 +3123,7 @@ Every new management route is registered in `mgmt_openapi.OPERATIONS` (tests
 enforce it). Stream status changes, cleanups, unblocks and link answers are
 audited.
 
-### 18.8 Streams UI [`inv-05`] — Delivered on `dev`
+### 18.8 Streams UI [`inv-05`] — Delivered
 
 **As built:** server-rendered, no new JSON endpoints. The lifecycle rules stay in
 `streams.py`; the session routes in `routes_dashboard.py` (admin, CSRF-protected,

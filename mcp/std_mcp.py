@@ -41,7 +41,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # The release this script belongs to. `/release-prep` sets it with VERSION; a test
 # keeps the two from drifting.
-MCP_VERSION = "0.9.0"
+MCP_VERSION = "0.10.0"
 
 API = "/api/v1"
 DEFAULT_TIMEOUT = 15.0

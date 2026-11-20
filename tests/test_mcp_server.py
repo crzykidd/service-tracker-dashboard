@@ -466,7 +466,7 @@ def test_whoami_includes_the_std_version(app):
     assert who["version"] == app.config["VERSION_INFO"]["version"]
 
 
-@pytest.mark.parametrize("version", ["0.10.1", "0.8.0", "dev", None])
+@pytest.mark.parametrize("version", ["0.11.0", "0.8.0", "dev", None])
 def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
     who = {"name": "k", "prefix": "abcd1234", "scope": "write"}
     if version is not None:
@@ -480,7 +480,7 @@ def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
     err = capsys.readouterr().err
     assert ran and "Version notice" in ran[0].instructions
     assert f"std_mcp {std_mcp.MCP_VERSION}" in err and "connected to STD" in err
-    assert "std_mcp 0.9.0 talking to STD" in err
+    assert f"std_mcp {std_mcp.MCP_VERSION} talking to STD" in err
 
 
 def test_startup_line_when_versions_are_equal(monkeypatch, capsys):
