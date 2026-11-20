@@ -30,8 +30,11 @@ from datetime import datetime
 
 from sqlalchemy import func
 
+from check_form import new_service_check, validate_service_check
 from extensions import db
 from models import (
+    CHECK_TYPE_PING,
+    CHECK_TYPE_TCP,
     NAME_SOURCE_STREAM,
     NAME_SOURCE_UI_EDIT,
     SOURCE_MANUAL,
@@ -234,20 +237,47 @@ def _item_values(item):
             "attributes": item.get("attributes")}
 
 
+def _first_label(text):
+    return text.split(".", 1)[0]
+
+
+def _name_tokens(name):
+    """Casefolded forms an item name is matched by: the whole name and its first
+    DNS label (`z-wave-house.crzynet.me` -> `z-wave-house`)."""
+    text = (name or "").strip().casefold()
+    return {t for t in (text, _first_label(text)) if t}
+
+
+def _entry_tokens(entry):
+    """Casefolded forms a manual entry is matched by: its name, its host and the
+    first label of its host (operators put a device's hostname in Host)."""
+    tokens = set()
+    for text in (entry.container_name, entry.host):
+        text = (text or "").strip().casefold()
+        if text:
+            tokens.add(text)
+    host = (entry.host or "").strip().casefold()
+    if host:
+        tokens.add(_first_label(host))
+    return tokens
+
+
 def plan(stream, items):
     """Decide what applying `items` to `stream` would do. Reads only.
 
-    Loads the stream's entries, blocks and offers and the host-less manual entries
+    Loads the stream's entries, blocks and offers and the active manual entries
     once each, then diffs in Python (a handful of queries at 5,000 items).
     """
     entries = {e.stream_key: e for e in ServiceEntry.query.filter_by(stream_id=stream.id).all()}
     blocked = {k for (k,) in db.session.query(InventoryBlock.key).filter_by(stream_id=stream.id)}
     offers = {o.key: o for o in StreamLinkOffer.query.filter_by(stream_id=stream.id).all()}
-    manual_by_id, manual_by_name = {}, {}
-    for e in (ServiceEntry.active()
-              .filter(ServiceEntry.host.is_(None), ServiceEntry.source == SOURCE_MANUAL).all()):
+    manual_by_id, manual_by_token = {}, {}
+    for e in ServiceEntry.active().filter(ServiceEntry.source == SOURCE_MANUAL).all():
         manual_by_id[e.id] = e
-        manual_by_name.setdefault((e.container_name or "").casefold(), []).append(e)
+        for token in _entry_tokens(e):
+            manual_by_token.setdefault(token, []).append(e)
+    # A manual entry already offered to one key is not offered to a second one.
+    claimed = {o.entry_id for o in offers.values()}
 
     counts = _empty_counts()
     plans, stale = [], []
@@ -278,10 +308,15 @@ def plan(stream, items):
             if offer is not None:
                 plans.append(ItemPlan(key, name, ACTION_LINK_OFFER, item, offer=offer))
                 continue
-            candidates = manual_by_name.get(name.casefold(), [])
+            candidates = {}
+            for token in _name_tokens(name):
+                for e in manual_by_token.get(token, ()):
+                    if e.id not in claimed:
+                        candidates[e.id] = e
             if len(candidates) == 1:
-                plans.append(ItemPlan(key, name, ACTION_LINK_OFFER, item,
-                                      offer_entry_id=candidates[0].id))
+                (entry_id,) = candidates
+                claimed.add(entry_id)
+                plans.append(ItemPlan(key, name, ACTION_LINK_OFFER, item, offer_entry_id=entry_id))
             else:
                 plans.append(ItemPlan(key, name, ACTION_CREATED, item))
     for p in plans:
@@ -323,13 +358,15 @@ def _execute(stream, the_plan, now):
 
 
 def new_stream_entry(stream, item):
-    """A fresh stream entry: no host, no health checks beyond the dormant URL rows."""
+    """A fresh stream entry: no host; the dormant URL rows plus the stream's default
+    checks (ping / TCP on its IP) when it has any."""
     entry = ServiceEntry(
         host=None, container_name=item["name"], source=SOURCE_STREAM,
         stream_id=stream.id, stream_key=item["key"], name_source=NAME_SOURCE_STREAM,
         last_updated=datetime.now(), inventory_missing=False, **_item_values(item),
     )
     ensure_url_checks(entry)
+    add_default_checks(stream, entry)
     return entry
 
 
@@ -360,6 +397,88 @@ def _record_failure(stream_pk, exc):
     if stream is not None:
         stream.last_error = f"{type(exc).__name__}: {exc}"[:255]
         db.session.commit()
+
+
+# --- default checks ---------------------------------------------------------------
+
+DEFAULT_CHECK_KEYS = ("ping", "tcp_port")
+
+
+def clean_default_checks(value):
+    """Validate and normalise a `default_checks` value: `{"ping": bool, "tcp_port":
+    int | None}` (missing keys default off). Returns the stored dict, or None when
+    nothing is enabled (so "off" is stored as NULL). Raises `StreamError(400)`."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise StreamError(400, "default_checks must be an object like {\"ping\": true, \"tcp_port\": 22}.")
+    unknown = sorted(set(value) - set(DEFAULT_CHECK_KEYS))
+    if unknown:
+        raise StreamError(400, f"default_checks has unknown keys: {', '.join(unknown)}.")
+    ping = value.get("ping", False)
+    if ping is None:
+        ping = False
+    if not isinstance(ping, bool):
+        raise StreamError(400, "default_checks.ping must be true or false.")
+    port = value.get("tcp_port")
+    if port is not None:
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+            raise StreamError(400, "default_checks.tcp_port must be a port from 1 to 65535, or null.")
+    if not ping and port is None:
+        return None
+    return {"ping": ping, "tcp_port": port}
+
+
+def default_checks_of(stream):
+    """The stream's default checks as `{"ping": bool, "tcp_port": int | None}`."""
+    cfg = stream.default_checks or {}
+    return {"ping": bool(cfg.get("ping")), "tcp_port": cfg.get("tcp_port")}
+
+
+def _has_service_check(entry, check_type):
+    return any(c.check_type == check_type for c in entry.service_checks)
+
+
+def add_default_checks(stream, entry):
+    """Add the stream's missing default checks to `entry` (enabled service checks on
+    its IP). A kind the entry already has a check of is skipped, so customised checks
+    are never touched or duplicated. No IP: nothing. Caller commits. Returns how
+    many checks were added."""
+    cfg = default_checks_of(stream)
+    ip = (entry.ip or "").strip()
+    if not ip or not (cfg["ping"] or cfg["tcp_port"]):
+        return 0
+    specs = []
+    if cfg["ping"] and not _has_service_check(entry, CHECK_TYPE_PING):
+        specs.append({"name": "Ping", "check_type": CHECK_TYPE_PING, "target": ip})
+    if cfg["tcp_port"] and not _has_service_check(entry, CHECK_TYPE_TCP):
+        host = f"[{ip}]" if ":" in ip else ip
+        specs.append({"name": f"TCP {cfg['tcp_port']}", "check_type": CHECK_TYPE_TCP,
+                      "target": f"{host}:{cfg['tcp_port']}"})
+    added = 0
+    for spec in specs:
+        values, errors = validate_service_check({**spec, "enabled": True})
+        if errors:
+            logger.warning("Default check %s skipped for %s: %s", spec["name"], entry.container_name, errors)
+            continue
+        entry.checks.append(new_service_check(values))
+        added += 1
+    return added
+
+
+def apply_default_checks(stream):
+    """Add the missing default checks to every active entry of `stream`. Returns
+    `{"entries": n, "checks_added": n, "entries_changed": n}`."""
+    with _LOCK:
+        result = {"entries": 0, "checks_added": 0, "entries_changed": 0}
+        for entry in ServiceEntry.active().filter_by(stream_id=stream.id).all():
+            result["entries"] += 1
+            added = add_default_checks(stream, entry)
+            if added:
+                result["checks_added"] += added
+                result["entries_changed"] += 1
+        db.session.commit()
+        return result
 
 
 # --- ingest ------------------------------------------------------------------------
@@ -442,6 +561,14 @@ def preview(stream):
             "items": the_plan.actions(),
             "missing": [{"entry_id": e.id, "key": e.stream_key, "name": e.container_name}
                         for e in the_plan.missing]}
+
+
+def would_counts(stream):
+    """The counts applying the stored snapshot would give (read-only `plan()`), or
+    None when the stream has no stored snapshot."""
+    if stream.snapshot is None:
+        return None
+    return plan(stream, stream.snapshot).counts
 
 
 def entry_stats(stream):
@@ -579,7 +706,6 @@ def disable(stream, cleanup=CLEANUP_KEEP, clear_blocks=False):
         if cleanup == CLEANUP_PURGE:
             StreamLinkOffer.query.filter_by(stream_id=stream.id).delete()
             counts["offers_removed"] = offers
-            stream.snapshot = None
             stream.last_counts = None
             if clear_blocks:
                 counts["blocks_cleared"] = InventoryBlock.query.filter_by(stream_id=stream.id).delete()
@@ -607,8 +733,10 @@ def delete(stream, cleanup=CLEANUP_KEEP):
         return counts
 
 
-def update(stream, display_name=None, network_include=None, network_exclude=None, sent=()):
-    """Change the display name and the network filters. `sent` names the fields
+def update(stream, display_name=None, network_include=None, network_exclude=None, sent=(),
+           default_checks=None):
+    """Change the display name, the network filters and the default checks
+    (`default_checks`: `{"ping": bool, "tcp_port": int | None}`, null clears). `sent` names the fields
     the caller provided; an empty list or null clears a filter. Returns the changes
     as `{field: [old, new]}`. Raises `StreamError(400)` on a bad value."""
     changes = {}
@@ -628,6 +756,11 @@ def update(stream, display_name=None, network_include=None, network_exclude=None
             if cleaned != getattr(stream, field_name):
                 changes[field_name] = [getattr(stream, field_name), cleaned]
                 setattr(stream, field_name, cleaned)
+        if "default_checks" in sent:
+            cleaned = clean_default_checks(default_checks)
+            if cleaned != stream.default_checks:
+                changes["default_checks"] = [stream.default_checks, cleaned]
+                stream.default_checks = cleaned
         db.session.commit()
     return changes
 
@@ -685,7 +818,9 @@ def unblock(stream, block_id):
 
 def _convert(entry, stream, item):
     """A manual entry joins the stream. It keeps its id, history, checks and
-    `ha_publish`. Its name is the operator's, so snapshots no longer write it."""
+    `ha_publish`. Its name is the operator's, so snapshots no longer write it. Its
+    host is cleared: stream entries have none (the stream reports the address)."""
+    entry.host = None
     entry.source = SOURCE_STREAM
     entry.stream_id = stream.id
     entry.stream_key = item["key"]
@@ -751,8 +886,8 @@ def decline_offer(stream, offer):
 def link_entry(stream, entry, key):
     """Link a manual entry to an unmatched item of the stream's latest snapshot."""
     with _LOCK:
-        if entry.deleted_at is not None or entry.source != SOURCE_MANUAL or entry.host is not None:
-            raise StreamError(409, "Only an active manual entry with no host can be linked.",
+        if entry.deleted_at is not None or entry.source != SOURCE_MANUAL:
+            raise StreamError(409, "Only an active manual entry can be linked.",
                               {"entry_id": entry.id})
         item = next((i for i in (stream.snapshot or []) if i["key"] == key), None)
         if item is None:

@@ -15,6 +15,7 @@
         ({{ offer.key }}{% if offer.item.get('ip') %}, {{ offer.item.get('ip') }}{% endif %}) matches this entry.
         <strong>Convert</strong> makes this entry a stream entry (it keeps its history, checks and Home Assistant setting);
         <strong>Keep separate</strong> adds the stream item as its own entry.
+        {% if entry.host %}<span class="convert-host-note">Its host <code>{{ entry.host }}</code> will be cleared; the stream reports its address.</span>{% endif %}
       </p>
       <div class="flex gap-3">
         {% for answer, label, cls in [('accept', 'Convert', 'bg-blue-600 hover:bg-blue-500'), ('decline', 'Keep separate', 'bg-gray-600 hover:bg-gray-500')] %}
@@ -39,6 +40,7 @@
         <div>
           <label for="host" class="block text-sm font-medium text-dashboard-secondary mb-1">Host</label>
           <input type="text" name="host" id="host" class="form-input" value="{{ fv('host', entry.host or '') }}">
+          {% if entry.source == 'manual' %}<p class="edit-helper">The machine that runs this container, if the notifier should take this entry over later. Leave blank for a device, VM or anything not running in Docker.</p>{% endif %}
         </div>
         {% endif %}
 
@@ -274,7 +276,7 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
     <div class="bg-dashboard-info-box rounded-lg p-6" id="stream-link">
       <h2 class="text-lg font-semibold text-dashboard-primary mb-1">Link to stream item</h2>
       <p class="text-xs text-dashboard-secondary mb-4">
-        Make this entry the stream's entry for one item that has none yet. It keeps its history, checks and Home Assistant setting.
+        Make this entry the stream's entry for one item that has none yet. It keeps its history, checks and Home Assistant setting.{% if entry.host %} Its host <code>{{ entry.host }}</code> will be cleared; the stream reports its address.{% endif %}
       </p>
       <form method="POST" action="{{ url_for('dashboard.link_entry_to_stream', id=entry.id) }}" class="flex flex-wrap items-end gap-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

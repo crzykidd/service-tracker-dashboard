@@ -53,7 +53,10 @@
           <td class="px-3 py-2">{% if st.last_snapshot_at %}{{ st.last_snapshot_at | time_since_utc }}{% else %}never{% endif %}</td>
           <td class="px-3 py-2">{{ row.item_count if row.item_count is not none else (st.last_item_count if st.last_item_count is not none else '—') }}</td>
           <td class="px-3 py-2 text-xs">
-            {% if st.last_counts %}{% for k, v in st.last_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}{% else %}—{% endif %}
+            {% if st.status == 'enabled' and st.last_counts %}{% for k, v in st.last_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}
+            {% elif row.would_counts is not none and st.status != 'enabled' %}<span class="text-gray-400 stream-would-counts" title="What enabling the stored snapshot would do (nothing is written)">would: {% for k, v in row.would_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}</span>
+            {% elif st.last_counts %}{% for k, v in st.last_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}
+            {% else %}—{% endif %}
           </td>
           <td class="px-3 py-2 text-xs">
             {{ row.stats.active }} active{% if row.stats.deleted %}, {{ row.stats.deleted }} deleted{% endif %}{% if row.stats.missing %}, {{ row.stats.missing }} missing{% endif %}
@@ -62,6 +65,8 @@
             <div class="flex flex-wrap gap-2 items-center">
               {% if st.snapshot is not none %}
               <a href="{{ url_for('dashboard.settings', section='streams', preview=st.stream_id) }}" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Preview</a>
+              {% else %}
+              <span class="text-xs text-gray-500 stream-waiting">Waiting for the next snapshot</span>
               {% endif %}
               {% if st.status in ('pending', 'disabled', 'ignored') %}
               <form method="POST" action="{{ url_for('dashboard.stream_enable', slug=st.stream_id) }}" class="inline">
@@ -104,6 +109,24 @@
                   <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">Save stream</button>
                   <span class="text-xs text-gray-500 ml-2">Filters apply at the next snapshot. Entries outside them are not removed.</span>
                 </div>
+              </form>
+            </details>
+            <details class="mt-2" id="stream-checks-{{ st.stream_id }}">
+              <summary class="cursor-pointer text-xs text-gray-400">Default checks
+                {% if st.default_checks %}<span class="text-gray-500">({% if st.default_checks.get('ping') %}ping{% endif %}{% if st.default_checks.get('ping') and st.default_checks.get('tcp_port') %}, {% endif %}{% if st.default_checks.get('tcp_port') %}TCP {{ st.default_checks.get('tcp_port') }}{% endif %})</span>{% endif %}</summary>
+              <form method="POST" action="{{ url_for('dashboard.stream_default_checks', slug=st.stream_id) }}" class="mt-3 flex flex-wrap items-end gap-4" data-unsaved-guard>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="text-sm flex items-center gap-2"><input type="checkbox" name="ping" value="1" {% if st.default_checks and st.default_checks.get('ping') %}checked{% endif %}> Ping the entry's IP</label>
+                <label class="text-sm">TCP port <span class="text-xs text-gray-500">(blank = no TCP check)</span>
+                  <input type="number" name="tcp_port" min="1" max="65535" value="{{ (st.default_checks or {}).get('tcp_port') or '' }}" class="form-input block mt-1 w-32">
+                </label>
+                <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">Save default checks</button>
+              </form>
+              <p class="text-xs text-gray-500 mt-2">New entries of this stream start with these checks, enabled, on their IP (none without an IP). Saving does not change existing entries.</p>
+              <form method="POST" action="{{ url_for('dashboard.stream_default_checks_apply', slug=st.stream_id) }}" class="mt-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs" {% if not st.default_checks %}disabled title="Save default checks first"{% endif %}>Apply to existing entries</button>
+                <span class="text-xs text-gray-500 ml-2">Adds the missing checks to every active entry; an entry that already has a ping (or TCP) check is skipped.</span>
               </form>
             </details>
           </td>
@@ -180,7 +203,7 @@
   {% else %}<p class="text-gray-500 text-sm" id="stream-blocks-empty">Nothing is blocked.</p>{% endif %}
 
   <h3 class="text-xl font-semibold mt-8 mb-2">Link offers</h3>
-  <p class="text-gray-400 text-sm mb-3">A new stream item whose name matches one manual entry. <strong>Accept</strong> turns that manual entry into the stream entry; <strong>Decline</strong> adds the item as a separate entry.</p>
+  <p class="text-gray-400 text-sm mb-3">A new stream item whose name matches one manual entry (by its name or host). <strong>Accept</strong> turns that manual entry into the stream entry (its host is cleared); <strong>Decline</strong> adds the item as a separate entry.</p>
   {% if _any_offers %}
   <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="stream-offers">
     <thead class="bg-gray-800 text-gray-400"><tr><th class="px-3 py-2">Stream</th><th class="px-3 py-2">Stream item</th><th class="px-3 py-2">Manual entry</th><th class="px-3 py-2"></th></tr></thead>
@@ -228,9 +251,10 @@
         <label class="flex items-start gap-2"><input type="radio" name="cleanup" value="soft_delete" class="mt-1">
           <span><strong>Soft delete</strong> <span class="text-gray-400">: they move to Settings → Deleted and can be restored there.</span></span></label>
         <label class="flex items-start gap-2"><input type="radio" name="cleanup" value="purge" class="mt-1">
-          <span><strong>Purge</strong> <span class="text-gray-400">: they are deleted permanently, with their history.</span></span></label>
+          <span><strong>Purge</strong> <span class="text-gray-400">: they are deleted permanently, with their history and checks.</span></span></label>
       </fieldset>
-      <p class="text-xs text-gray-400 mb-3 stream-delete-note">Deleting the stream also removes its {{ row.blocks|length }} block{{ '' if row.blocks|length == 1 else 's' }} and {{ row.offers|length }} link offer{{ '' if row.offers|length == 1 else 's' }}.</p>
+      <p class="text-xs text-gray-400 mb-3 stream-delete-note">Deleting the stream removes the stream itself, its stored snapshot, its {{ row.blocks|length }} block{{ '' if row.blocks|length == 1 else 's' }} and its {{ row.offers|length }} link offer{{ '' if row.offers|length == 1 else 's' }}, whichever option you pick. A sidecar that keeps posting recreates it as pending.</p>
+      <p class="text-xs text-gray-400 mb-3 stream-disable-note hidden">Purge also removes the stream's {{ row.offers|length }} open link offer{{ '' if row.offers|length == 1 else 's' }} and its last counts. Blocked items stay unless you tick the box below. The stored snapshot is kept in every mode, so you can preview and re-enable without waiting for the sidecar.</p>
       <label class="flex items-center text-sm mb-3 stream-clear-blocks hidden">
         <input type="checkbox" name="clear_blocks" value="1" class="mr-2"> Also clear the block list ({{ row.blocks|length }})
       </label>
@@ -269,6 +293,7 @@
       dlg.querySelector('.stream-keep-delete').classList.toggle('hidden', disable);
       dlg.querySelector('.stream-keep-disable').classList.toggle('hidden', !disable);
       dlg.querySelector('.stream-delete-note').classList.toggle('hidden', disable);
+      dlg.querySelector('.stream-disable-note').classList.toggle('hidden', !disable);
       sync(dlg);
       dlg.showModal();
     }));

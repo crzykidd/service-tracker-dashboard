@@ -319,14 +319,31 @@ def test_csrf_token_is_accepted(app, admin_client, put):
 # --- Views --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["/", "/tiled_dash", "/compact_dash"])
-def test_stream_entry_shows_the_stream_pill_on_every_view(admin_client, app, put, op, path):
+def test_stream_entry_shows_the_stream_pill_on_the_dashboard(admin_client, app, put, op):
     enabled_stream(app, put, op)
-    html = admin_client.get(path).get_data(as_text=True)
+    html = admin_client.get("/").get_data(as_text=True)
     assert html.count('class="status-pill stream-pill') == 10
     assert '<span class="stream-pill-name">DHCP</span>' in html
     assert "Manual" not in re.sub(r"<option.*?</option>", "", html)       # no grey Manual pill for streams
     assert "shelly-pump" in html
+
+
+@pytest.mark.parametrize("path", ["/tiled_dash", "/compact_dash"])
+def test_tiled_and_compact_show_the_stream_icon_not_the_pill(admin_client, app, put, op, path):
+    enabled_stream(app, put, op)
+    html = admin_client.get(path).get_data(as_text=True)
+    assert "stream-pill" not in html.replace(".stream-pill", "")
+    assert html.count("stream-icon") >= 10
+    assert 'title="Stream: DHCP — 10.0.40.21"' in html
+    assert "ti-router" in html and "status-icon-ok stream-icon" in html
+
+
+def test_compact_shows_one_source_icon_per_row(admin_client, app, put, op, manual):
+    manual("hand-made")
+    enabled_stream(app, put, op)
+    html = admin_client.get("/compact_dash").get_data(as_text=True)
+    assert "ti-link" in html and "ti-router" in html
+    assert html.count("source-icon") + html.count("stream-icon") == html.count("compact-tile") - html.count("group-header")
 
 
 def test_dashboard_shows_manual_pill_for_manual_and_not_stream_pill(admin_client, manual):
@@ -335,15 +352,19 @@ def test_dashboard_shows_manual_pill_for_manual_and_not_stream_pill(admin_client
     assert "Manual" in html and "stream-pill" not in html.replace(".stream-pill", "")
 
 
-@pytest.mark.parametrize("path", ["/", "/tiled_dash", "/compact_dash"])
-def test_missing_marker(admin_client, app, put, op, path):
+def test_missing_marker(admin_client, app, put, op):
     enabled_stream(app, put, op)
     body = snapshot()
     body["items"] = body["items"][1:]                     # shelly-pump leaves the snapshot
     assert put(body).status_code == 200
-    html = admin_client.get(path).get_data(as_text=True)
+    html = admin_client.get("/").get_data(as_text=True)
     assert html.count('class="stream-missing"') == 1
     assert "stream-pill stream-pill-missing" in html
+    for path in ("/tiled_dash", "/compact_dash"):          # the icon carries the state
+        icons = admin_client.get(path).get_data(as_text=True)
+        assert 'class="stream-missing"' not in icons
+        assert icons.count("status-icon-warn stream-icon") == 1
+        assert "missing from the latest snapshot" in icons
 
 
 @pytest.mark.parametrize("path", ["/", "/tiled_dash", "/compact_dash"])

@@ -82,6 +82,7 @@
 | 0.72    | 2026-11-17 | §18.3 delivered on `dev`: `ServiceEntry.is_docker`; "not Docker" branches (tiled/dashboard/edit templates, stale guard, HA model) moved off `is_manual`; source filters and restore generalised over `VALID_SOURCES`. No operator-visible change. |
 | 0.73    | 2026-11-17 | §18.4–§18.7 delivered on `dev` (inv-04): inventory streams backend. Migration `f4c8a2e6d173` (new §5.10: `inventory_stream`, `inventory_block`, `stream_link_offer`, stream columns and a partial unique index on `service_entry`; `source = stream`); `ingest` API key scope; the sidecar ingest contract `PUT /api/v1/streams/<stream_id>/snapshot` and `GET .../status` (§18.5, as specified); new `streams.py` apply engine and lifecycle (§18.6, §18.7); management routes under `/api/v1/streams`, `inventory` on entries, `block` on entry delete, MCP tools; MQTT payload `ip`/`mac`/`network`/`stream` and the HA device model. §3.1 and §3.2 updated. §18.8 (Settings → Streams UI) remains planned. |
 | 0.74    | 2026-11-17 | §18.8 delivered on `dev` (inv-05): Settings → Streams tab (rows, pending highlight, read-only Docker row, Preview, Enable / Ignore, Disable… / Delete… cleanup dialog, inline name and network-filter edit, Blocked and Link offers lists), **Ingest (sidecars)** in the API key scope picker, stream pill and "missing" marker on Dashboard / Tiled / Compact, per-stream Source filter (`stream:<stream_id>`), stream edit page (read-only observations, Allow re-adding / Don't re-add), manual edit page (Convert / Keep separate banner, Link to stream item…). New session routes under `/settings/streams/` and `/edit/<id>/stream-link`. §18 retitled Delivered on `dev`; §18.8 "As built" notes; §13.6 `source` filter updated. No schema, register-contract or `/api/v1` change. |
+| 0.75    | 2026-11-19 | §18 follow-ups from the first live test (inv-06), still API revision 2: link-offer matching widened (any active manual entry; name, host or host's first label; convert clears `host`); disable + purge keeps the stored snapshot; dry-run counts for pending/disabled streams; pending-stream flag in the header; per-stream `default_checks` (migration `a9d3c5e7f102`, `PATCH /streams/{id}`, `POST /streams/{id}/default-checks/apply`, MCP `apply_stream_default_checks`); `pending` in `GET /streams`; IP/MAC/network in the detail panel; Tiled and Compact stream icon and Compact source icon; HA entries table Source column; Add page "Docker host" wording. §5.10, §18.6–§18.8 updated. |
 
 ---
 
@@ -466,11 +467,12 @@ Migrations `d8e2a6f4b915` and `e3b7c1d9a204` (§17.4). No foreign keys, no new i
 
 ### 5.10 Inventory stream schema changes
 
-Migration `f4c8a2e6d173` (§18.4). Every FK column has its index in the same migration.
+Migration `f4c8a2e6d173` (§18.4) and `a9d3c5e7f102` (`inventory_stream.default_checks`, below). Every FK column has its index in the same migration.
 
 | Change | Detail |
 |--------|--------|
 | Table | `inventory_stream`: `id`, `stream_id` (`String(63)`, unique: the slug in the URL), `display_name` (`String(32)`), `producer` (`String(64)`), `producer_version` (`String(32)`), `key_type` (`String(16)`), `status` (`pending` / `enabled` / `disabled` / `ignored`, default `pending`), `api_key_id` (FK `api_key.id` ON DELETE SET NULL, indexed `ix_inventory_stream_api_key_id`), `network_include` / `network_exclude` (JSON lists, NULL = no filter), `snapshot` (JSON, the latest accepted items), `first_seen_at`, `last_snapshot_at`, `last_applied_at`, `last_item_count`, `last_counts` (JSON), `last_error` (`String(255)`), `created_at`, `updated_at`. |
+| Column | `inventory_stream.default_checks` (JSON, nullable; migration `a9d3c5e7f102`): `{"ping": bool, "tcp_port": int \| null}`, port 1-65535; NULL = no default checks. Plain column, no FK, no index. |
 | Table | `inventory_block`: `id`, `stream_id` (FK `inventory_stream.id` ON DELETE CASCADE, indexed), `key` (`String(128)`), `name`, `ip`, `blocked_at`, `blocked_by`; unique `ux_inventory_block_stream_key` on `(stream_id, key)`. Not tied to the entry, so it outlives the entry's hard delete. |
 | Table | `stream_link_offer`: `id`, `stream_id` (FK ON DELETE CASCADE, indexed), `key`, `entry_id` (FK `service_entry.id` ON DELETE CASCADE, indexed), `item` (JSON, the stored snapshot item), `created_at`; unique `ux_stream_link_offer_stream_key` on `(stream_id, key)`. |
 | Columns | `service_entry.stream_id` (FK `inventory_stream.id`, nullable, indexed `ix_service_entry_stream_id`), `stream_key` (`String(128)`), `mac` (`String(17)`), `ip` (`String(64)`), `network` (`String(64)`), `attributes` (JSON), `inventory_missing` (Boolean, NOT NULL, default false), `name_source` (`String(16)`: NULL, `stream` or `ui_edit`). NULL for notifier and manual entries. |
@@ -2930,10 +2932,11 @@ the operator are audited.
 
 ### 18.6 Applying a snapshot [`inv-04`] — Delivered on `dev`
 
-**As built:** `streams.plan()` / `streams.apply()`. `plan()` loads the stream's entries, blocks and open offers and the host-less manual entries once each (four queries) and diffs in Python; a test pins an apply of 5,000 items to at most 15 SELECTs. Details the text leaves open:
+**As built:** `streams.plan()` / `streams.apply()`. `plan()` loads the stream's entries, blocks and open offers and the active manual entries once each (four queries) and diffs in Python; a test pins an apply of 5,000 items to at most 15 SELECTs. Details the text leaves open:
 - **Filter:** matching is exact and case-insensitive. When `network_include` is set, an item with no `network` is filtered. An empty list means no filter. A filter change takes effect with the next snapshot (or Enable); nothing is re-applied when it is saved.
 - **Counts** partition the items: `created + updated + unchanged + restored + blocked + link_offers + filtered = item_count`. `link_offers` counts items held back for an offer, new or still waiting. `missing` counts entries (not deleted) now flagged missing, not only the newly flagged ones.
 - A key that is in the snapshot but filtered or blocked is not "missing", and its entry is left untouched.
+- **Link offer matching (inv-06):** candidates are all active manual entries, with or without a host. An item matches an entry when the item's name, or its first DNS label (`z-wave-house.crzynet.me` -> `z-wave-house`), equals case-insensitively the entry's `container_name`, its `host`, or the first label of its `host`. Exactly one candidate makes an offer, else the item is created. A manual entry already offered to another key of the stream is not a candidate for a second one. The lookup is built in Python, so the query budget is unchanged. Accepting an offer or linking by hand **clears the entry's `host`** (stream entries have none). Register adoption, `find_duplicate` and the restore clash checks are unchanged.
 - **Link offers:** an offer whose manual entry is gone, deleted or already converted is dropped at the next apply, and the item is processed as a new key. Accepting an offer, or linking by hand, removes the entry's other offers. The linked entry gets `name_source = ui_edit`, so a snapshot never renames the operator's entry.
 - Register never matches, adopts or updates a `source = stream` row (a `source != stream` filter in `upsert_service`).
 - **Entry edit:** the management API and the Edit page let the operator rename a stream entry (`name_source` becomes `ui_edit` when the name actually changes). `host` stays NULL, and a rename skips `find_duplicate`. The restore clash checks (Settings → Deleted, `POST /entries/{id}/restore`) skip stream entries.
@@ -2953,8 +2956,9 @@ stream:
    - a soft-deleted row is **restored** (`deleted_at` cleared; `restored`);
    - group, description, icon, checks and `ha_publish` are never written.
 4. **New key:**
-   - if exactly one active manual entry with no host has the item's name (ignoring
-     case) and no open offer exists, record a `stream_link_offer` (`link_offers`)
+   - if exactly one active manual entry matches the item (name, host or first DNS
+     label of either, ignoring case; see the matching note above) and no open offer
+     exists, record a `stream_link_offer` (`link_offers`)
      and create nothing;
    - with an open offer for the key, keep waiting;
    - otherwise create an entry: `source = stream`, `host` NULL, `container_name` =
@@ -2965,8 +2969,15 @@ stream:
 
 Also:
 - **Enable** applies the stored snapshot immediately, with the same rules.
-- **Stream entries get no health checks automatically** in this release. The URL
-  rows exist but stay dormant. The operator adds a ping or TCP check by hand.
+- **Default checks (inv-06).** A stream's `default_checks` (`{"ping": bool,
+  "tcp_port": int | null}`) gives each *new* stream entry an enabled Ping check on
+  its IP and, when a port is set, a TCP check on `ip:port` (service checks, built
+  with `check_form`); an entry without an IP gets none. Without `default_checks` a
+  stream entry has only the dormant URL rows. **Apply to existing entries** (UI
+  button, `POST /streams/{id}/default-checks/apply`, MCP `apply_stream_default_checks`)
+  adds the missing ones to every active entry and skips an entry that already has a
+  check of that kind (any Ping, any TCP), so nothing is duplicated and customised
+  checks are untouched. Saving `default_checks` never changes existing entries.
   Templates come with monitor profiles (design doc §7).
 - The MQTT entry payload adds `ip`, `mac`, `network` and `stream` (the display
   name). `notify_state._ENTRY_ATTRS` adds `ip`, `mac`, `network`, `stream_id` and
@@ -2979,14 +2990,15 @@ Also:
 
 | Route | Scope | What it does |
 |---|---|---|
-| `GET /streams`, `GET /streams/{stream_id}` | read | status, producer and version, counts, filters, last error, entry counts, blocks and offers |
-| `PATCH /streams/{stream_id}` | write | `display_name`, `network_include`, `network_exclude` |
+| `GET /streams`, `GET /streams/{stream_id}` | read | status, producer and version, counts, filters, `default_checks`, last error, entry counts, blocks and offers. The list also returns `pending` (streams waiting for review). Additive inside revision 2 |
+| `PATCH /streams/{stream_id}` | write | `display_name`, `network_include`, `network_exclude`, `default_checks` (null clears) |
+| `POST /streams/{stream_id}/default-checks/apply` | write | add the stream's missing default checks to its active entries; returns `{stream, entries, entries_changed, checks_added}` |
 | `GET /streams/{stream_id}/preview` | read | counts plus the per-item action, and the entries that would go missing (409 with no stored snapshot) |
 | `POST .../enable`, `.../disable`, `.../ignore` | write | `enable`: pending, disabled or ignored, applies the stored snapshot. `disable` (body `cleanup`, `clear_blocks`): enabled only. `ignore`: pending or disabled; discards the stored snapshot. Any other state is 409 |
 | `DELETE /streams/{stream_id}?cleanup=` | write | delete a stream |
 | `GET .../blocks`, `DELETE .../blocks/{block_id}` | read / write | list, unblock |
 | `GET .../offers`, `POST .../offers/{offer_id}/accept`, `.../decline` | read / write | list, answer (enabled streams only) |
-| `GET .../unmatched`, `POST .../link` (`entry_id`, `key`) | read / write | items with no entry yet; link a host-less manual entry by hand |
+| `GET .../unmatched`, `POST .../link` (`entry_id`, `key`) | read / write | items with no entry yet; link an active manual entry by hand (its host is cleared) |
 
 - `DELETE /api/v1/entries/{id}` takes `block=true` (a stream entry, first delete only; 400 otherwise or with `permanent`). The session routes (`POST /api/v1/entries/<id>/delete` and the Edit page delete) take a `block` flag too; the dialog that sets it is §18.8.
 - **Delete a stream** removes its blocks and link offers with it, so `clear_blocks` only means something for `disable` with `purge`; `disable` ignores it for the other cleanups. With `keep`, `mac`, `ip`, `network` and `attributes` stay on the entries that become manual. `soft_delete` also turns the soft-deleted entries into manual ones, so they stay restorable from Settings → Deleted.
@@ -3003,13 +3015,14 @@ API (read / write scope) and MCP:
 - **Enable** (applies now), **Disable**, **Ignore**.
   - Disable takes `cleanup`: `keep` (entries stay, no longer updated) |
     `soft_delete` | `purge` (hard delete through `hard_delete_entry`, plus the
-    stored snapshot and link offers). Purge also takes `clear_blocks` (default
+    link offers and last counts; the stored snapshot is kept in every mode). Purge also takes `clear_blocks` (default
     false).
   - The response gives counts.
 - **Delete a stream** takes the same `cleanup` options. With `keep`, its entries
   become manual (`source = manual`, `stream_id`/`stream_key` cleared, `mac`/`ip`
   kept).
-- **Update a stream:** `display_name`, `network_include`, `network_exclude`.
+- **Update a stream:** `display_name`, `network_include`, `network_exclude`,
+  `default_checks`.
 - **Blocks:** list, unblock (the next snapshot restores the row or creates a new
   one).
 - **Link offers:** list, accept, decline.
@@ -3049,15 +3062,38 @@ becomes a flash, never a 500). Deviations and details:
 - **Source filter** value for one stream is `stream:<stream_id>` (`all`, `notifier`,
   `manual` and `stream` still work). An unknown stream id matches nothing; text that
   is not a stream id falls back to `all`.
-- **Views:** the pill is `partials/stream_pill.html`. Compact shows only the pill
-  (a muted ghost icon marks a missing item); Tiled replaces the link icon and adds
-  Stream/Network rows to the drawer; Dashboard replaces the grey "Manual" pill.
+- **Views:** the full pill (`partials/stream_pill.html`, with the ghost marker for a
+  missing item) is on the Dashboard view only, replacing the grey "Manual" pill.
+  Tiled and Compact (inv-06) use `partials/stream_icon.html`: a `ti-router`
+  `status-icon`, `status-icon-ok`, or `status-icon-warn` when the item is missing,
+  tooltip "Stream: <name> — <ip>" plus "— missing from the latest snapshot"; no
+  ghost marker there. On Tiled it takes the Docker icon's slot (and the drawer keeps
+  its Stream/Network rows). Compact shows one source icon per row
+  (`partials/source_icon.html`): `ti-brand-docker` with Tiled's status classes and
+  tooltips, the stream icon, or the muted `ti-link` for manual entries; nothing else
+  from Tiled's status row. The Dashboard's expanded detail (and the edit page's
+  health panel) show a stream entry's stream, IP, MAC and network
+  (`.health-detail-facts`, read-only).
+- **inv-06 additions:** a pending or disabled stream with a stored snapshot shows
+  "would: created 5, link offers 2" in Last counts (one read-only `plan()`); a
+  stream with no stored snapshot shows "Waiting for the next snapshot" in place of
+  Preview. `inject_globals` supplies `pending_streams` to every page for
+  authenticated users (try/except, never breaks a page); while it is above zero the
+  header's Settings link gets an amber ring and count badge and goes to Settings →
+  Streams. A "Default checks" panel per stream row (ping, TCP port, **Apply to
+  existing entries**; `POST /settings/streams/<id>/default-checks[/apply]`). The
+  Disable…/Delete… dialog states what each mode removes. Settings → Notifications'
+  Home Assistant entries table has a **Source** column (Docker, Manual or the
+  stream's display name) that the filter box matches. The Add page's field is
+  "Docker host (optional)" with help that says to leave it blank for a device or VM
+  (mirrored on the edit page for manual entries); the Convert banner and the link
+  picker say the host will be cleared.
 - **Delete popover:** the trash popover on Dashboard and Tiled and the edit page's
   Delete button show **Allow re-adding** / **Don't re-add** for stream entries
   (`data-stream="1"`) and send `block` to `POST /api/v1/entries/<id>/delete`.
 - **Edit page:** a stream entry has no Host field. The "Link to stream item…"
-  picker lists unmatched items of every stream and shows for host-less manual
-  entries with no open offer.
+  picker lists unmatched items of every stream and shows for any manual entry
+  (host or not) with no open offer.
 - The UI actions are logged, not written to `api_audit` (that log is for API keys).
 
 

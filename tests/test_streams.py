@@ -612,14 +612,53 @@ def test_new_item_matching_one_manual_entry_becomes_an_offer(app, put, op, manua
         assert StreamLinkOffer.query.count() == 1
 
 
-def test_two_manual_matches_or_a_host_create_normally(app, put, op, manual):
+def test_two_manual_matches_create_normally(app, put, op, manual):
     manual("nas")
     manual("NAS")                         # two candidates: ambiguous, no offer
-    manual("tv-lounge", host="h1")        # has a host: not a candidate
     enabled_stream(app, put, op)
     with app.app_context():
         assert StreamLinkOffer.query.count() == 0
-        assert "aa:bb:cc:00:00:07" in stream_entries() and "aa:bb:cc:00:00:03" in stream_entries()
+        assert "aa:bb:cc:00:00:07" in stream_entries()
+
+
+def test_host_and_first_label_matching(app, put, op, manual):
+    by_host = manual("Some Device", host="NAS")                 # the host equals the item name
+    by_label = manual("plug", host="plug-kitchen.lan")          # the host's first label
+    enabled_stream(app, put, op)
+    with app.app_context():
+        offers = {o.key: o.entry_id for o in StreamLinkOffer.query.all()}
+        assert offers["aa:bb:cc:00:00:07"] == by_host
+        assert offers["AA:BB:CC:00:00:02".lower()] == by_label
+
+
+def test_item_first_label_matches_entry_name(app, put, op, manual):
+    mid = manual("z-wave-house")
+    body = snapshot()
+    body["items"].append({"key": "aa:bb:cc:00:00:f2", "name": "Z-Wave-House.crzynet.me"})
+    enabled_stream(app, put, op, body)
+    with app.app_context():
+        assert StreamLinkOffer.query.filter_by(key="aa:bb:cc:00:00:f2").one().entry_id == mid
+
+
+def test_an_entry_is_offered_to_one_key_only(app, put, op, manual):
+    manual("dup")
+    body = snapshot()
+    body["items"] += [{"key": "aa:bb:cc:00:00:f3", "name": "dup"}, {"key": "aa:bb:cc:00:00:f4", "name": "dup.lan"}]
+    enabled_stream(app, put, op, body)
+    with app.app_context():
+        assert StreamLinkOffer.query.filter(StreamLinkOffer.key.in_(["aa:bb:cc:00:00:f3", "aa:bb:cc:00:00:f4"])).count() == 1
+        assert "aa:bb:cc:00:00:f4" in stream_entries()
+
+
+def test_accepting_an_offer_clears_the_host(app, put, op, manual):
+    mid = manual("box", host="nas")
+    enabled_stream(app, put, op)
+    with app.app_context():
+        offer_id = StreamLinkOffer.query.one().id
+    assert op("POST", f"/streams/dhcp/offers/{offer_id}/accept").status_code == 200
+    with app.app_context():
+        e = db.session.get(ServiceEntry, mid)
+        assert e.host is None and e.source == "stream"
 
 
 def test_accept_converts_the_manual_entry(app, put, op, manual):
@@ -712,8 +751,9 @@ def test_link_by_hand_errors(app, put, op, manual):
     mid = manual("m")
     hosted = manual("h", host="host")
     assert op("POST", "/streams/dhcp/link", json={"entry_id": mid, "key": "nope"}).status_code == 404
-    assert op("POST", "/streams/dhcp/link", json={"entry_id": hosted, "key": "aa:bb:cc:00:00:04"}).status_code == 409
     assert op("POST", "/streams/dhcp/link", json={"entry_id": mid, "key": "aa:bb:cc:00:00:04"}).status_code == 200
+    r = op("POST", "/streams/dhcp/link", json={"entry_id": hosted, "key": "aa:bb:cc:00:00:05"})     # a host is fine
+    assert r.status_code == 200 and r.get_json()["entry"]["host"] is None
     other = manual("o")
     assert op("POST", "/streams/dhcp/link", json={"entry_id": other, "key": "aa:bb:cc:00:00:04"}).status_code == 409
 
@@ -849,7 +889,7 @@ def test_disable_purge_and_clear_blocks(app, put, op, manual):
         assert ServiceEntry.query.filter_by(source="stream").count() == 0
         assert ServiceEntry.query.filter_by(source="manual").count() == 1
         s = InventoryStream.query.one()
-        assert s.snapshot is None and s.status == "disabled"
+        assert s.snapshot is not None and s.status == "disabled"      # the snapshot is kept
         assert StreamLinkOffer.query.count() == 0 and InventoryBlock.query.count() == 1     # blocks kept
     op("POST", "/streams/dhcp/enable")
     # re-enable and purge again, this time clearing the blocks
@@ -1297,7 +1337,7 @@ def test_migration_on_an_empty_db_reaches_a_single_head(tmp_path):
     db_path = str(tmp_path / "empty.db")
     _alembic(tmp_path, db_path, "upgrade", "head")
     heads = _alembic(tmp_path, db_path, "heads").stdout
-    assert heads.count("(head)") == 1 and "f4c8a2e6d173" in heads
+    assert heads.count("(head)") == 1 and "a9d3c5e7f102" in heads
     tables, cols, _ = _schema(db_path)
     assert "inventory_stream" in tables and "name_source" in cols
     _alembic(tmp_path, db_path, "downgrade", "base")

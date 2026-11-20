@@ -799,6 +799,8 @@ class InventoryStream(db.Model):
                            nullable=True, index=True)
     network_include = db.Column(db.JSON, nullable=True)
     network_exclude = db.Column(db.JSON, nullable=True)
+    # {"ping": bool, "tcp_port": int | None}: checks a new stream entry starts with.
+    default_checks = db.Column(db.JSON, nullable=True)
     snapshot = db.Column(db.JSON, nullable=True)
     first_seen_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     last_snapshot_at = db.Column(db.DateTime, nullable=True)

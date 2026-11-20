@@ -62,7 +62,7 @@ _LIMIT = Param("limit", {"type": "integer", "minimum": 1, "maximum": 1000, "defa
 _OFFSET = Param("offset", {"type": "integer", "minimum": 0, "default": 0}, "Rows to skip.")
 _PAGE = (_LIMIT, _OFFSET)
 _CLEANUP = ("`keep` (entries stay and are no longer updated), `soft_delete` (every entry is soft-deleted "
-            "and can be restored) or `purge` (hard delete, plus the stored snapshot and link offers)")
+            "and can be restored) or `purge` (hard delete, plus the link offers; the stored snapshot is kept)")
 
 _PATCH_NOTE = (
     "Every field is optional. A field that is **absent** is left alone; a field sent as "
@@ -237,15 +237,24 @@ OPERATIONS: tuple = (
     Op("GET", "/streams/{stream_id}/status", "ingest", "A stream's status, for a sidecar to log", S.StreamStatusOut,
        errors=(404,), description="404 until the first snapshot has created the stream."),
 
-    Op("GET", "/streams", "read", "List inventory streams", S.Page[S.StreamOut], params=_PAGE,
-       description="Status, producer, last counts, filters, entry counts and the last error of every stream."),
+    Op("GET", "/streams", "read", "List inventory streams", S.StreamListOut, params=_PAGE,
+       description="Status, producer, last counts, filters, default checks, entry counts and the last error of "
+                   "every stream. `pending` counts the streams waiting for review (all pages)."),
     Op("GET", "/streams/{stream_id}", "read", "Get one stream", S.StreamOut, errors=(404,)),
-    Op("PATCH", "/streams/{stream_id}", "write", "Rename a stream or change its network filters", S.StreamOut,
+    Op("PATCH", "/streams/{stream_id}", "write", "Rename a stream or change its filters and default checks", S.StreamOut,
        request=S.StreamPatch, errors=(404,),
        description=_PATCH_NOTE + " `network_include` / `network_exclude` are lists of network names "
                    "(null or an empty list clears the filter); items whose `network` is not in the include "
                    "list, or is in the exclude list, are dropped (`filtered`). Takes effect at the next "
-                   "snapshot."),
+                   "snapshot. `default_checks` is `{\"ping\": bool, \"tcp_port\": 1-65535 | null}` (null "
+                   "clears): new stream entries start with an enabled Ping check on their IP and, when "
+                   "set, a TCP check on `ip:port`. It affects entries created from then on; use "
+                   "`POST /streams/{stream_id}/default-checks/apply` for the existing ones."),
+    Op("POST", "/streams/{stream_id}/default-checks/apply", "write",
+       "Add the stream's default checks to its existing entries", S.StreamApplyChecksOut, errors=(404,),
+       description="Adds the missing default checks to every active entry of the stream that has an IP. An "
+                   "entry that already has a check of that kind (any Ping, any TCP) is skipped, so nothing "
+                   "is duplicated and customised checks are not touched. Returns the counts."),
     Op("GET", "/streams/{stream_id}/preview", "read", "What applying the stored snapshot would do",
        S.StreamPreviewOut, errors=(404, 409),
        description="The per-item action and the counts, with no writes. 409 when no snapshot is stored."),
@@ -256,8 +265,8 @@ OPERATIONS: tuple = (
     Op("POST", "/streams/{stream_id}/disable", "write", "Disable a stream", S.StreamDisableOut,
        request=S.StreamDisableRequest, errors=(404, 409),
        description="From `enabled`. The body is optional. `cleanup` is " + _CLEANUP + ". "
-                   "`clear_blocks` (purge only, default false) also empties the block list. Later "
-                   "snapshots are still accepted and stored."),
+                   "`clear_blocks` (purge only, default false) also empties the block list. The stored "
+                   "snapshot is kept in every mode, and later snapshots are still accepted and stored."),
     Op("POST", "/streams/{stream_id}/ignore", "write", "Ignore a stream", S.StreamOut, errors=(404, 409),
        description="From `pending` or `disabled`. The stored snapshot is discarded and later snapshots "
                    "are answered 202 and dropped."),
@@ -276,11 +285,11 @@ OPERATIONS: tuple = (
        errors=(404,), description="The next snapshot restores the entry or creates a new one."),
     Op("GET", "/streams/{stream_id}/offers", "read", "List open link offers", S.Page[S.OfferOut],
        params=_PAGE, errors=(404,),
-       description="A new item whose name matches one manual entry with no host waits here instead of "
-                   "being created."),
+       description="A new item whose name (or first DNS label) equals exactly one active manual "
+                   "entry's name, host or host's first label waits here instead of being created."),
     Op("POST", "/streams/{stream_id}/offers/{offer_id}/accept", "write", "Accept a link offer", S.OfferAnswerOut,
        errors=(404, 409), description="The manual entry becomes a stream entry, keeping its id, history, "
-                                      "checks and Home Assistant setting."),
+                                      "checks and Home Assistant setting; its host is cleared."),
     Op("POST", "/streams/{stream_id}/offers/{offer_id}/decline", "write", "Decline a link offer",
        S.OfferAnswerOut, errors=(404, 409),
        description="A new stream entry is created from the item; the manual entry is left alone."),
@@ -289,7 +298,8 @@ OPERATIONS: tuple = (
        description="Not blocked and not yet an entry: what a manual entry can be linked to by hand."),
     Op("POST", "/streams/{stream_id}/link", "write", "Link a manual entry to a snapshot item", S.OfferAnswerOut,
        request=S.StreamLinkRequest, errors=(404, 409),
-       description="`entry_id` is an active manual entry with no host; `key` an unmatched item."),
+       description="`entry_id` is an active manual entry (its host, if any, is cleared: the stream "
+                   "reports the address); `key` an unmatched item."),
 
     Op("GET", "/config", "read", "Effective configuration (read-only)", S.ConfigOut,
        description="Secrets are masked as `***`. `sources` says where each value came from."),

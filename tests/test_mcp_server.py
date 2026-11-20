@@ -42,6 +42,7 @@ WRITE_TOOLS = {
     "purge_notification_channel", "purge_entry_notifications",
     "update_stream", "enable_stream", "disable_stream", "ignore_stream", "delete_stream",
     "unblock_stream_key", "answer_link_offer", "link_entry_to_stream_item",
+    "apply_stream_default_checks",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -75,6 +76,8 @@ CALLS = {
                                     {"limit": "200", "offset": "0"}, None),
     "update_stream": ({"stream_id": "dhcp", "fields": {"network_exclude": ["Guest"]}},
                       "PATCH", "/api/v1/streams/dhcp", {}, {"network_exclude": ["Guest"]}),
+    "apply_stream_default_checks": ({"stream_id": "dhcp"}, "POST",
+                                    "/api/v1/streams/dhcp/default-checks/apply", {}, None),
     "enable_stream": ({"stream_id": "dhcp"}, "POST", "/api/v1/streams/dhcp/enable", {}, None),
     "disable_stream": ({"stream_id": "dhcp", "cleanup": "purge", "clear_blocks": True},
                        "POST", "/api/v1/streams/dhcp/disable", {},

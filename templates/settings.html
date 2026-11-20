@@ -819,7 +819,7 @@
       <form method="POST" action="{{ url_for('dashboard.save_ha_entries') }}" id="ha-entries-form" data-unsaved-guard>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="flex flex-wrap items-center gap-3 my-3">
-          <input type="text" id="ha-filter" placeholder="Filter by name, host or group" class="form-input text-sm w-64">
+          <input type="text" id="ha-filter" placeholder="Filter by name, host, source or group" class="form-input text-sm w-64">
           <button type="button" id="ha-select-all" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Select all</button>
           <button type="button" id="ha-select-none" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Select none</button>
           <button type="submit" data-unsaved-save class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm">Save</button>
@@ -828,7 +828,7 @@
         {% if ha_entries %}
         <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="ha-entries-table">
           <thead class="bg-gray-800 text-gray-400">
-            <tr><th class="py-2 px-3">Publish</th><th class="py-2 px-3">Name</th><th class="py-2 px-3">Host</th><th class="py-2 px-3">Group</th></tr>
+            <tr><th class="py-2 px-3">Publish</th><th class="py-2 px-3">Name</th><th class="py-2 px-3">Host</th><th class="py-2 px-3">Source</th><th class="py-2 px-3">Group</th></tr>
           </thead>
           <tbody>
           {% for e in ha_entries %}
@@ -839,6 +839,7 @@
               </td>
               <td class="py-1 px-3">{{ e.container_name }}</td>
               <td class="py-1 px-3">{{ e.host or '' }}</td>
+              <td class="py-1 px-3" data-ha-source>{% if e.is_stream %}{{ e.stream.display_name if e.stream else 'Stream' }}{% elif e.is_docker %}Docker{% else %}Manual{% endif %}</td>
               <td class="py-1 px-3">{{ e.group.group_name if e.group else '' }}</td>
             </tr>
           {% endfor %}

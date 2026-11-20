@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import humanize
 from dateutil import parser
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
 import version_check
@@ -26,7 +27,7 @@ from extensions import csrf, db, login_manager
 from health import health_bp
 from health_state import entry_health
 from jobs import start_background_workers, verify_and_fetch_missing_icons
-from models import User
+from models import STREAM_PENDING, InventoryStream, User
 from routes_api import api_bp
 from routes_auth import auth_bp, refresh_default_password_flag
 from routes_dashboard import dashboard_bp
@@ -177,7 +178,15 @@ def create_app():
                           'upd': version_check.status(running)}
         except Exception as exc:  # the header must never break a page
             logger.debug(f"version header unavailable: {exc}")
+        pending_streams = 0
+        try:
+            if current_user.is_authenticated:
+                pending_streams = InventoryStream.query.filter_by(status=STREAM_PENDING).count()
+        except Exception as exc:  # the header must never break a page
+            db.session.rollback()
+            logger.debug(f"pending stream count unavailable: {exc}")
         return {
+            'pending_streams': pending_streams,
             'version_ui': version_ui,
             'static_v': static_v,
             'now': datetime.now,

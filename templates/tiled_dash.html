@@ -136,7 +136,7 @@
                                             <i class="ti ti-brand-docker" aria-hidden="true"></i>
                                         </span>
                                     {% elif entry.is_stream %}
-                                        {% include "partials/stream_pill.html" %}
+                                        {% include "partials/stream_icon.html" %}
                                     {% else %}
                                         <span class="status-icon status-icon-muted" title="{{ _docker_tooltip }}{% if entry.description %} — {{ entry.description }}{% endif %}">
                                             <i class="ti ti-link" aria-hidden="true"></i>
@@ -390,7 +390,7 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
                             {# Health detail (loaded when the drawer opens) #}
                             <div class="drawer-row drawer-row-health">
                                 <span class="drawer-label">Health</span>
-                                <span class="drawer-value">{% include "partials/health_detail.html" %}</span>
+                                <span class="drawer-value">{% with hide_facts=true %}{% include "partials/health_detail.html" %}{% endwith %}</span>
                             </div>
 
                             <hr class="drawer-divider">

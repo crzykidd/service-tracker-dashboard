@@ -116,7 +116,8 @@ Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
 `set_exposure_settings`, `test_notification_channel`, `purge_notification_channel`,
 `purge_entry_notifications`, `update_stream`, `enable_stream`, `disable_stream`,
 `ignore_stream`, `delete_stream`, `unblock_stream_key`, `answer_link_offer`,
-`link_entry_to_stream_item`.
+`link_entry_to_stream_item`, `apply_stream_default_checks`. `update_stream` also sets a
+stream's `default_checks`; `list_streams` returns the `pending` stream count.
 
 `update_entry` and `update_check` take a `fields` object: name only what should
 change, and send `null` to clear a value. Errors come back as tool errors that

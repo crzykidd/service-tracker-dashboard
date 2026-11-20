@@ -36,7 +36,7 @@
           {% endif %}
         </div>
         <span class="compact-end">
-          {% if item.entry.is_stream %}{% with entry=item.entry %}{% include "partials/stream_pill.html" %}{% endwith %}{% endif %}
+          {% with entry=item.entry %}{% include "partials/source_icon.html" %}{% endwith %}
           {% with entry=item.entry, variant='compact' %}{% include "partials/health_badge.html" %}{% endwith %}
           {% if item.entry.last_api_update and item.entry.is_docker_status_stale %}
             <span class="status-icon status-icon-warn compact-stale" title="Stale — updated {{ item.entry.last_api_update | time_since }}">

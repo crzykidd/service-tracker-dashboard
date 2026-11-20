@@ -32,7 +32,7 @@ from models import (
     StreamLinkOffer,
     check_counts,
 )
-from streams import entry_stats
+from streams import default_checks_of, entry_stats
 
 
 def _local_iso(dt):
@@ -221,6 +221,7 @@ def stream_out(stream: InventoryStream) -> StreamOut:
         "api_key": key,
         "network_include": stream.network_include,
         "network_exclude": stream.network_exclude,
+        "default_checks": default_checks_of(stream),
         "first_seen_at": iso_z(stream.first_seen_at),
         "last_snapshot_at": iso_z(stream.last_snapshot_at),
         "last_applied_at": iso_z(stream.last_applied_at),

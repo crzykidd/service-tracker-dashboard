@@ -1545,7 +1545,10 @@ def list_streams():
     limit, offset = _page_args()
     query = InventoryStream.query.order_by(InventoryStream.id)
     rows = query.limit(limit).offset(offset).all()
-    return _page([stream_out(s) for s in rows], query.order_by(None).count(), limit, offset)
+    body = {"items": [stream_out(s) for s in rows], "total": query.order_by(None).count(),
+            "limit": limit, "offset": offset,
+            "pending": InventoryStream.query.filter_by(status=streams.STREAM_PENDING).count()}
+    return jsonify(body)
 
 
 @mgmt_bp.route("/streams/<stream_id>", methods=["GET"])
@@ -1563,10 +1566,23 @@ def patch_stream(stream_id):
     sent = data.model_fields_set
     if not sent:
         return _fail([{"field": "body", "message": "name at least one field to change"}])
+    default_checks = data.default_checks.model_dump() if data.default_checks is not None else None
     changes = streams.update(stream, data.display_name, data.network_include,
-                             data.network_exclude, sent)
+                             data.network_exclude, sent, default_checks=default_checks)
     audit("stream", stream_id, changes)
     return jsonify(stream_out(stream))
+
+
+@mgmt_bp.route("/streams/<stream_id>/default-checks/apply", methods=["POST"])
+@require_api_key("write")
+def apply_stream_default_checks(stream_id):
+    """Add the stream's missing default checks to every active entry of the stream."""
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    result = streams.apply_default_checks(stream)
+    audit("stream", stream_id, {"default_checks_applied": [None, result["checks_added"]],
+                                "entries_changed": [None, result["entries_changed"]]})
+    return jsonify({"stream": stream_out(stream), **result})
 
 
 @mgmt_bp.route("/streams/<stream_id>/preview", methods=["GET"])
@@ -1696,7 +1712,7 @@ def list_stream_unmatched(stream_id):
 @mgmt_bp.route("/streams/<stream_id>/link", methods=["POST"])
 @require_api_key("write")
 def link_stream_item(stream_id):
-    """Link a manual entry (no host) to an unmatched item of the latest snapshot."""
+    """Link an active manual entry to an unmatched item of the latest snapshot (its host is cleared)."""
     audit("stream", stream_id)
     stream = _load_stream(stream_id)
     data = StreamLinkRequest.model_validate(_json_body())

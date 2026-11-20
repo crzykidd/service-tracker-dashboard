@@ -676,7 +676,8 @@ token.
 | GET | `/api/v1/streams/{stream_id}/status` | ingest | A stream's status, for a sidecar to log |
 | GET | `/api/v1/streams` | read | List inventory streams |
 | GET | `/api/v1/streams/{stream_id}` | read | Get one stream |
-| PATCH | `/api/v1/streams/{stream_id}` | write | Rename a stream or change its network filters |
+| PATCH | `/api/v1/streams/{stream_id}` | write | Rename a stream or change its filters and default checks |
+| POST | `/api/v1/streams/{stream_id}/default-checks/apply` | write | Add the stream's default checks to its existing entries |
 | GET | `/api/v1/streams/{stream_id}/preview` | read | What applying the stored snapshot would do |
 | POST | `/api/v1/streams/{stream_id}/enable` | write | Enable a stream and apply its stored snapshot |
 | POST | `/api/v1/streams/{stream_id}/disable` | write | Disable a stream (`cleanup`: keep, soft_delete, purge) |
@@ -747,13 +748,23 @@ document.
 3. **Enable** imports the items; later snapshots update them. **Ignore** drops
    a stream you don't want. The list also shows a read-only **Docker
    (register)** row with the number of notifier entries and the last register.
+   While a stream is pending or disabled, **Last counts** shows what enabling
+   would do ("would: created 5, link offers 2"), and the **Settings** link in
+   the header carries an amber ring and count while any stream is pending
+   review. A stream with no stored snapshot says "Waiting for the next
+   snapshot" instead of Preview.
 4. Each stream row has an **Edit** panel for its display name and its network
    include / exclude lists (applied from the next snapshot; entries already
-   imported are not removed).
+   imported are not removed), and a **Default checks** panel: a ping check on
+   each entry's IP and, optionally, a TCP check on a port. New entries of the
+   stream start with them; **Apply to existing entries** adds the missing ones
+   to every active entry (an entry that already has a ping or TCP check is
+   skipped).
 5. **Disable…** and **Delete…** open a dialog that shows the counts first, then
    asks what happens to the entries: **keep** (disable: they stay but stop
    updating; delete: they become manual entries), **soft delete** (restorable
-   from Settings → Deleted) or **purge** (gone for good). Entries you
+   from Settings → Deleted) or **purge** (gone for good). The stored snapshot is
+   kept when you disable, so Preview and Enable still work. Entries you
    customised (renamed, grouped, described, with an icon, checks or Home
    Assistant) are listed by name. Disable with purge can also clear the block
    list; deleting a stream always removes its blocks and link offers.
@@ -761,16 +772,19 @@ document.
    **Link offers** lists manual entries that match a new item, with **Accept**
    and **Decline**.
 
-Stream entries show a blue pill with the stream's name where a Docker entry
-shows its Docker status (Dashboard, Tiled and Compact). An item that dropped
-out of the latest snapshot is dimmed with a "missing" marker, never deleted.
+Stream entries show a blue pill with the stream's name on the Dashboard view.
+Tiled and Compact show a small router icon instead (green; amber when the item
+dropped out of the latest snapshot); Compact shows one source icon on every row
+(Docker status, stream or manual). On the Dashboard an item that dropped out of
+the latest snapshot is dimmed with a "missing" marker, never deleted. The
+expanded detail shows a stream entry's IP, MAC and network.
 The **Source** filter lists each stream by name (`?source=stream:dhcp`). On a
 stream entry's edit page the MAC, IP, network, attributes and stream are
 read-only and the name stays editable (your name then wins over the sidecar's).
 Deleting one asks **Allow re-adding** (the next snapshot may bring it back) or
 **Don't re-add** (it is blocked). A manual entry with an open link offer shows a
 **Convert** / **Keep separate** banner on its edit page; one without an offer
-(and no host) offers **Link to stream item…** to pick an unmatched item by hand.
+offers **Link to stream item…** to pick an unmatched item by hand.
 
 **Over the API.** The same operations, with an example:
 
@@ -801,11 +815,14 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/jso
   entry wins over the sidecar's name, and group, icon, description, checks and
   Home Assistant settings are never written. `network_include` and
   `network_exclude` (set with `PATCH /api/v1/streams/dhcp`) leave networks out.
-  Stream entries get no health checks by default; add a ping or TCP check by
-  hand.
-- **Link offers.** A new item named like one of your manual entries (no host,
-  same name ignoring case) is not created. It waits as a link offer: accept it
-  and your entry joins the stream, keeping its id, history and checks; decline
+  Stream entries get no health checks unless the stream has
+  `default_checks` (`{"ping": true, "tcp_port": 22}`, set with `PATCH` and
+  applied to existing entries with `POST .../default-checks/apply`).
+- **Link offers.** A new item whose name (or first DNS label) equals, ignoring
+  case, exactly one active manual entry's name, host or host's first label is
+  not created. It waits as a link offer: accept it
+  and your entry joins the stream, keeping its id, history and checks (its host
+  is cleared); decline
   it and a new entry is created.
 - **Deleting a stream entry** (`DELETE /api/v1/entries/{id}?block=true`) can
   also put its key on the stream's block list, so a snapshot does not bring it
@@ -814,6 +831,7 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/jso
 - **Disabling or deleting a stream** takes `cleanup`: `keep` (entries stay, no
   longer updated; deleting the stream turns them into manual entries),
   `soft_delete` (restorable from Settings → Deleted) or `purge` (gone for good).
+  The stored snapshot is kept when disabling.
 - Snapshot posts are not written to the audit log; changes you make to a
   stream are. Limits: 5,000 items and 2 MiB per snapshot.
 
@@ -1214,7 +1232,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/health/strips?ids=1,2,3` | 24h uptime strips for up to 500 entries (JSON, login). |
 | `/service/<id>/checks/run` | Check now (POST, login). |
 | `/settings`          | Settings + backup/restore UI (incl. Exposure, Notifications and Streams tabs; `?section=streams&preview=<stream_id>` shows a stream preview). |
-| `/settings/streams/<stream_id>/...` | Streams tab: `enable`, `ignore`, `disable`, `delete`, `update`, `blocks/<id>/unblock`, `offers/<id>/accept\|decline` (admin POST). |
+| `/settings/streams/<stream_id>/...` | Streams tab: `enable`, `ignore`, `disable`, `delete`, `update`, `default-checks`, `default-checks/apply`, `blocks/<id>/unblock`, `offers/<id>/accept\|decline` (admin POST). |
 | `/edit/<id>/stream-link` | Link a manual entry to a stream item (admin POST). |
 | `/settings/notifications/...` | Notifications tab: `save`, `<id>/toggle`, `<id>/delete`, `test` (admin POST), `status` (admin GET). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |

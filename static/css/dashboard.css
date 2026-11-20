@@ -962,6 +962,8 @@
 .health-checknow-btn:hover:not(:disabled) { border-color: var(--color-border-focus); color: #fff; }
 .health-checknow-btn:disabled { opacity: 0.6; cursor: default; }
 .health-detail-note { color: var(--color-text-muted); font-style: italic; }
+.health-detail-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 8px; font-size: 0.8rem; }
+.health-fact-label { color: var(--color-text-muted); margin-right: 2px; }
 .health-detail-error { color: var(--color-status-bad); font-style: normal; }
 
 .health-check { padding: 8px 0; border-top: 1px solid var(--color-border); }

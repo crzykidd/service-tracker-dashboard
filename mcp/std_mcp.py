@@ -222,7 +222,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
             "Tools for a Service Tracker Dashboard (STD). Entries are the dashboard's services: "
             "'notifier' entries come from Docker containers (their Docker-owned fields cannot be "
             "edited), 'manual' entries are added by hand, 'stream' entries are pushed by inventory sidecars "
-            "(see list_streams). Each entry has checks (internal URL, "
+            "(see list_streams); a stream entry's `inventory` object carries its ip, mac, network, key and whether it is missing from the latest snapshot. Each entry has checks (internal URL, "
             "external URL, container, and any number of service checks) that roll up to a health "
             "state. Start with health_summary to see what is broken."
             + ("" if scope == "write" else " This key is read-only: no change tools are available.")
@@ -310,7 +310,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @read_tool
     def list_streams(limit: int = 200, offset: int = 0) -> dict:
-        """List inventory streams: sidecars (e.g. a DHCP reservation reader) that push device lists into STD. Each has a status (pending = waiting for approval, enabled, disabled, ignored), producer and version, last counts, network filters, entry counts and the last error. Returns {items, total, limit, offset}."""
+        """List inventory streams: sidecars (e.g. a DHCP reservation reader) that push device lists into STD. Each has a status (pending = waiting for approval, enabled, disabled, ignored), producer and version, last counts, network filters, default_checks (Ping / TCP check a new entry starts with), entry counts and the last error. Returns {items, total, limit, offset, pending}; `pending` is how many streams are waiting for review (the operator sees the same count on the Settings link in the header)."""
         return client.request("GET", "/streams", params=dict(limit=limit, offset=offset))
 
     @read_tool
@@ -320,7 +320,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @read_tool
     def preview_stream(stream_id: str) -> dict:
-        """What applying a stream's stored snapshot would do, with no changes: counts plus the per-item action (created, updated, unchanged, restored, blocked, link_offer, filtered) and the entries that would be flagged missing. Use it before enable_stream on a pending stream."""
+        """What applying a stream's stored snapshot would do, with no changes (works for pending and disabled streams too; the Settings page shows the same counts as "would: ..."): counts plus the per-item action (created, updated, unchanged, restored, blocked, link_offer, filtered) and the entries that would be flagged missing. Use it before enable_stream on a pending stream."""
         return client.request("GET", f"/streams/{stream_id}/preview")
 
     @read_tool
@@ -330,7 +330,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @read_tool
     def list_stream_offers(stream_id: str, limit: int = 200, offset: int = 0) -> dict:
-        """List open link offers: new stream items whose name matches one manual entry and wait for accept or decline (answer_link_offer). Returns {items, total, limit, offset}."""
+        """List open link offers: new stream items whose name (or first DNS label) equals exactly one manual entry's name, host or host's first label and wait for accept or decline (answer_link_offer). Returns {items, total, limit, offset}."""
         return client.request("GET", f"/streams/{stream_id}/offers", params=dict(limit=limit, offset=offset))
 
     @read_tool
@@ -518,11 +518,16 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @write_tool
     def update_stream(stream_id: str, fields: dict) -> dict:
-        """Rename an inventory stream or change its network filters. `fields` names only what changes: display_name (1-32 characters), network_include and network_exclude (lists of network names; null or [] clears). Items outside the include list or inside the exclude list are dropped from the next snapshot on.
-        Example fields: {"network_exclude": ["Guest"]}
+        """Rename an inventory stream or change its network filters and default checks. `fields` names only what changes: display_name (1-32 characters), network_include and network_exclude (lists of network names; null or [] clears), default_checks ({"ping": bool, "tcp_port": 1-65535 or null}; null clears). Items outside the include list or inside the exclude list are dropped from the next snapshot on. default_checks make new stream entries start with an enabled Ping check on their IP and, when tcp_port is set, a TCP check on ip:port; existing entries are not touched until apply_stream_default_checks.
+        Example fields: {"network_exclude": ["Guest"]} or {"default_checks": {"ping": true, "tcp_port": null}}
         """
-        allowed = {"display_name", "network_include", "network_exclude"}
+        allowed = {"display_name", "network_include", "network_exclude", "default_checks"}
         return client.request("PATCH", f"/streams/{stream_id}", json=_check_fields(fields, allowed, "stream"))
+
+    @write_tool
+    def apply_stream_default_checks(stream_id: str) -> dict:
+        """Add the stream's default checks (see update_stream) to every active entry of the stream that has an IP. Entries that already have a check of that kind (any Ping, any TCP) are skipped, so nothing is duplicated and customised checks are left alone. Returns {stream, entries, entries_changed, checks_added}."""
+        return client.request("POST", f"/streams/{stream_id}/default-checks/apply")
 
     @write_tool
     def enable_stream(stream_id: str) -> dict:
@@ -531,7 +536,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @write_tool
     def disable_stream(stream_id: str, cleanup: str = "keep", clear_blocks: bool = False) -> dict:
-        """Disable an enabled stream: it stops applying snapshots (they are still stored). cleanup decides what happens to its entries: keep (they stay, no longer updated), soft_delete (all soft-deleted; re-enabling restores them) or purge (hard delete, plus the stored snapshot and link offers; irreversible). clear_blocks=true (purge only) also empties the block list. Returns {stream, cleanup, result}."""
+        """Disable an enabled stream: it stops applying snapshots (they are still stored). cleanup decides what happens to its entries: keep (they stay, no longer updated), soft_delete (all soft-deleted; re-enabling restores them) or purge (hard delete, plus the link offers; irreversible). clear_blocks=true (purge only) also empties the block list. The stored snapshot is kept in every mode. Returns {stream, cleanup, result}."""
         return client.request("POST", f"/streams/{stream_id}/disable",
                               json={"cleanup": cleanup, "clear_blocks": clear_blocks})
 
@@ -557,7 +562,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @write_tool
     def link_entry_to_stream_item(stream_id: str, entry_id: int, key: str) -> dict:
-        """Link a manual entry (no host) to an unmatched item of a stream's latest snapshot (keys from list_stream_unmatched_items)."""
+        """Link any active manual entry (with or without a host) to an unmatched item of a stream's latest snapshot (keys from list_stream_unmatched_items). The entry keeps its id, history and checks; its host is cleared because the stream reports the address."""
         return client.request("POST", f"/streams/{stream_id}/link", json={"entry_id": entry_id, "key": key})
 
     @write_tool

@@ -97,12 +97,21 @@ class StreamSnapshotPut(_Request):
     items: Annotated[list[StreamSnapshotItem], Field(max_length=5000)]
 
 
+class StreamDefaultChecksIn(_Request):
+    """Checks a new stream entry starts with, on the entry's IP. Both off = none."""
+
+    ping: bool = False                    # an enabled Ping check on the entry's IP
+    tcp_port: int | None = None           # 1..65535: also an enabled TCP check on ip:port; null = none
+
+
 class StreamPatch(_Request):
-    """Every field is optional; null (or an empty list) clears a network filter."""
+    """Every field is optional; null (or an empty list) clears a network filter,
+    null clears `default_checks`."""
 
     display_name: str | None = None
     network_include: list[str] | None = None
     network_exclude: list[str] | None = None
+    default_checks: StreamDefaultChecksIn | None = None
 
 
 class StreamDisableRequest(_Request):
@@ -111,7 +120,7 @@ class StreamDisableRequest(_Request):
 
 
 class StreamLinkRequest(_Request):
-    entry_id: int                         # an active manual entry with no host
+    entry_id: int                         # an active manual entry (its host, if any, is cleared)
     key: str                              # an unmatched key of the stream's latest snapshot
 
 
@@ -702,6 +711,11 @@ class StreamEntryStatsOut(TypedDict):
     missing: int                     # active entries absent from the latest snapshot
 
 
+class StreamDefaultChecksOut(TypedDict):
+    ping: bool
+    tcp_port: int | None
+
+
 class StreamOut(TypedDict):
     stream_id: str
     display_name: str
@@ -712,6 +726,7 @@ class StreamOut(TypedDict):
     api_key: str | None              # name of the key that created the stream
     network_include: list[str] | None
     network_exclude: list[str] | None
+    default_checks: StreamDefaultChecksOut   # checks new entries start with (additive in revision 2)
     first_seen_at: str | None
     last_snapshot_at: str | None
     last_applied_at: str | None
@@ -721,6 +736,21 @@ class StreamOut(TypedDict):
     entries: StreamEntryStatsOut
     blocks: int
     link_offers: int
+
+
+class StreamListOut(TypedDict):
+    items: list[StreamOut]
+    total: int
+    limit: int
+    offset: int
+    pending: int                     # streams waiting for review (status "pending"), all pages
+
+
+class StreamApplyChecksOut(TypedDict):
+    stream: StreamOut
+    entries: int                     # active entries of the stream
+    entries_changed: int             # entries that gained at least one check
+    checks_added: int
 
 
 class StreamEnableOut(TypedDict):

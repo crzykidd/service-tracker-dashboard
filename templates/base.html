@@ -44,7 +44,12 @@
           <a href="/tiled_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'tiled' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Tiled</a>
           <a href="/compact_dash" class="px-3 py-2 text-sm font-medium {% if active_tab == 'compact' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Compact</a>
           <a href="/add" class="px-3 py-2 text-sm font-medium {% if active_tab == 'add' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Add</a>
+          {% if pending_streams and pending_streams > 0 %}
+          {% set pending_label = pending_streams ~ ' inventory stream' ~ ('s' if pending_streams != 1 else '') ~ ' pending review' %}
+          <a href="{{ url_for('dashboard.settings', section='streams') }}" id="settings-pending-streams" title="{{ pending_label }}" aria-label="{{ pending_label }}" class="px-3 py-2 text-sm font-medium {% if active_tab == 'settings' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t ring-2 ring-amber-400 inline-flex items-center gap-1.5">Settings <span class="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-amber-400 text-gray-900 text-xs font-bold">{{ pending_streams }}</span></a>
+          {% else %}
           <a href="/settings" class="px-3 py-2 text-sm font-medium {% if active_tab == 'settings' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Settings</a>
+          {% endif %}
         </nav>
 
         {% if current_user.is_authenticated %}

@@ -790,7 +790,7 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          notification_channels=notification_channels_out,
          notification_form=notification_form,
-         ha_entries=ServiceEntry.active().order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
+         ha_entries=ServiceEntry.active().options(joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
          ha_discovery_on=any(c['config'].get('ha_discovery') for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
@@ -1816,6 +1816,8 @@ def _streams_context(preview_slug=None):
             'blocks': InventoryBlock.query.filter_by(stream_id=stream.id).order_by(InventoryBlock.id).all(),
             'offers': [{'offer': o, 'entry_name': names.get(o.entry_id, '?')} for o in offers],
             'item_count': len(stream.snapshot) if stream.snapshot is not None else None,
+            # Dry run for streams that are not applying: one read-only plan() each.
+            'would_counts': (streams.would_counts(stream) if stream.status != 'enabled' else None),
         })
     docker_q = ServiceEntry.active().filter(ServiceEntry.source == SOURCE_NOTIFIER)
     docker_row = {'count': docker_q.count(),
@@ -1937,6 +1939,45 @@ def stream_update(slug):
     return _streams_redirect()
 
 
+@dashboard_bp.route('/settings/streams/<slug>/default-checks', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_default_checks(slug):
+    stream = _stream_or_404(slug)
+    raw_port = (request.form.get('tcp_port') or '').strip()
+    try:
+        port = int(raw_port) if raw_port else None
+    except ValueError:
+        flash("TCP port must be a number from 1 to 65535.", "danger")
+        return _streams_redirect()
+    try:
+        changes = streams.update(stream, sent=('default_checks',), default_checks={
+            'ping': _truthy(request.form.get('ping')), 'tcp_port': port})
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' default checks saved by {current_user.username}: "
+                f"{'changed' if changes else 'no changes'}.")
+    flash(f"Saved default checks for '{stream.display_name}'. New entries get them; use "
+          "Apply to existing entries for the current ones." if changes else "Nothing changed.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/default-checks/apply', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_default_checks_apply(slug):
+    stream = _stream_or_404(slug)
+    result = streams.apply_default_checks(stream)
+    logger.info(f"Stream '{slug}' default checks applied by {current_user.username}: "
+                f"{result['checks_added']} added to {result['entries_changed']} of {result['entries']} entries.")
+    flash(f"Added {result['checks_added']} check{'' if result['checks_added'] == 1 else 's'} to "
+          f"{result['entries_changed']} of {result['entries']} active "
+          f"entr{'y' if result['entries'] == 1 else 'ies'} of '{stream.display_name}'.", "success")
+    return _streams_redirect()
+
+
 @dashboard_bp.route('/settings/streams/<slug>/blocks/<int:block_id>/unblock', methods=['POST'])
 @login_required
 @is_admin_required
@@ -2004,7 +2045,7 @@ def _edit_stream_context(entry):
     offers, choices = [], []
     if entry.source == SOURCE_MANUAL:
         offers = StreamLinkOffer.query.filter_by(entry_id=entry.id).order_by(StreamLinkOffer.id).all()
-        if not offers and entry.host is None:
+        if not offers:
             for stream in InventoryStream.query.order_by(InventoryStream.display_name).all():
                 items = streams.unmatched_items(stream)
                 if items:

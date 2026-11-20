@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Stream default checks.** Each stream can give its entries a ping check on
+  their IP and, optionally, a TCP check on a port. New entries start with them;
+  **Apply to existing entries** (Settings → Streams → Default checks, or
+  `POST /api/v1/streams/<id>/default-checks/apply` and the MCP tool
+  `apply_stream_default_checks`) adds the missing ones to every active entry and
+  skips an entry that already has a ping or TCP check. Set them with
+  `default_checks` on the stream (`PATCH /api/v1/streams/<id>`, `update_stream`).
+- **Pending streams are flagged in the header.** While a stream waits for
+  review, the **Settings** link gets an amber ring and a count and opens
+  Settings → Streams. `GET /api/v1/streams` returns the same count as `pending`.
+- **Streams tab shows what enabling would do.** A pending or disabled stream
+  with a stored snapshot shows "would: created 5, link offers 2" in Last counts;
+  a stream with no snapshot says "Waiting for the next snapshot".
+- **IP, MAC and network in the expanded detail** of an entry, on the Dashboard
+  view.
+- **Home Assistant entries table has a Source column** (Docker, Manual or the
+  stream's name) and the filter box matches it, so typing a stream's name and
+  **Select all** picks its entries.
+
 - **Inventory streams: sidecars can push device lists into STD.** A small
   separate service (a "sidecar", for example one that reads your DHCP static
   reservations) can post a full list of devices to
@@ -143,6 +162,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/v1/whoami` and `GET /api/v1/config` now include `commit`,
   `channel`, `build_time` and an `update` status; the MCP `server_info` tool
   reports them too.
+
+### Changed
+
+- **Link offers match more.** A new stream item is now offered to a manual entry
+  whose name, host, or the first part of its host equals the item's name (or its
+  first DNS label, so `z-wave-house.crzynet.me` matches `z-wave-house`), host or
+  not. Still exactly one match, else the item is created. Converting an entry
+  (accept, or link by hand) clears its host, and the edit page says so; the
+  "Link to stream item…" picker now also shows for entries that have a host.
+- **Disable with purge keeps the stored snapshot**, so you can still preview and
+  re-enable without waiting for the sidecar. The Disable… and Delete… dialog now
+  states exactly what each choice removes.
+- **Tiled and Compact show a small stream icon** (a router; amber when the item
+  is missing from the latest snapshot) instead of the stream pill. Compact now
+  also shows one source icon on every row: Docker status, stream, or manual
+  (link). The full pill stays on the Dashboard view.
+- **Add page:** the field is "Docker host (optional)", the example hostname is
+  gone, and the help says to leave it blank for a device, VM or anything not
+  running in Docker (the edit page says the same for manual entries).
 
 ### Fixed
 

@@ -5,6 +5,35 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-19 — Stream follow-ups from the first live test (inv-06)
+
+- **Link matching compares host.** Operators put a device's hostname in the add
+  page's Host field, so name-only matching on host-less entries missed real
+  matches. Candidates are now every active manual entry; an item matches on its
+  name or first DNS label against the entry's name, host or host's first label.
+  Still "exactly one candidate or create": a wrong offer is cheap (the operator
+  answers it), a wrong silent link is not, so ambiguity creates. An entry already
+  claimed by an offer for another key is not offered twice. Convert/link clear
+  `host` because stream entries never have one.
+- **Purge keeps `stream.snapshot`.** The snapshot is the sidecar's latest word, not
+  entry data; keeping it lets Preview and Enable work right after a purge without
+  waiting for the next post. `ignore` still discards it (that is its point) and
+  `delete` removes the row.
+- **Default checks are a stream column, not a template system.** `default_checks`
+  JSON `{ping, tcp_port}` is the smallest thing that makes stream devices
+  monitorable; monitor profiles stay parked. Apply-to-existing skips an entry that
+  has any check of the kind rather than comparing targets, so customised checks are
+  never touched or duplicated.
+- **`pending` rides on the `GET /streams` list** (an extra key next to `items`/`total`)
+  so MCP can report the pending count; additive inside the unreleased revision 2.
+- **Dry-run counts are computed on page render** (one read-only `plan()` per
+  pending/disabled stream) rather than stored, so they never go stale.
+- **Compact source icon** (operator scope addition): `partials/source_icon.html`
+  duplicates Tiled's Docker status classification instead of refactoring Tiled's
+  template, to keep the Tiled diff small.
+
+---
+
 ## 2026-11-17 — Streams UI (inv-05)
 
 Calls made while implementing PRD 18.8 (also recorded as "As built" notes there):
