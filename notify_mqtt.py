@@ -188,6 +188,9 @@ class MqttSession:
         self._since = datetime.now(timezone.utc)
         self._stopping = False
         self._collector = None     # set while collect_retained() listens (see there)
+        # Set after the retained `<base>/status` was cleared because the channel is being
+        # removed: stop() must not publish `offline` over the empty topic (PRD 17.5).
+        self.suppress_offline = False
 
     # -- state --------------------------------------------------------------
 
@@ -238,7 +241,7 @@ class MqttSession:
         if client is None:
             return
         try:
-            if self.status()["state"] == "connected":
+            if self.status()["state"] == "connected" and not self.suppress_offline:
                 info = client.publish(self._topic("status"), "offline",
                                       qos=self.config["qos"], retain=True)
                 info.wait_for_publish(timeout=2)

@@ -274,6 +274,25 @@ class NotificationChannelPatch(_Request):
     enabled: bool | None = None
     config: dict[str, Any] | None = None
     secret: str | None = None
+    # Clear the broker first. Applies when this request disables the channel (default
+    # false) or changes the base topic / discovery prefix (default true).
+    cleanup: bool | None = None
+
+
+class NotificationOrphanScanRequest(_Request):
+    """Scan a channel's broker for orphaned retained STD topics. `extra_base` also
+    scans one more base topic the operator remembers using."""
+
+    extra_base: str | None = None
+
+
+class NotificationOrphanClearRequest(_Request):
+    """Clear orphans. `topics` is the list a scan returned (only those are cleared, and
+    only while they are still orphans); omitted, the channel is scanned again and every
+    orphan found is cleared. `extra_base` as for the scan."""
+
+    topics: list[str] | None = None
+    extra_base: str | None = None
 
 
 class NotificationPurgeRequest(_Request):
@@ -699,9 +718,54 @@ class EntryPurgeOut(TypedDict):
     republished: bool
 
 
+class NotificationCleanupOut(TypedDict):
+    topics_cleared: int
+    state_topics: int
+    discovery_topics: int
+
+
 class NotificationChannelDeleteOut(TypedDict):
     id: int
     deleted: bool
+    cleanup: NotificationCleanupOut | None   # what was cleared from the broker; null when not requested
+
+
+class StreamPurgeOut(TypedDict):
+    stream_id: str
+    entries: int                     # entries of the stream, soft-deleted ones included
+    topics_cleared: int
+    channels: list[PurgeChannelCountOut]
+    republished: bool
+
+
+class OrphanTopicOut(TypedDict):
+    topic: str
+    kind: str                        # state | discovery
+
+
+class NotificationOrphanScanOut(TypedDict):
+    channel_id: int
+    scanned: list[str]               # the topic filters subscribed to
+    count: int
+    orphans: list[OrphanTopicOut]
+
+
+class NotificationOrphanClearOut(TypedDict):
+    channel_id: int
+    topics_cleared: int
+    topics: list[str]
+    skipped: list[str]               # given topics that are outside the scanned bases or no longer orphans
+
+
+class PreviousBaseOut(TypedDict):
+    base_topic: str
+    ha_prefix: str
+
+
+class NotificationPreviousBasesOut(TypedDict):
+    channel_id: int
+    limit: int                       # how many are remembered (the newest)
+    items: list[PreviousBaseOut]
 
 
 class StreamEntryStatsOut(TypedDict):

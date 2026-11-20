@@ -11,8 +11,10 @@ two STD installs never collide) and discovery prefix `<ha_prefix>`:
 
     <ha_prefix>/<component>/<node>/<object_id>/config
 
-One hub device (`identifiers: [<node>]`) and one device per entry
-(`identifiers: [<node>_entry_<id>]`, `via_device` the hub). Entities read the
+One hub device (`identifiers: [<node>]`), one device per entry
+(`identifiers: [<node>_entry_<id>]`, `via_device` the hub) and one hub device per
+inventory stream that has a published entry (`identifiers: [<node>_stream_<stream_id>]`,
+`via_device` the STD hub; that stream's entry devices use it as `via_device`). Entities read the
 retained topics of PRD 17.3 and use `<base>/status` for availability.
 """
 
@@ -70,13 +72,28 @@ def source_model(entry):
     return SOURCE_MODELS.get(entry.source, "Manual")
 
 
+def stream_device_id(node, stream_slug):
+    return f"{node}_stream_{stream_slug}"
+
+
+def stream_device(node, device_prefix, stream, version):
+    """One hub device per inventory stream (PRD 17.4), below the STD hub."""
+    return {"identifiers": [stream_device_id(node, stream.stream_id)],
+            "name": f"{device_prefix} {stream.display_name} stream",
+            "manufacturer": MANUFACTURER, "model": "Stream", "sw_version": version,
+            "via_device": node}
+
+
 def entry_device(node, device_prefix, entry):
+    via = node
+    if entry.stream_id is not None and entry.stream is not None:
+        via = stream_device_id(node, entry.stream.stream_id)   # a stream entry hangs off its stream hub
     device = {
         "identifiers": [f"{node}_entry_{entry.id}"],
         "name": device_name(device_prefix, entry),
         "manufacturer": MANUFACTURER,
         "model": source_model(entry),
-        "via_device": node,
+        "via_device": via,
     }
     if entry.image_tag:
         device["sw_version"] = entry.image_tag
@@ -110,6 +127,43 @@ def hub_configs(base, prefix, node, device_prefix, version):
             "default_entity_id": f"sensor.{hub_slug}_{state}_entries",
             "state_topic": f"{base}/summary",
             "value_template": f"{{{{ value_json.{state} }}}}",
+            "state_class": "measurement",
+            **_availability(base),
+            "device": device,
+        }
+    return out
+
+
+STREAM_STATUSES = ["pending", "enabled", "disabled", "ignored"]
+
+
+def stream_configs(base, prefix, node, device_prefix, stream, version):
+    """A stream hub device's entities, all read from `<base>/stream/<stream_id>`:
+    the status, and the active and missing entry counts."""
+    device = stream_device(node, device_prefix, stream, version)
+    device_slug = slug(device["name"])
+    topic = f"{base}/{notify_state.stream_topic(stream.stream_id)}"
+    key = stream.stream_id
+    out = {}
+    out[config_topic(prefix, "sensor", node, f"stream_{key}_status")] = {
+        "name": "Status",
+        "unique_id": f"{node}_stream_{key}_status",
+        "default_entity_id": f"sensor.{device_slug}_status",
+        "device_class": "enum",
+        "options": list(STREAM_STATUSES),
+        "state_topic": topic,
+        "value_template": "{{ value_json.status }}",
+        "json_attributes_topic": topic,
+        **_availability(base),
+        "device": device,
+    }
+    for name, field in (("Active entries", "active"), ("Missing entries", "missing")):
+        out[config_topic(prefix, "sensor", node, f"stream_{key}_{field}")] = {
+            "name": name,
+            "unique_id": f"{node}_stream_{key}_{field}",
+            "default_entity_id": f"sensor.{device_slug}_{field}_entries",
+            "state_topic": topic,
+            "value_template": f"{{{{ value_json.counts.{field} }}}}",
             "state_class": "measurement",
             **_availability(base),
             "device": device,
@@ -174,8 +228,14 @@ def desired_configs(entries, config, instance_id, version):
     device_prefix = config["ha_device_prefix"]
     node = node_id(instance_id)
     out = hub_configs(base, prefix, node, device_prefix, version)
+    streams = {}
     for entry in entries:
         if not entry.ha_publish:
             continue
         out.update(entry_configs(base, prefix, node, device_prefix, entry))
+        if entry.stream_id is not None and entry.stream is not None:
+            streams[entry.stream.id] = entry.stream
+    # A stream gets a hub device only while at least one of its entries is published.
+    for stream in streams.values():
+        out.update(stream_configs(base, prefix, node, device_prefix, stream, version))
     return out

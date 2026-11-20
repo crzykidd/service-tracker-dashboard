@@ -668,9 +668,12 @@ token.
 | POST | `/api/v1/notifications/channels` | write | Add a notification channel |
 | GET | `/api/v1/notifications/channels/{id}` | read | Get a notification channel |
 | PATCH | `/api/v1/notifications/channels/{id}` | write | Edit a notification channel |
-| DELETE | `/api/v1/notifications/channels/{id}` | write | Delete a notification channel |
+| DELETE | `/api/v1/notifications/channels/{id}` | write | Delete a notification channel (`cleanup`, default true, clears its broker data first) |
 | POST | `/api/v1/notifications/channels/{id}/test` | write | Send a test message through a channel |
 | POST | `/api/v1/notifications/channels/{id}/purge` | write | Purge a channel's retained MQTT topics and Home Assistant devices |
+| GET | `/api/v1/notifications/channels/{id}/previous-bases` | read | List the base topics a channel used before |
+| POST | `/api/v1/notifications/channels/{id}/orphans/scan` | write | Scan a channel's broker for orphaned retained STD topics |
+| POST | `/api/v1/notifications/channels/{id}/orphans/clear` | write | Clear orphaned retained topics |
 | POST | `/api/v1/entries/{id}/notifications/purge` | write | Purge an entry's MQTT topics and Home Assistant device, then republish it |
 | PUT | `/api/v1/streams/{stream_id}/snapshot` | ingest | Push a full inventory snapshot (sidecars) |
 | GET | `/api/v1/streams/{stream_id}/status` | ingest | A stream's status, for a sidecar to log |
@@ -678,6 +681,7 @@ token.
 | GET | `/api/v1/streams/{stream_id}` | read | Get one stream |
 | PATCH | `/api/v1/streams/{stream_id}` | write | Rename a stream or change its filters and default checks |
 | POST | `/api/v1/streams/{stream_id}/default-checks/apply` | write | Add the stream's default checks to its existing entries |
+| POST | `/api/v1/streams/{stream_id}/notifications/purge` | write | Purge a stream's entries' MQTT topics and Home Assistant devices, then republish |
 | GET | `/api/v1/streams/{stream_id}/preview` | read | What applying the stored snapshot would do |
 | POST | `/api/v1/streams/{stream_id}/enable` | write | Enable a stream and apply its stored snapshot |
 | POST | `/api/v1/streams/{stream_id}/disable` | write | Disable a stream (`cleanup`: keep, soft_delete, purge) |
@@ -955,6 +959,7 @@ moves them (`<base>` is the channel's base topic, `std` by default):
 | `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `std_entry_id`, `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`) |
 | `<base>/entry/<entry id>/check/<check id>` | JSON: `ok`, `state`, `std_entry_id`, `entry_name`, `host`, `group`, `source`, `dashboard_url`, `check_type`, `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` |
 | `<base>/summary` | JSON: `{up, degraded, down, unknown, none, total}` over active entries |
+| `<base>/stream/<stream id>` | JSON, one per inventory stream: `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at`, `counts` (`{active, missing, pending_offers}`), `item_count`. Entry topics stay under `entry/<entry id>`; they never move under a stream. |
 
 ```sh
 mosquitto_sub -t 'std/#' -v
@@ -981,12 +986,16 @@ What gets created:
   sensors for the number of entries that are up, degraded, down and unknown.
 - One **device per published entry**, named `<prefix> <entry name> (<host>)`
   (for example `STD Plex (nas1)`; an entry with no host is `STD Plex`, and the
-  host tells apart same-named entries on different hosts), linked to the hub, with a **State** sensor (`up`, `degraded`,
+  host tells apart same-named entries on different hosts), linked to the hub (a stream entry is linked to its stream's device instead), with a **State** sensor (`up`, `degraded`,
   `down`, `unknown`, `none`) and one **problem** binary sensor per check named
   after the check (`HTTP`, `TCP 443`, `Container`, ...). The sensor is on when
   the check is failing, plus a **Since** timestamp sensor (when the entry
   last changed state). Docker entries show the image tag as the software
   version.
+- One **device per inventory stream** that has at least one published entry,
+  named `<prefix> <stream name> stream`, linked to the hub, with a **Status**
+  sensor and **Active entries** and **Missing entries** count sensors read from
+  `<base>/stream/<stream id>`. Its configs are removed with the stream.
 - Entity ids start with `std_` and include the host (for example
   `binary_sensor.std_plex_nas1_http`), so
   they are easy to find. The entry's group, host, source, check type, target,
@@ -1002,9 +1011,9 @@ a single check to leave it out. The management API and MCP carry `ha_publish`
 on entries and `ha_exclude` on checks. Unticked, deleted or disabled entries
 and checks are removed from Home Assistant, as is everything when you untick
 **Add to Home Assistant**. The hub device always appears while the channel's
-**Add to Home Assistant** is on. Delete
-a channel only after unticking it, or its devices stay behind. When Home
-Assistant restarts, STD republishes everything.
+**Add to Home Assistant** is on. Deleting a channel offers to remove its data
+from the broker first (see [Cleaning the broker](#cleaning-the-broker)). When
+Home Assistant restarts, STD republishes everything.
 
 #### Purge and republish
 
@@ -1031,10 +1040,45 @@ devices or old entity ids:
   not published to Home Assistant only has its state topics cleared and
   republished.
 
+- **Purge MQTT/HA** on a **stream's row** in Settings → Streams (shown when a
+  channel is enabled) does this for every entry of the stream in one batch,
+  soft-deleted ones included, plus the stream's status topic and its Home
+  Assistant device. Afterwards STD publishes what is still eligible: entries
+  that are gone, or not published to Home Assistant, stay cleared.
+
 The same actions are `POST /api/v1/notifications/channels/<id>/purge`
-(`{"republish": true}`) and `POST /api/v1/entries/<id>/notifications/purge` in
-the management API, and the `purge_notification_channel` and
-`purge_entry_notifications` MCP tools (write key). They take several seconds.
+(`{"republish": true}`), `POST /api/v1/entries/<id>/notifications/purge` and
+`POST /api/v1/streams/<stream id>/notifications/purge` in the management API,
+and the `purge_notification_channel`, `purge_entry_notifications` and
+`purge_stream_notifications` MCP tools (write key). They take several seconds.
+
+#### Cleaning the broker
+
+- **Delete** (Settings → Notifications) shows **Remove this channel's data from
+  the broker first**, ticked by default: the retained topics, the discovery
+  configs and `<base>/status` are cleared (no republish), then the channel is
+  deleted. If the channel is disabled or its broker can't be reached, nothing
+  is deleted and the dialog offers **Delete anyway**.
+- **Disable** offers the same option, unticked by default; `<base>/status`
+  then reads `offline`.
+- **Changing the base topic** (or, with Home Assistant on, the discovery prefix
+  or device name prefix) shows **Remove the old topics from the broker**, ticked
+  by default: STD clears everything under the old base (its `status` too) and
+  this install's old discovery configs, then switches. The last 5 previous
+  bases are remembered per channel.
+- **Scan for orphans** (per channel) lists the retained STD topics that STD no
+  longer publishes, under the current base, the remembered previous bases, a
+  base you type, and this install's discovery configs. It is a preview; **Clear
+  N orphans** removes exactly what was listed. Only topics shaped like STD's own
+  (`status`, `summary`, `entry/<id>/...`, `stream/<id>`, discovery configs) are
+  listed.
+
+In the management API: `DELETE /api/v1/notifications/channels/<id>?cleanup=false`
+skips the cleanup (default true), `PATCH` takes `cleanup` (default true for a base
+change, false for a disable), `GET .../previous-bases`, and `POST
+.../orphans/scan` and `.../orphans/clear`. MCP: `delete_notification_channel`,
+`update_notification_channel`, `list_notification_previous_bases`,
+`scan_notification_orphans`, `clear_notification_orphans`.
 
 Example [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
 cards:

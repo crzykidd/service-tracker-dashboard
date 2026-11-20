@@ -59,11 +59,8 @@ prompts/startnewsession.md and start".
 
 ## Known gaps (decide: fix, park in FUTURE.md, or accept)
 
-From notifications (carried over, not yet decided):
-- Deleting or disabling a channel while HA discovery is on leaves its configs
-  on that broker. Untick discovery or use Purge first.
-- Changing the base topic leaves the old retained topics behind. Purge covers
-  the new base only.
+From notifications (carried over, not yet decided; the delete/disable and
+base-topic gaps were fixed by notif-06):
 - The test button can block up to about 13 s against a broker that doesn't
   answer.
 - The "republish: false" purge hold is in memory only, so a restart ends it.

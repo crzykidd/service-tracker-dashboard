@@ -192,12 +192,27 @@ OPERATIONS: tuple = (
     Op("GET", "/notifications/channels/{id}", "read", "Get a notification channel",
        S.NotificationChannelOut, errors=(404,)),
     Op("PATCH", "/notifications/channels/{id}", "write", "Edit a notification channel",
-       S.NotificationChannelOut, request=S.NotificationChannelPatch, errors=(404, 409),
+       S.NotificationChannelOut, request=S.NotificationChannelPatch, errors=(404, 409, 504),
        description="`config` keys are merged over the stored config. `secret` omitted keeps the "
                    "stored password, null clears it. The publisher reconnects with the new settings "
-                   "at once. A request that names no field is rejected with 400."),
+                   "at once. A request that names no field is rejected with 400. `cleanup` clears "
+                   "the broker first: when the request disables the channel (default false: its "
+                   "retained topics and discovery configs are removed, `<base_topic>/status` ends "
+                   "as `offline`), and when it changes `base_topic` (or `ha_prefix` / "
+                   "`ha_device_prefix` while discovery is on; default true: the old base's retained "
+                   "topics and discovery configs are removed, and the old base and prefix are "
+                   "remembered, see `previous-bases`). 409 when the cleanup is wanted but the "
+                   "broker cannot be reached (nothing is changed; send `cleanup: false`)."),
     Op("DELETE", "/notifications/channels/{id}", "write", "Delete a notification channel",
-       S.NotificationChannelDeleteOut, errors=(404,)),
+       S.NotificationChannelDeleteOut, errors=(404, 409, 504),
+       params=(Param("cleanup", {"type": "boolean", "default": True},
+                     "Remove the channel's retained topics, Home Assistant discovery configs and "
+                     "`<base_topic>/status` from the broker first (default true). Send `false` to "
+                     "delete without touching the broker."),),
+       description="With `cleanup` (the default) the broker is cleaned on the publisher thread before "
+                   "the channel is deleted; when the channel is disabled or its broker cannot be "
+                   "reached the answer is 409 and nothing is deleted (use `cleanup=false` to delete "
+                   "anyway). Takes several seconds with cleanup."),
     Op("POST", "/notifications/channels/{id}/test", "write", "Send a test message through a channel",
        S.NotificationTestOut, errors=(404,),
        description="Connects with the stored settings and publishes a non-retained JSON message to "
@@ -213,6 +228,33 @@ OPERATIONS: tuple = (
                    "again after about 2 seconds, false leaves the broker empty until something changes "
                    "or the channel reconnects. 409 when the channel is disabled or not connected; "
                    "takes several seconds."),
+    Op("GET", "/notifications/channels/{id}/previous-bases", "read",
+       "List the base topics a channel used before", S.NotificationPreviousBasesOut, errors=(404,),
+       description="The last 5 `{base_topic, ha_prefix}` pairs the channel used before a change, newest "
+                   "first. The orphan scan looks under each of them."),
+    Op("POST", "/notifications/channels/{id}/orphans/scan", "write",
+       "Scan a channel's broker for orphaned retained STD topics", S.NotificationOrphanScanOut,
+       request=S.NotificationOrphanScanRequest, errors=(404, 409, 504),
+       description="A preview: nothing is cleared. Subscribes briefly to the current `base_topic`, every "
+                   "remembered previous base, the optional `extra_base` and this instance's discovery "
+                   "configs under the current and remembered `ha_prefix`, and lists the retained "
+                   "STD-shaped topics (`status`, `summary`, `entry/<id>/state`, `entry/<id>/check/<id>`, "
+                   "`stream/<id>`, discovery configs) that STD no longer desires. 409 when the channel "
+                   "is disabled or not connected; takes several seconds. The body is optional."),
+    Op("POST", "/notifications/channels/{id}/orphans/clear", "write", "Clear orphaned retained topics",
+       S.NotificationOrphanClearOut, request=S.NotificationOrphanClearRequest, errors=(404, 409, 504),
+       description="`topics` (what a scan returned) clears exactly those that are still inside the "
+                   "scanned bases and still not desired; the rest come back in `skipped`. Without "
+                   "`topics` the channel is scanned again and every orphan found is cleared. The body "
+                   "is optional."),
+    Op("POST", "/streams/{stream_id}/notifications/purge", "write",
+       "Purge a stream's entries' MQTT topics and Home Assistant devices, then republish", S.StreamPurgeOut,
+       errors=(404, 409, 504),
+       description="One batch on every enabled channel: clears the state and check topics and the "
+                   "discovery configs of every entry of the stream (soft-deleted ones too) plus the "
+                   "stream's own status topic and hub device, waits about 2 seconds for Home "
+                   "Assistant, then publishes what is still eligible (entries that are gone or "
+                   "not opted in to Home Assistant stay cleared). 409 when no channel is enabled."),
     Op("POST", "/entries/{id}/notifications/purge", "write",
        "Purge an entry's MQTT topics and Home Assistant device, then republish it", S.EntryPurgeOut,
        errors=(404, 409, 504),

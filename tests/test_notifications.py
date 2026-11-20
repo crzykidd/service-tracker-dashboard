@@ -552,8 +552,8 @@ def test_api_validation_and_conflicts(client, wkey):
 
 def test_api_delete(app, client, wkey):
     cid = _post(client, wkey, name="ha", config=GOOD).get_json()["id"]
-    resp = client.delete(f"/api/v1/notifications/channels/{cid}", headers=wkey)
-    assert resp.get_json() == {"id": cid, "deleted": True}
+    resp = client.delete(f"/api/v1/notifications/channels/{cid}?cleanup=false", headers=wkey)
+    assert resp.get_json() == {"id": cid, "deleted": True, "cleanup": None}
     assert client.delete(f"/api/v1/notifications/channels/{cid}", headers=wkey).status_code == 404
 
 

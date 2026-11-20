@@ -86,7 +86,14 @@
               {% endif %}
               <button type="button" class="stream-dialog-open px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
                       data-dialog="stream-dialog-{{ st.stream_id }}" data-mode="delete">Delete…</button>
+              {% if notifications_enabled %}
+              <button type="button" class="stream-notify-purge px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
+                      data-url="{{ url_for('dashboard.stream_purge_notifications', slug=st.stream_id) }}"
+                      data-name="{{ st.display_name|e }}"
+                      title="Remove this stream's entries from MQTT and Home Assistant, then publish what is still eligible">Purge MQTT/HA</button>
+              {% endif %}
             </div>
+            <div class="stream-notify-result text-xs text-gray-300 mt-1" role="status"></div>
           </td>
         </tr>
         <tr class="border-t border-gray-800">
@@ -303,3 +310,33 @@
     });
   })();
 </script>
+
+{% if notifications_enabled %}
+<script>
+  // Purge MQTT/HA per stream (PRD 17.5): one publisher job for every entry of the stream.
+  document.addEventListener('click', async (event) => {
+    const btn = event.target.closest('.stream-notify-purge');
+    if (!btn) return;
+    if (!confirm('Purge the MQTT topics and Home Assistant devices of every entry of "' + btn.dataset.name +
+                 '" and publish what is still eligible? Home Assistant will recreate their devices.')) return;
+    const out = btn.closest('td').querySelector('.stream-notify-result');
+    btn.disabled = true;
+    out.textContent = 'Purging... (up to 15 seconds)';
+    try {
+      const resp = await fetch(btn.dataset.url, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+      });
+      const data = await resp.json();
+      out.textContent = data.ok
+        ? 'Cleared ' + data.topics_cleared + ' topics for ' + data.entries + ' entr' + (data.entries === 1 ? 'y' : 'ies') +
+          ' on ' + data.channels.length + ' channel(s); republished what is still eligible.'
+        : 'Purge failed: ' + data.message;
+    } catch (err) {
+      out.textContent = 'Purge failed: could not reach STD (' + err + ').';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+{% endif %}

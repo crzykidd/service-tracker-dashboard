@@ -13,8 +13,8 @@ API_REVISION_HISTORY = (
     (1, "<= 0.9.0",
      "/api/v1/register (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions)"),
     (2, "0.10.0",
-     "meta, revision headers; update-check settings; notification channels, purge; ha_publish; "
-     "inventory streams and the ingest key scope"),
+     "meta, revision headers; update-check settings; notification channels, purge, cleanup, orphan scan; "
+     "ha_publish; inventory streams and the ingest key scope"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later

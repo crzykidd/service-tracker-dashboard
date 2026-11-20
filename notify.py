@@ -403,6 +403,29 @@ def purge_entry(entry_id):
     return _publisher.call(lambda pub: notify_purge.purge_entry(pub, entry_id))
 
 
+def purge_stream(stream_pk):
+    """Purge every entry of an inventory stream (and its status topic and hub device) on
+    every channel, then republish what is still eligible. `stream_pk` is the row id, not
+    the slug. Raises `notify_purge.PurgeError`."""
+    return _publisher.call(lambda pub: notify_purge.purge_stream(pub, stream_pk))
+
+
+def scan_orphans(channel_id, extra_base=None):
+    """Preview the retained STD topics on a channel's broker that nothing desires any
+    more (PRD 17.5). Raises `notify_purge.PurgeError`."""
+    return _publisher.call(lambda pub: notify_purge.scan_orphans(pub, channel_id, extra_base))
+
+
+def clear_orphans(channel_id, topics=None, extra_base=None):
+    """Clear orphans: the given `topics`, or (None) whatever a fresh scan finds."""
+    return _publisher.call(lambda pub: notify_purge.clear_orphans(pub, channel_id, topics, extra_base))
+
+
+def previous_bases(channel_id):
+    """The channel's remembered previous `{base_topic, ha_prefix}` pairs, newest first."""
+    return notify_purge.previous_bases(channel_id)
+
+
 def publish_changes(check_ids):
     """Scheduler thread, after a tick commits: enqueue the state changes for the
     checks whose result changed. Never raises."""
@@ -492,9 +515,18 @@ def create_channel(name, type_name, enabled, config, secret):
     return channel, []
 
 
-def update_channel(channel, name=UNSET, enabled=UNSET, config=UNSET, secret=UNSET):
+def update_channel(channel, name=UNSET, enabled=UNSET, config=UNSET, secret=UNSET,
+                   cleanup_disable=False, cleanup_old_base=False):
     """`(channel, errors)`. `config` is merged over the stored config; `secret`
-    UNSET keeps it, None clears it. Commits and asks the publisher to reload."""
+    UNSET keeps it, None clears it. Commits and asks the publisher to reload.
+
+    `cleanup_disable`: when this call disables the channel, first clear its retained
+    topics and discovery configs from the broker (no republish; `<base>/status` is
+    left to read `offline`). `cleanup_old_base`: when the call changes the base topic
+    (or the discovery prefix / device prefix with discovery on), first clear what the
+    old values left on the broker; skipped when the channel has no live session.
+    Both run on the publisher thread before anything is saved and raise
+    `notify_purge.PurgeError` (nothing changed) when the broker cannot be reached."""
     errors = []
     if name is not UNSET:
         name, name_errors = _check_name(name, exclude_id=channel.id)
@@ -507,6 +539,23 @@ def update_channel(channel, name=UNSET, enabled=UNSET, config=UNSET, secret=UNSE
         errors += _check_secret(secret)
     if errors:
         return None, errors
+    old_config = dict(channel.config or {})
+    disabling = bool(channel.enabled) and enabled is not UNSET and not enabled
+    base_changed = ha_changed = False
+    if clean is not None and old_config:
+        base_changed, ha_changed = notify_purge.namespace_change(
+            {**MqttChannelType.defaults(), **old_config}, clean)
+    clear_old = cleanup_old_base and (base_changed or ha_changed) and \
+        _publisher.session_status(channel.id) is not None
+    if (cleanup_disable and disabling) or clear_old:
+        def work(pub):
+            if cleanup_disable and disabling:
+                notify_purge.purge_channel(pub, channel.id, republish=False)
+            if clear_old:
+                notify_purge.clear_old_namespace(pub, channel.id, clean)
+        _publisher.call(work)
+    if clean is not None and old_config:
+        notify_purge.remember_base(channel.id, {**MqttChannelType.defaults(), **old_config}, clean)
     if name is not UNSET:
         channel.name = name
     if enabled is not UNSET:
@@ -520,10 +569,23 @@ def update_channel(channel, name=UNSET, enabled=UNSET, config=UNSET, secret=UNSE
     return channel, []
 
 
-def delete_channel(channel):
+def delete_channel(channel, cleanup=False):
+    """Delete a channel. With `cleanup` its retained topics, discovery configs and
+    `<base>/status` are first cleared from the broker (no republish; the session is
+    told not to publish `offline` afterwards). Raises `notify_purge.PurgeError`, and
+    deletes nothing, when the broker cannot be reached. Returns the cleared counts
+    `{topics_cleared, state_topics, discovery_topics}`, or None without `cleanup`."""
+    cleared = None
+    if cleanup:
+        channel_id = channel.id
+        result = _publisher.call(lambda pub: notify_purge.purge_channel(
+            pub, channel_id, republish=False, clear_status=True))
+        cleared = {k: result[k] for k in ("topics_cleared", "state_topics", "discovery_topics")}
+    notify_purge.forget_bases(channel.id)
     db.session.delete(channel)
     db.session.commit()
     request_reload()
+    return cleared
 
 
 def test_channel(type_name, config, secret):

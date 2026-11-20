@@ -20,7 +20,8 @@ Builds the retained MQTT topics from the database and decides what to send:
 `setting` store, so the cleanup still works after a restart.
 
 Topic suffixes under the channel's `base_topic`:
-    entry/<entry_id>/state, entry/<entry_id>/check/<check_id>, summary
+    entry/<entry_id>/state, entry/<entry_id>/check/<check_id>, summary,
+    stream/<stream_id>
 """
 
 import json
@@ -28,7 +29,7 @@ import logging
 import threading
 from datetime import datetime
 
-from sqlalchemy import event, inspect
+from sqlalchemy import event, func, inspect
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 import health_state
@@ -42,6 +43,7 @@ from models import (
     HealthCheck,
     InventoryStream,
     ServiceEntry,
+    StreamLinkOffer,
     check_counts,
 )
 
@@ -55,7 +57,10 @@ SUMMARY_TOPIC = "summary"
 _ENTRY_ATTRS = ("container_name", "host", "group_id", "source", "deleted_at",
                 "internalurl", "externalurl", "is_static", "image_tag", "ha_publish",
                 "ip", "mac", "network", "stream_id", "inventory_missing")
-_STREAM_ATTRS = ("display_name",)      # the `stream` field of a stream entry's payload (PRD 18.6)
+# The `stream` field of a stream entry's payload and everything the per-stream status topic
+# carries (PRD 18.6).
+_STREAM_ATTRS = ("display_name", "status", "producer", "producer_version", "last_snapshot_at",
+                 "last_applied_at", "last_item_count", "last_counts")
 _CHECK_ATTRS = ("enabled", "kind", "name", "check_type", "target", "ha_exclude")
 _GROUP_ATTRS = ("group_name",)
 
@@ -66,6 +71,12 @@ def entry_topic(entry_id):
 
 def check_topic(entry_id, check_id):
     return f"entry/{entry_id}/check/{check_id}"
+
+
+def stream_topic(stream_slug):
+    """`stream/<stream_id>`: one retained status topic per inventory stream (PRD 18.6).
+    Entry topics never move under it; they stay keyed by entry id."""
+    return f"stream/{stream_slug}"
 
 
 def _iso(dt):
@@ -156,6 +167,22 @@ def entry_payload(entry, health, since):
         "dashboard_url": dashboard_url(entry.id),
         "since": _iso(since),
         "checks": check_counts_by_state(entry),
+    }
+
+
+def stream_payload(stream, active, missing, pending_offers):
+    """The per-stream status topic (PRD 18.6). `active` counts entries that are not
+    soft-deleted; `missing` those flagged absent from the latest snapshot."""
+    return {
+        "stream_id": stream.stream_id,
+        "display_name": stream.display_name,
+        "status": stream.status,
+        "producer": stream.producer,
+        "producer_version": stream.producer_version,
+        "last_snapshot_at": _iso(stream.last_snapshot_at),
+        "last_applied_at": _iso(stream.last_applied_at),
+        "counts": {"active": active, "missing": missing, "pending_offers": pending_offers},
+        "item_count": stream.last_item_count,
     }
 
 
@@ -331,7 +358,12 @@ def desired_state(state, now=None):
     desired = {}
     healths = []
     entry_meta, check_meta = {}, {}
+    stream_active, stream_missing = {}, {}
     for entry in _active_entries():
+        if entry.stream_id is not None:
+            stream_active[entry.stream_id] = stream_active.get(entry.stream_id, 0) + 1
+            if entry.inventory_missing:
+                stream_missing[entry.stream_id] = stream_missing.get(entry.stream_id, 0) + 1
         health = health_state.entry_health(entry)
         healths.append(health)
         since, _ = state.entry_since(entry, health, now)
@@ -343,6 +375,12 @@ def desired_state(state, now=None):
             check_meta[check.id] = state.checks[check.id]
             desired[check_topic(entry.id, check.id)] = check_payload(entry, check, changed)
     desired[SUMMARY_TOPIC] = summary_payload(healths)
+    offers = dict(db.session.query(StreamLinkOffer.stream_id, func.count(StreamLinkOffer.id))
+                  .group_by(StreamLinkOffer.stream_id).all())
+    for stream in InventoryStream.query.order_by(InventoryStream.id).all():
+        desired[stream_topic(stream.stream_id)] = stream_payload(
+            stream, stream_active.get(stream.id, 0), stream_missing.get(stream.id, 0),
+            offers.get(stream.id, 0))
     state.entries, state.checks = entry_meta, check_meta
     return desired
 
@@ -453,7 +491,7 @@ def _touches(obj):
 def _before_flush(session, flush_context, instances):
     if session.info.get("notify_sync"):
         return
-    watched = (ServiceEntry, HealthCheck, Group)
+    watched = (ServiceEntry, HealthCheck, Group, InventoryStream, StreamLinkOffer)
     if any(isinstance(o, watched) for o in session.new) or \
             any(isinstance(o, watched) for o in session.deleted) or \
             any(_touches(o) for o in session.dirty):

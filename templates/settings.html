@@ -695,19 +695,30 @@
             <td class="py-2 px-3 text-right whitespace-nowrap">
               <button type="button" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
                       data-notification-edit="{{ ch.id }}">Edit</button>
+              {% if ch.enabled %}
+              <button type="button" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
+                      data-channel-remove="disable" data-channel-id="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+                      data-channel-connected="{{ 1 if ch.status.state == 'connected' else 0 }}"
+                      data-action-url="{{ url_for('dashboard.toggle_notification_channel', id=ch.id) }}">Disable</button>
+              {% else %}
               <form method="POST" action="{{ url_for('dashboard.toggle_notification_channel', id=ch.id) }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">{{ 'Disable' if ch.enabled else 'Enable' }}</button>
+                <button type="submit" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Enable</button>
               </form>
+              {% endif %}
               <button type="button" class="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-white text-xs"
                       data-notification-purge="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
                       data-purge-url="{{ url_for('dashboard.purge_notification_channel', id=ch.id) }}"
                       title="Remove every retained STD message and Home Assistant discovery config from this broker">Purge MQTT and Home Assistant</button>
-              <form method="POST" action="{{ url_for('dashboard.delete_notification_channel', id=ch.id) }}" class="inline"
-                    onsubmit="return confirm('Delete notification channel {{ ch.name|e }}?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs">Delete</button>
-              </form>
+              <button type="button" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
+                      data-notification-orphans="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+                      data-scan-url="{{ url_for('dashboard.scan_notification_orphans', id=ch.id) }}"
+                      data-clear-url="{{ url_for('dashboard.clear_notification_orphans', id=ch.id) }}"
+                      title="List retained STD topics on this broker that nothing publishes any more (previous base topics, deleted entries)">Scan for orphans</button>
+              <button type="button" class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
+                      data-channel-remove="delete" data-channel-id="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+                      data-channel-connected="{{ 1 if ch.status.state == 'connected' else 0 }}"
+                      data-action-url="{{ url_for('dashboard.delete_notification_channel', id=ch.id) }}">Delete</button>
             </td>
           </tr>
         {% endfor %}
@@ -728,6 +739,39 @@
         <div class="flex justify-end gap-2">
           <button type="button" id="purge-cancel" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">Cancel</button>
           <button type="button" id="purge-confirm" class="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-white text-sm">Purge</button>
+        </div>
+      </dialog>
+
+      <dialog id="channel-remove-dialog" class="bg-gray-800 text-gray-200 rounded shadow p-6 max-w-lg">
+        <h3 class="text-lg font-semibold text-white mb-2"><span id="remove-title"></span>: <span id="remove-name"></span></h3>
+        <p class="text-sm mb-3" id="remove-intro"></p>
+        <label class="flex items-center text-sm mb-1"><input type="checkbox" id="remove-cleanup" class="mr-2">
+          <span id="remove-cleanup-label"></span></label>
+        <p class="text-xs text-gray-400 mb-3" id="remove-cleanup-note"></p>
+        <p class="text-sm text-red-300 mb-3" id="remove-error" role="alert" hidden></p>
+        <div class="flex justify-end gap-2">
+          <button type="button" id="remove-cancel" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">Cancel</button>
+          <button type="button" id="remove-confirm" class="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-sm"></button>
+        </div>
+      </dialog>
+
+      <dialog id="orphan-dialog" class="bg-gray-800 text-gray-200 rounded shadow p-6 max-w-2xl w-full">
+        <h3 class="text-lg font-semibold text-white mb-2">Scan for orphans: <span id="orphan-name"></span></h3>
+        <p class="text-sm mb-3">Looks on the broker for retained STD topics that STD no longer publishes: topics under the
+          base topics this channel used before (STD remembers the last 5), under a base topic you type below, and this
+          install's Home Assistant discovery configs for entries that are gone. Nothing is cleared until you press
+          <strong>Clear</strong>. Only topics shaped like STD's own are listed.</p>
+        <div class="flex items-end gap-2 mb-3">
+          <label class="text-sm flex-1">Also scan this base topic <span class="text-xs text-gray-500">(optional)</span>
+            <input type="text" id="orphan-extra" maxlength="128" placeholder="old/base" class="form-input block mt-1 w-full">
+          </label>
+          <button type="button" id="orphan-scan" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">Scan</button>
+        </div>
+        <p class="text-sm mb-2" id="orphan-status" role="status"></p>
+        <ul class="text-xs font-mono max-h-64 overflow-auto mb-3 border border-gray-700 rounded p-2" id="orphan-list" hidden></ul>
+        <div class="flex justify-end gap-2">
+          <button type="button" id="orphan-close" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">Close</button>
+          <button type="button" id="orphan-clear" class="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-white text-sm" hidden></button>
         </div>
       </dialog>
 
@@ -783,6 +827,13 @@
           <label>Keepalive (seconds)
             <input type="number" name="keepalive" id="nf-keepalive" min="5" max="3600" value="{{ nf.get('keepalive', 60) }}" class="form-input block mt-1 w-full">
           </label>
+        </div>
+        <div id="nf-cleanup-row" class="text-sm border border-yellow-700 rounded p-3" hidden>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" name="cleanup_old_base" id="nf-cleanup-old-base" value="1" checked>
+            Remove the old topics from the broker
+          </label>
+          <p class="text-xs text-gray-400 mt-1" id="nf-cleanup-note"></p>
         </div>
         <fieldset class="border border-gray-700 rounded p-3 space-y-3">
           <legend class="text-sm font-semibold px-1">Home Assistant</legend>
@@ -1098,8 +1149,32 @@
       $('nf-password-state').textContent = set ? '(set; leave blank to keep)' : '';
       $('nf-clear-row').hidden = !set;
       $('nf-test-result').textContent = '';
+      $('nf-cleanup-old-base').checked = true;
       form.dispatchEvent(new Event('change', { bubbles: true }));
+      updateCleanupRow();
     }
+
+    // "Remove the old topics from the broker" (PRD 17.5): shown while editing a saved
+    // channel whose base topic (or, with discovery on, discovery / device prefix) differs
+    // from what is stored; checked by default.
+    function updateCleanupRow() {
+      const row = $('nf-cleanup-row');
+      const ch = channels.find((c) => String(c.id) === $('nf-channel-id').value);
+      if (!ch) { row.hidden = true; return; }
+      const c = ch.config;
+      const baseChanged = $('nf-base-topic').value.trim().replace(/\/+$/, '') !== c.base_topic;
+      const haChanged = !!c.ha_discovery && (
+        ($('nf-ha-prefix').value.trim() || 'homeassistant') !== c.ha_prefix ||
+        ($('nf-ha-device-prefix').value.trim() || 'STD') !== c.ha_device_prefix);
+      row.hidden = !(baseChanged || haChanged);
+      $('nf-cleanup-note').textContent = baseChanged
+        ? "Clears every retained topic under '" + c.base_topic + "/' (including its status) and this install's " +
+          'discovery configs from the broker, then switches. The old base is remembered for the orphan scan.'
+        : "Clears this install's Home Assistant discovery configs under '" + c.ha_prefix +
+          "/' so Home Assistant drops the old devices; the new ones are published after the save.";
+    }
+    form.addEventListener('input', updateCleanupRow);
+    form.addEventListener('change', updateCleanupRow);
 
     document.addEventListener('click', (event) => {
       const edit = event.target.closest('[data-notification-edit]');
@@ -1157,6 +1232,144 @@
       $('nf-password-state').textContent = ch && ch.secret_set ? '(set; leave blank to keep)' : '';
       $('nf-clear-row').hidden = !(ch && ch.secret_set);
     }
+    updateCleanupRow();
+
+    // Delete / Disable (PRD 17.5): a dialog with "Remove this channel's data from the broker
+    // first" (checked for delete, unchecked for disable). A broker that can't be reached
+    // is reported and the operator can go ahead without the cleanup.
+    const rmDialog = $('channel-remove-dialog');
+    let rmBtn = null, rmFailed = false;
+    function rmLabel() {
+      const del = rmBtn.dataset.channelRemove === 'delete';
+      const on = $('remove-cleanup').checked;
+      $('remove-confirm').textContent = rmFailed ? (del ? 'Delete anyway' : 'Disable anyway')
+        : (del ? (on ? 'Delete and clean the broker' : 'Delete') : (on ? 'Disable and clean the broker' : 'Disable'));
+    }
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-channel-remove]');
+      if (!btn) return;
+      rmBtn = btn; rmFailed = false;
+      const del = btn.dataset.channelRemove === 'delete';
+      const connected = btn.dataset.channelConnected === '1';
+      $('remove-title').textContent = del ? 'Delete notification channel' : 'Disable notification channel';
+      $('remove-name').textContent = btn.dataset.channelName;
+      $('remove-intro').textContent = del
+        ? 'The channel is removed. STD stops publishing to this broker.'
+        : 'STD stops publishing to this broker until you enable the channel again.';
+      $('remove-cleanup-label').textContent = "Remove this channel's data from the broker first";
+      $('remove-cleanup').checked = del && connected;
+      $('remove-cleanup-note').textContent = (connected
+        ? 'Clears the retained STD topics and Home Assistant devices' + (del ? ', including the status topic.' : '; the status topic reads offline.')
+        : 'This channel is not connected, so its broker cannot be cleaned. Enable it and wait for connected first.');
+      $('remove-error').hidden = true;
+      rmLabel();
+      rmDialog.showModal();
+    });
+    $('remove-cleanup').addEventListener('change', rmLabel);
+    $('remove-cancel').addEventListener('click', () => rmDialog.close());
+    $('remove-confirm').addEventListener('click', async () => {
+      const btn = rmBtn;
+      const confirmBtn = $('remove-confirm');
+      confirmBtn.disabled = true;
+      $('remove-error').hidden = true;
+      try {
+        const body = new FormData();
+        body.append('cleanup', $('remove-cleanup').checked ? '1' : '0');
+        const resp = await fetch(btn.dataset.actionUrl, {
+          method: 'POST', body, credentials: 'same-origin',
+          headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          window.location.href = '{{ url_for("dashboard.settings", section="notifications") }}';
+          return;
+        }
+        rmFailed = true;
+        $('remove-cleanup').checked = false;
+        $('remove-error').textContent = data.message + ' Nothing was changed.';
+        $('remove-error').hidden = false;
+        rmLabel();
+      } catch (err) {
+        $('remove-error').textContent = 'Could not reach STD (' + err + ').';
+        $('remove-error').hidden = false;
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    });
+
+    // Scan for orphans: preview, then clear exactly what was listed.
+    const orphanDialog = $('orphan-dialog');
+    let orphanBtn = null, orphanTopics = [];
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-notification-orphans]');
+      if (!btn) return;
+      orphanBtn = btn; orphanTopics = [];
+      $('orphan-name').textContent = btn.dataset.channelName;
+      $('orphan-status').textContent = '';
+      $('orphan-list').hidden = true;
+      $('orphan-clear').hidden = true;
+      orphanDialog.showModal();
+    });
+    $('orphan-close').addEventListener('click', () => orphanDialog.close());
+    $('orphan-scan').addEventListener('click', async () => {
+      const scanBtn = $('orphan-scan');
+      scanBtn.disabled = true;
+      $('orphan-clear').hidden = true;
+      $('orphan-list').hidden = true;
+      $('orphan-status').textContent = 'Scanning... (up to 15 seconds)';
+      try {
+        const body = new FormData();
+        body.append('extra_base', $('orphan-extra').value);
+        const resp = await fetch(orphanBtn.dataset.scanUrl, {
+          method: 'POST', headers: { 'X-CSRFToken': csrf() }, body, credentials: 'same-origin',
+        });
+        const data = await resp.json();
+        if (!data.ok) { $('orphan-status').textContent = 'Scan failed: ' + data.message; return; }
+        orphanTopics = data.orphans.map((o) => o.topic);
+        const list = $('orphan-list');
+        list.textContent = '';
+        data.orphans.forEach((o) => {
+          const li = document.createElement('li');
+          li.textContent = o.topic + '  (' + o.kind + ')';
+          list.appendChild(li);
+        });
+        list.hidden = !data.orphans.length;
+        $('orphan-status').textContent = data.count
+          ? 'Found ' + data.count + ' orphaned topic' + (data.count === 1 ? '' : 's') + '.'
+          : 'No orphans found.';
+        const clearBtn = $('orphan-clear');
+        clearBtn.textContent = 'Clear ' + data.count + ' orphan' + (data.count === 1 ? '' : 's');
+        clearBtn.hidden = !data.count;
+      } catch (err) {
+        $('orphan-status').textContent = 'Scan failed: could not reach STD (' + err + ').';
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
+    $('orphan-clear').addEventListener('click', async () => {
+      const clearBtn = $('orphan-clear');
+      clearBtn.disabled = true;
+      $('orphan-status').textContent = 'Clearing...';
+      try {
+        const body = new FormData();
+        orphanTopics.forEach((t) => body.append('topic', t));
+        body.append('extra_base', $('orphan-extra').value);
+        const resp = await fetch(orphanBtn.dataset.clearUrl, {
+          method: 'POST', headers: { 'X-CSRFToken': csrf() }, body, credentials: 'same-origin',
+        });
+        const data = await resp.json();
+        if (!data.ok) { $('orphan-status').textContent = 'Clear failed: ' + data.message; return; }
+        $('orphan-status').textContent = 'Cleared ' + data.topics_cleared + ' topic' +
+          (data.topics_cleared === 1 ? '' : 's') + (data.skipped.length ? ' (' + data.skipped.length + ' skipped).' : '.');
+        $('orphan-list').hidden = true;
+        clearBtn.hidden = true;
+        orphanTopics = [];
+      } catch (err) {
+        $('orphan-status').textContent = 'Clear failed: could not reach STD (' + err + ').';
+      } finally {
+        clearBtn.disabled = false;
+      }
+    });
 
     $('nf-test').addEventListener('click', async () => {
       const out = $('nf-test-result');

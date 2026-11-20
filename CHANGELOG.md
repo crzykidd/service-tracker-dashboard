@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deleting a notification channel cleans its broker.** The Delete dialog
+  offers **Remove this channel's data from the broker first** (ticked by
+  default): the retained STD topics, the Home Assistant discovery configs and
+  `<base>/status` are cleared, then the channel is deleted. If the channel is
+  disabled or its broker can't be reached, nothing is deleted and the dialog
+  offers **Delete anyway**. Disabling offers the same cleanup, unticked by
+  default. In the API, `DELETE /api/v1/notifications/channels/<id>` takes
+  `cleanup` (default true) and `PATCH` takes `cleanup` too; MCP:
+  `delete_notification_channel`, `update_notification_channel`.
+- **Changing a channel's base topic cleans up the old one.** Saving a channel
+  with a new base topic (or, with Home Assistant on, a new discovery or device
+  name prefix) shows **Remove the old topics from the broker**, ticked by
+  default: everything under the old base and this install's old discovery
+  configs are cleared before the switch. STD remembers the last 5 previous
+  bases per channel (`GET /api/v1/notifications/channels/<id>/previous-bases`,
+  MCP `list_notification_previous_bases`).
+- **Scan for orphans.** A per-channel button lists the retained STD topics on
+  the broker that STD no longer publishes (under the current and remembered
+  base topics, one you type, and this install's discovery configs) and clears
+  them on request (`POST .../orphans/scan` and `.../orphans/clear`, MCP
+  `scan_notification_orphans` and `clear_notification_orphans`).
+- **Purge MQTT/HA per stream.** A button on each stream row in Settings →
+  Streams clears the MQTT topics and Home Assistant devices of every entry of
+  the stream in one batch, then republishes what is still eligible
+  (`POST /api/v1/streams/<id>/notifications/purge`, MCP
+  `purge_stream_notifications`).
+- **Stream status topic and Home Assistant stream devices.** STD publishes a
+  retained `<base>/stream/<stream id>` per inventory stream (status, producer,
+  last snapshot and apply times, active / missing / pending-offer counts, item
+  count). With Home Assistant discovery on, a stream with a published entry gets
+  a device with a status sensor and active / missing count sensors, and its
+  entries' devices hang off it instead of the STD hub. Entry topics are
+  unchanged.
+
 - **Stream default checks.** Each stream can give its entries a ping check on
   their IP and, optionally, a TCP check on a port. New entries start with them;
   **Apply to existing entries** (Settings → Streams → Default checks, or

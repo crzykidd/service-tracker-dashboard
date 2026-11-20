@@ -304,6 +304,11 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("GET", "/notifications/channels", params={"limit": limit, "offset": offset})
 
     @read_tool
+    def list_notification_previous_bases(channel_id: int) -> dict:
+        """The base topics (and Home Assistant discovery prefixes) a notification channel used before its last changes, newest first, at most 5. The orphan scan looks under each of them. Returns {channel_id, limit, items: [{base_topic, ha_prefix}]}."""
+        return client.request("GET", f"/notifications/channels/{channel_id}/previous-bases")
+
+    @read_tool
     def get_notification_channel(channel_id: int) -> dict:
         """Get one notification channel: type, name, enabled, config (host, port, tls, base_topic, qos, ha_discovery, ha_prefix, ha_device_prefix, ...), `secret_set` and its live connection `status`. Use it to check whether the MQTT broker is connected and why not (status.last_error)."""
         return client.request("GET", f"/notifications/channels/{channel_id}")
@@ -515,6 +520,40 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def purge_entry_notifications(entry_id: int) -> dict:
         """Purge one entry's MQTT topics and Home Assistant device on every enabled channel, wait about 2 seconds, then republish it, so Home Assistant recreates the device with fresh entity ids (use it after renaming an entry). An entry not published to Home Assistant only has its state topics cleared and republished. Returns {entry_id, topics_cleared, channels, republished}; 409 if no channel is enabled."""
         return client.request("POST", f"/entries/{entry_id}/notifications/purge")
+
+    @write_tool
+    def delete_notification_channel(channel_id: int, cleanup: bool = True) -> dict:
+        """Delete a notification channel. cleanup=true (default) first removes the channel's retained STD topics, Home Assistant discovery configs and its `<base_topic>/status` from the MQTT broker (no republish). If the channel is disabled or its broker cannot be reached the answer is 409 and nothing is deleted: enable the channel and wait until it is connected, or call again with cleanup=false to delete without touching the broker (topics may stay behind; scan_notification_orphans finds them later). Returns {id, deleted, cleanup: {topics_cleared, state_topics, discovery_topics} or null}. Takes several seconds with cleanup."""
+        return client.request("DELETE", f"/notifications/channels/{channel_id}", params={"cleanup": cleanup})
+
+    @write_tool
+    def update_notification_channel(channel_id: int, fields: dict, cleanup: bool | None = None) -> dict:
+        """Change a notification channel (the password cannot be set here). `fields` names only what changes: name, enabled, config (keys are merged over the stored config: host, port, tls, tls_insecure, username, client_id, base_topic, qos, keepalive, ha_discovery, ha_prefix, ha_device_prefix).
+        cleanup clears the broker first. Omitted: a change of base_topic (or ha_prefix / ha_device_prefix while discovery is on) removes the old base's retained topics and discovery configs and remembers the old base; a plain disable leaves the broker alone. cleanup=true also removes the channel's data when this call disables it; cleanup=false never touches the broker. 409 (nothing changed) when the cleanup is wanted but the broker cannot be reached.
+        Example: fields {"config": {"base_topic": "std2"}}, or fields {"enabled": false} with cleanup true."""
+        allowed = {"name", "enabled", "config"}
+        body = dict(_check_fields(fields, allowed, "notification channel"))
+        if cleanup is not None:
+            body["cleanup"] = cleanup
+        return client.request("PATCH", f"/notifications/channels/{channel_id}", json=body)
+
+    @write_tool
+    def scan_notification_orphans(channel_id: int, extra_base: str | None = None) -> dict:
+        """Preview orphaned retained STD topics on a channel's MQTT broker; nothing is cleared. It subscribes briefly to the current base_topic, every remembered previous base (list_notification_previous_bases), the optional extra_base (a base topic you remember using) and this STD install's Home Assistant discovery configs, and lists retained STD-shaped topics (status, summary, entry/<id>/state, entry/<id>/check/<id>, stream/<id>, discovery configs) that STD no longer publishes. Returns {channel_id, scanned, count, orphans: [{topic, kind}]}. Takes several seconds; 409 if the channel is disabled or not connected."""
+        return client.request("POST", f"/notifications/channels/{channel_id}/orphans/scan",
+                              json={"extra_base": extra_base} if extra_base else None)
+
+    @write_tool
+    def clear_notification_orphans(channel_id: int, topics: list[str] | None = None,
+                                   extra_base: str | None = None) -> dict:
+        """Clear orphaned retained topics on a channel's broker. Pass `topics` (the list scan_notification_orphans returned) to clear exactly those; topics outside the scanned bases or that STD publishes again are returned in `skipped`. Without `topics` the channel is scanned again and every orphan found is cleared. Use the same extra_base as for the scan. Returns {channel_id, topics_cleared, topics, skipped}."""
+        body = {k: v for k, v in (("topics", topics), ("extra_base", extra_base)) if v is not None}
+        return client.request("POST", f"/notifications/channels/{channel_id}/orphans/clear", json=body or None)
+
+    @write_tool
+    def purge_stream_notifications(stream_id: str) -> dict:
+        """Purge every entry of an inventory stream from MQTT and Home Assistant on every enabled channel in one batch: state and check topics and discovery configs of all its entries (soft-deleted ones too) plus the stream's own `<base_topic>/stream/<stream_id>` status topic and its Home Assistant hub device. After about 2 seconds what is still eligible is published again (entries that are gone or not opted in to Home Assistant stay cleared). Returns {stream_id, entries, topics_cleared, channels, republished}; 409 if no channel is enabled."""
+        return client.request("POST", f"/streams/{stream_id}/notifications/purge")
 
     @write_tool
     def update_stream(stream_id: str, fields: dict) -> dict:

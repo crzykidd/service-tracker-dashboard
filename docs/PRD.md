@@ -83,6 +83,7 @@
 | 0.73    | 2026-11-17 | §18.4–§18.7 delivered on `dev` (inv-04): inventory streams backend. Migration `f4c8a2e6d173` (new §5.10: `inventory_stream`, `inventory_block`, `stream_link_offer`, stream columns and a partial unique index on `service_entry`; `source = stream`); `ingest` API key scope; the sidecar ingest contract `PUT /api/v1/streams/<stream_id>/snapshot` and `GET .../status` (§18.5, as specified); new `streams.py` apply engine and lifecycle (§18.6, §18.7); management routes under `/api/v1/streams`, `inventory` on entries, `block` on entry delete, MCP tools; MQTT payload `ip`/`mac`/`network`/`stream` and the HA device model. §3.1 and §3.2 updated. §18.8 (Settings → Streams UI) remains planned. |
 | 0.74    | 2026-11-17 | §18.8 delivered on `dev` (inv-05): Settings → Streams tab (rows, pending highlight, read-only Docker row, Preview, Enable / Ignore, Disable… / Delete… cleanup dialog, inline name and network-filter edit, Blocked and Link offers lists), **Ingest (sidecars)** in the API key scope picker, stream pill and "missing" marker on Dashboard / Tiled / Compact, per-stream Source filter (`stream:<stream_id>`), stream edit page (read-only observations, Allow re-adding / Don't re-add), manual edit page (Convert / Keep separate banner, Link to stream item…). New session routes under `/settings/streams/` and `/edit/<id>/stream-link`. §18 retitled Delivered on `dev`; §18.8 "As built" notes; §13.6 `source` filter updated. No schema, register-contract or `/api/v1` change. |
 | 0.75    | 2026-11-19 | §18 follow-ups from the first live test (inv-06), still API revision 2: link-offer matching widened (any active manual entry; name, host or host's first label; convert clears `host`); disable + purge keeps the stored snapshot; dry-run counts for pending/disabled streams; pending-stream flag in the header; per-stream `default_checks` (migration `a9d3c5e7f102`, `PATCH /streams/{id}`, `POST /streams/{id}/default-checks/apply`, MCP `apply_stream_default_checks`); `pending` in `GET /streams`; IP/MAC/network in the detail panel; Tiled and Compact stream icon and Compact source icon; HA entries table Source column; Add page "Docker host" wording. §5.10, §18.6–§18.8 updated. |
+| 0.76    | 2026-11-19 | Notification cleanup (notif-06), still API revision 2: §17.5 channel delete cleans the broker first (default on; `cleanup` on `DELETE`/`PATCH`), disable offers it (default off), a base topic / discovery prefix change clears the old one and remembers the last 5 bases (`setting` key `notify_previous_bases`, §5.8), per-stream purge (`POST /streams/{id}/notifications/purge`), orphan scan and clear (`/notifications/channels/{id}/orphans/scan` and `/clear`, `GET .../previous-bases`), MCP tools for all; §17.3/§18.6 per-stream retained status topic `<base>/stream/<stream_id>` (part of the desired set, so `full_sync` reconciles and clears it); §17.4 one HA hub device per stream with a published entry (status and active / missing count sensors; its entry devices use `via_device` the stream device). The "channel delete/disable leaves its configs" caveat is gone. No schema migration, no register-contract change. |
 
 ---
 
@@ -220,8 +221,10 @@ notify_state.py     ← retained state publishing: topic/payload builders,
 notify_mqtt.py      ← MQTT channel type: pydantic config, paho session
                       (LWT/availability, HA birth subscription), test message
 notify_ha.py        ← Home Assistant discovery config builders (§17.4)
-notify_purge.py     ← channel-wide and per-entry purge of retained topics and
-                      HA devices, run on the publisher thread (§17.5)
+notify_purge.py     ← channel-wide, per-entry and per-stream purge of retained
+                      topics and HA devices, base-change cleanup, remembered
+                      bases and the orphan scan, all run on the publisher
+                      thread (§17.5)
 streams.py          ← inventory streams: ingest helpers, apply engine
                       (`plan` / `apply`), lifecycle, blocks, link offers
                       (§18.4–§18.7)
@@ -453,6 +456,7 @@ Migration `a2f4c6e8b031` (§17.2). No foreign keys.
 |--------|--------|
 | Table | `notification_channel`: `id`, `type` (`String(32)`, indexed `ix_notification_channel_type`), `name` (`String(64)`, unique index `ux_notification_channel_name`), `enabled` (bool, default false), `config` (JSON, non-secret settings), `secret` (`String(512)`, nullable, the MQTT password; write-only in the UI, API, logs and audit), `created_at`, `updated_at`. |
 | Setting key | `instance_id` in `setting`: a UUID created on first use and never changed (MQTT client ids; Home Assistant unique ids in §17.4). |
+| Setting key | `notify_previous_bases` in `setting` (§17.5): JSON `{channel id: [{base_topic, ha_prefix}]}`, newest first, at most 5 per channel; the pairs a channel used before a change, for the orphan scan. Dropped with the channel. |
 | Setting key | `notify_publish_state` in `setting` (§17.3): JSON `{topics, entries, checks}`: every retained topic believed to be on the broker, each entry's last published roll-up (`state`, `since`, `checks`) and each check's last `ok` with the time it changed. Lets the reconcile clear deleted topics after a restart. |
 
 ### 5.9 Home Assistant schema changes
@@ -2565,7 +2569,16 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
 | `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). |
 | `<base>/entry/<entry_id>/check/<check_id>` | One check: `ok` (true / false / null before its first run), `state` (`up` / `down` / `unknown`), `entry_id`, `check_id`, `name`, `kind` (`container`, `internal_url`, `external_url`, `service`), `check_type` (`http`, `tcp`, `ping`, `dns`, or `container`), `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` (when `ok` last changed). |
 | `<base>/summary` | `{up, degraded, down, unknown, none, total}` over active (not soft-deleted) entries. |
+| `<base>/stream/<stream_id>` | One inventory stream (§18.6): `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at` (null before the first), `counts` (`{active, missing, pending_offers}`: entries not soft-deleted, those flagged missing, open link offers), `item_count` (the last snapshot's item count). |
 
+- **Stream topic (notif-06).** Published for every stream, whatever its status
+  (a `pending` stream shows an automation that it is waiting for review). It is
+  part of the desired set, so `full_sync()` publishes it and clears it when the
+  stream is deleted; entry topics never move under a stream path (topics use
+  ids, and Convert / link must never move one). A commit that changes the
+  stream's status, producer, display name, counts bookkeeping (`last_*`) or its
+  link offers, or creates or deletes a stream, requests a sync like any other
+  change (non-forced: only topics whose payload changed go out).
 - Only checks that take part in the roll-up (`check_counts`: enabled and able
   to run) have a topic. `dashboard_url` is the path `/edit/<entry_id>`: STD has
   no configured public base URL, so it is never absolute.
@@ -2612,7 +2625,8 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 | Device | Identifiers / fields |
 |--------|----------------------|
 | Hub | `identifiers: [<node>]`, `name` = `ha_device_prefix` (`STD`), `manufacturer: Service Tracker Dashboard`, `model: STD`, `sw_version` = the STD version. No `configuration_url`: STD has no configured public base URL. |
-| Entry | `identifiers: [<node>_entry_<entry_id>]`, `name` = `<ha_device_prefix> <entry name> (<host>)` (`<ha_device_prefix> <entry name>` when the entry has no host), same `manufacturer`, `model` = `Docker container` or `Manual`, `sw_version` = the image tag when the entry has one, `via_device: <node>`. No `suggested_area` (the group is an attribute). |
+| Entry | `identifiers: [<node>_entry_<entry_id>]`, `name` = `<ha_device_prefix> <entry name> (<host>)` (`<ha_device_prefix> <entry name>` when the entry has no host), same `manufacturer`, `model` = `Docker container`, `Manual` or the stream's display name, `sw_version` = the image tag when the entry has one, `via_device: <node>` (a stream entry: `<node>_stream_<stream_id>`, see below). No `suggested_area` (the group is an attribute). |
+| Stream hub | One per inventory stream that has at least one published (`ha_publish`, active) entry: `identifiers: [<node>_stream_<stream_id>]`, `name` = `<ha_device_prefix> <stream display name> stream`, `manufacturer`, `model: Stream`, `sw_version` = the STD version, `via_device: <node>`. |
 
 | Entity | Config |
 |--------|--------|
@@ -2620,6 +2634,8 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 | Hub `sensor`s `up`, `degraded`, `down`, `unknown` | object ids `hub_<state>`, unique ids `<node>_hub_<state>`; state topic `<base>/summary`, `value_template` `{{ value_json.<state> }}`. |
 | Entry `sensor` "Since" | object id `entry_<id>_since`, unique id `<node>_entry_<id>_since`, `device_class: timestamp`; state topic `<base>/entry/<id>/state` with `value_template` `{{ value_json.since if value_json.since else None }}` (ISO 8601 UTC; null renders `None`, which MQTT sensors read as unknown). |
 | Entry `sensor` "State" | object id `entry_<id>_state`, unique id `<node>_entry_<id>_state`, `device_class: enum`, `options: [up, degraded, down, unknown, none]`; state and `json_attributes_topic` = `<base>/entry/<id>/state`. |
+| Stream hub `sensor` "Status" | object id `stream_<stream_id>_status`, unique id `<node>_stream_<stream_id>_status`, `device_class: enum`, `options: [pending, enabled, disabled, ignored]`; state and `json_attributes_topic` = `<base>/stream/<stream_id>`, `value_template` `{{ value_json.status }}`. |
+| Stream hub `sensor`s "Active entries", "Missing entries" | object ids `stream_<stream_id>_active` / `_missing`, unique ids `<node>_stream_<stream_id>_<field>`, `state_class: measurement`; state topic `<base>/stream/<stream_id>`, `value_template` `{{ value_json.counts.active }}` / `.missing`. |
 | Check `binary_sensor` | object id `check_<check_id>`, unique id `<node>_check_<check_id>`, `device_class: problem`, ON when the check's `state` is `down`; state and `json_attributes_topic` = `<base>/entry/<id>/check/<check_id>`. Name is the check's label (`HTTP`, `TCP 443`, `Container`, ...). |
 
 Every entity except the connectivity sensor uses `availability_topic`
@@ -2636,7 +2652,7 @@ need: both add `std_entry_id`; the check payload also carries `entry_name`,
 
 **Lifecycle.** The desired discovery set is: channel enabled with
 `ha_discovery` on, times active entries with `ha_publish`, times their
-counted checks without `ha_exclude`, plus the hub (always). Everything previously
+counted checks without `ha_exclude`, plus the hub (always) and a stream hub device for every stream with at least one such entry. Everything previously
 published for that channel and no longer desired (opt-outs, removed or disabled
 checks, soft delete, purge, `ha_discovery` turned off or the prefix changed)
 gets an empty retained payload on its config topic. Configs are published
@@ -2645,8 +2661,9 @@ channel id in the `setting` key `notify_publish_state` (`ha`). With
 `ha_discovery` on the session subscribes to `<ha_prefix>/status` (the only
 subscription, read-only); `online` (Home Assistant restarted) requests a forced
 sync, republishing every config and then every state. A channel that is
-deleted or disabled while discovery is on leaves its configs on that broker
-(STD no longer has a session to clear them).
+deleted or disabled while discovery is on keeps its configs on that broker
+unless the operator asked for the cleanup (§17.5, notif-06; STD no longer has a
+session to clear them afterwards).
 
 **Schema** (§5.9): `service_entry.ha_publish` (opt-in) and
 `health_check.ha_exclude` (opt-out), both NOT NULL default false, operator-owned,
@@ -2706,6 +2723,56 @@ or is soft-deleted gets no discovery configs back; an opted-in active entry
 gets state topics and configs. Result: `entry_id`, `topics_cleared`,
 `channels[{id, name, state_topics, discovery_topics}]`, `republished`.
 
+**Stream purge (notif-06).** For one inventory stream, one publisher job on every
+live session: the state and check topics and discovery configs of every entry of
+the stream (all of its checks, soft-deleted entries too), plus the stream's own
+status topic (§17.3) and its hub device configs (§17.4). It is the entry purge
+batched (`_purge_entries`), not N round trips; after 2 s a non-forced
+`full_sync()` publishes whatever is still eligible, so a stream whose entries
+were soft-deleted or purged brings back only its status topic (and the changed
+summary), and entries that are not opted in to Home Assistant get no configs.
+Result: `stream_id`, `entries`, `topics_cleared`, `channels[{id, name,
+state_topics, discovery_topics}]`, `republished`.
+
+**Channel delete and disable (notif-06).** Delete runs the channel purge with
+`republish=false` and also clears `<base>/status`, last; the session is told not
+to publish `offline` over it when it stops, then the channel row is deleted.
+Default **on** (UI dialog ticked; management API `cleanup`, default true; MCP).
+Disable offers the same purge, default **off**, and leaves `<base>/status` to
+read `offline`. If the channel is disabled, not running or not connected, the
+request is refused (409) and nothing is changed: the operator picks **Delete
+anyway** (`cleanup=false`). The cleanup runs before the change is saved.
+
+**Base topic / prefix change (notif-06).** Saving a channel whose `base_topic`
+changed, or whose `ha_prefix` / `ha_device_prefix` changed while discovery was on,
+first runs `clear_old_namespace()` on the channel's current session (so it works
+even if the host changes too): a changed base clears every retained topic under
+`<old>/#` (the old `status` too, and the session does not republish `offline` to
+it); a changed prefix or device prefix clears this install's discovery configs
+under the old prefix (a device prefix change republishes them with the new names
+after the save). UI checkbox **Remove the old topics from the broker**, default on;
+API `cleanup` on `PATCH`, default true for this case. A channel with no live
+session (disabled) skips the cleanup silently; an enabled one that cannot be
+reached refuses (409, nothing saved; send `cleanup: false`). Every such change
+remembers the old `{base_topic, ha_prefix}` pair per channel (the last 5, newest
+first; `notify_previous_bases`, §5.8), whether or not the cleanup ran.
+
+**Orphan scan (notif-06).** `scan_orphans()` subscribes with the channel-purge
+timing to `<base>/#` for the current base, every remembered previous base and an
+optional operator-typed `extra_base`, plus this install's `<prefix>/+/<node>/#`
+under the current and remembered prefixes, and diffs the retained topics against
+the desired set: the desired state topics and `<base>/status` of every channel on
+the same broker (host and port), and their discovery configs. Only topics shaped
+like STD's own count (`status`, `summary`, `entry/<id>/state`,
+`entry/<id>/check/<id>`, `stream/<stream_id>`, this node's discovery configs), so
+an operator-typed base cannot sweep up another application; an `extra_base` equal
+to a discovery prefix is refused. It is a preview. `clear_orphans()` with `topics`
+(the scan's list) clears exactly those that are still inside the scanned
+namespaces and still not desired (the rest return as `skipped`); without `topics`
+it scans again and clears everything found. Results: scan `{channel_id, scanned,
+count, orphans[{topic, kind}]}`; clear `{channel_id, topics_cleared, topics,
+skipped}`.
+
 **UI, API, MCP.** Settings → Notifications has **Purge MQTT and Home
 Assistant** per channel (confirm dialog with **Republish afterwards**, counts
 inline); the entry edit page has **Purge and republish to MQTT/HA** when a
@@ -2714,7 +2781,18 @@ channel is enabled. Both are POST, CSRF-protected and admin only
 Management API (write scope; error shape as elsewhere, 404/409/504):
 `POST /api/v1/notifications/channels/<id>/purge` (body optional,
 `{republish: bool}`) and `POST /api/v1/entries/<id>/notifications/purge`; MCP
-tools `purge_notification_channel` and `purge_entry_notifications`.
+tools `purge_notification_channel` and `purge_entry_notifications`. Added by
+notif-06 (revision 2): Settings → Streams has **Purge MQTT/HA** per stream row
+(`/settings/streams/<slug>/purge-notifications`); Settings → Notifications has
+a Delete / Disable dialog, **Scan for orphans** (`/settings/notifications/<id>/orphans/scan`
+and `/clear`) and the base-change checkbox. Management API (write scope unless
+noted; 404/409/504): `POST /streams/{stream_id}/notifications/purge`,
+`DELETE /notifications/channels/{id}?cleanup=` (default true; the answer carries
+`cleanup`), `PATCH` takes `cleanup`, `GET .../previous-bases` (read),
+`POST .../orphans/scan` and `POST .../orphans/clear`. MCP: `purge_stream_notifications`,
+`delete_notification_channel`, `update_notification_channel`,
+`list_notification_previous_bases`, `scan_notification_orphans`,
+`clear_notification_orphans`.
 
 ---
 
@@ -2777,7 +2855,7 @@ server supports and log it.
 | Revision | STD release | Adds |
 |---|---|---|
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
-| 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge (§17); `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
+| 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered on `dev`
 
@@ -2940,7 +3018,7 @@ the operator are audited.
 - **Link offers:** an offer whose manual entry is gone, deleted or already converted is dropped at the next apply, and the item is processed as a new key. Accepting an offer, or linking by hand, removes the entry's other offers. The linked entry gets `name_source = ui_edit`, so a snapshot never renames the operator's entry.
 - Register never matches, adopts or updates a `source = stream` row (a `source != stream` filter in `upsert_service`).
 - **Entry edit:** the management API and the Edit page let the operator rename a stream entry (`name_source` becomes `ui_edit` when the name actually changes). `host` stays NULL, and a rename skips `find_duplicate`. The restore clash checks (Settings → Deleted, `POST /entries/{id}/restore`) skip stream entries.
-- **MQTT:** `ip`, `mac`, `network` and `stream` are always present in an entry's payload (null for notifier and manual entries). `InventoryStream.display_name` is watched too, so renaming a stream republishes its entries and updates the HA device `model`.
+- **MQTT:** `ip`, `mac`, `network` and `stream` are always present in an entry's payload (null for notifier and manual entries). `InventoryStream.display_name` is watched too, so renaming a stream republishes its entries and updates the HA device `model`. Each stream also has a retained status topic `<base>/stream/<stream_id>` (§17.3) and, with Home Assistant discovery on and at least one published entry, a hub device with status and active / missing count sensors that its entry devices hang off (§17.4); entry topics stay under `entry/<id>` and never move.
 - A failed apply rolls back, records `last_error` on the stream and answers 500.
 
 Applied in the ingest request, in one transaction, under an in-process lock (the

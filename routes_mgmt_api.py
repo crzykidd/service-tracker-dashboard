@@ -56,6 +56,8 @@ from mgmt_schemas import (
     GroupPatch,
     NotificationChannelCreate,
     NotificationChannelPatch,
+    NotificationOrphanClearRequest,
+    NotificationOrphanScanRequest,
     NotificationPurgeRequest,
     ServiceCheckCreate,
     StreamDisableRequest,
@@ -99,7 +101,7 @@ from models import (
     ensure_url_checks,
     hard_delete_entry,
 )
-from notify_purge import PurgeError
+from notify_purge import MAX_PREVIOUS_BASES, PurgeError
 from view_helpers import VALID_STATUS_FILTERS, matches_status
 
 logger = logging.getLogger(__name__)
@@ -1369,10 +1371,19 @@ def patch_notification_channel(id):
               if f in sent and getattr(data, f) is None]
     if errors:
         return _fail(errors)
+    if sent == {"cleanup"}:
+        return _fail([{"field": "body", "message": "name at least one field to change"}])
     before = _channel_snapshot(channel)
     had_secret = bool(channel.secret)
     kwargs = {f: getattr(data, f) for f in ("name", "enabled", "config", "secret") if f in sent}
-    _, errors = notify.update_channel(channel, **kwargs)
+    # `cleanup` null/omitted: clear the old base on a base change, not on a plain disable.
+    cleanup = data.cleanup
+    kwargs["cleanup_disable"] = bool(cleanup)
+    kwargs["cleanup_old_base"] = True if cleanup is None else cleanup
+    try:
+        _, errors = notify.update_channel(channel, **kwargs)
+    except PurgeError as exc:
+        return _purge_error(exc)
     if errors:
         if any("already exists" in e["message"] for e in errors):
             return json_error(409, errors[0]["message"], errors)
@@ -1389,10 +1400,22 @@ def patch_notification_channel(id):
 def delete_notification_channel(id):
     audit("notification_channel", id)
     channel = _load_channel(id)
+    raw = request.args.get("cleanup")
+    if raw is None or raw.strip() == "":
+        cleanup = True
+    elif raw.strip().lower() in ("1", "true", "yes", "on"):
+        cleanup = True
+    elif raw.strip().lower() in ("0", "false", "no", "off"):
+        cleanup = False
+    else:
+        abort(400, "'cleanup' must be true or false.")
     name = channel.name
-    notify.delete_channel(channel)
+    try:
+        cleared = notify.delete_channel(channel, cleanup=cleanup)
+    except PurgeError as exc:
+        return _purge_error(exc)
     audit("notification_channel", id, {"name": [name, None]})
-    return jsonify({"id": id, "deleted": True})
+    return jsonify({"id": id, "deleted": True, "cleanup": cleared})
 
 
 @mgmt_bp.route("/notifications/channels/<int:id>/test", methods=["POST"])
@@ -1427,6 +1450,45 @@ def purge_notification_channel(id):
         return _purge_error(exc)
     audit("notification_channel", id, {"purge": [None, {"topics_cleared": result["topics_cleared"],
                                                          "republish": data.republish}]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/previous-bases", methods=["GET"])
+@require_api_key("read")
+def list_notification_previous_bases(id):
+    """The base topics this channel used before (the orphan scan looks under them)."""
+    channel = _load_channel(id)
+    return jsonify({"channel_id": channel.id, "limit": MAX_PREVIOUS_BASES,
+                    "items": notify.previous_bases(channel.id)})
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/orphans/scan", methods=["POST"])
+@require_api_key("write")
+def scan_notification_orphans(id):
+    """Preview the retained STD topics nothing desires any more (PRD 17.5)."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    data = _optional_body(NotificationOrphanScanRequest)
+    try:
+        result = notify.scan_orphans(channel.id, data.extra_base)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"orphan_scan": [None, {"count": result["count"]}]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/orphans/clear", methods=["POST"])
+@require_api_key("write")
+def clear_notification_orphans(id):
+    """Clear the orphans a scan listed (or, with no list, every orphan a fresh scan finds)."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    data = _optional_body(NotificationOrphanClearRequest)
+    try:
+        result = notify.clear_orphans(channel.id, data.topics, data.extra_base)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"orphans_cleared": [None, result["topics_cleared"]]})
     return jsonify(result)
 
 
@@ -1583,6 +1645,21 @@ def apply_stream_default_checks(stream_id):
     audit("stream", stream_id, {"default_checks_applied": [None, result["checks_added"]],
                                 "entries_changed": [None, result["entries_changed"]]})
     return jsonify({"stream": stream_out(stream), **result})
+
+
+@mgmt_bp.route("/streams/<stream_id>/notifications/purge", methods=["POST"])
+@require_api_key("write")
+def purge_stream_notifications(stream_id):
+    """Purge every entry of a stream (and its status topic and hub device) from MQTT and
+    Home Assistant, then republish what is still eligible."""
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    try:
+        result = notify.purge_stream(stream.id)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("stream", stream_id, {"notification_purge": [None, {"topics_cleared": result["topics_cleared"]}]})
+    return jsonify(result)
 
 
 @mgmt_bp.route("/streams/<stream_id>/preview", methods=["GET"])

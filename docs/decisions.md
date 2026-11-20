@@ -5,6 +5,65 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-19 — notif-06 MQTT/HA cleanup tools and per-stream topics
+
+- **A stream status topic, not entry topics under a stream path.** Retained
+  `<base>/stream/<stream_id>` carries the stream's status and counts. Moving
+  entry topics to `stream/<id>/entry/<n>/...` was rejected: topics use ids so a
+  rename never moves one, and Convert (a manual entry joining a stream) would
+  have moved a topic and orphaned the old retained message and HA entity. The
+  stream topic is part of `desired_state`, so `full_sync` publishes it and clears
+  it when the stream goes; it is published for every stream whatever its status
+  (a pending stream is useful to an automation) and the commit listener now
+  watches the stream's `status`/`last_*` columns, new/deleted streams and link
+  offers. Cost: a sync (debounced, non-forced) after each snapshot, since
+  `last_snapshot_at` is in the payload.
+- **Stream hub device with two count sensors.** The brief said "an active/missing
+  count sensor"; I made it two sensors (Active entries, Missing entries), the same
+  pattern as the hub's per-state counts, instead of one sensor with the other
+  number as an attribute. Stream entry devices use `via_device` the stream device;
+  the stream device exists only while at least one of its entries is published, so
+  `via_device` never points at a device that has no configs.
+- **Cleanup defaults: delete on, disable off, base change on.** Deleting a channel
+  is the last chance to reach its broker, so the dialog ticks the box; disabling is
+  reversible and the broker is often down when someone disables, so it is unticked;
+  a base change is the only moment the old base is known, so it is ticked. The API
+  mirrors them (`cleanup` default true on `DELETE`, null on `PATCH` meaning on for a
+  base change and off for a disable). A cleanup that can't reach the broker refuses
+  with 409 and changes nothing (the operator picks "Delete anyway" /
+  `cleanup=false`), except that a base change on a channel with no live session
+  (disabled) skips the cleanup silently, otherwise every edit of a disabled channel
+  would error. Existing `DELETE` callers that expect a plain delete now need
+  `cleanup=false` or a connected channel (revision 2 is unreleased, so no bump).
+- **Delete clears `<base>/status` last and suppresses the session's `offline`.**
+  `MqttSession.stop()` publishes `offline` (retained) before disconnecting, which
+  would re-create the topic just cleared; `suppress_offline` skips it. A disable
+  keeps the normal `offline`. The same flag is set for the old base on a base change.
+- **Remembered bases: 5, newest first, per channel, in the `setting` store.** No
+  migration; they only feed the orphan scan, so a short list is enough and an old
+  base the operator no longer remembers can still be typed in. The pair
+  `(base_topic, ha_prefix)` is kept so a prefix change is scanned too. A base the
+  channel switches back to leaves the list.
+- **Orphans are STD-shaped topics only, diffed against every channel on the same
+  broker.** A scan of `<old>/#` would otherwise list another app's topics or a
+  sibling channel's live topics. Only `status`, `summary`, `entry/<id>/state`,
+  `entry/<id>/check/<id>`, `stream/<slug>` and this node's discovery configs are
+  candidates, a base equal to a discovery prefix is refused, and a clear with an
+  explicit list re-checks each topic. Clear takes the previewed list so the operator
+  clears what they saw; clear without a list re-scans.
+- **Stream purge is `purge_entry` batched; "disabled stream, nothing comes back"
+  holds only when its entries are gone.** `_purge_entries` serves both. A disabled
+  stream with `keep` leaves active entries, which stay eligible and are published
+  again, so I did not change eligibility (no new rule that hides entries of
+  disabled streams from MQTT).
+- **Scan and clear are POST + write scope.** They subscribe to the broker for
+  several seconds like the test and purge calls; a GET with such side effects, or a
+  read key doing broker I/O, seemed wrong.
+- **No new module.** The cleanup, remembered bases and orphan scan live in
+  `notify_purge.py`, so the CLAUDE.md module layout needs no new line.
+
+---
+
 ## 2026-11-19 — Stream follow-ups from the first live test (inv-06)
 
 - **Link matching compares host.** Operators put a device's hostname in the add

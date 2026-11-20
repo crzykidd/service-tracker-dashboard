@@ -792,6 +792,7 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          notification_form=notification_form,
          ha_entries=ServiceEntry.active().options(joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
          ha_discovery_on=any(c['config'].get('ha_discovery') for c in notification_channels_out),
+         notifications_enabled=any(c['enabled'] for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
@@ -846,12 +847,25 @@ def _notification_form_data(form):
 @is_admin_required
 def save_notification_channel():
     """Create (no `channel_id`) or update an MQTT channel. A blank password keeps
-    the stored one; the clear box removes it. The password never leaves the server."""
+    the stored one; the clear box removes it. The password never leaves the server.
+
+    On an update that changes the base topic (or the discovery prefix / device prefix
+    with discovery on), `cleanup_old_base` clears what the old values left on the
+    broker first (PRD 17.5); when the broker can't be reached nothing is saved and the
+    form comes back so the operator can untick it."""
     name, enabled, config, secret = _notification_form_data(request.form)
     raw_id = (request.form.get('channel_id') or '').strip()
+    cleanup_failed = False
     if raw_id:
         channel = db.get_or_404(NotificationChannel, int(raw_id) if raw_id.isdigit() else 0)
-        _, errors = notify.update_channel(channel, name=name, enabled=enabled, config=config, secret=secret)
+        try:
+            _, errors = notify.update_channel(
+                channel, name=name, enabled=enabled, config=config, secret=secret,
+                cleanup_old_base=request.form.get('cleanup_old_base') == '1')
+        except PurgeError as exc:
+            cleanup_failed = True
+            errors = [{'field': 'cleanup', 'message': f"{exc.message} Nothing was saved: untick "
+                       "\"Remove the old topics from the broker\" to save anyway."}]
     else:
         channel, errors = notify.create_channel(name, 'mqtt', enabled, config,
                                                 None if secret is notify.UNSET else secret)
@@ -859,7 +873,7 @@ def save_notification_channel():
         for e in errors:
             flash(f"Notification channel: {e['field']} {e['message']}", "danger")
         form = {'id': raw_id, 'name': name, 'enabled': enabled, **config}
-        return _render_settings(notification_form=form, status=400)
+        return _render_settings(notification_form=form, status=409 if cleanup_failed else 400)
     logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
     flash(f"✅ Notification channel '{channel.name}' saved.", "success")
     return redirect(url_for('dashboard.settings', section='notifications'))
@@ -888,25 +902,55 @@ def save_ha_entries():
     return redirect(url_for('dashboard.settings', section='notifications'))
 
 
+def _wants_json():
+    return request.accept_mimetypes.best_match(['application/json', 'text/html']) == 'application/json'
+
+
+def _channel_action_result(call, success):
+    """Run a channel change that may clean the broker first. JSON for the Settings
+    dialog (which then reloads to show the flash); a flash and a redirect otherwise."""
+    try:
+        message = success(call())
+    except PurgeError as exc:
+        if _wants_json():
+            return jsonify({'ok': False, 'message': exc.message}), exc.status
+        flash(exc.message, 'danger')
+        return redirect(url_for('dashboard.settings', section='notifications'))
+    flash(message, 'success')
+    if _wants_json():
+        return jsonify({'ok': True, 'message': message})
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
 @dashboard_bp.route('/settings/notifications/<int:id>/toggle', methods=['POST'])
 @login_required
 @is_admin_required
 def toggle_notification_channel(id):
+    """Enable or disable a channel. Disabling can first remove the channel's data from
+    its broker (`cleanup=1`, off by default)."""
     channel = db.get_or_404(NotificationChannel, id)
-    notify.update_channel(channel, enabled=not channel.enabled)
-    flash(f"Notification channel '{channel.name}' {'enabled' if channel.enabled else 'disabled'}.", "success")
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    cleanup = request.form.get('cleanup') == '1'
+    return _channel_action_result(
+        lambda: notify.update_channel(channel, enabled=not channel.enabled, cleanup_disable=cleanup),
+        lambda _r: f"Notification channel '{channel.name}' {'enabled' if channel.enabled else 'disabled'}"
+                   f"{' and removed from the broker' if cleanup and not channel.enabled else ''}.")
 
 
 @dashboard_bp.route('/settings/notifications/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required
 def delete_notification_channel(id):
+    """Delete a channel. `cleanup=1` (the dialog's default) removes its retained topics,
+    discovery configs and status first; when the broker can't be reached nothing is
+    deleted and the dialog offers "Delete anyway" (`cleanup=0`)."""
     channel = db.get_or_404(NotificationChannel, id)
     name = channel.name
-    notify.delete_channel(channel)
-    flash(f"Deleted notification channel '{name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    cleanup = request.form.get('cleanup') == '1'
+
+    def done(cleared):
+        extra = (f" and removed {cleared['topics_cleared']} topics from the broker" if cleared else '')
+        return f"Deleted notification channel '{name}'{extra}."
+    return _channel_action_result(lambda: notify.delete_channel(channel, cleanup=cleanup), done)
 
 
 @dashboard_bp.route('/settings/notifications/test', methods=['POST'])
@@ -941,6 +985,26 @@ def purge_notification_channel(id):
     channel = db.get_or_404(NotificationChannel, id)
     republish = request.form.get('republish', '') not in ('', '0', 'false')
     return _purge_response(notify.purge_channel, channel.id, republish)
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/orphans/scan', methods=['POST'])
+@login_required
+@is_admin_required
+def scan_notification_orphans(id):
+    """List the retained STD topics nothing desires any more (nothing is cleared)."""
+    channel = db.get_or_404(NotificationChannel, id)
+    return _purge_response(notify.scan_orphans, channel.id,
+                           (request.form.get('extra_base') or '').strip() or None)
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/orphans/clear', methods=['POST'])
+@login_required
+@is_admin_required
+def clear_notification_orphans(id):
+    """Clear the listed orphans (`topic` fields from the scan)."""
+    channel = db.get_or_404(NotificationChannel, id)
+    return _purge_response(notify.clear_orphans, channel.id, request.form.getlist('topic'),
+                           (request.form.get('extra_base') or '').strip() or None)
 
 
 @dashboard_bp.route('/edit/<int:id>/purge-notifications', methods=['POST'])
@@ -1976,6 +2040,16 @@ def stream_default_checks_apply(slug):
           f"{result['entries_changed']} of {result['entries']} active "
           f"entr{'y' if result['entries'] == 1 else 'ies'} of '{stream.display_name}'.", "success")
     return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/purge-notifications', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_purge_notifications(slug):
+    """Purge this stream's entries from MQTT and Home Assistant, then republish what is
+    still eligible. Posted with fetch; the counts show inline."""
+    stream = _stream_or_404(slug)
+    return _purge_response(notify.purge_stream, stream.id)
 
 
 @dashboard_bp.route('/settings/streams/<slug>/blocks/<int:block_id>/unblock', methods=['POST'])

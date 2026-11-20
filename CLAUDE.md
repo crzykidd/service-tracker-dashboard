@@ -326,9 +326,10 @@ rule as register: STD ships a schema change before any sidecar sends it.
   never delete. STD makes no outbound calls while applying.
 - **`ingest` keys open only the two ingest routes**, bound to the key that
   created the stream. `scope_allows("ingest", "read" | "write")` must stay false.
-- **Stream entries (`source = stream`) are never touched by register adoption,
-  `find_duplicate` or the restore clash checks.** They are unique by
-  `(stream_id, stream_key)`.
+- **Stream entries (`source = stream`) are never touched by register adoption
+  or the restore clash checks.** They are unique by `(stream_id, stream_key)`.
+  `find_duplicate` does see them on purpose: adding a host-less manual entry
+  with a stream entry's name is rejected as a duplicate (one device, one entry).
 - **Snapshot PUTs are not audited**; operator status changes, cleanups,
   unblocks and link answers are.
 
