@@ -30,6 +30,7 @@ from datetime import datetime
 
 from sqlalchemy import func
 
+import entry_rules
 from check_form import new_service_check, validate_service_check
 from extensions import db
 from models import (
@@ -580,15 +581,22 @@ def entry_stats(stream):
                                   ServiceEntry.inventory_missing.is_(True)), 1), else_=0)))
         .filter(ServiceEntry.stream_id == stream.id).one())
     total, active, missing = (int(v or 0) for v in row)
-    return {"total": total, "active": active, "deleted": total - active, "missing": missing}
+    linked = (db.session.query(func.count(ServiceEntry.id))
+              .filter(ServiceEntry.stream_id == stream.id, ServiceEntry.stream_linked.is_(True),
+                      ServiceEntry.deleted_at.is_(None)).scalar())
+    return {"total": total, "active": active, "deleted": total - active, "missing": missing,
+            "linked": int(linked or 0)}
 
 
 def customised_entries(stream):
     """Active entries the operator changed (renamed, grouped, described, extra
     checks, published to Home Assistant): `[{"id", "name", "reasons"}]`. The
-    cleanup dialog lists them by name before anything is removed."""
+    cleanup dialog lists them by name before anything is removed. Linked entries
+    (`stream_linked`) are left out: cleanup unlinks them, see `linked_entries`."""
     out = []
     for entry in ServiceEntry.active().filter_by(stream_id=stream.id).order_by(ServiceEntry.id):
+        if entry.stream_linked:
+            continue          # the operator's entry: cleanup unlinks it, nothing is lost
         reasons = []
         if entry.name_source == NAME_SOURCE_UI_EDIT:
             reasons.append("renamed")
@@ -605,6 +613,15 @@ def customised_entries(stream):
         if reasons:
             out.append({"id": entry.id, "name": entry.container_name, "reasons": reasons})
     return out
+
+
+def linked_entries(stream):
+    """Active entries that were manual entries linked to this stream:
+    `[{"id", "name", "host"}]` (`host` is what unlinking restores). Cleanup never
+    deletes these; it unlinks them."""
+    return [{"id": e.id, "name": e.container_name, "host": e.pre_link_host}
+            for e in ServiceEntry.active().filter_by(stream_id=stream.id, stream_linked=True)
+            .order_by(ServiceEntry.id)]
 
 
 def unmatched_items(stream):
@@ -667,16 +684,61 @@ def _become_manual(entry):
     entry.stream_key = None
     entry.inventory_missing = False
     entry.name_source = None
+    entry.stream_linked = False
+    entry.pre_link_host = None
+
+
+def _unlink_locked(entry, block=False, actor=None):
+    """`unlink_entry` without the lock or the commit (the caller holds `_LOCK`).
+    Returns `{"host": restored host | None, "host_restored": bool, "host_clash": bool,
+    "blocked": bool}`; `host_clash` means the pre-link host was not restored because
+    `(host, name)` is taken."""
+    stream_pk, key = entry.stream_id, entry.stream_key
+    host = entry.pre_link_host
+    if host and entry_rules.find_duplicate(host, entry.container_name, exclude_id=entry.id):
+        host = None          # (host, name) is taken: stay hostless rather than clash
+    wanted = entry.pre_link_host
+    blocked = False
+    if block and stream_pk is not None and key is not None and not InventoryBlock.query.filter_by(
+            stream_id=stream_pk, key=key).first():
+        db.session.add(InventoryBlock(
+            stream_id=stream_pk, key=key, name=(entry.container_name or "")[:128],
+            ip=entry.ip, blocked_at=datetime.utcnow(), blocked_by=(actor or "")[:80] or None))
+        blocked = True
+    _become_manual(entry)
+    entry.host = host
+    return {"host": host, "host_restored": bool(wanted) and host == wanted,
+            "host_clash": bool(wanted) and host != wanted, "blocked": blocked}
+
+
+def unlink_entry(entry, block=False, actor=None):
+    """A stream entry goes back to being a manual entry, keeping its id, history,
+    checks and settings. A linked entry gets its pre-link host back (unless
+    `(host, name)` is now taken, then it stays hostless: `host_clash` is true
+    and `host` null); a stream-created entry simply becomes manual. With `block`
+    the item key joins the stream's block list so no snapshot re-creates or
+    re-offers it; without, the next snapshot may offer the link again. Commits."""
+    with _LOCK:
+        if entry.stream_id is None or entry.source != SOURCE_STREAM:
+            raise StreamError(409, "Only a stream entry can be unlinked.", {"entry_id": entry.id})
+        result = _unlink_locked(entry, block, actor)
+        db.session.commit()
+        return result
 
 
 def _cleanup_entries(stream, cleanup):
-    """Soft delete or hard delete the stream's entries; returns the counts."""
-    counts = {"entries": 0, "kept": 0, "soft_deleted": 0, "purged": 0}
+    """Soft delete or hard delete the stream's entries; returns the counts. Linked
+    entries (manual entries that joined the stream) are never deleted: with
+    `soft_delete` and `purge` they are unlinked and counted in `unlinked`."""
+    counts = {"entries": 0, "kept": 0, "soft_deleted": 0, "purged": 0, "unlinked": 0}
     entries = _stream_entries(stream)
     counts["entries"] = len(entries)
     stamp = datetime.now()
     for entry in entries:
-        if cleanup == CLEANUP_PURGE:
+        if entry.stream_linked and cleanup != CLEANUP_KEEP:
+            _unlink_locked(entry)
+            counts["unlinked"] += 1
+        elif cleanup == CLEANUP_PURGE:
             hard_delete_entry(entry)
             counts["purged"] += 1
         elif cleanup == CLEANUP_SOFT_DELETE:
@@ -725,7 +787,12 @@ def delete(stream, cleanup=CLEANUP_KEEP):
         counts = _cleanup_entries(stream, cleanup)
         if cleanup != CLEANUP_PURGE:
             for entry in _stream_entries(stream):
-                _become_manual(entry)
+                if entry.stream_linked:      # `keep`: the host comes back too
+                    _unlink_locked(entry)
+                    counts["unlinked"] += 1
+                    counts["kept"] -= 1
+                else:
+                    _become_manual(entry)
         counts["offers_removed"], counts["blocks_cleared"] = offers, blocks
         db.session.flush()
         db.session.delete(stream)      # its blocks and offers go with it (ORM cascade)
@@ -817,9 +884,12 @@ def unblock(stream, block_id):
 
 
 def _convert(entry, stream, item):
-    """A manual entry joins the stream. It keeps its id, history, checks and
+    """A manual entry joins the stream (and is marked `stream_linked`, with its old
+    host in `pre_link_host`, so cleanup unlinks rather than deletes it). It keeps its id, history, checks and
     `ha_publish`. Its name is the operator's, so snapshots no longer write it. Its
     host is cleared: stream entries have none (the stream reports the address)."""
+    entry.pre_link_host = entry.host
+    entry.stream_linked = True
     entry.host = None
     entry.source = SOURCE_STREAM
     entry.stream_id = stream.id

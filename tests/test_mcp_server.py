@@ -43,7 +43,7 @@ WRITE_TOOLS = {
     "delete_notification_channel", "update_notification_channel", "scan_notification_orphans",
     "clear_notification_orphans", "update_stream", "enable_stream", "disable_stream", "ignore_stream", "delete_stream",
     "unblock_stream_key", "answer_link_offer", "link_entry_to_stream_item",
-    "apply_stream_default_checks",
+    "apply_stream_default_checks", "unlink_entry",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -108,6 +108,8 @@ CALLS = {
     "link_entry_to_stream_item": ({"stream_id": "dhcp", "entry_id": 7, "key": "aa:bb:cc:dd:ee:ff"},
                                   "POST", "/api/v1/streams/dhcp/link", {},
                                   {"entry_id": 7, "key": "aa:bb:cc:dd:ee:ff"}),
+    "unlink_entry": ({"entry_id": 7, "block": True}, "POST", "/api/v1/entries/7/unlink", {},
+                     {"block": True}),
     "create_manual_entry": (
         {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000",
          "checks": [{"target": "nas.lan", "check_type": "ping"}]},

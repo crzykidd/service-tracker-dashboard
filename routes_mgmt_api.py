@@ -51,6 +51,7 @@ from mgmt_schemas import (
     CheckPatch,
     EntryCreate,
     EntryPatch,
+    EntryUnlinkRequest,
     ExposureSettingsPut,
     GroupCreate,
     GroupPatch,
@@ -793,6 +794,27 @@ def delete_entry(id):
         changes["stream_block"] = [None, entry.stream_key]
     audit("entry", id, changes)
     return jsonify(entry_out(_load_entry(id)))
+
+
+@mgmt_bp.route("/entries/<int:id>/unlink", methods=["POST"])
+@require_api_key("write")
+def unlink_entry(id):
+    """A stream entry goes back to being a manual entry (a linked one gets its host back)."""
+    entry = _load_entry(id)
+    audit("entry", id)
+    data = _optional_body(EntryUnlinkRequest)
+    with routes_api._UPSERT_LOCK:
+        if entry.deleted_at is not None:
+            return json_error(409, "This entry is deleted; restore it first.", {"id": id})
+        stream_slug, key = (entry.stream.stream_id if entry.stream else None), entry.stream_key
+        result = streams.unlink_entry(entry, data.block, actor=g.api_key_name)
+    changes = {"source": ["stream", "manual"], "stream": [stream_slug, None]}
+    if result["blocked"]:
+        changes["stream_block"] = [None, key]
+    if result["host"]:
+        changes["host"] = [None, result["host"]]
+    audit("entry", id, changes)
+    return jsonify({"entry": entry_out(_load_entry(id)), **result})
 
 
 @mgmt_bp.route("/entries/<int:id>/restore", methods=["POST"])

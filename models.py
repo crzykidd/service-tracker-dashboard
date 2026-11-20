@@ -176,6 +176,11 @@ class ServiceEntry(db.Model):
     attributes = db.Column(db.JSON, nullable=True)
     inventory_missing = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     name_source = db.Column(db.String(16), nullable=True)
+    # A manual entry that joined a stream (Convert / accept / Link) belongs to the
+    # operator: stream cleanup unlinks it instead of deleting it, and `pre_link_host`
+    # is the host it had before the join (restored on unlink; NULL when unknown).
+    stream_linked = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    pre_link_host = db.Column(db.String(100), nullable=True)
     stream = db.relationship('InventoryStream', backref=db.backref('entries', lazy=True))
     link_offers = db.relationship(
         'StreamLinkOffer',

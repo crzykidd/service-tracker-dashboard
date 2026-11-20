@@ -5,6 +5,38 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-19 — inv-07 linked entries are the operator's; cleanup unlinks them
+
+- **Linked entries are unlinked, never deleted, by cleanup.** A manual entry that
+  joined a stream (Convert / accept / link) carries the operator's history, checks
+  and settings, so `soft_delete` / `purge` (disable) and every delete option
+  unlink it. Disable `keep` leaves it attached. The flag is `stream_linked`, set
+  by `_convert`, not inferred from `name_source` (a renamed stream-created entry
+  is also `ui_edit`, and is not the operator's in this sense).
+- **Backfill heuristic.** No created timestamp exists, so for rows linked before
+  the migration: per stream, `name_source = 'ui_edit'` and `id` below the stream's
+  smallest `name_source = 'stream'` id means linked (the stream's own entries are
+  created after a pre-existing manual one). It misses an entry linked after
+  the stream created its first entry (higher id; it stays unmarked and is treated
+  as the stream's, the old behavior), and wrongly marks a stream-created entry
+  renamed while holding the lowest id, which errs on the safe side (unlinked, not
+  deleted). `pre_link_host` stays NULL for them (host unknown).
+- **Unlink restores the host, unless it would clash.** `find_duplicate` is
+  checked (soft-deleted rows count, as for restore); on a clash the host stays
+  NULL and the result carries `host_clash` rather than failing the cleanup.
+- **Already soft-deleted linked entries are unlinked, not purged**, so a purge
+  never removes anything that was the operator's; they stay in Settings → Deleted
+  as manual entries.
+- **Linked entries are left out of `customised_entries()`** (the "lose these
+  settings" warning would be false) and get their own list in the dialog;
+  `entry_stats()` gains `linked`.
+- **No `API_REVISION` bump.** Revision 2 is unreleased; the unlink route and the
+  additive fields ride in it, as notif-06 did.
+- **Unlink lives at `/entries/{id}/unlink`**, not under `/streams`, because it
+  acts on one entry and works for any stream entry. The edit-page UI is a
+  `<details>` with two submit buttons rather than the JS delete popover, since
+  that popover is wired to the delete flow.
+
 ## 2026-11-19 — notif-06 MQTT/HA cleanup tools and per-stream topics
 
 - **A stream status topic, not entry topics under a stream path.** Retained

@@ -119,6 +119,10 @@ class StreamDisableRequest(_Request):
     clear_blocks: bool = False            # purge only: also empty the block list
 
 
+class EntryUnlinkRequest(_Request):
+    block: bool = False                   # also block the item key so no snapshot re-adds or re-offers it
+
+
 class StreamLinkRequest(_Request):
     entry_id: int                         # an active manual entry (its host, if any, is cleared)
     key: str                              # an unmatched key of the stream's latest snapshot
@@ -495,6 +499,7 @@ class InventoryOut(TypedDict):
     attributes: Any
     missing: bool                    # absent from the stream's latest snapshot
     name_source: str | None          # "stream" | "ui_edit" (renamed in STD)
+    linked: bool                     # was a manual entry linked to the stream; cleanup unlinks it, never deletes it
 
 
 class EntryOut(TypedDict):
@@ -773,6 +778,7 @@ class StreamEntryStatsOut(TypedDict):
     active: int
     deleted: int
     missing: int                     # active entries absent from the latest snapshot
+    linked: int                      # active entries that were manual entries linked to the stream
 
 
 class StreamDefaultChecksOut(TypedDict):
@@ -828,8 +834,17 @@ class StreamCleanupOut(TypedDict):
     kept: int
     soft_deleted: int
     purged: int
+    unlinked: int                    # linked manual entries that went back to manual (never deleted)
     offers_removed: int
     blocks_cleared: int
+
+
+class EntryUnlinkOut(TypedDict):
+    entry: EntryOut                  # now a manual entry
+    blocked: bool                    # the item key was put on the stream's block list
+    host_restored: bool              # a linked entry got its pre-link host back
+    host_clash: bool                 # the pre-link host was left empty because (host, name) is now taken
+    host: str | None
 
 
 class StreamDisableOut(TypedDict):

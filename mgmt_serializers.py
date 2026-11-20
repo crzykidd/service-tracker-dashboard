@@ -102,6 +102,7 @@ def inventory_out(entry: ServiceEntry) -> InventoryOut | None:
         "attributes": entry.attributes,
         "missing": bool(entry.inventory_missing),
         "name_source": entry.name_source,
+        "linked": bool(entry.stream_linked),
     }
 
 

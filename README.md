@@ -643,6 +643,7 @@ token.
 | GET | `/api/v1/entries/{id}` | read | Get one entry in full |
 | PATCH | `/api/v1/entries/{id}` | write | Edit an entry |
 | DELETE | `/api/v1/entries/{id}` | write | Delete an entry (soft) or remove it for good |
+| POST | `/api/v1/entries/{id}/unlink` | write | Unlink a stream entry (back to a manual entry) |
 | POST | `/api/v1/entries/{id}/restore` | write | Restore a deleted entry |
 | GET | `/api/v1/entries/{id}/checks` | read | List an entry's checks |
 | POST | `/api/v1/entries/{id}/checks` | write | Add a service check |
@@ -770,8 +771,14 @@ document.
    from Settings → Deleted) or **purge** (gone for good). The stored snapshot is
    kept when you disable, so Preview and Enable still work. Entries you
    customised (renamed, grouped, described, with an icon, checks or Home
-   Assistant) are listed by name. Disable with purge can also clear the block
-   list; deleting a stream always removes its blocks and link offers.
+   Assistant) are listed by name. Manual entries you linked to the stream are
+   never deleted: soft delete and purge (and deleting the stream) turn them back
+   into manual entries with their old host. Disable with purge can also clear the
+   block list; deleting a stream always removes its blocks and link offers.
+6. A stream entry's edit page has **Unlink from stream…**: the entry becomes a
+   manual entry again (a linked one gets its old host back). **Allow
+   re-offering** lets a later snapshot offer the link again; **Don't re-add**
+   blocks the item.
 6. **Blocked** lists items you deleted with "Don't re-add", with **Unblock**.
    **Link offers** lists manual entries that match a new item, with **Accept**
    and **Decline**.
@@ -835,7 +842,11 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/jso
 - **Disabling or deleting a stream** takes `cleanup`: `keep` (entries stay, no
   longer updated; deleting the stream turns them into manual entries),
   `soft_delete` (restorable from Settings → Deleted) or `purge` (gone for good).
-  The stored snapshot is kept when disabling.
+  The stored snapshot is kept when disabling. Entries that were manual entries
+  linked to the stream (`inventory.linked`) are never deleted: `soft_delete` and
+  `purge` unlink them (back to manual, old host restored; counted in
+  `result.unlinked`). `POST /api/v1/entries/{id}/unlink` (`{"block": bool}`) does
+  the same for one entry.
 - Snapshot posts are not written to the audit log; changes you make to a
   stream are. Limits: 5,000 items and 2 MiB per snapshot.
 

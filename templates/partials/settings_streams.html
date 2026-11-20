@@ -265,6 +265,16 @@
       <label class="flex items-center text-sm mb-3 stream-clear-blocks hidden">
         <input type="checkbox" name="clear_blocks" value="1" class="mr-2"> Also clear the block list ({{ row.blocks|length }})
       </label>
+      {% if row.linked %}
+      <div class="text-sm mb-3 p-3 rounded bg-gray-900 border border-gray-700 stream-linked">
+        <p class="font-medium mb-1">{{ row.linked|length }} linked entr{{ 'y' if row.linked|length == 1 else 'ies' }}
+          <span class="text-gray-400 font-normal">(manual entries you linked to this stream)</span></p>
+        <p class="text-gray-300">{{ row.linked|length }} linked entr{{ 'y goes' if row.linked|length == 1 else 'ies go' }} back to manual entries (with their host); they are never deleted, whichever option you pick.</p>
+        <ul class="list-disc ml-5 text-gray-300">
+          {% for l in row.linked %}<li>{{ l.name }}{% if l.host %} <span class="text-xs text-gray-500">(host {{ l.host }})</span>{% endif %}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
       {% if row.customised %}
       <div class="text-sm mb-3 p-3 rounded bg-gray-900 border border-gray-700 stream-customised">
         <p class="font-medium mb-1">{{ row.customised|length }} customised entr{{ 'y' if row.customised|length == 1 else 'ies' }} <span class="text-gray-400 font-normal">(renamed, grouped, described, with an icon, checks or Home Assistant; soft delete and purge lose these settings or hide them)</span></p>

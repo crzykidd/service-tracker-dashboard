@@ -252,6 +252,7 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
         <strong>{{ entry.stream.display_name if entry.stream else 'its stream' }}</strong>. Read-only.
         {% if entry.inventory_missing %}<span class="text-amber-300">This item is missing from the latest snapshot.</span>{% endif %}
       </p>
+      {% if entry.stream_linked %}<p class="text-xs text-dashboard-secondary mb-4" id="stream-linked-note">Linked from a manual entry{% if entry.pre_link_host %} (host <code>{{ entry.pre_link_host }}</code>, restored if you unlink){% endif %}. Stream cleanup unlinks it and never deletes it.</p>{% endif %}
       <dl class="text-sm text-gray-100 grid grid-cols-[8rem_1fr] gap-y-2">
         <dt class="text-dashboard-secondary">Stream</dt>
         <dd>{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.stream %} <code class="text-gray-400">{{ entry.stream.stream_id }}</code>{% endif %}</dd>
@@ -268,6 +269,22 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
           {% else %}<span class="text-xs italic text-dashboard-secondary">None.</span>{% endif %}
         </dd>
       </dl>
+      <details class="mt-4" id="stream-unlink">
+        <summary class="btn-secondary px-4 py-2 rounded-lg text-sm inline-block cursor-pointer">Unlink from stream…</summary>
+        <form method="POST" action="{{ url_for('dashboard.unlink_entry_from_stream', id=entry.id) }}" class="mt-3 text-sm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="ref" value="{{ ref }}">
+          <p class="text-xs text-dashboard-secondary mb-3">
+            This becomes a manual entry again, keeping its history, checks and settings{% if entry.stream_linked and entry.pre_link_host %} and its host <code>{{ entry.pre_link_host }}</code>{% endif %}.
+            <strong>Allow re-offering</strong>: the next snapshot may offer to link it again.
+            <strong>Don't re-add</strong>: the stream will not add or offer this item (Settings → Streams → Blocked).
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button type="submit" name="block" value="0" class="btn-secondary px-4 py-2 rounded-lg text-sm">Allow re-offering</button>
+            <button type="submit" name="block" value="1" class="btn-secondary px-4 py-2 rounded-lg text-sm">Don't re-add</button>
+          </div>
+        </form>
+      </details>
     </div>
     {% endif %}
 

@@ -112,7 +112,7 @@ Read (any key): `list_entries`, `get_entry`, `health_summary`,
 versions of this script and of your STD, and whether they match).
 
 Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
-(soft by default), `restore_entry`, `add_check`, `update_check`, `delete_check`,
+(soft by default), `unlink_entry`, `restore_entry`, `add_check`, `update_check`, `delete_check`,
 `run_checks`, `upsert_group`, `set_widget`, `remove_widget`,
 `set_exposure_settings`, `test_notification_channel`, `purge_notification_channel`,
 `purge_entry_notifications`, `purge_stream_notifications`, `delete_notification_channel`,

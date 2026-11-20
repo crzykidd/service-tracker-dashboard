@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Linked entries are yours: stream cleanup unlinks them, never deletes them.**
+  A manual entry you linked to a stream (Convert, accepting an offer, **Link to
+  stream item…** or the API) goes back to being a manual entry, with the host it
+  had before, when you disable a stream with soft delete or purge, or delete a
+  stream with any option. The Disable…/Delete… dialog lists them and says "N
+  linked entries go back to manual entries (with their host); they are never
+  deleted." Entries the stream created itself behave as before, and Disable with
+  keep still leaves everything attached.
+- **Unlink from stream.** A stream entry's edit page has **Unlink from
+  stream…**: **Allow re-offering** (a later snapshot may offer to link it again)
+  or **Don't re-add** (the item is blocked). The entry keeps its history, checks
+  and settings; a linked entry gets its old host back, unless another entry now
+  has that host and name (it stays without a host and you are told). The stream
+  info box says "Linked from a manual entry". In the API: `POST
+  /api/v1/entries/{id}/unlink` (body `{"block": bool}`), entries report
+  `inventory.linked`, stream disable/delete report `unlinked`; MCP tool
+  `unlink_entry`. A database migration adds two columns to entries; entries
+  linked before this release are detected by their id order (a manual entry
+  linked earlier has a lower id than the stream's own entries), with their old
+  host unknown.
 - **Deleting a notification channel cleans its broker.** The Delete dialog
   offers **Remove this channel's data from the broker first** (ticked by
   default): the retained STD topics, the Home Assistant discovery configs and

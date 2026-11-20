@@ -1877,6 +1877,7 @@ def _streams_context(preview_slug=None):
             'stream': stream,
             'stats': streams.entry_stats(stream),
             'customised': streams.customised_entries(stream),
+            'linked': streams.linked_entries(stream),
             'blocks': InventoryBlock.query.filter_by(stream_id=stream.id).order_by(InventoryBlock.id).all(),
             'offers': [{'offer': o, 'entry_name': names.get(o.entry_id, '?')} for o in offers],
             'item_count': len(stream.snapshot) if stream.snapshot is not None else None,
@@ -2110,6 +2111,34 @@ def link_entry_to_stream(id):
         return redirect(back)
     logger.info(f"Entry {id} linked to stream '{slug}' by {current_user.username}.")
     flash(f"Linked '{entry.container_name}' to stream '{stream.display_name}'.", "success")
+    return redirect(back)
+
+
+@dashboard_bp.route('/edit/<int:id>/stream-unlink', methods=['POST'])
+@login_required
+@is_admin_required
+def unlink_entry_from_stream(id):
+    """Unlink a stream entry: it becomes a manual entry again. `block` also keeps the
+    stream from re-adding or re-offering the item."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    ref = request.form.get('ref') or None
+    back = url_for('dashboard.edit_entry', id=id, ref=ref)
+    try:
+        result = streams.unlink_entry(entry, _truthy(request.form.get('block')),
+                                      actor=current_user.username)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return redirect(back)
+    logger.info(f"Entry {id} unlinked from its stream by {current_user.username}.")
+    msg = f"Unlinked '{entry.container_name}': it is a manual entry again."
+    if result['host_restored']:
+        msg += f" Its host '{result['host']}' is back."
+    elif result['host_clash']:
+        msg += " Its old host was left empty because another entry now uses that host and name."
+    if result['blocked']:
+        msg += " The stream will not add or offer it again (Settings → Streams → Blocked)."
+    flash(msg, "success")
     return redirect(back)
 
 

@@ -395,6 +395,11 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
                               params={"permanent": permanent or None, "block": block or None})
 
     @write_tool
+    def unlink_entry(entry_id: int, block: bool = False) -> dict:
+        """Unlink a stream entry: it becomes a manual entry again, keeping its id, history, checks and settings. An entry that was a manual entry linked to the stream gets its old host back (unless that host and name are now taken: it stays hostless; host_clash says which). block=true also blocks the item's key so no snapshot re-creates or re-offers it (unblock_stream_key undoes it); without it the next snapshot may offer the link again. Returns {entry, blocked, host_restored, host_clash, host}."""
+        return client.request("POST", f"/entries/{entry_id}/unlink", json={"block": block})
+
+    @write_tool
     def restore_entry(entry_id: int) -> dict:
         """Restore a soft-deleted entry."""
         return client.request("POST", f"/entries/{entry_id}/restore")
@@ -575,7 +580,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @write_tool
     def disable_stream(stream_id: str, cleanup: str = "keep", clear_blocks: bool = False) -> dict:
-        """Disable an enabled stream: it stops applying snapshots (they are still stored). cleanup decides what happens to its entries: keep (they stay, no longer updated), soft_delete (all soft-deleted; re-enabling restores them) or purge (hard delete, plus the link offers; irreversible). clear_blocks=true (purge only) also empties the block list. The stored snapshot is kept in every mode. Returns {stream, cleanup, result}."""
+        """Disable an enabled stream: it stops applying snapshots (they are still stored). cleanup decides what happens to its entries: keep (they stay, no longer updated), soft_delete (all soft-deleted; re-enabling restores them) or purge (hard delete, plus the link offers; irreversible). Entries that were manual entries linked to the stream (inventory.linked) are never deleted by soft_delete or purge: they are unlinked (back to manual with their old host) and counted in result.unlinked. clear_blocks=true (purge only) also empties the block list. The stored snapshot is kept in every mode. Returns {stream, cleanup, result}."""
         return client.request("POST", f"/streams/{stream_id}/disable",
                               json={"cleanup": cleanup, "clear_blocks": clear_blocks})
 
@@ -586,7 +591,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @write_tool
     def delete_stream(stream_id: str, cleanup: str = "keep") -> dict:
-        """Delete an inventory stream and its blocks and link offers. cleanup: keep (entries become manual entries), soft_delete (entries are soft-deleted and become manual, restorable) or purge (hard delete; irreversible). A sidecar that keeps posting recreates the stream as pending."""
+        """Delete an inventory stream and its blocks and link offers. cleanup: keep (entries become manual entries), soft_delete (entries are soft-deleted and become manual, restorable) or purge (hard delete; irreversible). Linked entries (inventory.linked: manual entries that joined the stream) are never deleted: soft_delete and purge unlink them (back to manual, keeping their old host, counted in result.unlinked) and keep makes them manual with their host restored. A sidecar that keeps posting recreates the stream as pending."""
         return client.request("DELETE", f"/streams/{stream_id}", params={"cleanup": cleanup})
 
     @write_tool

@@ -62,7 +62,10 @@ _LIMIT = Param("limit", {"type": "integer", "minimum": 1, "maximum": 1000, "defa
 _OFFSET = Param("offset", {"type": "integer", "minimum": 0, "default": 0}, "Rows to skip.")
 _PAGE = (_LIMIT, _OFFSET)
 _CLEANUP = ("`keep` (entries stay and are no longer updated), `soft_delete` (every entry is soft-deleted "
-            "and can be restored) or `purge` (hard delete, plus the link offers; the stored snapshot is kept)")
+            "and can be restored) or `purge` (hard delete, plus the link offers; the stored snapshot is kept). "
+            "Entries that were manual entries linked to the stream (`inventory.linked`) are never deleted: "
+            "`soft_delete` and `purge` unlink them (back to manual, with their old host) and count them in "
+            "`unlinked`")
 
 _PATCH_NOTE = (
     "Every field is optional. A field that is **absent** is left alone; a field sent as "
@@ -114,6 +117,15 @@ OPERATIONS: tuple = (
        description="By default the entry is soft-deleted and can be restored. "
                    "`?permanent=true` removes an already deleted entry for good. "
                    "`?block=true` (a stream entry, first delete only) also blocks its key."),
+    Op("POST", "/entries/{id}/unlink", "write", "Unlink a stream entry (back to a manual entry)", S.EntryUnlinkOut,
+       request=S.EntryUnlinkRequest, errors=(404, 409),
+       description="The body is optional. The entry keeps its id, history, checks and settings and becomes a "
+                   "manual entry. One that was a manual entry linked to the stream gets its pre-link host "
+                   "back (unless that host and name are now taken: it stays hostless and `host_clash` "
+                   "is true); a stream-created entry just becomes manual. `block` (default false) also puts "
+                   "the item key on the stream's block list so no snapshot re-creates or re-offers it; "
+                   "without it the next snapshot may offer the link again. 409 for an entry that is not "
+                   "a stream entry or is deleted."),
     Op("POST", "/entries/{id}/restore", "write", "Restore a deleted entry", S.EntryOut,
        errors=(404, 409)),
 
