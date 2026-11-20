@@ -17,7 +17,10 @@ from models import ApiKey
 KEY_PREFIX = "std"
 SCOPE_READ = "read"
 SCOPE_WRITE = "write"
-SCOPES = (SCOPE_READ, SCOPE_WRITE)
+# `ingest` (PRD 18.5) is for inventory sidecars: it opens only the stream ingest
+# routes and fails every `read` and `write` check.
+SCOPE_INGEST = "ingest"
+SCOPES = (SCOPE_READ, SCOPE_WRITE, SCOPE_INGEST)
 NAME_MAX = 64
 
 
@@ -50,9 +53,11 @@ def verify(presented):
 
 
 def scope_allows(key_scope, required):
-    """`write` includes `read`."""
+    """`write` includes `read` and `ingest`; an `ingest` key satisfies only `ingest`."""
     if required == SCOPE_READ:
         return key_scope in (SCOPE_READ, SCOPE_WRITE)
+    if required == SCOPE_INGEST:
+        return key_scope in (SCOPE_INGEST, SCOPE_WRITE)
     return key_scope == required
 
 

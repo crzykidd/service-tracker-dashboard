@@ -1,6 +1,14 @@
 {# Health detail panel shell (PRD 13.7). Context: `entry`; optional `autoload`
    (load on page load instead of when opened). The body is filled by
    static/js/health_detail.js from GET /service/<id>/health. #}
+{% if not hide_facts and (entry.ip or entry.mac or entry.network) %}
+<div class="health-detail-facts" data-entry-facts>
+  {% if entry.stream_id and entry.stream %}<span><span class="health-fact-label">Stream</span> {{ entry.stream.display_name }}</span>{% endif %}
+  {% if entry.ip %}<span><span class="health-fact-label">IP</span> {{ entry.ip }}</span>{% endif %}
+  {% if entry.mac %}<span><span class="health-fact-label">MAC</span> <code>{{ entry.mac }}</code></span>{% endif %}
+  {% if entry.network %}<span><span class="health-fact-label">Network</span> {{ entry.network }}</span>{% endif %}
+</div>
+{% endif %}
 <div class="health-detail" data-health-detail
      data-entry-id="{{ entry.id }}"
      data-url="{{ url_for('dashboard.entry_health_detail', id=entry.id) }}"

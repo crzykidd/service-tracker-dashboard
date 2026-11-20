@@ -20,6 +20,7 @@ import importlib
 import json
 import logging
 import os
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -33,6 +34,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func
 
 import checker
+import notify
 from extensions import db
 from image_utils import fetch_icon_if_missing
 from models import (
@@ -144,8 +146,13 @@ def _global_health_timeout(app):
 
 def record_check_result(check, result, now_utc=None):
     """Store `result` (a checker.ProbeResult) as a HealthResult and update
-    the check's cached `last_*` state. Scheduler thread only. Caller commits."""
+    the check's cached `last_*` state. Scheduler thread only. Caller commits.
+
+    Returns True when this is the check's first result or `ok` changed: the
+    caller collects those check ids and hands them to `notify.publish_changes`
+    after the commit (PRD 17.3)."""
     now_utc = now_utc or datetime.utcnow()
+    previous_ok = check.last_ok
     db.session.add(HealthResult(
         check_id=check.id,
         ts=now_utc,
@@ -164,6 +171,7 @@ def record_check_result(check, result, now_utc=None):
     # http, or the certificate could not be read, so a stale date never shows.
     check.last_cert_expires_at = getattr(result, "cert_expires_at", None)
     check.consecutive_failures = 0 if result.ok else (check.consecutive_failures or 0) + 1
+    return previous_ok is None or previous_ok != result.ok
 
 
 def _check_interval(check, global_interval):
@@ -262,14 +270,15 @@ def select_due_jobs(app, now_utc=None, skip_ids=()):
     return jobs_due
 
 
-def run_container_checks(app, now_utc=None, now_local=None):
+def run_container_checks(app, now_utc=None, now_local=None, changed=None):
     """Evaluate every due Container check and record the results.
 
     Runs on the scheduler thread, inline: the evaluation is a read of the
     entry's docker_status / last_api_update, so there is no network and no
     pool submission. Due like any check (interval, or a pending run request
     from a register that changed the status). Locked, manual and soft-deleted
-    entries are skipped. Returns the number of results written.
+    entries are skipped. Returns the number of results written; ids of checks
+    whose `ok` changed are appended to `changed` when given.
     """
     now_utc = now_utc or datetime.utcnow()
     global_interval = _int_setting(app, "url_healthcheck_interval", DEFAULT_URL_INTERVAL)
@@ -297,7 +306,9 @@ def run_container_checks(app, now_utc=None, now_local=None):
         ):
             continue
         ok, message = evaluate_container(entry, now_local)
-        record_check_result(check, checker.ProbeResult(ok=ok, latency_ms=None, message=message), now_utc)
+        if record_check_result(check, checker.ProbeResult(ok=ok, latency_ms=None, message=message), now_utc) \
+                and changed is not None:
+            changed.append(check.id)
         ran.append(check.id)
         written += 1
     if written:
@@ -327,8 +338,9 @@ class HealthScheduler:
         self.executor = executor or ThreadPoolExecutor(max_workers=workers, thread_name_prefix="health-check")
         self.in_flight = {}  # check_id -> Future
 
-    def collect(self):
-        """Write the results of every finished future. Returns the count."""
+    def collect(self, changed=None):
+        """Write the results of every finished future. Returns the count; ids of
+        checks whose `ok` changed are appended to `changed` when given."""
         written = 0
         for check_id, future in list(self.in_flight.items()):
             if not future.done():
@@ -342,7 +354,8 @@ class HealthScheduler:
             check = db.session.get(HealthCheck, check_id)
             if check is None:  # deleted while in flight
                 continue
-            record_check_result(check, result)
+            if record_check_result(check, result) and changed is not None:
+                changed.append(check_id)
             entry = check.service_entry
             logger.info("%s - %s: %s", entry.container_name if entry else "?", check.kind,
                         "ok" if result.ok else f"failing ({result.message})")
@@ -362,13 +375,17 @@ class HealthScheduler:
         """One scheduler pass inside its own app context. Returns
         (results_written, checks_submitted)."""
         with self.app.app_context():
+            changed = []
             try:
-                written = self.collect()
+                written = self.collect(changed)
                 submitted = self.submit_due(now_utc)
-                written += run_container_checks(self.app, now_utc)
+                written += run_container_checks(self.app, now_utc, changed=changed)
             except Exception:
                 db.session.rollback()
                 raise
+            if changed:
+                # After the commits; builds dicts here, enqueues, never blocks.
+                notify.publish_changes(changed)
             return written, submitted
 
     def shutdown(self):
@@ -525,6 +542,38 @@ def purge_api_audit(app, now_utc=None):
     return deleted
 
 
+BACKUP_SUFFIXES = ("-std_backup.yml", "-std_backup.sqlite3")
+
+
+def _write_sqlite_snapshot(backup_dir):
+    """Consistent copy of the live database via sqlite3's online backup API
+    (WAL-safe; never a file copy). Failures are logged, never raised."""
+    path = os.path.join(backup_dir, datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3"))
+    tmp = path + ".tmp"
+    src = dst = None
+    try:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raw = db.engine.raw_connection()
+        try:
+            src = raw.driver_connection
+            dst = sqlite3.connect(tmp)
+            src.backup(dst)
+        finally:
+            if dst is not None:
+                dst.close()
+            raw.close()
+        os.replace(tmp, path)
+        logger.info(f"🌙 Scheduled database snapshot saved to {path}")
+    except Exception as e:
+        logger.error(f"❌ Scheduled database snapshot failed: {e}")
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+
+
 def run_scheduled_backup(app):
     with app.app_context():
         backup_dir = app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
@@ -545,12 +594,14 @@ def run_scheduled_backup(app):
         except Exception as e:
             logger.error(f"❌ Scheduled backup failed: {e}")
 
+        _write_sqlite_snapshot(backup_dir)
+
         # Cleanup
         now = time.time()
         cutoff = now - (days_to_keep * 86400)
         removed = 0
         for fname in os.listdir(backup_dir):
-            if fname.endswith("-std_backup.yml"):
+            if fname.endswith(BACKUP_SUFFIXES):
                 fpath = os.path.join(backup_dir, fname)
                 if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
                     try:
@@ -706,6 +757,17 @@ def start_background_workers(app):
         name='Compact old raw health successes into hourly ranges',
         replace_existing=True
     )
+    scheduler.add_job(
+        notify.safety_net_sync,
+        IntervalTrigger(minutes=notify.SYNC_SAFETY_NET_MINUTES),
+        id='notify_state_sync_job',
+        name='Republish retained notification state (safety net)',
+        replace_existing=True
+    )
     scheduler.start()
+
+    # Notification publisher: its own thread and queue; it loads the enabled
+    # channels itself and never blocks the checker (PRD 17.2).
+    notify.start(app)
 
     threading.Thread(target=partial(health_check_loop, app), daemon=True, name="health-check-loop").start()

@@ -1,0 +1,352 @@
+{# Settings -> Streams (PRD 18.8). Server-rendered: every action is a CSRF-protected POST
+   to a thin route over streams.py. #}
+{% set _status_cls = {'pending': 'bg-amber-700', 'enabled': 'bg-green-700', 'disabled': 'bg-gray-600', 'ignored': 'bg-gray-700'} %}
+<section id="section-streams" class="section hidden">
+  <h2 class="text-2xl font-semibold mb-2">Inventory streams</h2>
+  <p class="text-gray-400 text-sm mb-4">
+    A stream is a sidecar's inventory (DHCP reservations, a Zigbee bridge, ...) sent to STD with an
+    <strong>ingest</strong> API key (Settings → API). A new stream waits here as <em>pending</em> until you enable it.
+  </p>
+
+  {% for row in stream_rows if row.stream.status == 'pending' %}
+  <div class="mb-4 p-4 bg-amber-900/40 border border-amber-600 rounded text-amber-100 text-sm" data-pending-stream="{{ row.stream.stream_id }}">
+    <strong>New stream waiting:</strong> enable <strong>{{ row.stream.display_name }}</strong> to import
+    {{ row.item_count if row.item_count is not none else 0 }} item{{ '' if row.item_count == 1 else 's' }}.
+    Preview shows what it would do first.
+  </div>
+  {% endfor %}
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="stream-table">
+      <thead class="bg-gray-800 text-gray-400">
+        <tr>
+          <th class="px-3 py-2">Stream</th>
+          <th class="px-3 py-2">Producer</th>
+          <th class="px-3 py-2">Status</th>
+          <th class="px-3 py-2">Last snapshot</th>
+          <th class="px-3 py-2">Items</th>
+          <th class="px-3 py-2">Last counts</th>
+          <th class="px-3 py-2">Entries</th>
+          <th class="px-3 py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="bg-gray-900">
+        <tr class="border-t border-gray-700" id="stream-row-docker">
+          <td class="px-3 py-2"><strong>Docker (register)</strong><div class="text-xs text-gray-500"><code>/api/v1/register</code></div></td>
+          <td class="px-3 py-2">docker-api-notifier</td>
+          <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs text-white bg-green-700">always on</span></td>
+          <td class="px-3 py-2">{% if docker_row.last_register %}{{ docker_row.last_register | time_since }}{% else %}never{% endif %}</td>
+          <td class="px-3 py-2">—</td>
+          <td class="px-3 py-2">—</td>
+          <td class="px-3 py-2">{{ docker_row.count }}</td>
+          <td class="px-3 py-2 text-gray-500 text-xs">read-only</td>
+        </tr>
+        {% for row in stream_rows %}
+        {% set st = row.stream %}
+        <tr class="border-t border-gray-700 {% if st.status == 'pending' %}bg-amber-900/30{% endif %}" id="stream-row-{{ st.stream_id }}" data-stream-status="{{ st.status }}">
+          <td class="px-3 py-2"><strong>{{ st.display_name }}</strong><div class="text-xs text-gray-500"><code>{{ st.stream_id }}</code></div></td>
+          <td class="px-3 py-2">{{ st.producer }} <span class="text-gray-500">{{ st.producer_version }}</span></td>
+          <td class="px-3 py-2">
+            <span class="px-2 py-0.5 rounded text-xs text-white {{ _status_cls.get(st.status, 'bg-gray-600') }}">{{ st.status }}</span>
+            {% if st.last_error %}<div class="text-xs text-red-400 mt-1" title="Last apply error">{{ st.last_error }}</div>{% endif %}
+          </td>
+          <td class="px-3 py-2">{% if st.last_snapshot_at %}{{ st.last_snapshot_at | time_since_utc }}{% else %}never{% endif %}</td>
+          <td class="px-3 py-2">{{ row.item_count if row.item_count is not none else (st.last_item_count if st.last_item_count is not none else '—') }}</td>
+          <td class="px-3 py-2 text-xs">
+            {% if st.status == 'enabled' and st.last_counts %}{% for k, v in st.last_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}
+            {% elif row.would_counts is not none and st.status != 'enabled' %}<span class="text-gray-400 stream-would-counts" title="What enabling the stored snapshot would do (nothing is written)">would: {% for k, v in row.would_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}</span>
+            {% elif st.last_counts %}{% for k, v in st.last_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {{ row.stats.active }} active{% if row.stats.deleted %}, {{ row.stats.deleted }} deleted{% endif %}{% if row.stats.missing %}, {{ row.stats.missing }} missing{% endif %}
+          </td>
+          <td class="px-3 py-2">
+            <div class="flex flex-wrap gap-2 items-center">
+              {% if st.snapshot is not none %}
+              <a href="{{ url_for('dashboard.settings', section='streams', preview=st.stream_id) }}" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Preview</a>
+              {% else %}
+              <span class="text-xs text-gray-500 stream-waiting">Waiting for the next snapshot</span>
+              {% endif %}
+              {% if st.status in ('pending', 'disabled', 'ignored') %}
+              <form method="POST" action="{{ url_for('dashboard.stream_enable', slug=st.stream_id) }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-2 py-1 bg-green-700 hover:bg-green-600 rounded text-white text-xs">Enable</button>
+              </form>
+              {% endif %}
+              {% if st.status in ('pending', 'disabled') %}
+              <form method="POST" action="{{ url_for('dashboard.stream_ignore', slug=st.stream_id) }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Ignore</button>
+              </form>
+              {% endif %}
+              {% if st.status == 'enabled' %}
+              <button type="button" class="stream-dialog-open px-2 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-white text-xs"
+                      data-dialog="stream-dialog-{{ st.stream_id }}" data-mode="disable">Disable…</button>
+              {% endif %}
+              <button type="button" class="stream-dialog-open px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-xs"
+                      data-dialog="stream-dialog-{{ st.stream_id }}" data-mode="delete">Delete…</button>
+              {% if notifications_enabled %}
+              <button type="button" class="stream-notify-purge px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs"
+                      data-url="{{ url_for('dashboard.stream_purge_notifications', slug=st.stream_id) }}"
+                      data-name="{{ st.display_name|e }}"
+                      title="Remove this stream's entries from MQTT and Home Assistant, then publish what is still eligible">Purge MQTT/HA</button>
+              {% endif %}
+            </div>
+            <div class="stream-notify-result text-xs text-gray-300 mt-1" role="status"></div>
+          </td>
+        </tr>
+        <tr class="border-t border-gray-800">
+          <td colspan="8" class="px-3 py-2 bg-gray-900">
+            <details>
+              <summary class="cursor-pointer text-xs text-gray-400">Edit name and network filters
+                {% if st.network_include or st.network_exclude %}<span class="text-gray-500">(filters set)</span>{% endif %}</summary>
+              <form method="POST" action="{{ url_for('dashboard.stream_update', slug=st.stream_id) }}" class="mt-3 grid gap-3 md:grid-cols-3" data-unsaved-guard>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="text-sm">Display name
+                  <input type="text" name="display_name" maxlength="32" required value="{{ st.display_name }}" class="form-input block mt-1 w-full">
+                </label>
+                <label class="text-sm">Only these networks <span class="text-xs text-gray-500">(one per line; empty = all)</span>
+                  <textarea name="network_include" rows="3" class="form-input block mt-1 w-full">{{ (st.network_include or []) | join('\n') }}</textarea>
+                </label>
+                <label class="text-sm">Never these networks <span class="text-xs text-gray-500">(one per line)</span>
+                  <textarea name="network_exclude" rows="3" class="form-input block mt-1 w-full">{{ (st.network_exclude or []) | join('\n') }}</textarea>
+                </label>
+                <div class="md:col-span-3">
+                  <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">Save stream</button>
+                  <span class="text-xs text-gray-500 ml-2">Filters apply at the next snapshot. Entries outside them are not removed.</span>
+                </div>
+              </form>
+            </details>
+            <details class="mt-2" id="stream-checks-{{ st.stream_id }}">
+              <summary class="cursor-pointer text-xs text-gray-400">Default checks
+                {% if st.default_checks %}<span class="text-gray-500">({% if st.default_checks.get('ping') %}ping{% endif %}{% if st.default_checks.get('ping') and st.default_checks.get('tcp_port') %}, {% endif %}{% if st.default_checks.get('tcp_port') %}TCP {{ st.default_checks.get('tcp_port') }}{% endif %})</span>{% endif %}</summary>
+              <form method="POST" action="{{ url_for('dashboard.stream_default_checks', slug=st.stream_id) }}" class="mt-3 flex flex-wrap items-end gap-4" data-unsaved-guard>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="text-sm flex items-center gap-2"><input type="checkbox" name="ping" value="1" {% if st.default_checks and st.default_checks.get('ping') %}checked{% endif %}> Ping the entry's IP</label>
+                <label class="text-sm">TCP port <span class="text-xs text-gray-500">(blank = no TCP check)</span>
+                  <input type="number" name="tcp_port" min="1" max="65535" value="{{ (st.default_checks or {}).get('tcp_port') or '' }}" class="form-input block mt-1 w-32">
+                </label>
+                <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">Save default checks</button>
+              </form>
+              <p class="text-xs text-gray-500 mt-2">New entries of this stream start with these checks, enabled, on their IP (none without an IP). Saving does not change existing entries.</p>
+              <form method="POST" action="{{ url_for('dashboard.stream_default_checks_apply', slug=st.stream_id) }}" class="mt-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs" {% if not st.default_checks %}disabled title="Save default checks first"{% endif %}>Apply to existing entries</button>
+                <span class="text-xs text-gray-500 ml-2">Adds the missing checks to every active entry; an entry that already has a ping (or TCP) check is skipped.</span>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not stream_rows %}
+  <p class="text-gray-400 mt-4" id="stream-empty">No inventory streams yet. Create an ingest key (Settings → API) and point a sidecar at it; its first snapshot appears here as pending.</p>
+  {% endif %}
+
+  {% if preview %}
+  <div class="mt-8" id="stream-preview">
+    <h3 class="text-xl font-semibold mb-1">Preview: {{ preview.stream.display_name }}</h3>
+    <p class="text-sm text-gray-400 mb-3">
+      What applying the stored snapshot ({{ preview.data.item_count }} item{{ '' if preview.data.item_count == 1 else 's' }}) would do. Nothing is written.
+      {% for k, v in preview.data.counts.items() if v %}<span class="ml-2">{{ k|replace('_', ' ') }}: <strong>{{ v }}</strong></span>{% endfor %}
+    </p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow">
+        <thead class="bg-gray-800 text-gray-400"><tr>
+          <th class="px-3 py-2">Name</th><th class="px-3 py-2">Key</th><th class="px-3 py-2">IP</th><th class="px-3 py-2">Network</th><th class="px-3 py-2">Would be</th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-700 bg-gray-900">
+          {% for it in preview['items'] %}
+          <tr>
+            <td class="px-3 py-1">{{ it.name }}</td>
+            <td class="px-3 py-1 font-mono text-xs">{{ it.key }}</td>
+            <td class="px-3 py-1">{{ it.ip or '' }}</td>
+            <td class="px-3 py-1">{{ it.network or '' }}</td>
+            <td class="px-3 py-1"><span class="preview-action" data-action="{{ it.action }}">{{ it.action|replace('_', ' ') }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="px-3 py-2 text-gray-500">The snapshot has no items.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if preview.truncated %}<p class="text-xs text-gray-500 mt-1">Showing the first {{ preview['items']|length }}; {{ preview.truncated }} more not shown.</p>{% endif %}
+    {% if preview.data.missing %}
+    <h4 class="text-sm font-semibold mt-4 mb-1">Entries that would be marked missing ({{ preview.data.missing|length }})</h4>
+    <p class="text-sm text-gray-400">{% for m in preview.data.missing %}{{ m.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Blocked and link offers, per stream ───────────────────────── #}
+  {% set _any_blocks = stream_rows | selectattr('blocks') | list %}
+  {% set _any_offers = stream_rows | selectattr('offers') | list %}
+  <h3 class="text-xl font-semibold mt-10 mb-2">Blocked</h3>
+  <p class="text-gray-400 text-sm mb-3">Items you deleted with “Don't re-add”. Snapshots skip them. Unblocking lets the next snapshot bring the item back.</p>
+  {% if _any_blocks %}
+  <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="stream-blocks">
+    <thead class="bg-gray-800 text-gray-400"><tr><th class="px-3 py-2">Stream</th><th class="px-3 py-2">Name</th><th class="px-3 py-2">Key</th><th class="px-3 py-2">IP</th><th class="px-3 py-2">Blocked</th><th class="px-3 py-2"></th></tr></thead>
+    <tbody class="divide-y divide-gray-700 bg-gray-900">
+      {% for row in _any_blocks %}{% for b in row.blocks %}
+      <tr>
+        <td class="px-3 py-1">{{ row.stream.display_name }}</td>
+        <td class="px-3 py-1">{{ b.name or '' }}</td>
+        <td class="px-3 py-1 font-mono text-xs">{{ b.key }}</td>
+        <td class="px-3 py-1">{{ b.ip or '' }}</td>
+        <td class="px-3 py-1">{{ b.blocked_at | time_since_utc }}{% if b.blocked_by %} by {{ b.blocked_by }}{% endif %}</td>
+        <td class="px-3 py-1 text-right">
+          <form method="POST" action="{{ url_for('dashboard.stream_unblock', slug=row.stream.stream_id, block_id=b.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-xs">Unblock</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-gray-500 text-sm" id="stream-blocks-empty">Nothing is blocked.</p>{% endif %}
+
+  <h3 class="text-xl font-semibold mt-8 mb-2">Link offers</h3>
+  <p class="text-gray-400 text-sm mb-3">A new stream item whose name matches one manual entry (by its name or host). <strong>Accept</strong> turns that manual entry into the stream entry (its host is cleared); <strong>Decline</strong> adds the item as a separate entry.</p>
+  {% if _any_offers %}
+  <table class="w-full text-sm text-left text-gray-300 border border-gray-600 rounded shadow" id="stream-offers">
+    <thead class="bg-gray-800 text-gray-400"><tr><th class="px-3 py-2">Stream</th><th class="px-3 py-2">Stream item</th><th class="px-3 py-2">Manual entry</th><th class="px-3 py-2"></th></tr></thead>
+    <tbody class="divide-y divide-gray-700 bg-gray-900">
+      {% for row in _any_offers %}{% for o in row.offers %}
+      <tr>
+        <td class="px-3 py-1">{{ row.stream.display_name }}</td>
+        <td class="px-3 py-1">{{ o.offer.item.get('name') or o.offer.key }} <span class="font-mono text-xs text-gray-500">{{ o.offer.key }}</span>{% if o.offer.item.get('ip') %} <span class="text-gray-500">{{ o.offer.item.get('ip') }}</span>{% endif %}</td>
+        <td class="px-3 py-1"><a class="text-blue-400 underline" href="{{ url_for('dashboard.edit_entry', id=o.offer.entry_id) }}">{{ o.entry_name }}</a></td>
+        <td class="px-3 py-1 text-right whitespace-nowrap">
+          {% for answer, label, cls in [('accept', 'Accept', 'bg-green-700 hover:bg-green-600'), ('decline', 'Decline', 'bg-gray-700 hover:bg-gray-600')] %}
+          <form method="POST" action="{{ url_for('dashboard.stream_answer_offer', slug=row.stream.stream_id, offer_id=o.offer.id, answer=answer) }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="px-2 py-1 rounded text-white text-xs {{ cls }}">{{ label }}</button>
+          </form>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="text-gray-500 text-sm" id="stream-offers-empty">No open link offers.</p>{% endif %}
+
+  {# ── One cleanup dialog per stream; Disable… and Delete… open it in a mode ── #}
+  {% for row in stream_rows %}
+  {% set st = row.stream %}
+  <dialog id="stream-dialog-{{ st.stream_id }}" class="stream-dialog bg-gray-800 text-gray-200 rounded shadow p-6 max-w-xl w-full"
+          data-disable-action="{{ url_for('dashboard.stream_disable', slug=st.stream_id) }}"
+          data-delete-action="{{ url_for('dashboard.stream_delete', slug=st.stream_id) }}">
+    <form method="POST" action="{{ url_for('dashboard.stream_delete', slug=st.stream_id) }}" class="stream-dialog-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h3 class="text-lg font-semibold text-white mb-2"><span class="stream-dialog-title">Delete</span> stream “{{ st.display_name }}”</h3>
+      <p class="text-sm mb-3 stream-dialog-counts">
+        <strong>{{ row.stats.total }}</strong> entr{{ 'y' if row.stats.total == 1 else 'ies' }}
+        ({{ row.stats.active }} active, {{ row.stats.deleted }} deleted, {{ row.stats.missing }} missing from the latest snapshot),
+        <strong>{{ row.blocks|length }}</strong> blocked item{{ '' if row.blocks|length == 1 else 's' }},
+        <strong>{{ row.offers|length }}</strong> link offer{{ '' if row.offers|length == 1 else 's' }}.
+      </p>
+      <fieldset class="space-y-2 text-sm mb-3">
+        <legend class="font-medium mb-1">What happens to its entries?</legend>
+        <label class="flex items-start gap-2"><input type="radio" name="cleanup" value="keep" checked class="mt-1">
+          <span><strong>Keep</strong>
+            <span class="text-gray-400 stream-keep-delete">: they become manual entries (MAC, IP, network and attributes stay).</span>
+            <span class="text-gray-400 stream-keep-disable">: they stay, but are no longer updated.</span></span></label>
+        <label class="flex items-start gap-2"><input type="radio" name="cleanup" value="soft_delete" class="mt-1">
+          <span><strong>Soft delete</strong> <span class="text-gray-400">: they move to Settings → Deleted and can be restored there.</span></span></label>
+        <label class="flex items-start gap-2"><input type="radio" name="cleanup" value="purge" class="mt-1">
+          <span><strong>Purge</strong> <span class="text-gray-400">: they are deleted permanently, with their history and checks.</span></span></label>
+      </fieldset>
+      <p class="text-xs text-gray-400 mb-3 stream-delete-note">Deleting the stream removes the stream itself, its stored snapshot, its {{ row.blocks|length }} block{{ '' if row.blocks|length == 1 else 's' }} and its {{ row.offers|length }} link offer{{ '' if row.offers|length == 1 else 's' }}, whichever option you pick. A sidecar that keeps posting recreates it as pending.</p>
+      <p class="text-xs text-gray-400 mb-3 stream-disable-note hidden">Purge also removes the stream's {{ row.offers|length }} open link offer{{ '' if row.offers|length == 1 else 's' }} and its last counts. Blocked items stay unless you tick the box below. The stored snapshot is kept in every mode, so you can preview and re-enable without waiting for the sidecar.</p>
+      <label class="flex items-center text-sm mb-3 stream-clear-blocks hidden">
+        <input type="checkbox" name="clear_blocks" value="1" class="mr-2"> Also clear the block list ({{ row.blocks|length }})
+      </label>
+      {% if row.linked %}
+      <div class="text-sm mb-3 p-3 rounded bg-gray-900 border border-gray-700 stream-linked">
+        <p class="font-medium mb-1">{{ row.linked|length }} linked entr{{ 'y' if row.linked|length == 1 else 'ies' }}
+          <span class="text-gray-400 font-normal">(manual entries you linked to this stream)</span></p>
+        <p class="text-gray-300">{{ row.linked|length }} linked entr{{ 'y goes' if row.linked|length == 1 else 'ies go' }} back to manual entries (with their host); they are never deleted, whichever option you pick.</p>
+        <ul class="list-disc ml-5 text-gray-300">
+          {% for l in row.linked %}<li>{{ l.name }}{% if l.host %} <span class="text-xs text-gray-500">(host {{ l.host }})</span>{% endif %}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if row.customised %}
+      <div class="text-sm mb-3 p-3 rounded bg-gray-900 border border-gray-700 stream-customised">
+        <p class="font-medium mb-1">{{ row.customised|length }} customised entr{{ 'y' if row.customised|length == 1 else 'ies' }} <span class="text-gray-400 font-normal">(renamed, grouped, described, with an icon, checks or Home Assistant; soft delete and purge lose these settings or hide them)</span></p>
+        <ul class="list-disc ml-5 text-gray-300">
+          {% for c in row.customised %}<li>{{ c.name }} <span class="text-xs text-gray-500">({{ c.reasons | map('replace', '_', ' ') | join(', ') }})</span></li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <div class="flex justify-end gap-2">
+        <button type="button" class="stream-dialog-cancel px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">Cancel</button>
+        <button type="submit" class="stream-dialog-submit px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white text-sm">Delete stream</button>
+      </div>
+    </form>
+  </dialog>
+  {% endfor %}
+</section>
+<script>
+  (function () {
+    // Disable… and Delete… share one dialog per stream; the mode picks the route, the
+    // wording and whether "also clear the block list" applies (disable + purge only).
+    function sync(dlg) {
+      const mode = dlg.dataset.mode;
+      const purge = dlg.querySelector('input[name=cleanup][value=purge]').checked;
+      dlg.querySelector('.stream-clear-blocks').classList.toggle('hidden', !(mode === 'disable' && purge));
+    }
+    document.querySelectorAll('.stream-dialog-open').forEach(btn => btn.addEventListener('click', () => {
+      const dlg = document.getElementById(btn.dataset.dialog);
+      const disable = btn.dataset.mode === 'disable';
+      dlg.dataset.mode = btn.dataset.mode;
+      dlg.querySelector('form').action = disable ? dlg.dataset.disableAction : dlg.dataset.deleteAction;
+      dlg.querySelector('.stream-dialog-title').textContent = disable ? 'Disable' : 'Delete';
+      dlg.querySelector('.stream-dialog-submit').textContent = disable ? 'Disable stream' : 'Delete stream';
+      dlg.querySelector('.stream-keep-delete').classList.toggle('hidden', disable);
+      dlg.querySelector('.stream-keep-disable').classList.toggle('hidden', !disable);
+      dlg.querySelector('.stream-delete-note').classList.toggle('hidden', disable);
+      dlg.querySelector('.stream-disable-note').classList.toggle('hidden', !disable);
+      sync(dlg);
+      dlg.showModal();
+    }));
+    document.querySelectorAll('.stream-dialog').forEach(dlg => {
+      dlg.querySelectorAll('input[name=cleanup]').forEach(r => r.addEventListener('change', () => sync(dlg)));
+      dlg.querySelector('.stream-dialog-cancel').addEventListener('click', () => dlg.close());
+    });
+  })();
+</script>
+
+{% if notifications_enabled %}
+<script>
+  // Purge MQTT/HA per stream (PRD 17.5): one publisher job for every entry of the stream.
+  document.addEventListener('click', async (event) => {
+    const btn = event.target.closest('.stream-notify-purge');
+    if (!btn) return;
+    if (!confirm('Purge the MQTT topics and Home Assistant devices of every entry of "' + btn.dataset.name +
+                 '" and publish what is still eligible? Home Assistant will recreate their devices.')) return;
+    const out = btn.closest('td').querySelector('.stream-notify-result');
+    btn.disabled = true;
+    out.textContent = 'Purging... (up to 15 seconds)';
+    try {
+      const resp = await fetch(btn.dataset.url, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+      });
+      const data = await resp.json();
+      out.textContent = data.ok
+        ? 'Cleared ' + data.topics_cleared + ' topics for ' + data.entries + ' entr' + (data.entries === 1 ? 'y' : 'ies') +
+          ' on ' + data.channels.length + ' channel(s); republished what is still eligible.'
+        : 'Purge failed: ' + data.message;
+    } catch (err) {
+      out.textContent = 'Purge failed: could not reach STD (' + err + ').';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+{% endif %}

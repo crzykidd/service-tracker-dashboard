@@ -15,6 +15,18 @@ Keys currently in use:
                            layer not present here defaults to
                            "neither" (the synthesizer ignores it).
 
+- `update_check_enabled` / `update_check_interval_hours`
+                           bool (default on) / int >= 1 (default 6): the
+                           GitHub "update available" check (version_check.py).
+
+- `update_check_cache`     dict: last good result (latest_version,
+                           release_url, checked_at, etag) so a restart does
+                           not refetch at once.
+
+- `instance_id`            str: a UUID generated once. Stable identity of this
+                           STD install for MQTT client ids and Home Assistant
+                           unique ids (PRD 17.2). Never changes after creation.
+
 - `exposure_layers_per_host`  dict[str, dict[str, str]]
                               e.g. {"docker-edge": {"traefik": "external"}}
                               Per-host override for `exposure_layers`.
@@ -27,6 +39,7 @@ the homelab workload is low, and a stale-cache bug here would be
 silently wrong rather than silently slow.
 """
 
+import uuid
 from typing import Dict, List
 
 from extensions import db
@@ -37,6 +50,13 @@ DEFAULT_DIRECTION = "neither"
 
 KEY_EXPOSURE_LAYERS = "exposure_layers"
 KEY_EXPOSURE_LAYERS_PER_HOST = "exposure_layers_per_host"
+KEY_UPDATE_CHECK_ENABLED = "update_check_enabled"
+KEY_UPDATE_CHECK_INTERVAL = "update_check_interval_hours"
+KEY_UPDATE_CHECK_CACHE = "update_check_cache"
+KEY_INSTANCE_ID = "instance_id"
+
+DEFAULT_UPDATE_CHECK_ENABLED = True
+DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
 
 
 def _get_value(key: str, default):
@@ -155,3 +175,50 @@ def discovered_hosts() -> List[str]:
         .all()
     )
     return [r[0] for r in rows]
+
+
+def get_update_check_settings():
+    """(enabled, interval_hours) with defaults; a bad stored value falls back."""
+    enabled = _get_value(KEY_UPDATE_CHECK_ENABLED, DEFAULT_UPDATE_CHECK_ENABLED)
+    hours = _get_value(KEY_UPDATE_CHECK_INTERVAL, DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
+    if not isinstance(enabled, bool):
+        enabled = DEFAULT_UPDATE_CHECK_ENABLED
+    if isinstance(hours, bool) or not isinstance(hours, int) or hours < 1:
+        hours = DEFAULT_UPDATE_CHECK_INTERVAL_HOURS
+    return enabled, hours
+
+
+def save_update_check_settings(enabled=None, interval_hours=None) -> None:
+    """Set either value (None = leave alone). Caller validates and commits."""
+    if enabled is not None:
+        _set_value(KEY_UPDATE_CHECK_ENABLED, bool(enabled))
+    if interval_hours is not None:
+        _set_value(KEY_UPDATE_CHECK_INTERVAL, int(interval_hours))
+
+
+def get_update_check_cache() -> dict:
+    raw = _get_value(KEY_UPDATE_CHECK_CACHE, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_update_check_cache(cache: dict) -> None:
+    """Persist the last good update-check result and commit (called from the
+    background thread, which owns its own app context)."""
+    _set_value(KEY_UPDATE_CHECK_CACHE, cache)
+    db.session.commit()
+
+
+def get_instance_id() -> str:
+    """The install's stable UUID, created and committed on first use."""
+    value = _get_value(KEY_INSTANCE_ID, None)
+    if isinstance(value, str) and value:
+        return value
+    value = str(uuid.uuid4())
+    _set_value(KEY_INSTANCE_ID, value)
+    db.session.commit()
+    return value
+
+
+def short_instance_id(instance_id: str) -> str:
+    """The first 8 hex digits, for client ids (`std-1a2b3c4d`)."""
+    return instance_id.replace("-", "")[:8]

@@ -23,9 +23,9 @@
 
       <!-- Host (optional) -->
       <div class="mb-5">
-        <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Host</label>
-        <input type="text" name="host" id="host" maxlength="100" class="input-clean" placeholder="Optional, e.g., server01.example.com" value="{{ entry.get('host', '') }}">
-        <p class="mt-1 text-xs text-gray-500">Leave blank if the entry is not tied to a host. If the notifier later reports a container with the same name and host, it takes over this entry.</p>
+        <label for="host" class="block text-sm font-medium text-gray-400 mb-1">Docker host (optional)</label>
+        <input type="text" name="host" id="host" maxlength="100" class="input-clean" value="{{ entry.get('host', '') }}">
+        <p class="mt-1 text-xs text-gray-500">The machine that runs this container, if the notifier should take this entry over later. Leave blank for a device, VM or anything not running in Docker.</p>
       </div>
 
       <!-- Description -->
@@ -99,6 +99,15 @@
           <label for="locked" class="ml-2 text-sm font-medium text-gray-400">Lock (ignore notifier updates)</label>
         </div>
         <p class="mt-1 text-xs text-gray-500">If checked, a notifier report for the same name and host is ignored instead of taking over this entry.</p>
+      </div>
+
+      <!-- Home Assistant opt-in -->
+      <div class="mb-6">
+        <div class="flex items-center">
+          <input type="checkbox" name="ha_publish" id="ha_publish" class="form-checkbox h-5 w-5 rounded border-gray-600" {% if 'ha_publish' in entry %}checked{% endif %}>
+          <label for="ha_publish" class="ml-2 text-sm font-medium text-gray-400">Publish to Home Assistant</label>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">Only matters when a notification channel has Add to Home Assistant on. Creates a device for this entry and its checks in Home Assistant.</p>
       </div>
 
       <!-- Buttons -->

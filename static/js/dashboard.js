@@ -37,6 +37,9 @@ window.stdPost = function (url, options) {
   function initRefresh() {
     const refreshLabel    = document.getElementById('refreshTimer');
     const refreshDropdown = document.getElementById('refreshInterval');
+    // Only the dashboard views (filter bar) auto-refresh. dashboard.js loads
+    // on every page via base.html, so Settings/Edit must not start the timer.
+    if (!refreshDropdown) return;
     const saved = localStorage.getItem('refreshInterval');
     if (saved !== null) {
       refreshInterval = parseInt(saved, 10);
@@ -287,13 +290,18 @@ window.stdPost = function (url, options) {
     }
   }
 
-  function showDeletePopover(triggerEl, containerName, onConfirm) {
+  /* `opts.stream` (an inventory-stream entry) adds the choice "Allow re-adding" /
+     "Don't re-add"; onConfirm then receives block (true = "Don't re-add"). */
+  function showDeletePopover(triggerEl, containerName, onConfirm, opts) {
     hideDeletePopover();
 
     const pop = document.getElementById('delete-popover');
     if (!pop) return;
+    const isStream = !!(opts && opts.stream);
 
     pop.querySelector('.delete-popover-target').textContent = containerName;
+    const streamHint = pop.querySelector('.delete-popover-stream-hint');
+    if (streamHint) streamHint.classList.toggle('hidden', !isStream);
     pop.classList.remove('hidden');
 
     // Position: fixed, relative to viewport
@@ -319,12 +327,18 @@ window.stdPost = function (url, options) {
     // Wire buttons (clone to drop any previous listeners)
     const oldConfirm = pop.querySelector('.delete-popover-confirm');
     const oldCancel  = pop.querySelector('.delete-popover-cancel');
+    const oldBlock   = pop.querySelector('.delete-popover-block');
     const newConfirm = oldConfirm.cloneNode(true);
     const newCancel  = oldCancel.cloneNode(true);
+    const newBlock   = oldBlock.cloneNode(true);
     oldConfirm.replaceWith(newConfirm);
     oldCancel.replaceWith(newCancel);
+    oldBlock.replaceWith(newBlock);
+    newConfirm.textContent = isStream ? 'Allow re-adding' : 'Confirm';
+    newBlock.classList.toggle('visible', isStream);
 
-    newConfirm.addEventListener('click', () => { hideDeletePopover(); onConfirm(); });
+    newConfirm.addEventListener('click', () => { hideDeletePopover(); onConfirm(false); });
+    newBlock.addEventListener('click', () => { hideDeletePopover(); onConfirm(true); });
     newCancel.addEventListener('click',  hideDeletePopover);
 
     // Click-outside (capture phase so it fires before other handlers)
@@ -340,8 +354,12 @@ window.stdPost = function (url, options) {
   }
 
   /* Shared fetch-delete helper used by tile, drawer, and dashboard row. */
-  function fetchDelete(entryId, onSuccess, onError) {
-    stdPost(`/api/v1/entries/${entryId}/delete`)
+  function fetchDelete(entryId, onSuccess, onError, block) {
+    const opts = block ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ block: true })
+    } : {};
+    stdPost(`/api/v1/entries/${entryId}/delete`, opts)
       .then(r => r.ok ? onSuccess() : onError())
       .catch(onError);
   }
@@ -353,15 +371,15 @@ window.stdPost = function (url, options) {
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        showDeletePopover(this, containerName, () => {
+        showDeletePopover(this, containerName, (block) => {
           fetchDelete(entryId, () => {
             // Remove the tile-wrapper from the DOM
             const drawer  = document.getElementById(`drawer-${entryId}`);
             const wrapper = drawer ? drawer.closest('.tile-wrapper') : null;
             if (wrapper) wrapper.remove();
             closeCurrentDrawer();
-          }, () => alert('Delete failed. Please try again.'));
-        });
+          }, () => alert('Delete failed. Please try again.'), block);
+        }, { stream: this.dataset.stream === '1' });
       });
     });
   }
@@ -373,12 +391,12 @@ window.stdPost = function (url, options) {
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        showDeletePopover(this, containerName, () => {
+        showDeletePopover(this, containerName, (block) => {
           fetchDelete(entryId, () => {
             const wrapper = this.closest('.tile-wrapper');
             if (wrapper) wrapper.remove();
-          }, () => alert('Delete failed. Please try again.'));
-        });
+          }, () => alert('Delete failed. Please try again.'), block);
+        }, { stream: this.dataset.stream === '1' });
       });
     });
   }
@@ -390,12 +408,12 @@ window.stdPost = function (url, options) {
         e.stopPropagation();
         const entryId       = this.dataset.entryId;
         const containerName = this.dataset.containerName;
-        showDeletePopover(this, containerName, () => {
+        showDeletePopover(this, containerName, (block) => {
           fetchDelete(entryId, () => {
             const row = this.closest('tr');
             if (row) row.remove();
-          }, () => alert('Delete failed. Please try again.'));
-        });
+          }, () => alert('Delete failed. Please try again.'), block);
+        }, { stream: this.dataset.stream === '1' });
       });
     });
   }
@@ -490,22 +508,40 @@ window.stdPost = function (url, options) {
     const modal   = document.getElementById('changelog-modal');
     if (!modal) return;
 
+    // Clicking the version in the header opens the same popup for the running version.
+    const versionBtn = document.getElementById('std-version-btn');
+    if (versionBtn) {
+      versionBtn.addEventListener('click', () => {
+        fetch('/api/v1/changelog')
+          .then(r => r.json())
+          .then(data => showModal(data.sections, true))
+          .catch(() => {});
+      });
+    }
+
     const currentVersion = document.body.dataset.stdVersion || '';
     if (!currentVersion || currentVersion === 'unknown') return;
 
     const STORAGE_KEY = 'std:lastSeenVersion';
     const lastSeen    = localStorage.getItem(STORAGE_KEY);
 
-    function showModal(sections) {
-      if (!sections || sections.length === 0) return;
+    function showModal(sections, always) {
+      if (!sections || sections.length === 0) {
+        if (!always) return;
+        sections = [];
+      }
 
       const body = document.getElementById('changelog-content');
-      body.innerHTML = sections.map(s => `
+      if (sections.length === 0) {
+        body.innerHTML = '<p>No release notes for this version.</p>';
+      } else {
+        body.innerHTML = sections.map(s => `
         <div class="changelog-version-block">
           <p class="changelog-version-header">v${s.version} — ${s.date}</p>
           ${s.html}
         </div>
       `).join('');
+      }
 
       modal.classList.remove('hidden');
       document.addEventListener('keydown', onEsc);
@@ -547,6 +583,31 @@ window.stdPost = function (url, options) {
     }
   }
 
+  /* ── Update-available link ───────────────────────────── */
+  // The server decides; this only re-reads the cached status once an hour so a
+  // page left open (auto-refresh off) still learns about a new release.
+  function initUpdateCheck() {
+    const header = document.getElementById('std-header');
+    const link = document.getElementById('std-update-link');
+    if (!header || !link || header.dataset.updateEnabled !== 'true') return;
+    function poll() {
+      fetch('/api/update-status', { headers: { 'Accept': 'application/json' } })
+        .then(r => r.ok ? r.json() : null)
+        .then(s => {
+          if (!s) return;
+          if (s.update_available && s.release_url) {
+            link.href = s.release_url;
+            document.getElementById('std-update-version').textContent = s.latest_version;
+            link.classList.remove('hidden');
+          } else {
+            link.classList.add('hidden');
+          }
+        })
+        .catch(() => {});
+    }
+    setInterval(poll, 60 * 60 * 1000);
+  }
+
   /* Expose popover API for pages with inline script (e.g. edit_entry.html) */
   window.showDeletePopover = showDeletePopover;
 
@@ -557,6 +618,7 @@ window.stdPost = function (url, options) {
     initFilter();
     initFilterBarMobile();
     initChangelogModal();
+    initUpdateCheck();
 
     const view = document.body.dataset.view;
     if (view === 'tiled') {

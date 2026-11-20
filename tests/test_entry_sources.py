@@ -334,3 +334,45 @@ def test_restore_of_old_backup_without_source_uses_backfill_rule(app, admin_clie
         assert nohost.source == "manual" and nohost.host is None
         # A notifier entry needs a host, so that record is skipped.
         assert ServiceEntry.query.filter_by(container_name="nohost-registered").count() == 0
+
+
+# --- is_docker and source filters (PRD 18.3) --------------------------------------
+
+
+def test_is_docker_means_notifier_source(app):
+    with app.app_context():
+        assert _make("d").is_docker is True
+        m = _make("m", source="manual")
+        assert m.is_docker is False and m.is_manual is True
+        # Not Docker -> never stale, even with no last_api_update.
+        assert m.is_docker_status_stale is False
+
+
+def test_source_filters_accept_every_valid_source(app):
+    from models import VALID_SOURCES
+    from view_helpers import matches_source, normalize_source_filter
+
+    with app.app_context():
+        entries = {s: _make(f"e-{s}", source=s) for s in VALID_SOURCES}
+        for source in VALID_SOURCES:
+            assert normalize_source_filter(source.upper()) == source
+            for other, entry in entries.items():
+                assert matches_source(entry, source) is (other == source)
+        for entry in entries.values():
+            assert matches_source(entry, "all") is True
+        assert normalize_source_filter("bogus") == "all"
+        assert normalize_source_filter(None) == "all"
+
+
+def test_restore_unknown_source_becomes_manual(app, admin_client):
+    base = {"last_updated": "2026-01-01 00:00:00", "last_api_update": "2026-01-01 00:00:00"}
+    records = [
+        {**base, "container_name": "future-nohost", "source": "stream"},
+        {**base, "host": "h", "container_name": "future-host", "source": "stream"},
+    ]
+    assert _restore(admin_client, records).status_code == 302
+    with app.app_context():
+        # Unknown source restores as manual, so no host is required.
+        nohost = _get("future-nohost")
+        assert nohost.source == "manual" and nohost.host is None
+        assert _get("future-host").source == "manual"

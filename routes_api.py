@@ -34,6 +34,7 @@ from extensions import csrf, db
 from image_utils import parse_bool, resolve_image_metadata
 from models import (
     SOURCE_NOTIFIER,
+    SOURCE_STREAM,
     Group,
     ServiceEntry,
     ensure_container_check,
@@ -50,6 +51,22 @@ unauthorized_log_tracker = {}
 # Throttle for repeated icon-download failures. Used by resolve_image_metadata.
 failed_icon_cache = {}  # image_icon -> last_failed_time
 RETRY_INTERVAL = timedelta(minutes=60)
+
+# User-Agents already logged on register: log each distinct one once per
+# restart, never per request. Capped so a hostile client can't grow it.
+_SEEN_UAS = set()
+_SEEN_UAS_LOCK = threading.Lock()
+_SEEN_UAS_MAX = 100
+
+
+def _log_new_user_agent():
+    ua = (request.headers.get("User-Agent") or "")[:200] or "(none)"
+    with _SEEN_UAS_LOCK:
+        if ua in _SEEN_UAS or len(_SEEN_UAS) >= _SEEN_UAS_MAX:
+            return
+        _SEEN_UAS.add(ua)
+    logger.info("Register client seen: User-Agent %r", ua)
+
 
 # Serializes the upsert critical section across all register calls.
 # See upsert_service docstring for the rationale.
@@ -155,7 +172,7 @@ def upsert_service(canonical, app):
 
     Entry source (v0.7.0): a matching `manual` row that is not locked is
     adopted (source -> "notifier") and then updated as usual. New rows are
-    created as "notifier".
+    created as "notifier". Rows with source "stream" are never matched.
 
     Locked (is_static) rows short-circuit with a 200 + skipped body — that
     behavior is unchanged from v0.4.x.
@@ -191,11 +208,14 @@ def upsert_service(canonical, app):
         # deleted (host, container_name) resurrects it. Prefer an active
         # row if both an active and a deleted one exist (deleted_at NULL
         # sorts first via the IS NOT NULL ordering key).
+        # Stream entries (source 'stream', PRD 18) belong to an inventory stream and are
+        # never matched, adopted or updated by register.
         entry = (
             ServiceEntry.query.filter_by(
                 host=canonical['host'],
                 container_name=canonical['container_name'],
             )
+            .filter(ServiceEntry.source != SOURCE_STREAM)
             .order_by(ServiceEntry.deleted_at.isnot(None), ServiceEntry.id)
             .first()
         )
@@ -372,6 +392,8 @@ def api_v1_register():
     auth_failure = _check_bearer_auth("/api/v1/register")
     if auth_failure is not None:
         return auth_failure
+
+    _log_new_user_agent()
 
     raw = request.get_json(silent=True)
     if not isinstance(raw, dict):

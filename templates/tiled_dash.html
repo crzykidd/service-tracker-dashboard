@@ -46,7 +46,7 @@
                     {% set _is_good_docker = ('running' in _docker_status_lower and 'unhealthy' not in _docker_status_lower) or 'healthy' in _docker_status_lower %}
                     {% set _is_bad_docker  = 'exited' in _docker_status_lower or 'dead' in _docker_status_lower or 'unhealthy' in _docker_status_lower or 'restarting' in _docker_status_lower or 'removing' in _docker_status_lower or 'paused' in _docker_status_lower %}
 
-                    {% if entry.is_manual %}
+                    {% if not entry.is_docker %}
                       {% set _docker_class   = 'status-icon-muted' %}
                       {% set _docker_tooltip = 'Manual entry' %}
                     {% elif not entry.last_api_update %}
@@ -131,10 +131,12 @@
                                     {% endif %}
 
                                     {# Source icon: Docker status for notifier entries, a link icon for manual ones #}
-                                    {% if not entry.is_manual %}
+                                    {% if entry.is_docker %}
                                         <span class="status-icon {{ _docker_class }}" title="{{ _docker_tooltip }}">
                                             <i class="ti ti-brand-docker" aria-hidden="true"></i>
                                         </span>
+                                    {% elif entry.is_stream %}
+                                        {% include "partials/stream_icon.html" %}
                                     {% else %}
                                         <span class="status-icon status-icon-muted" title="{{ _docker_tooltip }}{% if entry.description %} — {{ entry.description }}{% endif %}">
                                             <i class="ti ti-link" aria-hidden="true"></i>
@@ -187,6 +189,7 @@
                                         <button class="status-icon status-icon-trash tile-trash-btn"
                                                 data-entry-id="{{ entry.id }}"
                                                 data-container-name="{{ entry.container_name }}"
+data-stream="{{ 1 if entry.is_stream else 0 }}"
                                                 title="Delete {{ entry.container_name }}">
                                             <i class="ti ti-trash" aria-hidden="true"></i>
                                         </button>
@@ -261,7 +264,7 @@
                             {% endif %}
 
                             {# Docker status (notifier entries only) #}
-                            {% if not entry.is_manual %}
+                            {% if entry.is_docker %}
                             <div class="drawer-row">
                                 <span class="drawer-label">Docker</span>
                                 <span class="drawer-value">
@@ -273,6 +276,18 @@
                                       <span class="text-gray-400 text-xs ml-1">— <code>{{ entry.image_tag }}</code></span>
                                     {% endif %}
                                 </span>
+                            </div>
+                            {% endif %}
+
+                            {# Inventory stream facts (stream entries only) #}
+                            {% if entry.is_stream %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Stream</span>
+                                <span class="drawer-value">{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.inventory_missing %} <span class="text-gray-400 text-xs">(missing from latest snapshot)</span>{% endif %}</span>
+                            </div>
+                            <div class="drawer-row">
+                                <span class="drawer-label">Network</span>
+                                <span class="drawer-value">{{ entry.ip or '—' }}{% if entry.mac %} <code class="text-gray-400 text-xs">{{ entry.mac }}</code>{% endif %}{% if entry.network %} <span class="text-gray-400 text-xs">— {{ entry.network }}</span>{% endif %}</span>
                             </div>
                             {% endif %}
 
@@ -375,7 +390,7 @@
                             {# Health detail (loaded when the drawer opens) #}
                             <div class="drawer-row drawer-row-health">
                                 <span class="drawer-label">Health</span>
-                                <span class="drawer-value">{% include "partials/health_detail.html" %}</span>
+                                <span class="drawer-value">{% with hide_facts=true %}{% include "partials/health_detail.html" %}{% endwith %}</span>
                             </div>
 
                             <hr class="drawer-divider">
@@ -390,7 +405,8 @@
                                 {% if not entry.is_static %}
                                 <button class="drawer-btn drawer-btn-delete"
                                         data-entry-id="{{ entry.id }}"
-                                        data-container-name="{{ entry.container_name }}">
+                                        data-container-name="{{ entry.container_name }}"
+data-stream="{{ 1 if entry.is_stream else 0 }}">
                                     <i class="ti ti-trash" aria-hidden="true"></i> Delete
                                 </button>
                                 {% endif %}

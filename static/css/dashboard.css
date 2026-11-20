@@ -962,6 +962,8 @@
 .health-checknow-btn:hover:not(:disabled) { border-color: var(--color-border-focus); color: #fff; }
 .health-checknow-btn:disabled { opacity: 0.6; cursor: default; }
 .health-detail-note { color: var(--color-text-muted); font-style: italic; }
+.health-detail-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 8px; font-size: 0.8rem; }
+.health-fact-label { color: var(--color-text-muted); margin-right: 2px; }
 .health-detail-error { color: var(--color-status-bad); font-style: normal; }
 
 .health-check { padding: 8px 0; border-top: 1px solid var(--color-border); }
@@ -1093,3 +1095,12 @@ tr.group-entry.entry-health-degraded > td:first-child { border-left: 3px solid v
 .tile.entry-health-down:not(.tile-open),
 .compact-tile.entry-health-down,
 tr.group-entry.entry-health-down > td:first-child { border-left: 3px solid var(--color-status-bad); }
+
+/* ── Inventory streams (PRD 18.8) ───────────────────────── */
+.stream-pill { background-color: #1d4ed8; max-width: 9rem; }
+.stream-pill-name { overflow: hidden; text-overflow: ellipsis; }
+.stream-pill-missing { opacity: 0.6; }
+.stream-missing { color: #9ca3af; font-size: 0.72rem; font-style: italic; white-space: nowrap; }
+.compact-end .stream-missing-text { display: none; }
+.delete-popover-block { display: none; }
+.delete-popover-block.visible { display: inline-block; }

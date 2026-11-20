@@ -18,6 +18,7 @@ Every POST/PATCH/PUT/DELETE that reached a valid key is audited by the
 blueprint's `after_request` hook, including 4xx responses.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta
 from functools import wraps
@@ -33,11 +34,15 @@ import entry_rules
 import health_history
 import jobs
 import mgmt_openapi
+import notify
 import routes_api
 import settings_loader
 import settings_store
+import streams
 import synthesizer
+import version_check
 import widget_rules
+from api_version import API_REVISION, FEATURES
 from extensions import csrf, db
 from health_state import entry_health
 from image_utils import fetch_icon_if_missing
@@ -46,37 +51,58 @@ from mgmt_schemas import (
     CheckPatch,
     EntryCreate,
     EntryPatch,
+    EntryUnlinkRequest,
     ExposureSettingsPut,
     GroupCreate,
     GroupPatch,
+    NotificationChannelCreate,
+    NotificationChannelPatch,
+    NotificationOrphanClearRequest,
+    NotificationOrphanScanRequest,
+    NotificationPurgeRequest,
     ServiceCheckCreate,
+    StreamDisableRequest,
+    StreamLinkRequest,
+    StreamPatch,
+    StreamSnapshotPut,
+    UpdateCheckSettingsPut,
     WidgetPut,
 )
 from mgmt_serializers import (
+    block_out,
     check_out,
     entry_detail_out,
     entry_out,
     group_out,
+    notification_channel_out,
+    offer_out,
+    stream_out,
     widget_instance_out,
     widget_out,
 )
 from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_SERVICE,
+    NAME_SOURCE_UI_EDIT,
     SOURCE_MANUAL,
-    SOURCE_NOTIFIER,
     URL_CHECK_KINDS,
+    VALID_SOURCES,
     ApiAudit,
     Group,
     HealthCheck,
     HealthResult,
+    InventoryBlock,
+    InventoryStream,
+    NotificationChannel,
     ServiceEntry,
+    StreamLinkOffer,
     Widget,
     WidgetValue,
     check_counts,
     ensure_url_checks,
     hard_delete_entry,
 )
+from notify_purge import MAX_PREVIOUS_BASES, PurgeError
 from view_helpers import VALID_STATUS_FILTERS, matches_status
 
 logger = logging.getLogger(__name__)
@@ -107,7 +133,8 @@ def json_error(status, message, details=None):
 
 _STATUS_MESSAGES = {
     400: "Bad request", 401: "Unauthorized", 403: "Forbidden", 404: "Not found",
-    405: "Method not allowed", 409: "Conflict", 422: "Unprocessable entity",
+    405: "Method not allowed", 409: "Conflict", 413: "Request body too large",
+    422: "Unprocessable entity",
 }
 
 
@@ -126,6 +153,11 @@ def _api_error(exc):
 
 def abort(status, message):
     raise ApiError(status, message)
+
+
+@mgmt_bp.errorhandler(streams.StreamError)
+def _stream_error(exc):
+    return json_error(exc.status, exc.message, exc.details)
 
 
 def _http_error(exc):
@@ -270,6 +302,8 @@ def audit_response(response):
     key_id = g.get("api_key_id")
     if key_id is None or request.method not in WRITE_METHODS:
         return response
+    if request.endpoint == "mgmt_api.put_stream_snapshot":
+        return response     # a snapshot arrives every few minutes; the stream row keeps the counts (PRD 18.5)
     info = g.get("audit") or {}
     try:
         db.session.add(ApiAudit(
@@ -306,13 +340,31 @@ def openapi_spec():
     return jsonify(mgmt_openapi.build_spec(str(version)))
 
 
+def _build_facts():
+    """commit / channel / build_time / update, shared by whoami and config (additive fields)."""
+    info = current_app.config.get("VERSION_INFO") or {}
+    running = str(info.get("version") or "unknown")
+    return {"commit": info.get("commit") or "unknown",
+            "channel": info.get("channel") or "local",
+            "build_time": info.get("build_time") or "unknown",
+            "update": version_check.api_update(running)}
+
+
+@mgmt_bp.route("/meta", methods=["GET"])
+def meta():
+    """Contract revision and features. Public, no DB access: no more than the headers say."""
+    version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
+    return jsonify({"std_version": str(version), "api_revision": API_REVISION,
+                    "features": list(FEATURES)})
+
+
 @mgmt_bp.route("/whoami", methods=["GET"])
 @require_api_key("read")
 def whoami():
     key = g.api_key
     version = (current_app.config.get("VERSION_INFO") or {}).get("version") or "unknown"
     return jsonify({"name": key.name, "prefix": key.prefix, "scope": key.scope,
-                    "version": str(version)})
+                    "version": str(version), "api_revision": API_REVISION, **_build_facts()})
 
 
 # --- shared helpers --------------------------------------------------------------
@@ -331,9 +383,10 @@ _CHECK_FIELD_TO_VALIDATOR = {
     "cert_min_days": "cert_min_days",
 }
 _URL_CHECK_PATCHABLE = {"enabled", "mode", "interval_seconds", "timeout_seconds", "verify_tls",
-                        "cert_min_days"}
-_CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds"}
-_NOT_NULL = {"enabled", "verify_tls", "mode", "check_type", "target"}
+                        "cert_min_days", "ha_exclude"}
+_CONTAINER_CHECK_PATCHABLE = {"enabled", "interval_seconds", "ha_exclude"}
+# `ha_exclude` is not a probe setting: it has no validator, the routes write it directly.
+_NOT_NULL = {"enabled", "verify_tls", "mode", "check_type", "target", "ha_exclude"}
 
 
 def _prefixed(problems, prefix):
@@ -391,6 +444,7 @@ def _page(items, total, limit, offset):
 def _entry_query():
     return ServiceEntry.query.options(
         joinedload(ServiceEntry.group),
+        joinedload(ServiceEntry.stream),
         selectinload(ServiceEntry.checks),
     )
 
@@ -426,12 +480,14 @@ def _entry_snapshot(entry):
         "icon": entry.image_icon or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
+        "ha_publish": bool(entry.ha_publish),
     }
 
 
 def _check_snapshot(check):
     cfg = check.to_config()
     cfg.pop("kind", None)
+    cfg["ha_exclude"] = bool(check.ha_exclude)
     return cfg
 
 
@@ -477,8 +533,8 @@ def list_entries():
     if status not in VALID_STATUS_FILTERS:
         abort(400, f"'status' must be one of: {', '.join(VALID_STATUS_FILTERS)}.")
     source = (request.args.get("source") or "all").strip().lower()
-    if source not in ("all", "notifier", "manual"):
-        abort(400, "'source' must be one of: all, notifier, manual.")
+    if source != "all" and source not in VALID_SOURCES:
+        abort(400, f"'source' must be one of: all, {', '.join(VALID_SOURCES)}.")
     include_deleted, deleted_only = _bool_arg("include_deleted"), _bool_arg("deleted_only")
 
     query = _entry_query()
@@ -487,7 +543,7 @@ def list_entries():
     elif not include_deleted:
         query = query.filter(ServiceEntry.deleted_at.is_(None))
     if source != "all":
-        query = query.filter(ServiceEntry.source == (SOURCE_MANUAL if source == "manual" else SOURCE_NOTIFIER))
+        query = query.filter(ServiceEntry.source == source)
     if request.args.get("host"):
         query = query.filter(ServiceEntry.host == request.args["host"])
     if request.args.get("group"):
@@ -548,6 +604,8 @@ def create_entry():
         d = _settings_dict(settings, {k: v for k, v in _CHECK_FIELD_TO_VALIDATOR.items()
                                       if k in _URL_CHECK_PATCHABLE})
         values, problems = check_form.validate_url_check_settings(d)
+        if settings.ha_exclude is not None:
+            values["ha_exclude"] = settings.ha_exclude
         url_values[which] = values
         errors += _prefixed(problems, f"url_checks.{which}.")
     service_values = []
@@ -556,6 +614,7 @@ def create_entry():
                        f"a service can have at most {check_form.MAX_SERVICE_CHECKS} service checks"})
     for i, c in enumerate(data.checks[:check_form.MAX_SERVICE_CHECKS]):
         values, problems = check_form.validate_service_check(_service_check_input(c))
+        values["ha_exclude"] = c.ha_exclude
         service_values.append(values)
         errors += _prefixed(problems, f"checks.{i}.")
     if errors:
@@ -581,6 +640,7 @@ def create_entry():
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(), group_id=group.id if group else None,
             image_icon=icon, sort_priority=data.sort_priority, is_static=data.locked,
+            ha_publish=data.ha_publish,
         )
         ensure_url_checks(entry)
         for which, values in url_values.items():
@@ -617,11 +677,15 @@ def patch_entry(id):
 
     if (resp := _require_active(entry)) is not None:
         return resp
-    if entry.source != SOURCE_MANUAL and {"name", "host"} & sent:
+    if entry.is_docker and {"name", "host"} & sent:
         fields = sorted({"name", "host"} & sent)
         return json_error(
             400, "Name and host can only be changed on manual entries; this one is reported by the notifier.",
             [{"loc": [k], "msg": "only editable on manual entries", "type": "read_only"} for k in fields])
+    if entry.is_stream and "host" in sent:
+        return json_error(
+            400, "Stream entries have no host; only the name can be changed.",
+            [{"loc": ["host"], "msg": "not editable on stream entries", "type": "read_only"}])
 
     errors = []
     if "name" in sent and data.name is None:
@@ -646,6 +710,8 @@ def patch_entry(id):
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
     if "locked" in sent and data.locked is None:
         errors.append({"field": "locked", "message": "locked must be true or false"})
+    if "ha_publish" in sent and data.ha_publish is None:
+        errors.append({"field": "ha_publish", "message": "ha_publish must be true or false"})
     if errors:
         return _fail(errors)
 
@@ -653,13 +719,17 @@ def patch_entry(id):
         entry_rules.download_icon(current_app.config["IMAGE_DIR"], icon, new_name)
 
     with routes_api._UPSERT_LOCK:
-        if ({"name", "host"} & sent) and (new_name, new_host) != (entry.container_name, entry.host):
+        # Stream entries are unique by stream key, not by (host, name) (PRD 18.6).
+        if (({"name", "host"} & sent) and (new_name, new_host) != (entry.container_name, entry.host)
+                and entry.stream_id is None):
             existing = entry_rules.find_duplicate(new_host, new_name, exclude_id=entry.id)
             if existing:
                 return json_error(409, entry_rules.duplicate_message(existing, new_name, new_host),
                                   {"id": existing.id, "deleted": existing.deleted_at is not None})
         before = _entry_snapshot(entry)
         if "name" in sent:
+            if entry.is_stream and new_name != entry.container_name:
+                entry.name_source = NAME_SOURCE_UI_EDIT      # snapshots no longer write the name
             entry.container_name = new_name
         if "host" in sent:
             entry.host = new_host
@@ -677,6 +747,8 @@ def patch_entry(id):
             entry.image_icon = icon or ""
         if "sort_priority" in sent:
             entry.sort_priority = data.sort_priority
+        if "ha_publish" in sent and data.ha_publish is not None:
+            entry.ha_publish = data.ha_publish
         if "locked" in sent and data.locked is not None:
             was_locked = entry.is_static
             entry.is_static = data.locked
@@ -699,6 +771,9 @@ def delete_entry(id):
     entry = _load_entry(id)
     audit("entry", id)
     permanent = _bool_arg("permanent")
+    block = _bool_arg("block")
+    if block and permanent:
+        abort(400, "'block' applies to the first delete; it cannot be combined with 'permanent'.")
     with routes_api._UPSERT_LOCK:
         if permanent:
             if entry.deleted_at is None:
@@ -712,10 +787,34 @@ def delete_entry(id):
         if entry.deleted_at is not None:
             return json_error(409, "This entry is already deleted. Use ?permanent=true to remove it for good.",
                               {"id": id})
-        entry.deleted_at = datetime.now()
+        blocked = streams.soft_delete_entry(entry, block, actor=g.api_key_name)
         db.session.commit()
-    audit("entry", id, {"deleted_at": [None, entry.deleted_at.replace(microsecond=0).isoformat()]})
+    changes = {"deleted_at": [None, entry.deleted_at.replace(microsecond=0).isoformat()]}
+    if blocked:
+        changes["stream_block"] = [None, entry.stream_key]
+    audit("entry", id, changes)
     return jsonify(entry_out(_load_entry(id)))
+
+
+@mgmt_bp.route("/entries/<int:id>/unlink", methods=["POST"])
+@require_api_key("write")
+def unlink_entry(id):
+    """A stream entry goes back to being a manual entry (a linked one gets its host back)."""
+    entry = _load_entry(id)
+    audit("entry", id)
+    data = _optional_body(EntryUnlinkRequest)
+    with routes_api._UPSERT_LOCK:
+        if entry.deleted_at is not None:
+            return json_error(409, "This entry is deleted; restore it first.", {"id": id})
+        stream_slug, key = (entry.stream.stream_id if entry.stream else None), entry.stream_key
+        result = streams.unlink_entry(entry, data.block, actor=g.api_key_name)
+    changes = {"source": ["stream", "manual"], "stream": [stream_slug, None]}
+    if result["blocked"]:
+        changes["stream_block"] = [None, key]
+    if result["host"]:
+        changes["host"] = [None, result["host"]]
+    audit("entry", id, changes)
+    return jsonify({"entry": entry_out(_load_entry(id)), **result})
 
 
 @mgmt_bp.route("/entries/<int:id>/restore", methods=["POST"])
@@ -726,7 +825,8 @@ def restore_entry(id):
     with routes_api._UPSERT_LOCK:
         if entry.deleted_at is None:
             return json_error(409, "This entry is not deleted.", {"id": id})
-        clash = ServiceEntry.active().filter_by(host=entry.host, container_name=entry.container_name).first()
+        clash = None if entry.stream_id is not None else ServiceEntry.active().filter_by(
+            host=entry.host, container_name=entry.container_name).first()
         if clash is not None:
             return json_error(
                 409, f"Cannot restore '{entry.container_name}': an active entry with that name and host exists.",
@@ -799,7 +899,7 @@ def patch_check(id):
     elif check.kind == CHECK_KIND_CONTAINER:
         allowed, label = _CONTAINER_CHECK_PATCHABLE, "the container check"
     else:
-        allowed, label = set(_CHECK_FIELD_TO_VALIDATOR), "a service check"
+        allowed, label = set(_CHECK_FIELD_TO_VALIDATOR) | {"ha_exclude"}, "a service check"
     blocked = sorted(sent - allowed)
     if blocked:
         return json_error(
@@ -835,6 +935,8 @@ def patch_check(id):
     with routes_api._UPSERT_LOCK:
         before = _check_snapshot(check)
         check_form.apply_check_values(check, values)
+        if "ha_exclude" in sent:
+            check.ha_exclude = data.ha_exclude
         changes = _diff(before, _check_snapshot(check))
         db.session.commit()
     audit("check", id, changes)
@@ -1197,6 +1299,235 @@ def put_exposure_settings():
     return jsonify({**_exposure_payload(), "recomputed": touched})
 
 
+def _update_check_payload():
+    enabled, hours = settings_store.get_update_check_settings()
+    return {"enabled": enabled, "interval_hours": hours}
+
+
+@mgmt_bp.route("/settings/update-check", methods=["GET"])
+@require_api_key("read")
+def get_update_check_settings():
+    return jsonify(_update_check_payload())
+
+
+@mgmt_bp.route("/settings/update-check", methods=["PUT"])
+@require_api_key("write")
+def put_update_check_settings():
+    audit("update_check_settings")
+    data = UpdateCheckSettingsPut.model_validate(_json_body())
+    errors = []
+    if data.enabled is None and data.interval_hours is None:
+        errors.append({"field": "body", "message": "name at least one of enabled, interval_hours"})
+    if data.interval_hours is not None and data.interval_hours < 1:
+        errors.append({"field": "interval_hours", "message": "must be a whole number of hours, 1 or more"})
+    if errors:
+        return _fail(errors)
+    before = _update_check_payload()
+    settings_store.save_update_check_settings(data.enabled, data.interval_hours)
+    db.session.commit()
+    version_check.reset()
+    after = _update_check_payload()
+    audit("update_check_settings", None, _diff(before, after))
+    return jsonify(after)
+
+
+# --- notification channels (PRD 17.2) --------------------------------------------
+
+
+def _channel_snapshot(channel):
+    """Audit view: the secret is only ever recorded as a changed flag."""
+    return {"name": channel.name, "enabled": bool(channel.enabled), "config": dict(channel.config or {})}
+
+
+def _load_channel(id):
+    channel = db.session.get(NotificationChannel, id)
+    if channel is None:
+        abort(404, f"No notification channel with id {id}.")
+    return channel
+
+
+@mgmt_bp.route("/notifications/channels", methods=["GET"])
+@require_api_key("read")
+def list_notification_channels():
+    limit, offset = _page_args()
+    query = NotificationChannel.query.order_by(NotificationChannel.id.asc())
+    total = query.count()
+    items = [notification_channel_out(c) for c in query.limit(limit).offset(offset).all()]
+    return _page(items, total, limit, offset)
+
+
+@mgmt_bp.route("/notifications/channels", methods=["POST"])
+@require_api_key("write")
+def create_notification_channel():
+    audit("notification_channel")
+    data = NotificationChannelCreate.model_validate(_json_body())
+    channel, errors = notify.create_channel(data.name, data.type, data.enabled, data.config, data.secret)
+    if errors:
+        status_conflict = any("already exists" in e["message"] for e in errors)
+        if status_conflict:
+            return json_error(409, errors[0]["message"], errors)
+        return _fail(errors)
+    audit("notification_channel", channel.id,
+          {**_channel_snapshot(channel), "credential_set": [None, bool(channel.secret)]})
+    response = jsonify(notification_channel_out(channel))
+    response.status_code = 201
+    return response
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>", methods=["GET"])
+@require_api_key("read")
+def get_notification_channel(id):
+    return jsonify(notification_channel_out(_load_channel(id)))
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>", methods=["PATCH"])
+@require_api_key("write")
+def patch_notification_channel(id):
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    data = NotificationChannelPatch.model_validate(_json_body())
+    sent = data.model_fields_set
+    if not sent:
+        return _fail([{"field": "body", "message": "name at least one field to change"}])
+    errors = [{"field": f, "message": "cannot be null"} for f in ("name", "enabled", "config")
+              if f in sent and getattr(data, f) is None]
+    if errors:
+        return _fail(errors)
+    if sent == {"cleanup"}:
+        return _fail([{"field": "body", "message": "name at least one field to change"}])
+    before = _channel_snapshot(channel)
+    had_secret = bool(channel.secret)
+    kwargs = {f: getattr(data, f) for f in ("name", "enabled", "config", "secret") if f in sent}
+    # `cleanup` null/omitted: clear the old base on a base change, not on a plain disable.
+    cleanup = data.cleanup
+    kwargs["cleanup_disable"] = bool(cleanup)
+    kwargs["cleanup_old_base"] = True if cleanup is None else cleanup
+    try:
+        _, errors = notify.update_channel(channel, **kwargs)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    if errors:
+        if any("already exists" in e["message"] for e in errors):
+            return json_error(409, errors[0]["message"], errors)
+        return _fail(errors)
+    changes = _diff(before, _channel_snapshot(channel))
+    if "secret" in sent:
+        changes["credential_set"] = [had_secret, bool(channel.secret)]
+    audit("notification_channel", id, changes)
+    return jsonify(notification_channel_out(channel))
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>", methods=["DELETE"])
+@require_api_key("write")
+def delete_notification_channel(id):
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    raw = request.args.get("cleanup")
+    if raw is None or raw.strip() == "":
+        cleanup = True
+    elif raw.strip().lower() in ("1", "true", "yes", "on"):
+        cleanup = True
+    elif raw.strip().lower() in ("0", "false", "no", "off"):
+        cleanup = False
+    else:
+        abort(400, "'cleanup' must be true or false.")
+    name = channel.name
+    try:
+        cleared = notify.delete_channel(channel, cleanup=cleanup)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"name": [name, None]})
+    return jsonify({"id": id, "deleted": True, "cleanup": cleared})
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/test", methods=["POST"])
+@require_api_key("write")
+def test_notification_channel(id):
+    """Connect with the stored config and publish a non-retained message to
+    `<base_topic>/test`. A failed test is a 200 with `ok: false` and the reason."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    ok, message = notify.test_channel(channel.type, dict(channel.config or {}), channel.secret)
+    audit("notification_channel", id, {"test": [None, "ok" if ok else "failed"]})
+    return jsonify({"ok": ok, "message": message})
+
+
+def _purge_error(exc):
+    return json_error(exc.status, exc.message)
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/purge", methods=["POST"])
+@require_api_key("write")
+def purge_notification_channel(id):
+    """Clean slate for one channel's broker (PRD 17.5). The body is optional."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    raw = request.get_json(silent=True) if request.data else {}
+    if not isinstance(raw, dict):
+        abort(400, "Send a JSON object as the request body.")
+    data = NotificationPurgeRequest.model_validate(raw)
+    try:
+        result = notify.purge_channel(channel.id, data.republish)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"purge": [None, {"topics_cleared": result["topics_cleared"],
+                                                         "republish": data.republish}]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/previous-bases", methods=["GET"])
+@require_api_key("read")
+def list_notification_previous_bases(id):
+    """The base topics this channel used before (the orphan scan looks under them)."""
+    channel = _load_channel(id)
+    return jsonify({"channel_id": channel.id, "limit": MAX_PREVIOUS_BASES,
+                    "items": notify.previous_bases(channel.id)})
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/orphans/scan", methods=["POST"])
+@require_api_key("write")
+def scan_notification_orphans(id):
+    """Preview the retained STD topics nothing desires any more (PRD 17.5)."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    data = _optional_body(NotificationOrphanScanRequest)
+    try:
+        result = notify.scan_orphans(channel.id, data.extra_base)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"orphan_scan": [None, {"count": result["count"]}]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/notifications/channels/<int:id>/orphans/clear", methods=["POST"])
+@require_api_key("write")
+def clear_notification_orphans(id):
+    """Clear the orphans a scan listed (or, with no list, every orphan a fresh scan finds)."""
+    audit("notification_channel", id)
+    channel = _load_channel(id)
+    data = _optional_body(NotificationOrphanClearRequest)
+    try:
+        result = notify.clear_orphans(channel.id, data.topics, data.extra_base)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("notification_channel", id, {"orphans_cleared": [None, result["topics_cleared"]]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/entries/<int:id>/notifications/purge", methods=["POST"])
+@require_api_key("write")
+def purge_entry_notifications(id):
+    """Purge one entry's topics and Home Assistant device, then republish it."""
+    entry = _load_entry(id)
+    audit("entry", id)
+    try:
+        result = notify.purge_entry(entry.id)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("entry", id, {"notification_purge": [None, {"topics_cleared": result["topics_cleared"]}]})
+    return jsonify(result)
+
+
 _SECRET_SUFFIXES = ("_key", "_token", "_password", "_secret")
 
 
@@ -1220,4 +1551,272 @@ def get_config():
         sources[name] = "env" if name in from_env else "file" if name in from_file else "default"
     sources["display_tools"] = "derived"
     version = (cfg.get("VERSION_INFO") or {}).get("version", "unknown")
-    return jsonify({"version": version, "settings": values, "sources": sources})
+    return jsonify({"version": version, **_build_facts(), "settings": values, "sources": sources})
+
+
+# --- inventory streams (PRD 18.5 ingest, 18.7 lifecycle) -------------------------
+
+
+def _bad_stream_id():
+    return _fail([{"field": "stream_id", "message": "stream_id must match ^[a-z0-9][a-z0-9_-]{0,62}$"}])
+
+
+def _snapshot_body():
+    """The parsed JSON object. The size is checked before anything is parsed (413)."""
+    limit = streams.MAX_BODY_BYTES
+    declared = request.content_length
+    if declared is not None and declared > limit:
+        raise ApiError(413, f"The request body is larger than {limit} bytes.", {"limit": limit})
+    data = request.get_data() if declared is not None else request.stream.read(limit + 1)
+    if len(data) > limit:
+        raise ApiError(413, f"The request body is larger than {limit} bytes.", {"limit": limit})
+    try:
+        body = json.loads(data)
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        abort(400, "Send a JSON object as the request body.")
+    return body
+
+
+@mgmt_bp.route("/streams/<stream_id>/snapshot", methods=["PUT"])
+@require_api_key("ingest")
+def put_stream_snapshot(stream_id):
+    """A sidecar's full snapshot. Not audited: it arrives every few minutes."""
+    if not streams.STREAM_ID_RE.fullmatch(stream_id):
+        return _bad_stream_id()
+    existing = streams.find_stream(stream_id)
+    if existing is not None:
+        streams.check_binding(existing, g.api_key)
+        if existing.status == "ignored":
+            return jsonify({"stream_id": stream_id, "stream_status": "ignored", "applied": False}), 202
+    payload = StreamSnapshotPut.model_validate(_snapshot_body())
+    items, errors = streams.normalize_items(payload.key_type, payload.items)
+    if errors:
+        return _fail(errors)
+    status, body = streams.receive_snapshot(stream_id, payload, items, g.api_key)
+    return jsonify(body), status
+
+
+@mgmt_bp.route("/streams/<stream_id>/status", methods=["GET"])
+@require_api_key("ingest")
+def get_stream_status(stream_id):
+    """What STD knows about the stream, for a sidecar to log at startup."""
+    stream = streams.find_stream(stream_id) if streams.STREAM_ID_RE.fullmatch(stream_id) else None
+    if stream is None:
+        abort(404, f"No stream '{stream_id}' yet.")
+    streams.check_binding(stream, g.api_key)
+    return jsonify(streams.status_body(stream))
+
+
+def _load_stream(stream_id):
+    stream = streams.find_stream(stream_id) if streams.STREAM_ID_RE.fullmatch(stream_id) else None
+    if stream is None:
+        abort(404, f"No stream '{stream_id}'.")
+    return stream
+
+
+def _optional_body(model):
+    raw = request.get_json(silent=True) if request.data else {}
+    if not isinstance(raw, dict):
+        abort(400, "Send a JSON object as the request body.")
+    return model.model_validate(raw)
+
+
+@mgmt_bp.route("/streams", methods=["GET"])
+@require_api_key("read")
+def list_streams():
+    limit, offset = _page_args()
+    query = InventoryStream.query.order_by(InventoryStream.id)
+    rows = query.limit(limit).offset(offset).all()
+    body = {"items": [stream_out(s) for s in rows], "total": query.order_by(None).count(),
+            "limit": limit, "offset": offset,
+            "pending": InventoryStream.query.filter_by(status=streams.STREAM_PENDING).count()}
+    return jsonify(body)
+
+
+@mgmt_bp.route("/streams/<stream_id>", methods=["GET"])
+@require_api_key("read")
+def get_stream(stream_id):
+    return jsonify(stream_out(_load_stream(stream_id)))
+
+
+@mgmt_bp.route("/streams/<stream_id>", methods=["PATCH"])
+@require_api_key("write")
+def patch_stream(stream_id):
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    data = StreamPatch.model_validate(_json_body())
+    sent = data.model_fields_set
+    if not sent:
+        return _fail([{"field": "body", "message": "name at least one field to change"}])
+    default_checks = data.default_checks.model_dump() if data.default_checks is not None else None
+    changes = streams.update(stream, data.display_name, data.network_include,
+                             data.network_exclude, sent, default_checks=default_checks)
+    audit("stream", stream_id, changes)
+    return jsonify(stream_out(stream))
+
+
+@mgmt_bp.route("/streams/<stream_id>/default-checks/apply", methods=["POST"])
+@require_api_key("write")
+def apply_stream_default_checks(stream_id):
+    """Add the stream's missing default checks to every active entry of the stream."""
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    result = streams.apply_default_checks(stream)
+    audit("stream", stream_id, {"default_checks_applied": [None, result["checks_added"]],
+                                "entries_changed": [None, result["entries_changed"]]})
+    return jsonify({"stream": stream_out(stream), **result})
+
+
+@mgmt_bp.route("/streams/<stream_id>/notifications/purge", methods=["POST"])
+@require_api_key("write")
+def purge_stream_notifications(stream_id):
+    """Purge every entry of a stream (and its status topic and hub device) from MQTT and
+    Home Assistant, then republish what is still eligible."""
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    try:
+        result = notify.purge_stream(stream.id)
+    except PurgeError as exc:
+        return _purge_error(exc)
+    audit("stream", stream_id, {"notification_purge": [None, {"topics_cleared": result["topics_cleared"]}]})
+    return jsonify(result)
+
+
+@mgmt_bp.route("/streams/<stream_id>/preview", methods=["GET"])
+@require_api_key("read")
+def preview_stream(stream_id):
+    return jsonify(streams.preview(_load_stream(stream_id)))
+
+
+@mgmt_bp.route("/streams/<stream_id>/enable", methods=["POST"])
+@require_api_key("write")
+def enable_stream(stream_id):
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    before = stream.status
+    result = streams.enable(stream)
+    audit("stream", stream_id, {"status": [before, stream.status], "counts": [None, result["counts"]]})
+    return jsonify({"stream": stream_out(stream), **result})
+
+
+@mgmt_bp.route("/streams/<stream_id>/disable", methods=["POST"])
+@require_api_key("write")
+def disable_stream(stream_id):
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    data = _optional_body(StreamDisableRequest)
+    before = stream.status
+    result = streams.disable(stream, data.cleanup, data.clear_blocks)
+    audit("stream", stream_id, {"status": [before, stream.status], "cleanup": [None, data.cleanup],
+                                "clear_blocks": [False, data.clear_blocks and data.cleanup == "purge"],
+                                "result": [None, result]})
+    return jsonify({"stream": stream_out(stream), "cleanup": data.cleanup, "result": result})
+
+
+@mgmt_bp.route("/streams/<stream_id>/ignore", methods=["POST"])
+@require_api_key("write")
+def ignore_stream(stream_id):
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    before = stream.status
+    streams.ignore(stream)
+    audit("stream", stream_id, {"status": [before, stream.status]})
+    return jsonify(stream_out(stream))
+
+
+@mgmt_bp.route("/streams/<stream_id>", methods=["DELETE"])
+@require_api_key("write")
+def remove_stream(stream_id):
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    cleanup = (request.args.get("cleanup") or "keep").strip().lower()
+    name, before = stream.display_name, stream.status
+    result = streams.delete(stream, cleanup)
+    audit("stream", stream_id, {"name": [name, None], "status": [before, None],
+                                "cleanup": [None, cleanup], "result": [None, result]})
+    return jsonify({"stream_id": stream_id, "deleted": True, "cleanup": cleanup, "result": result})
+
+
+@mgmt_bp.route("/streams/<stream_id>/blocks", methods=["GET"])
+@require_api_key("read")
+def list_stream_blocks(stream_id):
+    stream = _load_stream(stream_id)
+    limit, offset = _page_args()
+    query = InventoryBlock.query.filter_by(stream_id=stream.id).order_by(InventoryBlock.id)
+    return _page([block_out(b) for b in query.limit(limit).offset(offset).all()],
+                 query.order_by(None).count(), limit, offset)
+
+
+@mgmt_bp.route("/streams/<stream_id>/blocks/<int:block_id>", methods=["DELETE"])
+@require_api_key("write")
+def unblock_stream_key(stream_id, block_id):
+    """Remove a block: the next snapshot restores the entry or creates a new one."""
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    key = streams.unblock(stream, block_id)
+    audit("stream", stream_id, {"unblocked": [None, key]})
+    return jsonify({"stream_id": stream_id, "key": key, "unblocked": True})
+
+
+@mgmt_bp.route("/streams/<stream_id>/offers", methods=["GET"])
+@require_api_key("read")
+def list_stream_offers(stream_id):
+    stream = _load_stream(stream_id)
+    limit, offset = _page_args()
+    query = StreamLinkOffer.query.filter_by(stream_id=stream.id).order_by(StreamLinkOffer.id)
+    return _page([offer_out(o) for o in query.limit(limit).offset(offset).all()],
+                 query.order_by(None).count(), limit, offset)
+
+
+def _answer_offer(stream_id, offer_id, answer):
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    offer = streams.get_offer(stream, offer_id)
+    key = offer.key
+    if answer == "accepted":
+        entry = streams.accept_offer(stream, offer)
+    else:
+        entry = streams.decline_offer(stream, offer)
+    audit("stream", stream_id, {"link_offer": [key, answer], "entry_id": [None, entry.id]})
+    return jsonify({"stream_id": stream_id, "key": key, "answer": answer,
+                    "entry": entry_out(_load_entry(entry.id))})
+
+
+@mgmt_bp.route("/streams/<stream_id>/offers/<int:offer_id>/accept", methods=["POST"])
+@require_api_key("write")
+def accept_stream_offer(stream_id, offer_id):
+    """The manual entry joins the stream, keeping its id, history, checks and settings."""
+    return _answer_offer(stream_id, offer_id, "accepted")
+
+
+@mgmt_bp.route("/streams/<stream_id>/offers/<int:offer_id>/decline", methods=["POST"])
+@require_api_key("write")
+def decline_stream_offer(stream_id, offer_id):
+    """A new stream entry is created from the item; the manual entry is left alone."""
+    return _answer_offer(stream_id, offer_id, "declined")
+
+
+@mgmt_bp.route("/streams/<stream_id>/unmatched", methods=["GET"])
+@require_api_key("read")
+def list_stream_unmatched(stream_id):
+    """Items of the latest snapshot with no entry, not blocked: link targets."""
+    stream = _load_stream(stream_id)
+    limit, offset = _page_args()
+    items = streams.unmatched_items(stream)
+    return _page(items[offset:offset + limit], len(items), limit, offset)
+
+
+@mgmt_bp.route("/streams/<stream_id>/link", methods=["POST"])
+@require_api_key("write")
+def link_stream_item(stream_id):
+    """Link an active manual entry to an unmatched item of the latest snapshot (its host is cleared)."""
+    audit("stream", stream_id)
+    stream = _load_stream(stream_id)
+    data = StreamLinkRequest.model_validate(_json_body())
+    entry = _load_entry(data.entry_id)
+    streams.link_entry(stream, entry, data.key)
+    audit("stream", stream_id, {"link": [None, data.key], "entry_id": [None, entry.id]})
+    return jsonify({"stream_id": stream_id, "key": data.key, "answer": "linked",
+                    "entry": entry_out(_load_entry(entry.id))})

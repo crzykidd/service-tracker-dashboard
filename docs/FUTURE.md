@@ -249,12 +249,25 @@ design session (PRD §13). Each item came up and was deliberately kept
 out of 0.7.0 to hold its scope to manual entries, the check model,
 history and filters.
 
-- **Alerting / notifications on failure.** For example webhook, ntfy,
+- **Alerting rules and push channels.** For example webhook, ntfy,
   Gotify or email when a check goes from ok to failing (or after N
   consecutive failures; `health_check.consecutive_failures` already
-  exists for this). Parked because 0.7.0 is display-only monitoring;
-  alert delivery, de-duplication and quiet hours are a feature of their
-  own.
+  exists for this), with de-duplication and quiet hours. State
+  publishing to MQTT and Home Assistant is scoped in PRD §17 and builds
+  the channel framework these would plug into.
+- **Publish every check result to MQTT.** Operator decision (PRD 17.1):
+  state publishing sends changes only, retained. An option to publish every
+  result (latency graphs from the broker) was left out of notif-02; if
+  wanted, add it as a per-channel setting on top of `notify_state`.
+- **Home Assistant "Check now" button.** A `button` entity per entry that
+  makes STD run its checks at once (the management API already has
+  `POST /entries/{id}/checks/run`). Needs a command subscription, which
+  makes STD act on unauthenticated broker messages, so it needs a security
+  review (who may publish, rate limits) first. Operator decision (PRD 17.1):
+  no command entities in the first version.
+- **Per-result latency sensors for Home Assistant.** Requires publishing every
+  check result (see above), then a latency `sensor` per check. Left out of
+  notif-03.
 - **Notifier-defined service checks.** A container label (e.g.
   `dockernotifier.std.check.type=tcp`, `...check.target=...`) that the
   notifier forwards so service checks come from compose, not the UI.
@@ -321,6 +334,107 @@ register skip it.
 
 The operator chose to ship v0.9.0 without it ("leave it as is for now").
 Locking the entry is the workaround.
+
+---
+
+## UniFi inventory source and discovered-device inbox
+
+**Parked:** 2026-11-17, during the network-inventory design review
+(`docs/design/2026-11-17-network-inventory-and-profiles.md`).
+
+### Context
+
+The first draft of the network-inventory design had two sources:
+Technitium DHCP reservations ("what should exist") and the UniFi
+Integration API ("what is actually on the wire"). UniFi also fed a
+discovered-device inbox (MACs seen but not reserved, with Adopt /
+Attach to entry / Ignore) and link facts (AP or switch port, SSID,
+RSSI, uplink).
+
+### Why parked
+
+Every IoT device the operator cares about gets a Technitium static
+reservation, which already gives hostname, MAC, IP and scope. UniFi
+would import phones, laptops and other end-user devices the operator
+doesn't want in STD. Hosts with hard-coded IPs (VMs, hypervisors, the
+UDM) are added by hand as manual entries. The unknown-device detector
+is a security feature nobody asked for.
+
+### If picked up
+
+- UniFi as a sidecar on the stream ingest API (design doc §6), like
+  the Technitium one. A filter would be needed to keep end-user
+  devices out (e.g. only wired, only named, only certain networks).
+  An "inbox" is then just a pending stream's Preview.
+- Link facts are volatile (RSSI changes constantly). Keep them off the
+  MQTT entry attributes watched by `notify_state._ENTRY_ATTRS`, or
+  every sync triggers a full republish. A separate throttled
+  attributes topic would work.
+- Multi-NIC entries would then need an interfaces table.
+
+---
+
+## Backup contents and format
+
+**Parked:** 2026-11-17, during the network-inventory design review.
+
+### Context
+
+The nightly backup is a YAML list of entries with nested checks
+(`jobs.py` `run_scheduled_backup`). It isn't a table dump: groups
+are carried only by name, notification channels aren't included, and
+restore skips host-less entries unless `source = manual`. Tags,
+saved views, monitor profiles, assignment rules, alert policies,
+inventory sources and the inventory block list would all be missing.
+
+### Open questions
+
+- Back up everything, or only operator-set state (overrides, tags,
+  views, profiles, rules, the block list)? Observed data rebuilds
+  from the notifier and the DHCP sync.
+- A versioned top-level format (`format_version`, `entries`, `tags`,
+  `profiles`, ...) and how older backups map onto it.
+- Whether channel and source secrets belong in a backup file.
+
+### Interim
+
+A nightly SQLite snapshot via `sqlite3.Connection.backup()` (WAL-safe,
+per CLAUDE.md), stored next to the YAML backups with the same
+retention, and restored manually (stop the container, swap the file).
+It covers every table with no format work. A candidate for 0.10.0;
+see the design doc, sections 11 and 12.8.
+
+---
+
+## Notifier: log STD's API revision
+
+**Parked:** 2026-11-17, after the API revision landed on `dev` (PRD 18.1).
+This is work in the docker-api-notifier repo, not STD.
+
+### Context
+
+STD 0.10.0 sends `X-STD-API-Revision` and `X-STD-Version` on every
+`/api/...` response and serves a public `GET /api/v1/meta`. Today's
+notifier ignores both and still works, because the change is additive:
+the register contract and its responses are unchanged. STD logs each
+new `User-Agent` once, so a notifier that sends the library default
+(e.g. `python-requests/2.x`) shows up under that name.
+
+### Sketched shape
+
+- Send `User-Agent: docker-api-notifier/<version>`.
+- Read `X-STD-API-Revision` on each register response and log at INFO
+  when it differs from the last value seen.
+- Optionally call `GET /api/v1/meta` at startup and log `std_version`
+  and `api_revision`. Treat a 404 as "STD older than 0.10.0", not an
+  error.
+
+### Why parked
+
+Nothing breaks without it, and it needs no STD change. Pick it up the
+next time the notifier gets a release. The sidecar
+(`std-source-technitium`) does the same thing and can serve as the
+model.
 
 ---
 

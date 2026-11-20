@@ -37,7 +37,7 @@ claude mcp add std -s user \
 claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.9.0/mcp/std_mcp.py
+  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.0/mcp/std_mcp.py
 ```
 
 Updating means changing the tag in that URL (and re-running `claude mcp add`).
@@ -104,13 +104,22 @@ The key ends up in your Claude configuration, so keep that file private.
 
 Read (any key): `list_entries`, `get_entry`, `health_summary`,
 `get_health_history`, `list_groups`, `list_widgets`, `list_widget_types`,
-`get_exposure_settings`, `get_config` (secrets are masked), `server_info` (the
+`get_exposure_settings`, `list_notification_channels`, `get_notification_channel`,
+`list_notification_previous_bases`,
+`list_streams`, `get_stream`, `preview_stream`, `list_stream_blocks`,
+`list_stream_offers`, `list_stream_unmatched_items` (inventory streams),
+`get_config` (secrets are masked), `server_info` (the
 versions of this script and of your STD, and whether they match).
 
 Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
-(soft by default), `restore_entry`, `add_check`, `update_check`, `delete_check`,
+(soft by default), `unlink_entry`, `restore_entry`, `add_check`, `update_check`, `delete_check`,
 `run_checks`, `upsert_group`, `set_widget`, `remove_widget`,
-`set_exposure_settings`.
+`set_exposure_settings`, `test_notification_channel`, `purge_notification_channel`,
+`purge_entry_notifications`, `purge_stream_notifications`, `delete_notification_channel`,
+`update_notification_channel`, `scan_notification_orphans`, `clear_notification_orphans`, `update_stream`, `enable_stream`, `disable_stream`,
+`ignore_stream`, `delete_stream`, `unblock_stream_key`, `answer_link_offer`,
+`link_entry_to_stream_item`, `apply_stream_default_checks`. `update_stream` also sets a
+stream's `default_checks`; `list_streams` returns the `pending` stream count.
 
 `update_entry` and `update_check` take a `fields` object: name only what should
 change, and send `null` to clear a value. Errors come back as tool errors that

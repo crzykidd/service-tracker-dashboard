@@ -43,6 +43,9 @@
         {% for val, lbl in [('all', 'All'), ('notifier', 'Notifier'), ('manual', 'Manual')] %}
         <option value="{{ val }}" {% if source_filter == val %}selected{% endif %}>{{ lbl }}</option>
         {% endfor %}
+        {% for st in source_streams or [] %}
+        <option value="stream:{{ st.stream_id }}" {% if source_filter == 'stream:' ~ st.stream_id %}selected{% endif %}>{{ st.display_name }}</option>
+        {% endfor %}
       </select>
 
       <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">

@@ -124,8 +124,12 @@ def test_whoami_scope_matrix(app, client):
     _, wk = _key(app, "writer", "write")
     r = client.get("/api/v1/whoami", headers=_bearer(rk))
     assert r.status_code == 200
-    assert r.get_json() == {"name": "reader", "prefix": rk.split("_")[1], "scope": "read",
-                            "version": app.config["VERSION_INFO"]["version"]}
+    body = r.get_json()
+    assert {k: body[k] for k in ("name", "prefix", "scope", "version")} == {
+        "name": "reader", "prefix": rk.split("_")[1], "scope": "read",
+        "version": app.config["VERSION_INFO"]["version"]}
+    # additive build/update fields (version-in-ui)
+    assert {"commit", "channel", "build_time", "update"} <= set(body)
     assert client.get("/api/v1/whoami", headers=_bearer(wk)).get_json()["scope"] == "write"
 
     # read key on a write endpoint -> 403; write key -> 200

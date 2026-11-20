@@ -538,10 +538,12 @@ def test_purge_batches(app):
 
 
 def test_retention_jobs_registered(app):
-    with patch("jobs.BackgroundScheduler") as sched_cls, patch("jobs.threading.Thread") as thread:
+    with patch("jobs.BackgroundScheduler") as sched_cls, patch("jobs.threading.Thread") as thread, \
+            patch("jobs.notify.start") as notify_start:
         jobs.start_background_workers(app)
     ids = {c.kwargs["id"] for c in sched_cls.return_value.add_job.call_args_list}
     assert {"health_result_purge_job", "health_result_compaction_job"} <= ids
+    notify_start.assert_called_once_with(app)  # the publisher has its own thread
     assert thread.call_args.kwargs["daemon"] is True
     thread.return_value.start.assert_called_once()  # mocked: no real thread
 

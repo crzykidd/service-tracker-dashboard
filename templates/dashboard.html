@@ -173,7 +173,9 @@
 
             {# Status column — Docker pill with icon + label #}
             <td class="px-3 py-2">
-              {% if entry.is_manual %}
+              {% if entry.is_stream %}
+                {% include "partials/stream_pill.html" %}
+              {% elif not entry.is_docker %}
                 <span class="status-pill status-pill-gray" title="Manual entry{% if entry.description %} — {{ entry.description }}{% endif %}">
                   <i class="ti ti-link" aria-hidden="true"></i>Manual
                 </span>
@@ -238,6 +240,7 @@
                   <button class="row-trash-btn inline-flex items-center justify-center text-gray-500 hover:text-red-500 p-1 transition"
                           data-entry-id="{{ entry.id }}"
                           data-container-name="{{ entry.container_name }}"
+data-stream="{{ 1 if entry.is_stream else 0 }}"
                           title="Delete {{ entry.container_name }}"
                           style="background: none; border: none; cursor: pointer; font-size: 16px;">
                     <i class="ti ti-trash" aria-hidden="true"></i>

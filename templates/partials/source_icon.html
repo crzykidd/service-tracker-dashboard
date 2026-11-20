@@ -1,0 +1,23 @@
+{# The one source icon on a Compact row: Docker (status-coloured), stream, or manual.
+   Same classes and tooltips as the Tiled status row. Expects `entry`. #}
+{% if entry.is_stream %}
+  {% include "partials/stream_icon.html" %}
+{% elif entry.is_docker %}
+  {% set _s = entry.docker_status.lower() if entry.docker_status else 'unknown' %}
+  {% set _good = ('running' in _s and 'unhealthy' not in _s) or 'healthy' in _s %}
+  {% set _bad = 'exited' in _s or 'dead' in _s or 'unhealthy' in _s or 'restarting' in _s or 'removing' in _s or 'paused' in _s %}
+  {% if not entry.last_api_update %}
+    {% set _cls = 'status-icon-bad' %}{% set _tip = 'Docker: no update received' %}
+  {% elif entry.is_docker_status_stale %}
+    {% set _cls = 'status-icon-warn' %}{% set _tip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — stale — updated ' ~ (entry.last_api_update | time_since) %}
+  {% elif _good %}
+    {% set _cls = 'status-icon-ok' %}{% set _tip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — updated ' ~ (entry.last_api_update | time_since) %}
+  {% elif _bad %}
+    {% set _cls = 'status-icon-bad' %}{% set _tip = 'Docker: ' ~ (entry.docker_status or 'unknown') ~ ' — updated ' ~ (entry.last_api_update | time_since) %}
+  {% else %}
+    {% set _cls = 'status-icon-muted' %}{% set _tip = 'Docker: ' ~ (entry.docker_status or 'unknown') %}
+  {% endif %}
+  <span class="status-icon {{ _cls }} source-icon" title="{{ _tip }}"><i class="ti ti-brand-docker" aria-hidden="true"></i></span>
+{% else %}
+  <span class="status-icon status-icon-muted source-icon" title="Manual entry{% if entry.description %} — {{ entry.description }}{% endif %}"><i class="ti ti-link" aria-hidden="true"></i></span>
+{% endif %}

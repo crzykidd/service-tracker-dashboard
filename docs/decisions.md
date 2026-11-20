@@ -5,6 +5,536 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-19 — inv-07 linked entries are the operator's; cleanup unlinks them
+
+- **Linked entries are unlinked, never deleted, by cleanup.** A manual entry that
+  joined a stream (Convert / accept / link) carries the operator's history, checks
+  and settings, so `soft_delete` / `purge` (disable) and every delete option
+  unlink it. Disable `keep` leaves it attached. The flag is `stream_linked`, set
+  by `_convert`, not inferred from `name_source` (a renamed stream-created entry
+  is also `ui_edit`, and is not the operator's in this sense).
+- **Backfill heuristic.** No created timestamp exists, so for rows linked before
+  the migration: per stream, `name_source = 'ui_edit'` and `id` below the stream's
+  smallest `name_source = 'stream'` id means linked (the stream's own entries are
+  created after a pre-existing manual one). It misses an entry linked after
+  the stream created its first entry (higher id; it stays unmarked and is treated
+  as the stream's, the old behavior), and wrongly marks a stream-created entry
+  renamed while holding the lowest id, which errs on the safe side (unlinked, not
+  deleted). `pre_link_host` stays NULL for them (host unknown).
+- **Unlink restores the host, unless it would clash.** `find_duplicate` is
+  checked (soft-deleted rows count, as for restore); on a clash the host stays
+  NULL and the result carries `host_clash` rather than failing the cleanup.
+- **Already soft-deleted linked entries are unlinked, not purged**, so a purge
+  never removes anything that was the operator's; they stay in Settings → Deleted
+  as manual entries.
+- **Linked entries are left out of `customised_entries()`** (the "lose these
+  settings" warning would be false) and get their own list in the dialog;
+  `entry_stats()` gains `linked`.
+- **No `API_REVISION` bump.** Revision 2 is unreleased; the unlink route and the
+  additive fields ride in it, as notif-06 did.
+- **Unlink lives at `/entries/{id}/unlink`**, not under `/streams`, because it
+  acts on one entry and works for any stream entry. The edit-page UI is a
+  `<details>` with two submit buttons rather than the JS delete popover, since
+  that popover is wired to the delete flow.
+
+## 2026-11-19 — notif-06 MQTT/HA cleanup tools and per-stream topics
+
+- **A stream status topic, not entry topics under a stream path.** Retained
+  `<base>/stream/<stream_id>` carries the stream's status and counts. Moving
+  entry topics to `stream/<id>/entry/<n>/...` was rejected: topics use ids so a
+  rename never moves one, and Convert (a manual entry joining a stream) would
+  have moved a topic and orphaned the old retained message and HA entity. The
+  stream topic is part of `desired_state`, so `full_sync` publishes it and clears
+  it when the stream goes; it is published for every stream whatever its status
+  (a pending stream is useful to an automation) and the commit listener now
+  watches the stream's `status`/`last_*` columns, new/deleted streams and link
+  offers. Cost: a sync (debounced, non-forced) after each snapshot, since
+  `last_snapshot_at` is in the payload.
+- **Stream hub device with two count sensors.** The brief said "an active/missing
+  count sensor"; I made it two sensors (Active entries, Missing entries), the same
+  pattern as the hub's per-state counts, instead of one sensor with the other
+  number as an attribute. Stream entry devices use `via_device` the stream device;
+  the stream device exists only while at least one of its entries is published, so
+  `via_device` never points at a device that has no configs.
+- **Cleanup defaults: delete on, disable off, base change on.** Deleting a channel
+  is the last chance to reach its broker, so the dialog ticks the box; disabling is
+  reversible and the broker is often down when someone disables, so it is unticked;
+  a base change is the only moment the old base is known, so it is ticked. The API
+  mirrors them (`cleanup` default true on `DELETE`, null on `PATCH` meaning on for a
+  base change and off for a disable). A cleanup that can't reach the broker refuses
+  with 409 and changes nothing (the operator picks "Delete anyway" /
+  `cleanup=false`), except that a base change on a channel with no live session
+  (disabled) skips the cleanup silently, otherwise every edit of a disabled channel
+  would error. Existing `DELETE` callers that expect a plain delete now need
+  `cleanup=false` or a connected channel (revision 2 is unreleased, so no bump).
+- **Delete clears `<base>/status` last and suppresses the session's `offline`.**
+  `MqttSession.stop()` publishes `offline` (retained) before disconnecting, which
+  would re-create the topic just cleared; `suppress_offline` skips it. A disable
+  keeps the normal `offline`. The same flag is set for the old base on a base change.
+- **Remembered bases: 5, newest first, per channel, in the `setting` store.** No
+  migration; they only feed the orphan scan, so a short list is enough and an old
+  base the operator no longer remembers can still be typed in. The pair
+  `(base_topic, ha_prefix)` is kept so a prefix change is scanned too. A base the
+  channel switches back to leaves the list.
+- **Orphans are STD-shaped topics only, diffed against every channel on the same
+  broker.** A scan of `<old>/#` would otherwise list another app's topics or a
+  sibling channel's live topics. Only `status`, `summary`, `entry/<id>/state`,
+  `entry/<id>/check/<id>`, `stream/<slug>` and this node's discovery configs are
+  candidates, a base equal to a discovery prefix is refused, and a clear with an
+  explicit list re-checks each topic. Clear takes the previewed list so the operator
+  clears what they saw; clear without a list re-scans.
+- **Stream purge is `purge_entry` batched; "disabled stream, nothing comes back"
+  holds only when its entries are gone.** `_purge_entries` serves both. A disabled
+  stream with `keep` leaves active entries, which stay eligible and are published
+  again, so I did not change eligibility (no new rule that hides entries of
+  disabled streams from MQTT).
+- **Scan and clear are POST + write scope.** They subscribe to the broker for
+  several seconds like the test and purge calls; a GET with such side effects, or a
+  read key doing broker I/O, seemed wrong.
+- **No new module.** The cleanup, remembered bases and orphan scan live in
+  `notify_purge.py`, so the CLAUDE.md module layout needs no new line.
+
+---
+
+## 2026-11-19 — Stream follow-ups from the first live test (inv-06)
+
+- **Link matching compares host.** Operators put a device's hostname in the add
+  page's Host field, so name-only matching on host-less entries missed real
+  matches. Candidates are now every active manual entry; an item matches on its
+  name or first DNS label against the entry's name, host or host's first label.
+  Still "exactly one candidate or create": a wrong offer is cheap (the operator
+  answers it), a wrong silent link is not, so ambiguity creates. An entry already
+  claimed by an offer for another key is not offered twice. Convert/link clear
+  `host` because stream entries never have one.
+- **Purge keeps `stream.snapshot`.** The snapshot is the sidecar's latest word, not
+  entry data; keeping it lets Preview and Enable work right after a purge without
+  waiting for the next post. `ignore` still discards it (that is its point) and
+  `delete` removes the row.
+- **Default checks are a stream column, not a template system.** `default_checks`
+  JSON `{ping, tcp_port}` is the smallest thing that makes stream devices
+  monitorable; monitor profiles stay parked. Apply-to-existing skips an entry that
+  has any check of the kind rather than comparing targets, so customised checks are
+  never touched or duplicated.
+- **`pending` rides on the `GET /streams` list** (an extra key next to `items`/`total`)
+  so MCP can report the pending count; additive inside the unreleased revision 2.
+- **Dry-run counts are computed on page render** (one read-only `plan()` per
+  pending/disabled stream) rather than stored, so they never go stale.
+- **Compact source icon** (operator scope addition): `partials/source_icon.html`
+  duplicates Tiled's Docker status classification instead of refactoring Tiled's
+  template, to keep the Tiled diff small.
+
+---
+
+## 2026-11-17 — Streams UI (inv-05)
+
+Calls made while implementing PRD 18.8 (also recorded as "As built" notes there):
+
+- **Server-rendered, no new JSON endpoints.** Preview is a GET on the settings page
+  (`?section=streams&preview=<id>`), not a fetch; every action is a plain form POST
+  to a thin route that calls `streams.py` and flashes. Matches the Notifications
+  and Deleted tabs, keeps CSRF to the usual hidden field, and needs no JS beyond
+  opening the dialog.
+- **One cleanup dialog per stream, two modes.** Disable… and Delete… share it; JS
+  swaps the form action and wording. The counts and customised entries are rendered
+  server-side from `streams.entry_stats()` / `customised_entries()`, so the dialog
+  never goes stale relative to the page load and no extra endpoint is needed.
+  `clear_blocks` only shows for disable + purge, because deleting a stream drops
+  its blocks and offers through the FK anyway.
+- **Source filter value `stream:<stream_id>`** rather than a numeric id: bookmarks
+  survive a stream being recreated, and the value is validated against the stream-id
+  pattern. The bare `stream` value is kept.
+- **Delete popover grew a second button** instead of a new modal, so the same
+  popover serves Dashboard, Tiled and the edit page: `showDeletePopover(..., {stream})`
+  calls back with `block`.
+- **Offer answers take a same-site `next`** (checked with `safe_redirect_target`) so
+  the banner on a manual entry's edit page returns there, while the Streams tab uses
+  the same routes.
+- **UI stream actions are logged, not audited.** `api_audit` is keyed to API keys;
+  a session has none. The API's audit stays the record for API-driven changes.
+
+---
+
+## 2026-11-17 — Inventory streams backend (inv-04)
+
+Calls made while implementing PRD 18.4-18.7 (also recorded as "As built" notes there):
+
+- **Ingest routes live on the management blueprint** (scope `ingest`), not a
+  sibling blueprint. `require_api_key("ingest")` reuses the auth, last-used and
+  JSON-error code; `scope_allows` makes `ingest` satisfy only `ingest` (and
+  `write` satisfies it), so an ingest key fails every read/write route. The
+  audit hook skips the snapshot endpoint by name instead of a per-request flag,
+  so 4xx answers to snapshots are not audited either.
+- **`ignored` is answered before the body is read.** Cheap, and a producer for a
+  stream the operator ignored can't get 400/413.
+- **`display_name` is creation-only.** The contract says the producer's value is
+  ignored once the operator renames; with no column to record "renamed", the
+  simple rule is that a snapshot never touches it.
+- **Deleting a stream removes its blocks and offers** (FK to the stream row, so
+  they can't outlive it). `clear_blocks` therefore only matters for `disable` +
+  `purge`. A sidecar that keeps posting recreates the stream as pending.
+- **Delete + `soft_delete` turns the entries manual** (still soft-deleted), since
+  a `source = stream` row can't outlive its stream; they restore from Settings -> Deleted.
+- **Accepting an offer sets `name_source = ui_edit`**: the manual name is the
+  operator's, so the next snapshot must not rename it to the producer's casing.
+- **A stream entry restores from a YAML backup as manual**, and a backup record
+  never overwrites a live stream entry. `stream` is in `VALID_SOURCES` now, so
+  without this a restore would create `source = stream` rows with no stream.
+- **Edit page / `is_manual` -> `not is_docker`** for the Name label, Description
+  field and host handling in `edit_entry.html` and the `/edit` handler (stream
+  entries are operator-nameable but not Docker); `host` stays NULL for them, and
+  Description is only written when the form carries it.
+- **`name` is VARCHAR(100) in `service_entry`** but the contract allows 128. SQLite
+  doesn't enforce the length, so names are stored whole rather than widening a
+  column through a table rebuild.
+- **`ingest` is not in the Settings key picker yet** (inv-05 owns the UI); the
+  API accepts it, so a `write` key serves for testing until then.
+
+---
+
+## 2026-11-17 — Source refactor: `is_manual` vs `is_docker` (inv-03)
+
+Added `ServiceEntry.is_docker` (`source == notifier`; an unflushed instance with
+`source` None counts as Docker, matching the column default). Each branch:
+
+- Means "not Docker" -> `is_docker`: `tiled_dash.html` (docker status classes,
+  source icon, Docker drawer row), `dashboard.html` (status pill),
+  `edit_entry.html` (container section), `models.py` stale guard,
+  `ensure_container_check`, container-check eligibility, `view_helpers`
+  stale filter, `mgmt_serializers` `stale`.
+- Means "operator-made" -> kept `is_manual`: Name label and name field in
+  `edit_entry.html`, host editable only for manual in the `/edit` handler,
+  management API name/host rule and `POST /entries` source, register's
+  adopt-manual-entry branch (`routes_api.py`).
+- Filters: `normalize_source_filter`, `matches_source` and the `source` query on
+  `GET /api/v1/entries` match any `VALID_SOURCES` value exactly (OpenAPI enum
+  built from it).
+- Restore: a present-but-unknown `source` restores as manual (host optional);
+  a missing key keeps the pre-0.7 backfill rule.
+- HA `model`: `SOURCE_MODELS` map in `notify_ha.py`, defaulting to "Manual".
+
+---
+
+## 2026-11-17 — "Since" sensor reads the existing state topic; snapshot via tmp + rename
+
+- The Since sensor reuses `<base>/entry/<id>/state` (`since` is already there), so
+  §17.1 "publish changes only" holds and nothing new is published. A null
+  `since` renders the string `None`, which HA's MQTT sensor treats as unknown.
+- The SQLite snapshot backs up from SQLAlchemy's raw connection (the live,
+  WAL-aware handle) into `<name>.tmp`, then `os.replace`s it, so an interrupted
+  run never leaves a partial `.sqlite3` that looks like a valid backup.
+
+---
+
+## 2026-11-17 — API revision headers set app-wide, `meta` public
+
+- The `X-STD-API-Revision` / `X-STD-Version` headers come from one app-level
+  `after_request` keyed on `request.path.startswith("/api/")`, not a blueprint
+  hook, so register, the management API, and unrouted 404/405 all get them.
+- `GET /api/v1/meta` is public and reads only in-memory state. It reveals no
+  more than the headers do.
+
+
+## 2026-11-17 — Network-inventory design review: stream ingest API, Technitium sidecar
+
+- **Inventory arrives through a generic stream ingest API, pushed by
+  sidecars, not pulled by STD.** STD owns the contract
+  (`PUT /api/v1/streams/<id>/snapshot`, `ingest` key scope, strict core
+  fields plus a free-form `attributes` dict). Producers follow it, the
+  same split as the Docker notifier. Rejected: a Technitium source
+  inside STD (the first revision). It saved a repo, but every new feed
+  (Pi-hole, Kea, Zigbee) would have been a change to STD, and source
+  credentials would have lived in STD.
+- **Full snapshots, not per-item upserts.** "Reservation gone" is then
+  just "absent from the latest snapshot", with no TTLs or heartbeats.
+- **New streams arrive pending; enabling is per stream.** This replaces
+  a global `inventory_enabled` switch. A key holder can create a
+  stream, but nothing is applied until the operator previews and
+  enables it.
+- **The Technitium producer is a new repo (`std-source-technitium`),
+  not a mode in docker-api-notifier**, even though the notifier already
+  talks to Technitium DNS. A small standalone sidecar is the reference
+  others copy, and the notifier's job stays unchanged.
+- **The Docker notifier stays on `/api/v1/register`.** Moving the
+  most-used contract onto streams would gain little.
+- **`stream` is a third `source` value; the pill shows the stream's
+  display name.** Docker containers never have DHCP reservations (their
+  DNS is a CNAME to the parent host), and hard-coded-IP hosts
+  (em-pve01, em-dockha01) have static A records and stay manual. So
+  the sources never overlap. The cost is a small refactor first: about
+  12 branches use `is_manual` to mean "not Docker" and switch to a new
+  `is_docker`. Rejected: `source = manual` + a `kind` flag. It needed
+  no refactor, but it hides where an entry came from.
+- **UniFi dropped.** It would import phones and end-user devices. The
+  discovered-device inbox and the `entry_interface` table went with it
+  (FUTURE.md). A stream entry is one item, and the multi-NIC hosts are
+  manual.
+- **A manual entry matching a new stream item is offered for linking,
+  never auto-converted**, so its history, checks and HA settings
+  survive. Name matching isn't reliable enough to do it silently.
+- **Deleting a stream entry asks "allow re-adding" or "don't re-add".**
+  "Don't re-add" puts the stream key on a permanent, visible block list.
+  This replaces tracking why an entry was deleted. Without it, a
+  snapshot would resurrect a device the operator had deliberately
+  deleted.
+- **Thresholds store `health_check.state`** instead of each reader
+  deriving it from `last_ok`. Change detection keys on `last_ok`
+  flipping, so `pending` → `down` (still failing) would never publish.
+- **Backup format change parked; nightly SQLite snapshot instead.**
+  The YAML export is entries-only. Deciding what a backup should hold
+  is a separate discussion (FUTURE.md).
+
+---
+
+## 2026-11-17 — notif-05 purge MQTT and Home Assistant
+
+- **"Republish: false" holds the channel, it does not untick `ha_discovery`.**
+  Unticking would change the operator's config behind their back and covers
+  only discovery, not the state topics. Instead `PublishState.held` (a set of
+  channel ids, in memory) makes every publish skip that channel until
+  something changes: any `request_sync()` (commit listener, health change via
+  `publish_changes`) releases it, and a (re)connect releases that channel.
+  Releasing forces a full republish, because the payload cache is shared and
+  would otherwise make a non-forced sync think the channel is current. A restart
+  also ends the hold (connect republishes), which is the unsurprising outcome.
+- **The 10-minute safety net must not undo a purge.** It was a forced sync
+  that would have republished within minutes, defeating "leave the broker
+  empty". It now calls `notify.safety_net_sync()` (`keep_held=True`), which
+  syncs the other channels and leaves held ones alone.
+- **State-topic bookkeeping is shared across channels.** `topics` and
+  `payloads` have no per-channel key (state events go to every session), so a
+  channel purge empties them only when it is the only live channel; with
+  several, they stay (the other brokers still have those topics) and the forced
+  or release-time sync republishes to the purged one. Splitting the set per
+  channel was rejected as a larger change than this feature needs.
+- **Waits.** Collecting the retained burst waits at least 1 s, until 0.6 s of
+  quiet, at most 6 s (the broker gives no end-of-burst marker). The 2 s
+  pause before republishing is Home Assistant's processing time, per the task.
+  Worst case for a channel purge is about 6 + 2 s, under the request's 15 s
+  wait. A timeout is a 504 and the job still finishes on the publisher thread.
+- **Channel purge reaches the whole base topic.** Everything under
+  `<base>/#` is cleared, not only STD's known topics: the base topic carries no
+  instance id, so two STD installs sharing a base topic would clear each other
+  (they would already fight over `<base>/status`). Home Assistant configs, which do
+  carry the instance node id, are filtered to this instance only.
+- **Entry purge clears every check of the entry**, enabled or not, plus
+  remembered topics, because a disabled or opted-out check may still have a
+  retained topic or config. It also clears the entry's discovery topics
+  defensively when the entry is not opted in (nothing is republished).
+- **API scope.** The management API has only `read` and `write` scopes (an
+  "admin API key" is the write scope), so both routes are `write`.
+- **Purge UI uses fetch + JSON** (inline counts, no page reload) and a native
+  `<dialog>` for the confirm so the Republish checkbox can sit in it.
+
+---
+
+## 2026-11-17 — notif-04 Home Assistant entries are opt-in; host in device names
+
+- **Opt-in, not opt-out.** notif-03 published every entry once "Add to Home
+  Assistant" was on; the operator got ~50 unwanted devices. Publishing is now
+  opt-in per entry (`service_entry.ha_publish`, default false) because an
+  unwanted device in HA is noisy to clean up while a missing one is one tick
+  away. Checks stay opt-out (`health_check.ha_exclude`) inside a published
+  entry. The channel box remains the master switch and the hub publishes
+  whenever it is on.
+- **Clean-slate migration `e3b7c1d9a204`.** Every existing entry becomes
+  `ha_publish = false` regardless of its old `ha_exclude` (operator decision);
+  `service_entry.ha_exclude` is dropped (batch mode). A new forward migration
+  rather than editing `d8e2a6f4b915`, which has already run on the operator's
+  dev database. Downgrade restores `ha_exclude` (false). Nothing released
+  carries `ha_exclude` on entries, so the API field was renamed with no shim.
+- **Bulk picker.** Settings -> Notifications -> "Home Assistant entries" posts
+  the ids it displayed plus the ticked ones; only displayed ids are changed, so
+  an entry added meanwhile is not silently unpublished. All changes are one
+  commit, so the commit listener causes one sync. Select all / none apply to the
+  rows the filter shows.
+- **Host in the device name** (operator, same day): `<prefix> <name> (<host>)`
+  always, not only on collisions; no host (manual entries) gives
+  `<prefix> <name>`. `default_entity_id` is the slug of that device name, so it
+  includes the slugified host. `unique_id` is unchanged (instance id and
+  database ids). HA keeps entity ids it has already registered, which is moot
+  because the migration starts everyone with nothing published.
+- **Backups.** `ha_publish` (entries) and `ha_exclude` (checks) now round-trip;
+  notif-03 had left them out. Older backups without the keys leave the value
+  at its default (unpublished / published check).
+
+---
+
+## 2026-11-16 — notif-03 Home Assistant discovery
+
+- **`default_entity_id`, not `object_id`.** The HA MQTT docs (fetched
+  2026-11-16, home-assistant.io/integrations/mqtt) say the `<object_id>` in the
+  discovery topic does not influence the entity id and that
+  `default_entity_id` (a full `sensor.xyz`) controls it. They do not state a
+  release or an explicit deprecation of the payload key `object_id`, so that is
+  unverified; I used `default_entity_id` only and never `object_id`. If an old
+  HA ignores `default_entity_id`, entity ids simply come from device name +
+  entity name, which also start `std_` with the default prefix.
+- **Per-channel discovery inside the existing reconcile.** Discovery configs
+  contain the channel's own base topic and are published under that channel's
+  `ha_prefix`, so they cannot go through the shared "dispatch to every
+  session" path. `full_sync()` now calls `sync_discovery()` first, which
+  builds the set per live session and uses `Publisher.dispatch_to`; events
+  carry `absolute: true` (topic not prefixed with the base). The published set
+  is `ha_topics[channel id]`, persisted in `notify_publish_state.ha`. No
+  second reconcile.
+- **Channel delete/disable leaves its configs on that broker.** There is no
+  session left to clear them with. The remembered set for a deleted channel is
+  dropped. The operator turns `ha_discovery` off first to clear.
+- **Hub connectivity sensor has no availability topic.** The prompt says all
+  entities use `<base>/status` for availability, but this sensor's state *is*
+  that topic; with availability it would read "unavailable" instead of "off"
+  when STD is down.
+- **No `configuration_url`.** STD has no configured public base URL
+  (`dashboard_url` is a path, PRD 17.3), so a valid absolute URL cannot be
+  built on the publisher thread. Add one with a base-URL setting later.
+- **Check state mapping.** The problem sensor is ON only when `state ==
+  down`; a check that has never run (`unknown`) is OFF rather than a false alarm.
+- **Check payload gained entry attributes** (`entry_name`, `host`, `group`,
+  `source`, `dashboard_url`, `std_entry_id`) so `group`/`host` filters work on
+  `binary_sensor`s. Side effect: renaming an entry or changing its group now
+  republishes its check topics too (test updated).
+- **Per-check toggle uses a hidden `ha_seen` marker.** The form field is a
+  checkbox "Publish" (unticked = excluded). Without a marker, a form missing
+  the field (older page) would exclude every check; the server leaves the
+  stored value alone unless the marker is present. Same for the entry box
+  (`ha_form`).
+- **Controls always visible** rather than hidden when no HA channel exists:
+  a hidden control would also be absent from the submit.
+- **Birth message forces a full sync for all channels**, not just the one that
+  sent it. Simpler and harmless (payloads are identical retained messages).
+- **Migration table name.** The prompt says `service_entries`; the table is
+  `service_entry`.
+
+---
+
+## 2026-11-16 — notif-02 state publishing
+
+- **A commit listener, not a call in every mutation path.** The prompt asked
+  mutation paths to call `notify.request_sync()`. Entries and checks change
+  in a dozen places (UI add/edit/delete/restore/purge, the management API,
+  register adoption and restore, backup restore, the purge job). Instead
+  `notify_state.install_listeners()` flags a session in `before_flush` when a
+  watched object changes (new or deleted ServiceEntry, HealthCheck or Group, or
+  a changed name/host/group/source/URL/soft delete/check config) and calls
+  `request_sync()` in `after_commit`. The cached `last_*` result columns are
+  deliberately not watched, or every health tick would trigger a sync.
+- **`full_sync` runs on the publisher thread and dispatches directly**, not
+  through the 1000-slot queue: a sync of a large install would overflow it and
+  drop its own events. Change events from the scheduler do use the queue.
+- **Sync is debounced (2 s) and diffed.** A sync only republishes topics
+  whose payload changed (an in-memory map in the publisher); connect and the
+  safety net force a full republish. The safety net is a 10-minute APScheduler
+  job (forced, so it also repairs a broker that lost its retained messages).
+  The "after channel config changes" trigger is covered by the connect: any
+  config change restarts the session, which reconnects and forces a sync.
+- **No sync while no channel has a session**, and nothing is remembered then.
+  Otherwise a delete while the broker is down would drop the topic from the
+  persisted set without clearing it on the broker. The next connect forces.
+- **The published set is global, not per channel.** One JSON value in the
+  `setting` store (`notify_publish_state`; no table, no migration) holds the
+  topics, each entry's last roll-up with `since`, and each check's `ok` with
+  its change time. Known limits: a topic cleared while one broker was
+  unreachable stays retained there, and changing a channel's base topic leaves
+  the old retained topics behind.
+- **Only counted checks get a topic** (`check_counts`: enabled, able to run);
+  the roll-up counts and the topics then agree, and a disabled check is
+  cleared like a deleted one.
+- **Entry events also fire when the per-state check counts change**, not only
+  when the roll-up does (e.g. an extra check's first pass leaves the entry
+  `up`), so the retained payload never lags. The summary fires only on a
+  roll-up change.
+- **`dashboard_url` is the path `/edit/<id>`.** STD has no configured public
+  base URL, and the scheduler thread has no request to derive one from.
+
+---
+
+## 2026-11-16 — notif-01 channel framework and MQTT
+
+- **`paho-mqtt` 2.x, not `aiomqtt`.** STD is threaded (gunicorn threads,
+  APScheduler, a health thread), not asyncio. `aiomqtt` would need its own
+  event loop thread plus a bridge to every producer; paho's `loop_start()` is
+  already a network thread and `publish()` is thread-safe. Pinned
+  `paho-mqtt>=2,<3` in `requirements.in` (2.2.0 compiled), using
+  `CallbackAPIVersion.VERSION2`.
+- **One publisher thread, one bounded queue (1000), drop oldest.** Producers
+  call `notify.enqueue()`, which only does `put_nowait` and never raises. A
+  state change is superseded by the next one, so the oldest event is the right
+  one to lose; the full-queue warning is rate limited to once a minute. The
+  thread is the only code that touches brokers.
+- **`connect_async` + `loop_start`, never a blocking `connect`.** Applying a
+  channel never waits on the network, and a broker that is down at startup
+  does not delay STD. paho's own `reconnect_delay_set(1, 60)` does the
+  backoff. State changes are logged only when the (state, error) pair
+  changes, so retries stay silent.
+- **The test button uses a throwaway client with a `-test` client id.** Two
+  clients sharing a client id make the broker disconnect the older one, so
+  testing with the live id would knock the real connection offline. The test
+  client has no will (it must not flip `<base>/status` to `offline`). It runs
+  in the request thread (up to ~13 s), not on the publisher.
+- **Reload = diff by fingerprint.** `reload_now` compares each enabled
+  channel's (type, config, secret, instance id) with its live session; only
+  changed, removed or new channels are stopped/started. A clean stop publishes
+  `offline` itself because a clean disconnect does not fire the will.
+- **Port is resolved at validation.** `port` blank becomes 1883, or 8883 with
+  TLS, and is stored, so the config always carries the real port. `client_id`
+  stays NULL (resolved to `std-<instance>` at connect) so the default follows
+  the instance id. `tls_insecure` without `tls` is rejected.
+- **`ha_discovery`, `ha_prefix`, `ha_device_prefix` are stored now, unused.**
+  notif-03 needs no config reshuffle; the UI does not expose them yet and a
+  UI edit preserves them (config is merged).
+- **The secret is a plain column, like `widget_api_key`.** No at-rest
+  encryption: the same trust model as the existing widget keys and the
+  SQLite file. It is write-only: `secret_set` in responses, never logged,
+  never in the audit (the audit records only a `credential_set` flag), and a
+  failed-save re-render never echoes it.
+- **A failed test is HTTP 200 `ok: false`**, not an error status: the request
+  worked and the answer is "the broker said no". Unknown config keys and bad
+  values are still 400; a duplicate name is 409. The test endpoint needs the
+  `write` scope (it is a POST that opens a connection and publishes).
+- **Event shape for MQTT is `{topic, payload, retain}`** with `topic` relative
+  to `base_topic`; richer event kinds arrive with notif-02. Events that do not
+  fit are ignored by the channel.
+- **`on_connect_hooks` are called from paho's network thread** with the
+  session; hooks must not block for long.
+- **Not started under pytest.** `request_reload()` is a no-op unless the
+  publisher thread runs; conftest installs a client factory that raises, so a
+  test can never open a real socket. `test_checker.py` now patches
+  `jobs.notify.start` where it patches the threads.
+- **No `MCP_VERSION` bump.** It is set only by `/release-prep` (v090-09
+  decision), so the three new MCP tools leave it alone.
+
+---
+
+## 2026-11-16 — version in the UI (update check design)
+
+- **PR builds get `channel=pr`**, not `dev`: a PR image is neither the dev
+  branch nor main, and the display treats `pr` like `dev` anyway
+  (`dev · 0.9.0+sha-…`), so nothing is lost by being precise.
+- **Persisted the last good result** in the `setting` table
+  (`update_check_cache`: latest version, release URL, checked_at, ETag), in
+  addition to the in-memory cache, so a restart does not refetch at once and
+  the ETag survives. Failure state (backoff, last error) stays in memory only:
+  a restart is a fair moment to retry.
+- **Backoff:** `interval * 2^failures`, capped at 24h, pushed further by
+  `Retry-After` or `X-RateLimit-Reset` when remaining is 0. Only the first
+  failure of a run logs a warning, so page loads never spam the log.
+- **Status endpoint is `GET /api/update-status` in the dashboard blueprint**
+  (login-protected), not the management API: it serves the browser header, not
+  API keys. The management API instead gets the same data in `whoami`/`config`
+  plus `GET/PUT /settings/update-check`.
+- **The check is triggered from the template context processor**, so every
+  rendered page starts a stale refresh with no per-route code; it swallows all
+  errors so the header can never break a page. A lock allows one refresh in
+  flight; saving the settings calls `version_check.reset()` so the new interval
+  applies at once.
+- **Tests:** conftest stubs `version_check._spawn` and `_http_get` for every
+  test (no threads, no network); tests that exercise the check drive
+  `refresh_now()` / `maybe_refresh()` directly.
+- **MCP:** the new fields are merged into `server_info` after
+  `compare_versions`, leaving the compatibility logic untouched.
+
+---
+
 ## 2026-11-16 — v090-11 health-tinted entries
 
 - Tint is a plain `entry-health-<state>` class set in the templates, CSS-only

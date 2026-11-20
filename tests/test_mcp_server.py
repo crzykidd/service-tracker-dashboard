@@ -31,11 +31,19 @@ _spec.loader.exec_module(std_mcp)
 READ_TOOLS = {
     "list_entries", "get_entry", "health_summary", "get_health_history", "list_groups",
     "list_widgets", "list_widget_types", "get_exposure_settings", "get_config", "server_info",
+    "list_notification_channels", "get_notification_channel", "list_notification_previous_bases",
+    "list_streams", "get_stream", "preview_stream", "list_stream_blocks", "list_stream_offers",
+    "list_stream_unmatched_items",
 }
 WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
     "update_check", "delete_check", "run_checks", "upsert_group", "set_widget",
-    "remove_widget", "set_exposure_settings",
+    "remove_widget", "set_exposure_settings", "test_notification_channel",
+    "purge_notification_channel", "purge_entry_notifications", "purge_stream_notifications",
+    "delete_notification_channel", "update_notification_channel", "scan_notification_orphans",
+    "clear_notification_orphans", "update_stream", "enable_stream", "disable_stream", "ignore_stream", "delete_stream",
+    "unblock_stream_key", "answer_link_offer", "link_entry_to_stream_item",
+    "apply_stream_default_checks", "unlink_entry",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -50,11 +58,63 @@ CALLS = {
     "list_widget_types": ({}, "GET", "/api/v1/widgets/types", {}, None),
     "get_exposure_settings": ({}, "GET", "/api/v1/settings/exposure", {}, None),
     "get_config": ({}, "GET", "/api/v1/config", {}, None),
+    "list_notification_channels": ({}, "GET", "/api/v1/notifications/channels",
+                                   {"limit": "200", "offset": "0"}, None),
+    "get_notification_channel": ({"channel_id": 4}, "GET", "/api/v1/notifications/channels/4", {}, None),
+    "test_notification_channel": ({"channel_id": 4}, "POST", "/api/v1/notifications/channels/4/test", {}, None),
+    "purge_notification_channel": ({"channel_id": 4, "republish": False}, "POST",
+                                   "/api/v1/notifications/channels/4/purge", {}, {"republish": False}),
+    "purge_entry_notifications": ({"entry_id": 7}, "POST", "/api/v1/entries/7/notifications/purge",
+                                  {}, None),
+    "purge_stream_notifications": ({"stream_id": "dhcp"}, "POST",
+                                   "/api/v1/streams/dhcp/notifications/purge", {}, None),
+    "delete_notification_channel": ({"channel_id": 4, "cleanup": False}, "DELETE",
+                                    "/api/v1/notifications/channels/4", {"cleanup": "false"}, None),
+    "update_notification_channel": ({"channel_id": 4, "fields": {"config": {"base_topic": "std2"}},
+                                     "cleanup": True}, "PATCH", "/api/v1/notifications/channels/4", {},
+                                    {"config": {"base_topic": "std2"}, "cleanup": True}),
+    "scan_notification_orphans": ({"channel_id": 4, "extra_base": "old/std"}, "POST",
+                                  "/api/v1/notifications/channels/4/orphans/scan", {},
+                                  {"extra_base": "old/std"}),
+    "clear_notification_orphans": ({"channel_id": 4, "topics": ["std/entry/9/state"]}, "POST",
+                                   "/api/v1/notifications/channels/4/orphans/clear", {},
+                                   {"topics": ["std/entry/9/state"]}),
+    "list_notification_previous_bases": ({"channel_id": 4}, "GET",
+                                         "/api/v1/notifications/channels/4/previous-bases", {}, None),
+    "list_streams": ({}, "GET", "/api/v1/streams", {"limit": "200", "offset": "0"}, None),
+    "get_stream": ({"stream_id": "dhcp"}, "GET", "/api/v1/streams/dhcp", {}, None),
+    "preview_stream": ({"stream_id": "dhcp"}, "GET", "/api/v1/streams/dhcp/preview", {}, None),
+    "list_stream_blocks": ({"stream_id": "dhcp"}, "GET", "/api/v1/streams/dhcp/blocks",
+                           {"limit": "200", "offset": "0"}, None),
+    "list_stream_offers": ({"stream_id": "dhcp"}, "GET", "/api/v1/streams/dhcp/offers",
+                           {"limit": "200", "offset": "0"}, None),
+    "list_stream_unmatched_items": ({"stream_id": "dhcp"}, "GET", "/api/v1/streams/dhcp/unmatched",
+                                    {"limit": "200", "offset": "0"}, None),
+    "update_stream": ({"stream_id": "dhcp", "fields": {"network_exclude": ["Guest"]}},
+                      "PATCH", "/api/v1/streams/dhcp", {}, {"network_exclude": ["Guest"]}),
+    "apply_stream_default_checks": ({"stream_id": "dhcp"}, "POST",
+                                    "/api/v1/streams/dhcp/default-checks/apply", {}, None),
+    "enable_stream": ({"stream_id": "dhcp"}, "POST", "/api/v1/streams/dhcp/enable", {}, None),
+    "disable_stream": ({"stream_id": "dhcp", "cleanup": "purge", "clear_blocks": True},
+                       "POST", "/api/v1/streams/dhcp/disable", {},
+                       {"cleanup": "purge", "clear_blocks": True}),
+    "ignore_stream": ({"stream_id": "dhcp"}, "POST", "/api/v1/streams/dhcp/ignore", {}, None),
+    "delete_stream": ({"stream_id": "dhcp", "cleanup": "soft_delete"}, "DELETE", "/api/v1/streams/dhcp",
+                      {"cleanup": "soft_delete"}, None),
+    "unblock_stream_key": ({"stream_id": "dhcp", "block_id": 5}, "DELETE", "/api/v1/streams/dhcp/blocks/5",
+                           {}, None),
+    "answer_link_offer": ({"stream_id": "dhcp", "offer_id": 2, "accept": False}, "POST",
+                          "/api/v1/streams/dhcp/offers/2/decline", {}, None),
+    "link_entry_to_stream_item": ({"stream_id": "dhcp", "entry_id": 7, "key": "aa:bb:cc:dd:ee:ff"},
+                                  "POST", "/api/v1/streams/dhcp/link", {},
+                                  {"entry_id": 7, "key": "aa:bb:cc:dd:ee:ff"}),
+    "unlink_entry": ({"entry_id": 7, "block": True}, "POST", "/api/v1/entries/7/unlink", {},
+                     {"block": True}),
     "create_manual_entry": (
         {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000",
          "checks": [{"target": "nas.lan", "check_type": "ping"}]},
         "POST", "/api/v1/entries", {},
-        {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000", "locked": False,
+        {"name": "NAS", "group": "Storage", "internalurl": "http://nas.lan:5000", "locked": False, "ha_publish": False,
          "checks": [{"target": "nas.lan", "check_type": "ping"}]}),
     "update_entry": ({"entry_id": 7, "fields": {"externalurl": None, "description": "x"}},
                      "PATCH", "/api/v1/entries/7", {}, {"externalurl": None, "description": "x"}),
@@ -406,7 +466,7 @@ def test_whoami_includes_the_std_version(app):
     assert who["version"] == app.config["VERSION_INFO"]["version"]
 
 
-@pytest.mark.parametrize("version", ["0.10.1", "0.8.0", "dev", None])
+@pytest.mark.parametrize("version", ["0.11.0", "0.8.0", "dev", None])
 def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
     who = {"name": "k", "prefix": "abcd1234", "scope": "write"}
     if version is not None:
@@ -420,7 +480,7 @@ def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
     err = capsys.readouterr().err
     assert ran and "Version notice" in ran[0].instructions
     assert f"std_mcp {std_mcp.MCP_VERSION}" in err and "connected to STD" in err
-    assert "std_mcp 0.9.0 talking to STD" in err
+    assert f"std_mcp {std_mcp.MCP_VERSION} talking to STD" in err
 
 
 def test_startup_line_when_versions_are_equal(monkeypatch, capsys):

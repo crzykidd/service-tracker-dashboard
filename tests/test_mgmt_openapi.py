@@ -127,7 +127,7 @@ def test_request_models_query_params_and_responses(spec):
             "include_deleted", "deleted_only"} <= q
     assert {p["name"] for p in ops[("delete", "/groups/{id}")]["parameters"]} == {"id", "force"}
     assert {p["name"] for p in ops[("delete", "/entries/{id}/widget")]["parameters"]} == {"id", "delete"}
-    assert {p["name"] for p in ops[("delete", "/entries/{id}")]["parameters"]} == {"id", "permanent"}
+    assert {p["name"] for p in ops[("delete", "/entries/{id}")]["parameters"]} == {"id", "permanent", "block"}
     assert {p["name"] for p in ops[("get", "/entries/{id}/health")]["parameters"]} == {"id", "range"}
     page = ops[("get", "/entries")]["responses"]["200"]["content"]["application/json"]["schema"]
     assert page == {"$ref": "#/components/schemas/PageOfEntryOut"}

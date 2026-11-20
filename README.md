@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.9.0-blue)
+![Version](https://img.shields.io/badge/version-0.10.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -32,18 +32,54 @@ through the web UI or directly via API.
 7. [API: Registering Services](#api-registering-services)
 8. [Management API](#management-api)
 9. [Managing STD with Claude](#managing-std-with-claude)
-10. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
-11. [Files and Paths](#files-and-paths)
-12. [Health Checks](#health-checks)
-13. [Routes](#routes)
-14. [Widgets](#widgets)
-15. [Behavior Notes](#behavior-notes)
-16. [Versioning & Releases](#versioning--releases)
-17. [Development](#development)
+10. [Notifications](#notifications)
+11. [Container Labels (via docker-api-notifier)](#container-labels-via-docker-api-notifier)
+12. [Files and Paths](#files-and-paths)
+13. [Health Checks](#health-checks)
+14. [Routes](#routes)
+15. [Widgets](#widgets)
+16. [Behavior Notes](#behavior-notes)
+17. [Versioning & Releases](#versioning--releases)
+18. [Development](#development)
 
 ---
 
 ## What's New
+
+### v0.10.0 (2026-11-19)
+
+Notifications to MQTT and Home Assistant, inventory streams that push device
+lists into STD, and the running version in the header. Five database
+migrations run on startup (notification channels, Home Assistant opt-outs,
+inventory streams, stream default checks, linked stream entries); no notifier
+change is needed.
+
+- **Version in the header:** the running version next to the page title, with
+  a What's New link and an **Update available** link when GitHub has a newer
+  release (the check can be turned off in Settings → Info).
+- **MQTT notifications:** Settings → Notifications adds MQTT channels that
+  publish retained entry, check and summary state, with a test message button.
+  Deleting, disabling or re-basing a channel can clean its broker, and **Scan
+  for orphans** finds leftover topics.
+- **Home Assistant discovery:** tick **Add to Home Assistant** on a channel and
+  pick entries; each gets a device with State, Since and per-check sensors.
+  Purge tools give a clean slate per channel, entry or stream.
+- **Inventory streams:** a sidecar (such as `std-source-technitium` for DHCP
+  reservations) pushes a full device list with an `ingest` API key. New streams
+  wait for review in Settings → Streams (flagged on the Settings link), with
+  Preview, Enable, network filters, a block list, and offers to link items to
+  your existing manual entries. Linked entries are never deleted by stream
+  cleanup, and a stream can give its entries default ping / TCP checks.
+- **Stream entries in the views:** a stream pill on the Dashboard, a small
+  router icon on Tiled and Compact (Compact now shows a source icon on every
+  row), a "missing from latest snapshot" marker, and IP, MAC and network in
+  the expanded detail.
+- **API revision 2:** `X-STD-API-Revision` and `X-STD-Version` headers and a
+  public `GET /api/v1/meta`; every new feature is in the management API and
+  the MCP server.
+- **Nightly database snapshot** next to the YAML backup, pruned with it.
+- **Fixed:** auto-refresh now runs only on the Dashboard, Tiled and Compact
+  views.
 
 ### v0.9.0 (2026-11-16)
 
@@ -221,7 +257,7 @@ compose file; your config, database, and settings carry over unchanged. See
   [Homarr Labs Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
 - Register endpoint for pushing container metadata from external tools.
 - SQLite backing store, file-based, no external DB server.
-- Daily YAML backups with retention.
+- Daily YAML backups and SQLite snapshots with retention.
 - Manual entries: the Add page creates non-Docker entries (Name, optional Host, Description, URLs, group, icon). They show a link icon (Tiled) or "Manual" pill (Dashboard) instead of Docker status and are never stale. If the notifier later registers the same host and name, it takes the entry over. Tiled tiles and Dashboard rows have a one-click trash icon with an inline confirm popover. Locked entries show a lock icon and can only be deleted from the edit page. Deletes are recoverable from Settings → Deleted.
 - Optional Dozzle log link integration.
 - Local user accounts with session-based auth.
@@ -260,13 +296,31 @@ is dropped into `/config` for reference.
 
 Default login: `admin` / `changeme123`. Change it on first run.
 
+### Version and update check
+
+The running version shows next to the page title on every page; click it for
+the What's New popup. Release images show `v0.9.0`; `:dev` and local builds
+show `dev · 0.9.0+sha-abc1234` with the short commit linked to GitHub. When
+GitHub has a newer **release**, a subtle `update available → vX.Y.Z` link
+appears.
+
+The check runs inside STD (your browser never calls GitHub), only when someone
+loads a page, at most once per interval, and never delays a page. It sends no
+credentials or personal data. Change it in **Settings → Info** (or
+`PUT /api/v1/settings/update-check`):
+
+| Setting | Default | What it does |
+|---|---|---|
+| `update_check_enabled` | on | Off means STD makes no request to GitHub and shows no update link (Settings → Info says "Update check disabled"). |
+| `update_check_interval_hours` | `6` | Hours between checks (minimum 1). After an error STD keeps the last known result and backs off up to 24 hours. |
+
 ### Settings reference
 
 | Setting                    | Type   | ENV                          | Default            | What it does |
 |----------------------------|--------|------------------------------|--------------------|--------------|
 | `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. If unset, register returns 503 until it is set. The token is masked in logs. |
 | `std_dozzle_url`           | string | `STD_DOZZLE_URL`             | —                  | Optional link to a Dozzle instance; enables a Tools section in the UI. |
-| `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where YAML backups are written. |
+| `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where backups (YAML and SQLite snapshots) are written. |
 | `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
@@ -570,6 +624,19 @@ The machine-readable description is an OpenAPI 3.1 document at
 is generated from the same declarations the tests check against the routes, so
 it always matches the code.
 
+### API revision
+
+The `/api/v1` contract has its own revision number, separate from the STD
+version. Every response under `/api/` (errors included) carries
+`X-STD-API-Revision: <n>` and `X-STD-Version: <x.y.z>` headers.
+`GET /api/v1/meta` needs no key and returns
+`{"std_version", "api_revision", "features"}`; scripts and producers can call
+it at startup to log what this STD speaks. `whoami` also reports
+`api_revision`, the OpenAPI `info` has `x-api-revision`, and the MCP
+`server_info` tool reports `std_api_revision`. STD logs each distinct
+`User-Agent` it sees on `/api/v1/register` once per restart, so give your
+producer a `User-Agent: name/version`.
+
 ### Create a key and send it
 
 1. Open **Settings → API**, enter a name and pick a scope, and press
@@ -579,6 +646,10 @@ it always matches the code.
    - **write** can read and change.
    - Use a read key for dashboards and monitoring, and a write key only for
      things that should change STD.
+   - **ingest** (for inventory sidecars) opens only the two
+     [stream ingest](#inventory-streams-and-sidecars) routes. It cannot read or
+     change anything else. Pick **Ingest (sidecars)** in the scope list and
+     create one key per sidecar.
 2. Copy the key now. It is shown **once** (`std_<prefix>_<secret>`); only a
    hash is stored. A lost key is revoked and replaced.
 3. Send it on every request:
@@ -600,12 +671,14 @@ token.
 | Method | Path | Scope | What it does |
 |---|---|---|---|
 | GET | `/api/v1/openapi.json` | none | This OpenAPI document |
+| GET | `/api/v1/meta` | none | STD version, API revision and supported features |
 | GET | `/api/v1/whoami` | read | Name, prefix and scope of the calling key |
 | GET | `/api/v1/entries` | read | List entries |
 | POST | `/api/v1/entries` | write | Add a manual entry |
 | GET | `/api/v1/entries/{id}` | read | Get one entry in full |
 | PATCH | `/api/v1/entries/{id}` | write | Edit an entry |
 | DELETE | `/api/v1/entries/{id}` | write | Delete an entry (soft) or remove it for good |
+| POST | `/api/v1/entries/{id}/unlink` | write | Unlink a stream entry (back to a manual entry) |
 | POST | `/api/v1/entries/{id}/restore` | write | Restore a deleted entry |
 | GET | `/api/v1/entries/{id}/checks` | read | List an entry's checks |
 | POST | `/api/v1/entries/{id}/checks` | write | Add a service check |
@@ -625,6 +698,38 @@ token.
 | DELETE | `/api/v1/widgets/{id}` | write | Delete a detached widget |
 | GET | `/api/v1/settings/exposure` | read | Exposure direction settings |
 | PUT | `/api/v1/settings/exposure` | write | Replace exposure direction settings |
+| GET | `/api/v1/settings/update-check` | read | Update check settings |
+| PUT | `/api/v1/settings/update-check` | write | Change the update check settings |
+| GET | `/api/v1/notifications/channels` | read | List notification channels |
+| POST | `/api/v1/notifications/channels` | write | Add a notification channel |
+| GET | `/api/v1/notifications/channels/{id}` | read | Get a notification channel |
+| PATCH | `/api/v1/notifications/channels/{id}` | write | Edit a notification channel |
+| DELETE | `/api/v1/notifications/channels/{id}` | write | Delete a notification channel (`cleanup`, default true, clears its broker data first) |
+| POST | `/api/v1/notifications/channels/{id}/test` | write | Send a test message through a channel |
+| POST | `/api/v1/notifications/channels/{id}/purge` | write | Purge a channel's retained MQTT topics and Home Assistant devices |
+| GET | `/api/v1/notifications/channels/{id}/previous-bases` | read | List the base topics a channel used before |
+| POST | `/api/v1/notifications/channels/{id}/orphans/scan` | write | Scan a channel's broker for orphaned retained STD topics |
+| POST | `/api/v1/notifications/channels/{id}/orphans/clear` | write | Clear orphaned retained topics |
+| POST | `/api/v1/entries/{id}/notifications/purge` | write | Purge an entry's MQTT topics and Home Assistant device, then republish it |
+| PUT | `/api/v1/streams/{stream_id}/snapshot` | ingest | Push a full inventory snapshot (sidecars) |
+| GET | `/api/v1/streams/{stream_id}/status` | ingest | A stream's status, for a sidecar to log |
+| GET | `/api/v1/streams` | read | List inventory streams |
+| GET | `/api/v1/streams/{stream_id}` | read | Get one stream |
+| PATCH | `/api/v1/streams/{stream_id}` | write | Rename a stream or change its filters and default checks |
+| POST | `/api/v1/streams/{stream_id}/default-checks/apply` | write | Add the stream's default checks to its existing entries |
+| POST | `/api/v1/streams/{stream_id}/notifications/purge` | write | Purge a stream's entries' MQTT topics and Home Assistant devices, then republish |
+| GET | `/api/v1/streams/{stream_id}/preview` | read | What applying the stored snapshot would do |
+| POST | `/api/v1/streams/{stream_id}/enable` | write | Enable a stream and apply its stored snapshot |
+| POST | `/api/v1/streams/{stream_id}/disable` | write | Disable a stream (`cleanup`: keep, soft_delete, purge) |
+| POST | `/api/v1/streams/{stream_id}/ignore` | write | Ignore a pending or disabled stream |
+| DELETE | `/api/v1/streams/{stream_id}` | write | Delete a stream (`?cleanup=`) |
+| GET | `/api/v1/streams/{stream_id}/blocks` | read | List a stream's blocked keys |
+| DELETE | `/api/v1/streams/{stream_id}/blocks/{block_id}` | write | Unblock a key |
+| GET | `/api/v1/streams/{stream_id}/offers` | read | List open link offers |
+| POST | `/api/v1/streams/{stream_id}/offers/{offer_id}/accept` | write | Accept a link offer |
+| POST | `/api/v1/streams/{stream_id}/offers/{offer_id}/decline` | write | Decline a link offer |
+| GET | `/api/v1/streams/{stream_id}/unmatched` | read | Items of the latest snapshot with no entry |
+| POST | `/api/v1/streams/{stream_id}/link` | write | Link a manual entry to a snapshot item |
 | GET | `/api/v1/config` | read | Effective configuration (read-only) |
 
 Ids are the numeric ids shown in the API output. Write endpoints that create
@@ -662,6 +767,123 @@ curl -s -X PUT "${H[@]}" "$STD/api/v1/entries/1/widget" -d '{
   "fields": ["wanted", "queued"], "widget_api_key": "<sonarr key>"
 }'
 ```
+
+### Inventory streams and sidecars
+
+An inventory stream is a list of devices that a sidecar keeps current, for
+example every static DHCP reservation. The sidecar posts the **whole** list
+every few minutes; STD never pulls from your DHCP server. The first stream
+sidecar is `std-source-technitium` (its own repo). Anyone can write one for
+another source: the contract is [PRD §18.5](docs/PRD.md) and the OpenAPI
+document.
+
+**In the UI (Settings → Streams).**
+
+1. Settings → **API**: create a key with the scope **Ingest (sidecars)** and
+   give it to the sidecar.
+2. The sidecar's first snapshot creates the stream as **pending**. The tab
+   shows "New stream waiting: enable it to import N items" and nothing appears
+   on the dashboard yet. **Preview** lists every item with what enabling would
+   do (create, link offer, filtered, ...) and writes nothing.
+3. **Enable** imports the items; later snapshots update them. **Ignore** drops
+   a stream you don't want. The list also shows a read-only **Docker
+   (register)** row with the number of notifier entries and the last register.
+   While a stream is pending or disabled, **Last counts** shows what enabling
+   would do ("would: created 5, link offers 2"), and the **Settings** link in
+   the header carries an amber ring and count while any stream is pending
+   review. A stream with no stored snapshot says "Waiting for the next
+   snapshot" instead of Preview.
+4. Each stream row has an **Edit** panel for its display name and its network
+   include / exclude lists (applied from the next snapshot; entries already
+   imported are not removed), and a **Default checks** panel: a ping check on
+   each entry's IP and, optionally, a TCP check on a port. New entries of the
+   stream start with them; **Apply to existing entries** adds the missing ones
+   to every active entry (an entry that already has a ping or TCP check is
+   skipped).
+5. **Disable…** and **Delete…** open a dialog that shows the counts first, then
+   asks what happens to the entries: **keep** (disable: they stay but stop
+   updating; delete: they become manual entries), **soft delete** (restorable
+   from Settings → Deleted) or **purge** (gone for good). The stored snapshot is
+   kept when you disable, so Preview and Enable still work. Entries you
+   customised (renamed, grouped, described, with an icon, checks or Home
+   Assistant) are listed by name. Manual entries you linked to the stream are
+   never deleted: soft delete and purge (and deleting the stream) turn them back
+   into manual entries with their old host. Disable with purge can also clear the
+   block list; deleting a stream always removes its blocks and link offers.
+6. A stream entry's edit page has **Unlink from stream…**: the entry becomes a
+   manual entry again (a linked one gets its old host back). **Allow
+   re-offering** lets a later snapshot offer the link again; **Don't re-add**
+   blocks the item.
+6. **Blocked** lists items you deleted with "Don't re-add", with **Unblock**.
+   **Link offers** lists manual entries that match a new item, with **Accept**
+   and **Decline**.
+
+Stream entries show a blue pill with the stream's name on the Dashboard view.
+Tiled and Compact show a small router icon instead (green; amber when the item
+dropped out of the latest snapshot); Compact shows one source icon on every row
+(Docker status, stream or manual). On the Dashboard an item that dropped out of
+the latest snapshot is dimmed with a "missing" marker, never deleted. The
+expanded detail shows a stream entry's IP, MAC and network.
+The **Source** filter lists each stream by name (`?source=stream:dhcp`). On a
+stream entry's edit page the MAC, IP, network, attributes and stream are
+read-only and the name stays editable (your name then wins over the sidecar's).
+Deleting one asks **Allow re-adding** (the next snapshot may bring it back) or
+**Don't re-add** (it is blocked). A manual entry with an open link offer shows a
+**Convert** / **Keep separate** banner on its edit page; one without an offer
+offers **Link to stream item…** to pick an unmatched item by hand.
+
+**Over the API.** The same operations, with an example:
+
+```bash
+# KEY is an `ingest` (or, for testing, a `write`) key. "dhcp" is the stream id.
+curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  "$STD/api/v1/streams/dhcp/snapshot" -d '{
+  "display_name": "DHCP", "producer": "my-sidecar", "producer_version": "0.1.0",
+  "key_type": "mac",
+  "items": [
+    {"key": "AA-BB-CC-00-00-01", "name": "shelly-pump", "ip": "10.0.40.21",
+     "network": "IoT", "attributes": {"reservation_comment": "boiler room"}}
+  ]
+}'
+# 202 {"stream_id":"dhcp","stream_status":"pending","applied":false,"item_count":1,"message":"..."}
+```
+
+- **A new stream is `pending`.** STD stores the snapshot (answering `202`) and
+  applies nothing. Look at what it would do with
+  `GET /api/v1/streams/dhcp/preview`, then
+  `POST /api/v1/streams/dhcp/enable` applies the stored snapshot at once, and
+  every later one as it arrives (`200` with counts of created, updated,
+  unchanged, restored, missing, blocked, link offers and filtered items).
+  `ignore` drops a stream you don't want.
+- **What a snapshot does.** Each item becomes an entry (no host, source
+  `stream`) with its IP, MAC and network. A device missing from a later
+  snapshot is flagged missing, never deleted. Your edits stay: a rename of the
+  entry wins over the sidecar's name, and group, icon, description, checks and
+  Home Assistant settings are never written. `network_include` and
+  `network_exclude` (set with `PATCH /api/v1/streams/dhcp`) leave networks out.
+  Stream entries get no health checks unless the stream has
+  `default_checks` (`{"ping": true, "tcp_port": 22}`, set with `PATCH` and
+  applied to existing entries with `POST .../default-checks/apply`).
+- **Link offers.** A new item whose name (or first DNS label) equals, ignoring
+  case, exactly one active manual entry's name, host or host's first label is
+  not created. It waits as a link offer: accept it
+  and your entry joins the stream, keeping its id, history and checks (its host
+  is cleared); decline
+  it and a new entry is created.
+- **Deleting a stream entry** (`DELETE /api/v1/entries/{id}?block=true`) can
+  also put its key on the stream's block list, so a snapshot does not bring it
+  back; unblock it with `DELETE .../blocks/{block_id}`. Without `block` the next
+  snapshot that still holds the key restores it.
+- **Disabling or deleting a stream** takes `cleanup`: `keep` (entries stay, no
+  longer updated; deleting the stream turns them into manual entries),
+  `soft_delete` (restorable from Settings → Deleted) or `purge` (gone for good).
+  The stored snapshot is kept when disabling. Entries that were manual entries
+  linked to the stream (`inventory.linked`) are never deleted: `soft_delete` and
+  `purge` unlink them (back to manual, old host restored; counted in
+  `result.unlinked`). `POST /api/v1/entries/{id}/unlink` (`{"block": bool}`) does
+  the same for one entry.
+- Snapshot posts are not written to the audit log; changes you make to a
+  stream are. Limits: 5,000 items and 2 MiB per snapshot.
 
 ### Errors, pagination and the audit log
 
@@ -735,7 +957,7 @@ claude mcp add std -s user \
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script itself,
 so there is no virtualenv to set up. Without a checkout, point `uv run` at a
 release tag instead (updating means changing the tag):
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.9.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.0/mcp/std_mcp.py`.
 The server warns Claude when it is older or newer than your STD, and Claude can
 check with the `server_info` tool. A venv-based install and a Claude Desktop
 example are in [`mcp/README.md`](mcp/README.md).
@@ -746,6 +968,207 @@ changes is recorded in the audit log under the key's name. Details, settings
 [`mcp/README.md`](mcp/README.md).
 
 ---
+
+## Notifications
+
+STD can publish to an MQTT broker (the first notification channel; state
+publishing and Home Assistant discovery build on it). Configure it under **Settings → Notifications** (admins only).
+
+1. **Add the broker.** Name, host, port (1883, or 8883 with TLS), optional
+   username and password, and a **base topic** (default `std`; a trailing `/`
+   is dropped). Optional: TLS (with "skip certificate verification" for a
+   self-signed broker), a client id (default `std-<instance id>`), QoS (1 by
+   default) and keepalive. Tick **Enabled** and save.
+2. **Check it.** **Send test message** connects with the values currently in
+   the form (saved or not) and publishes a JSON message to
+   `<base topic>/test` (not retained). Success or the reason for the failure
+   shows right next to the button. Subscribe with
+   `mosquitto_sub -t 'std/#' -v` to watch.
+3. **Watch the status.** The channel list shows connected, connecting,
+   error (with the last error) or disabled, and refreshes while the tab is
+   open.
+
+STD announces itself on `<base topic>/status`: `online` (retained) when it
+connects, and `offline` (retained) as the broker's last will if STD
+disappears, or when it shuts down cleanly. STD reconnects by itself, and
+editing, disabling or deleting a channel takes effect at once, without a
+restart.
+
+### Published state
+
+Everything below is retained, and topics use database ids so a rename never
+moves them (`<base>` is the channel's base topic, `std` by default):
+
+| Topic | What it carries |
+|-------|-----------------|
+| `<base>/status` | `online` / `offline` |
+| `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `std_entry_id`, `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`) |
+| `<base>/entry/<entry id>/check/<check id>` | JSON: `ok`, `state`, `std_entry_id`, `entry_name`, `host`, `group`, `source`, `dashboard_url`, `check_type`, `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` |
+| `<base>/summary` | JSON: `{up, degraded, down, unknown, none, total}` over active entries |
+| `<base>/stream/<stream id>` | JSON, one per inventory stream: `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at`, `counts` (`{active, missing, pending_offers}`), `item_count`. Entry topics stay under `entry/<entry id>`; they never move under a stream. |
+
+```sh
+mosquitto_sub -t 'std/#' -v
+```
+
+STD publishes when a check's result flips between ok and failing (and for its
+first result) or an entry's roll-up changes, not on every result. The full set
+is republished whenever STD (re)connects to the broker and every 10 minutes,
+and a subscriber that joins late gets the current state at once because it is
+retained. Deleted, soft-deleted or disabled entries and checks have their
+topics cleared (an empty retained message). Checks that are disabled or
+cannot run (for example no URL) have no topic.
+
+### Home Assistant
+
+Tick **Add to Home Assistant** on the channel (Home Assistant's MQTT
+integration must use the same broker) and STD publishes retained MQTT
+discovery. Optional: **Discovery prefix** (default `homeassistant`, Home
+Assistant's default) and **Device name prefix** (default `STD`).
+
+What gets created:
+
+- An **STD hub device** with a connectivity sensor (STD online or not) and
+  sensors for the number of entries that are up, degraded, down and unknown.
+- One **device per published entry**, named `<prefix> <entry name> (<host>)`
+  (for example `STD Plex (nas1)`; an entry with no host is `STD Plex`, and the
+  host tells apart same-named entries on different hosts), linked to the hub (a stream entry is linked to its stream's device instead), with a **State** sensor (`up`, `degraded`,
+  `down`, `unknown`, `none`) and one **problem** binary sensor per check named
+  after the check (`HTTP`, `TCP 443`, `Container`, ...). The sensor is on when
+  the check is failing, plus a **Since** timestamp sensor (when the entry
+  last changed state). Docker entries show the image tag as the software
+  version.
+- One **device per inventory stream** that has at least one published entry,
+  named `<prefix> <stream name> stream`, linked to the hub, with a **Status**
+  sensor and **Active entries** and **Missing entries** count sensors read from
+  `<base>/stream/<stream id>`. Its configs are removed with the stream.
+- Entity ids start with `std_` and include the host (for example
+  `binary_sensor.std_plex_nas1_http`), so
+  they are easy to find. The entry's group, host, source, check type, target,
+  latency, message and last change are **attributes**, not areas.
+
+Entries are **opt-in**: nothing is published until you tick **Publish to Home
+Assistant** on an entry (Add or edit page), or pick several in **Settings →
+Notifications → Home Assistant entries**, a table of your entries with a
+filter box, **Select all** / **Select none** (they act on the rows the filter
+shows) and one **Save** that applies every change at once. Within a published
+entry its checks appear automatically; untick **Publish to Home Assistant** on
+a single check to leave it out. The management API and MCP carry `ha_publish`
+on entries and `ha_exclude` on checks. Unticked, deleted or disabled entries
+and checks are removed from Home Assistant, as is everything when you untick
+**Add to Home Assistant**. The hub device always appears while the channel's
+**Add to Home Assistant** is on. Deleting a channel offers to remove its data
+from the broker first (see [Cleaning the broker](#cleaning-the-broker)). When
+Home Assistant restarts, STD republishes everything.
+
+#### Purge and republish
+
+Two clean-slate tools, both admin only, for when Home Assistant shows stale
+devices or old entity ids:
+
+- **Settings → Notifications → Purge MQTT and Home Assistant** (per channel)
+  empties the broker of STD: every retained message under the channel's base
+  topic and every STD discovery config (this STD install's devices only;
+  other STD installs and other Home Assistant devices are left alone, and so is
+  `<base topic>/status`). The confirm dialog has **Republish afterwards**, on
+  by default: STD waits about 2 seconds for Home Assistant to process the
+  removals and publishes everything again, so devices come back as new. Turn it
+  off to leave the broker empty (for example before removing STD); it stays
+  empty until something changes or the channel reconnects, and the periodic
+  10-minute republish does not undo it. The result (topics cleared, state and
+  discovery) shows next to the channel. The channel must be enabled and
+  connected.
+- **Purge and republish to MQTT/HA** on an **entry's edit page** (shown when a
+  channel is enabled) does this for one entry on every channel: its state
+  topic, check topics and device are removed, then published again. Use it
+  after renaming an entry, since Home Assistant keeps entity ids it has
+  already registered; the recreated device gets fresh ones. An entry that is
+  not published to Home Assistant only has its state topics cleared and
+  republished.
+
+- **Purge MQTT/HA** on a **stream's row** in Settings → Streams (shown when a
+  channel is enabled) does this for every entry of the stream in one batch,
+  soft-deleted ones included, plus the stream's status topic and its Home
+  Assistant device. Afterwards STD publishes what is still eligible: entries
+  that are gone, or not published to Home Assistant, stay cleared.
+
+The same actions are `POST /api/v1/notifications/channels/<id>/purge`
+(`{"republish": true}`), `POST /api/v1/entries/<id>/notifications/purge` and
+`POST /api/v1/streams/<stream id>/notifications/purge` in the management API,
+and the `purge_notification_channel`, `purge_entry_notifications` and
+`purge_stream_notifications` MCP tools (write key). They take several seconds.
+
+#### Cleaning the broker
+
+- **Delete** (Settings → Notifications) shows **Remove this channel's data from
+  the broker first**, ticked by default: the retained topics, the discovery
+  configs and `<base>/status` are cleared (no republish), then the channel is
+  deleted. If the channel is disabled or its broker can't be reached, nothing
+  is deleted and the dialog offers **Delete anyway**.
+- **Disable** offers the same option, unticked by default; `<base>/status`
+  then reads `offline`.
+- **Changing the base topic** (or, with Home Assistant on, the discovery prefix
+  or device name prefix) shows **Remove the old topics from the broker**, ticked
+  by default: STD clears everything under the old base (its `status` too) and
+  this install's old discovery configs, then switches. The last 5 previous
+  bases are remembered per channel.
+- **Scan for orphans** (per channel) lists the retained STD topics that STD no
+  longer publishes, under the current base, the remembered previous bases, a
+  base you type, and this install's discovery configs. It is a preview; **Clear
+  N orphans** removes exactly what was listed. Only topics shaped like STD's own
+  (`status`, `summary`, `entry/<id>/...`, `stream/<id>`, discovery configs) are
+  listed.
+
+In the management API: `DELETE /api/v1/notifications/channels/<id>?cleanup=false`
+skips the cleanup (default true), `PATCH` takes `cleanup` (default true for a base
+change, false for a disable), `GET .../previous-bases`, and `POST
+.../orphans/scan` and `.../orphans/clear`. MCP: `delete_notification_channel`,
+`update_notification_channel`, `list_notification_previous_bases`,
+`scan_notification_orphans`, `clear_notification_orphans`.
+
+Example [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
+cards:
+
+```yaml
+# Every failing check
+type: custom:auto-entities
+card: {type: entities, title: STD failing checks}
+filter:
+  include:
+    - entity_id: "binary_sensor.std_*"
+      state: "on"
+```
+
+```yaml
+# Every check in one STD group
+type: custom:auto-entities
+card: {type: entities, title: Media}
+filter:
+  include:
+    - entity_id: "binary_sensor.std_*"
+      attributes: {group: Media}
+```
+
+```yaml
+# Everything STD created, by device manufacturer
+type: custom:auto-entities
+card: {type: entities, title: Service Tracker Dashboard}
+filter:
+  include:
+    - device_manufacturer: Service Tracker Dashboard
+```
+
+Not included: a "Check now" button and per-result latency sensors (see
+`docs/FUTURE.md`).
+
+The password is write-only: the form shows only that one is set, a blank
+field keeps it and a checkbox removes it; it is never returned by the API,
+written to the log or recorded in the audit log. Channels are also managed
+through the [management API](#management-api)
+(`/api/v1/notifications/channels`) and the MCP server.
+
+STD sends its MQTT traffic from one background thread, so a slow or offline
+broker never delays health checks or the dashboard.
 
 ## Container Labels (via docker-api-notifier)
 
@@ -774,7 +1197,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/config/services.db`    | SQLite database (WAL mode).      |
 | `/config/std.log`        | Main app log (rotated).          |
 | `/config/images/`        | Cached service icons.            |
-| `/config/backups/`       | YAML backups (manual + nightly). |
+| `/config/backups/`       | YAML backups (manual + nightly) and nightly SQLite snapshots. |
 | `/config/settings.yml`   | Optional config file.            |
 
 ---
@@ -898,18 +1321,24 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
 | `/health/strips?ids=1,2,3` | 24h uptime strips for up to 500 entries (JSON, login). |
 | `/service/<id>/checks/run` | Check now (POST, login). |
-| `/settings`          | Settings + backup/restore UI (incl. Exposure tab). |
+| `/settings`          | Settings + backup/restore UI (incl. Exposure, Notifications and Streams tabs; `?section=streams&preview=<stream_id>` shows a stream preview). |
+| `/settings/streams/<stream_id>/...` | Streams tab: `enable`, `ignore`, `disable`, `delete`, `update`, `default-checks`, `default-checks/apply`, `blocks/<id>/unblock`, `offers/<id>/accept\|decline` (admin POST). |
+| `/edit/<id>/stream-link` | Link a manual entry to a stream item (admin POST). |
+| `/settings/notifications/...` | Notifications tab: `save`, `<id>/toggle`, `<id>/delete`, `test` (admin POST), `status` (admin GET). |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
 | `/settings/api-keys` `/settings/api-keys/<id>/revoke` | Create (shown once) and revoke admin API keys (admin POST). |
+| `/settings/update-check` | Save the update-check toggle and interval (admin POST). |
+| `/api/update-status` | Cached update-check status for the header (JSON, login). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
 | `/images/<file>`     | Serve cached icon files.                 |
 | `/api/v1/register`   | Register/update entry (canonical keys; notifier `api_token`). |
 | `/api/v1/openapi.json` | OpenAPI 3.1 description of the management API (public). |
-| `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope (admin API key). |
+| `/api/v1/meta`       | STD version, API revision and features (public). |
+| `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope, plus the STD version, build commit/channel and update status (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
-| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
+| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
 | `/login` `/logout`   | Local user auth.                         |
 
 ### Admin API keys (management API)
@@ -921,7 +1350,8 @@ management key is rejected by `/api/v1/register`.
 
 - Pick a name (unique among active keys, up to 64 characters; a revoked key's
   name can be reused) and a scope: **read** or **write**
-  (write includes read). The full key (`std_<prefix>_<secret>`) is shown
+  (write includes read). An **ingest** key (inventory sidecars) is accepted by
+  the API; its picker arrives with the Settings → Streams page. The full key (`std_<prefix>_<secret>`) is shown
   **once** with a Copy button; only a hash is stored, so a lost key means
   revoking it and creating another.
 - Send it as `Authorization: Bearer <key>`. Browser sessions do not
@@ -974,8 +1404,14 @@ restored.
 - Entries with **Lock (ignore notifier updates)** ticked are not touched by API register calls. An unlocked manual entry that matches a register call (same host and name) is adopted by the notifier and becomes a notifier entry.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.
-- Nightly backups run shortly after midnight; old backups are pruned
-  per `backup_days_to_keep`.
+- Nightly backups run shortly after midnight and write two files to
+  `backup_path`: `<date>-std_backup.yml` and `<date>-std_backup.sqlite3` (a
+  full database snapshot). Old files of both kinds are pruned per
+  `backup_days_to_keep`; nothing else in the folder is touched.
+- To restore from a snapshot: stop the container, replace
+  `/config/services.db` in the config volume with the snapshot (delete any
+  `services.db-wal` / `services.db-shm` beside it), and start the container.
+  The YAML backup is restored from Settings as before.
 - Version metadata is shown in `/settings`.
 - All UI forms and in-page delete requests are CSRF-protected. If a form
   was left open past a session expiry, submitting it shows a "please retry"

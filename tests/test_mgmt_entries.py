@@ -671,3 +671,15 @@ def test_health_summary_container_up_url_failing_is_down(app, client, rkey):
     assert body["failing"][0]["failures"][0]["message"] == "503: Scope not found"
     entry = client.get(f"/api/v1/entries/{eid}", headers=rkey).get_json()
     assert entry["health"]["state"] == "down"
+
+
+def test_mgmt_entries_source_query_covers_valid_sources(app, client, rkey):
+    from models import VALID_SOURCES
+
+    with app.app_context():
+        for s in VALID_SOURCES:
+            _make(f"q-{s}", source=s)
+    for s in VALID_SOURCES:
+        body = client.get(f"/api/v1/entries?source={s}", headers=rkey).get_json()
+        assert [i["name"] for i in body["items"]] == [f"q-{s}"]
+    assert client.get("/api/v1/entries?source=bogus", headers=rkey).status_code == 400

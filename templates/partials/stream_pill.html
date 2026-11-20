@@ -1,0 +1,11 @@
+{# Inventory-stream pill (PRD 18.8): the stream's display name where Docker entries
+   show the Docker pill, plus a muted marker when the item is missing from the latest
+   snapshot. Expects `entry` (a stream entry); `with_name=false` hides the name text. #}
+{% set _st = entry.stream %}
+<span class="status-pill stream-pill{% if entry.inventory_missing %} stream-pill-missing{% endif %}"
+      title="Stream: {{ _st.display_name if _st else 'unknown' }}{% if entry.inventory_missing %} — missing from the latest snapshot{% endif %}{% if entry.description %} — {{ entry.description }}{% endif %}">
+  <i class="ti ti-network" aria-hidden="true"></i><span class="stream-pill-name">{{ _st.display_name if _st else 'Stream' }}</span>
+</span>
+{% if entry.inventory_missing %}
+<span class="stream-missing" title="Missing from the latest snapshot of {{ _st.display_name if _st else 'its stream' }}"><i class="ti ti-ghost-2" aria-hidden="true"></i><span class="stream-missing-text"> missing</span></span>
+{% endif %}

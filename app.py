@@ -18,13 +18,16 @@ from urllib.parse import urlparse
 import humanize
 from dateutil import parser
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
+import version_check
+from api_version import API_REVISION
 from extensions import csrf, db, login_manager
 from health import health_bp
 from health_state import entry_health
 from jobs import start_background_workers, verify_and_fetch_missing_icons
-from models import User
+from models import STREAM_PENDING, InventoryStream, User
 from routes_api import api_bp
 from routes_auth import auth_bp, refresh_default_password_flag
 from routes_dashboard import dashboard_bp
@@ -59,9 +62,11 @@ def _configure_logging():
 
 
 def read_version_info():
+    """Build metadata: always has `version`, `commit`, `channel`, `build_time`."""
+    info = {}
     try:
         with open("/app/version.txt", "r") as f:
-            return dict(line.strip().split("=", 1) for line in f)
+            info = dict(line.strip().split("=", 1) for line in f if "=" in line)
     except Exception as e:
         logger.warning(f"⚠️ Could not read version info: {e}")
         # Local run (no image build): fall back to the repo's VERSION file.
@@ -71,11 +76,13 @@ def read_version_info():
                 version = vf.read().strip() or "unknown"
         except OSError:
             pass
-        return {
-            "version": version,
-            "commit": "unknown",
-            "build_time": "unknown"
-        }
+        info = {"version": version}
+    # An image built before the channel arg existed has no `channel` line.
+    for key, default in (("version", "unknown"), ("commit", "unknown"),
+                         ("channel", "local"), ("build_time", "unknown")):
+        if not info.get(key):
+            info[key] = default
+    return info
 
 
 def create_app():
@@ -163,7 +170,24 @@ def create_app():
 
     @app.context_processor
     def inject_globals():
+        version_ui = {}
+        try:
+            version_check.maybe_refresh(app)
+            running = app.config['VERSION_INFO'].get('version', 'unknown')
+            version_ui = {'display': version_check.display_info(app.config['VERSION_INFO']),
+                          'upd': version_check.status(running)}
+        except Exception as exc:  # the header must never break a page
+            logger.debug(f"version header unavailable: {exc}")
+        pending_streams = 0
+        try:
+            if current_user.is_authenticated:
+                pending_streams = InventoryStream.query.filter_by(status=STREAM_PENDING).count()
+        except Exception as exc:  # the header must never break a page
+            db.session.rollback()
+            logger.debug(f"pending stream count unavailable: {exc}")
         return {
+            'pending_streams': pending_streams,
+            'version_ui': version_ui,
             'static_v': static_v,
             'now': datetime.now,
             'version_info': app.config['VERSION_INFO'],
@@ -226,6 +250,15 @@ def create_app():
                 response.headers["Allow"] = ", ".join(error.valid_methods)
             return response
         return error
+
+    @app.after_request
+    def _api_revision_headers(response):
+        """Every `/api/...` response, errors included, names the contract revision
+        and the STD version so producers can log them (PRD 18.1)."""
+        if request.path.startswith("/api/"):
+            response.headers["X-STD-API-Revision"] = str(API_REVISION)
+            response.headers["X-STD-Version"] = str(app.config["VERSION_INFO"].get("version") or "unknown")
+        return response
 
     app.register_error_handler(404, _api_v1_json_error)
     app.register_error_handler(405, _api_v1_json_error)

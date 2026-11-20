@@ -26,6 +26,7 @@ import requests
 import yaml
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     jsonify,
@@ -47,8 +48,12 @@ import check_form
 import entry_rules
 import health_history
 import jobs
+import mgmt_serializers
+import notify
 import settings_store
+import streams
 import synthesizer
+import version_check
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
@@ -58,15 +63,21 @@ from models import (
     CHECK_TYPE_DNS,
     CHECK_TYPE_HTTP,
     CHECK_TYPES,
+    NAME_SOURCE_UI_EDIT,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
+    SOURCE_STREAM,
     URL_CHECK_KINDS,
     VALID_SOURCES,
     ApiAudit,
     ApiKey,
     Group,
     HealthCheck,
+    InventoryBlock,
+    InventoryStream,
+    NotificationChannel,
     ServiceEntry,
+    StreamLinkOffer,
     User,
     Widget,
     WidgetValue,
@@ -75,6 +86,7 @@ from models import (
     ensure_url_checks,
     hard_delete_entry,
 )
+from notify_purge import PurgeError
 from routes_auth import is_admin_required
 from settings_loader import CONFIG_DIR
 from view_helpers import (
@@ -234,7 +246,8 @@ def _health_count_context(entries, show_urlless, source, status):
     for key, value in (("total", "all"), ("passing", "healthy"), ("failing", "failing")):
         links[key] = url_for(request.endpoint, **{**base, "status": value})
     active = {"all": "total", "healthy": "passing", "failing": "failing"}.get(status)
-    return {"health_counts": counts, "health_links": links, "health_active": active}
+    return {"health_counts": counts, "health_links": links, "health_active": active,
+            "source_streams": InventoryStream.query.order_by(InventoryStream.display_name).all()}
 
 
 def _load_view_entries():
@@ -243,6 +256,7 @@ def _load_view_entries():
     return (
         ServiceEntry.active()
         .options(joinedload(ServiceEntry.group))
+        .options(joinedload(ServiceEntry.stream))
         .options(selectinload(ServiceEntry.exposures))
         .options(selectinload(ServiceEntry.checks))
         .all()
@@ -527,8 +541,12 @@ def settings():
                     # Source: backups from before v0.7.0 have none; use the
                     # migration's backfill rule (never registered -> manual).
                     item_source = item.get('source')
-                    if item_source not in VALID_SOURCES:
+                    if item_source is None:
                         item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
+                    elif item_source not in VALID_SOURCES or item_source == SOURCE_STREAM:
+                        # Unknown (e.g. a source from a newer STD): operator-made. A stream
+                        # entry has no stream to rejoin on restore, so it comes back manual.
+                        item_source = SOURCE_MANUAL
                     item_host = (item.get('host') or '').strip() or None
 
                     # Host is optional for manual entries only.
@@ -595,6 +613,10 @@ def settings():
                     if not entry:
                         entry = ServiceEntry(host=item_host, container_name=item['container_name'])
                         db.session.add(entry)
+                    elif entry.stream_id is not None:
+                        # A live stream entry is owned by its stream; a backup never overwrites it.
+                        skipped_count += 1
+                        continue
 
                     # Assign group_id only now (after entry exists)
                     entry.group_id = group_obj.id if group_obj else None
@@ -663,7 +685,7 @@ def settings():
     return _render_settings()
 
 
-def _render_settings(group_form=None, status=200):
+def _render_settings(group_form=None, status=200, notification_form=None):
     """Render the Settings page. `group_form` (a failed Groups save) is shown in
     place of the stored groups, with its per-row errors, on the Groups tab."""
     BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
@@ -733,6 +755,9 @@ def _render_settings(group_form=None, status=200):
             audit_key_options.append({'value': f'id:{kid}',
                                       'label': f'{kname} (revoked)' if revoked_at else kname})
 
+    stream_ctx = _streams_context(request.args.get('preview'))
+    notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
+                                 NotificationChannel.query.order_by(NotificationChannel.id).all()]
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -740,12 +765,15 @@ def _render_settings(group_form=None, status=200):
          config_from_file=current_app.config['CONFIG_FROM_FILE'],
          server_backup_files=server_backup_files,
          version_info=current_app.config['VERSION_INFO'],
+         version_display=version_check.display_info(current_app.config['VERSION_INFO']),
+         update_status=version_check.status(current_app.config['VERSION_INFO'].get('version', 'unknown')),
          widgets=widgets,
          missing_icons=missing_icons,
          groups=groups,
          group_form=group_form,
          group_rows=group_rows,
-         force_section='groups' if group_form else '',
+         force_section='groups' if group_form else ('notifications' if notification_form else ('streams' if stream_ctx['preview'] else '')),
+         **stream_ctx,
          users=users,
          deleted_rows=_deleted_entry_rows(),
          detached_widgets=_detached_widget_rows(),
@@ -760,11 +788,240 @@ def _render_settings(group_form=None, status=200):
          audit_filter=audit_filter,
          audit_limit=AUDIT_VIEW_LIMIT,
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
+         notification_channels=notification_channels_out,
+         notification_form=notification_form,
+         ha_entries=ServiceEntry.active().options(joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
+         ha_discovery_on=any(c['config'].get('ha_discovery') for c in notification_channels_out),
+         notifications_enabled=any(c['enabled'] for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
          exposure_host_overrides=exposure_host_overrides,
     ), status
+
+
+# --- Settings -> Notifications (PRD 17.2) -----------------------------------------
+
+
+def _notification_form_data(form):
+    """Read the channel form: `(name, enabled, config, secret_op)` where
+    `secret_op` is `notify.UNSET` (keep), None (clear) or the new password."""
+    def text(key):
+        return (form.get(key) or '').strip()
+
+    def number(key):
+        raw = text(key)
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return raw          # left as text so validation reports it
+
+    config = {
+        'host': text('host'),
+        'port': number('port'),
+        'tls': form.get('tls') == '1',
+        'tls_insecure': form.get('tls_insecure') == '1',
+        'username': text('username') or None,
+        'client_id': text('client_id') or None,
+        'base_topic': text('base_topic') or 'std',
+        'qos': number('qos') if text('qos') else 1,
+        'keepalive': number('keepalive') if text('keepalive') else 60,
+        'ha_discovery': form.get('ha_discovery') == '1',
+        'ha_prefix': text('ha_prefix') or 'homeassistant',
+        'ha_device_prefix': text('ha_device_prefix') or 'STD',
+    }
+    password = form.get('password') or ''
+    if form.get('clear_password') == '1':
+        secret = None
+    elif password:
+        secret = password
+    else:
+        secret = notify.UNSET
+    return text('name'), form.get('enabled') == '1', config, secret
+
+
+@dashboard_bp.route('/settings/notifications/save', methods=['POST'])
+@login_required
+@is_admin_required
+def save_notification_channel():
+    """Create (no `channel_id`) or update an MQTT channel. A blank password keeps
+    the stored one; the clear box removes it. The password never leaves the server.
+
+    On an update that changes the base topic (or the discovery prefix / device prefix
+    with discovery on), `cleanup_old_base` clears what the old values left on the
+    broker first (PRD 17.5); when the broker can't be reached nothing is saved and the
+    form comes back so the operator can untick it."""
+    name, enabled, config, secret = _notification_form_data(request.form)
+    raw_id = (request.form.get('channel_id') or '').strip()
+    cleanup_failed = False
+    if raw_id:
+        channel = db.get_or_404(NotificationChannel, int(raw_id) if raw_id.isdigit() else 0)
+        try:
+            _, errors = notify.update_channel(
+                channel, name=name, enabled=enabled, config=config, secret=secret,
+                cleanup_old_base=request.form.get('cleanup_old_base') == '1')
+        except PurgeError as exc:
+            cleanup_failed = True
+            errors = [{'field': 'cleanup', 'message': f"{exc.message} Nothing was saved: untick "
+                       "\"Remove the old topics from the broker\" to save anyway."}]
+    else:
+        channel, errors = notify.create_channel(name, 'mqtt', enabled, config,
+                                                None if secret is notify.UNSET else secret)
+    if errors:
+        for e in errors:
+            flash(f"Notification channel: {e['field']} {e['message']}", "danger")
+        form = {'id': raw_id, 'name': name, 'enabled': enabled, **config}
+        return _render_settings(notification_form=form, status=409 if cleanup_failed else 400)
+    logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
+    flash(f"✅ Notification channel '{channel.name}' saved.", "success")
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+@dashboard_bp.route('/settings/notifications/ha-entries', methods=['POST'])
+@login_required
+@is_admin_required
+def save_ha_entries():
+    """Apply the Home Assistant entries picker in one commit (so one sync).
+
+    `ha_entry_ids` lists every row the operator saw; `ha_publish` the ticked
+    ones. Rows not listed (an entry added since the page loaded) are left alone."""
+    def ids(name):
+        return {int(v) for v in request.form.getlist(name) if v.isdigit()}
+    seen, ticked = ids('ha_entry_ids'), ids('ha_publish')
+    changed = 0
+    for entry in ServiceEntry.active().filter(ServiceEntry.id.in_(seen)).all():
+        want = entry.id in ticked
+        if bool(entry.ha_publish) != want:
+            entry.ha_publish = want
+            changed += 1
+    db.session.commit()
+    logger.info(f"Home Assistant entries saved by {current_user.username} ({changed} changed).")
+    flash(f"✅ Home Assistant entries saved ({changed} changed).", "success")
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+def _wants_json():
+    return request.accept_mimetypes.best_match(['application/json', 'text/html']) == 'application/json'
+
+
+def _channel_action_result(call, success):
+    """Run a channel change that may clean the broker first. JSON for the Settings
+    dialog (which then reloads to show the flash); a flash and a redirect otherwise."""
+    try:
+        message = success(call())
+    except PurgeError as exc:
+        if _wants_json():
+            return jsonify({'ok': False, 'message': exc.message}), exc.status
+        flash(exc.message, 'danger')
+        return redirect(url_for('dashboard.settings', section='notifications'))
+    flash(message, 'success')
+    if _wants_json():
+        return jsonify({'ok': True, 'message': message})
+    return redirect(url_for('dashboard.settings', section='notifications'))
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/toggle', methods=['POST'])
+@login_required
+@is_admin_required
+def toggle_notification_channel(id):
+    """Enable or disable a channel. Disabling can first remove the channel's data from
+    its broker (`cleanup=1`, off by default)."""
+    channel = db.get_or_404(NotificationChannel, id)
+    cleanup = request.form.get('cleanup') == '1'
+    return _channel_action_result(
+        lambda: notify.update_channel(channel, enabled=not channel.enabled, cleanup_disable=cleanup),
+        lambda _r: f"Notification channel '{channel.name}' {'enabled' if channel.enabled else 'disabled'}"
+                   f"{' and removed from the broker' if cleanup and not channel.enabled else ''}.")
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_notification_channel(id):
+    """Delete a channel. `cleanup=1` (the dialog's default) removes its retained topics,
+    discovery configs and status first; when the broker can't be reached nothing is
+    deleted and the dialog offers "Delete anyway" (`cleanup=0`)."""
+    channel = db.get_or_404(NotificationChannel, id)
+    name = channel.name
+    cleanup = request.form.get('cleanup') == '1'
+
+    def done(cleared):
+        extra = (f" and removed {cleared['topics_cleared']} topics from the broker" if cleared else '')
+        return f"Deleted notification channel '{name}'{extra}."
+    return _channel_action_result(lambda: notify.delete_channel(channel, cleanup=cleanup), done)
+
+
+@dashboard_bp.route('/settings/notifications/test', methods=['POST'])
+@login_required
+@is_admin_required
+def test_notification_channel_form():
+    """Send a test message with the submitted (possibly unsaved) values.
+    A blank password on a saved channel tests with the stored one."""
+    _, _, config, secret = _notification_form_data(request.form)
+    if secret is notify.UNSET:
+        raw_id = (request.form.get('channel_id') or '').strip()
+        stored = db.session.get(NotificationChannel, int(raw_id)) if raw_id.isdigit() else None
+        secret = stored.secret if stored else None
+    ok, message = notify.test_channel('mqtt', config, secret)
+    return jsonify({'ok': ok, 'message': message})
+
+
+def _purge_response(call, *args):
+    try:
+        result = call(*args)
+    except PurgeError as exc:
+        return jsonify({'ok': False, 'message': exc.message}), exc.status
+    return jsonify({'ok': True, **result})
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/purge', methods=['POST'])
+@login_required
+@is_admin_required
+def purge_notification_channel(id):
+    """Clear every retained STD topic and discovery config on a channel's broker.
+    The Notifications tab posts this with fetch and shows the counts inline."""
+    channel = db.get_or_404(NotificationChannel, id)
+    republish = request.form.get('republish', '') not in ('', '0', 'false')
+    return _purge_response(notify.purge_channel, channel.id, republish)
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/orphans/scan', methods=['POST'])
+@login_required
+@is_admin_required
+def scan_notification_orphans(id):
+    """List the retained STD topics nothing desires any more (nothing is cleared)."""
+    channel = db.get_or_404(NotificationChannel, id)
+    return _purge_response(notify.scan_orphans, channel.id,
+                           (request.form.get('extra_base') or '').strip() or None)
+
+
+@dashboard_bp.route('/settings/notifications/<int:id>/orphans/clear', methods=['POST'])
+@login_required
+@is_admin_required
+def clear_notification_orphans(id):
+    """Clear the listed orphans (`topic` fields from the scan)."""
+    channel = db.get_or_404(NotificationChannel, id)
+    return _purge_response(notify.clear_orphans, channel.id, request.form.getlist('topic'),
+                           (request.form.get('extra_base') or '').strip() or None)
+
+
+@dashboard_bp.route('/edit/<int:id>/purge-notifications', methods=['POST'])
+@login_required
+@is_admin_required
+def purge_entry_notifications(id):
+    """Purge this entry's MQTT topics and Home Assistant device, then republish it."""
+    entry = db.get_or_404(ServiceEntry, id)
+    return _purge_response(notify.purge_entry, entry.id)
+
+
+@dashboard_bp.route('/settings/notifications/status', methods=['GET'])
+@login_required
+@is_admin_required
+def notification_status():
+    """Live connection status per channel id, polled by the Notifications tab."""
+    return jsonify({str(c.id): notify.channel_status(c) for c in NotificationChannel.query.all()})
 
 
 @dashboard_bp.route('/settings/exposure', methods=['POST'])
@@ -804,6 +1061,27 @@ def save_exposure_settings():
         "success",
     )
     return redirect(url_for('dashboard.settings', section='exposure'))
+
+
+@dashboard_bp.route('/settings/update-check', methods=['POST'])
+@login_required
+@is_admin_required
+def save_update_check():
+    """Save the update-check toggle and interval (Settings -> Info)."""
+    enabled = request.form.get('update_check_enabled') == '1'
+    raw = (request.form.get('update_check_interval_hours') or '').strip()
+    try:
+        hours = int(raw)
+        if hours < 1:
+            raise ValueError
+    except ValueError:
+        flash("Update check interval must be a whole number of hours, 1 or more.", "danger")
+        return redirect(url_for('dashboard.settings', section='info'))
+    settings_store.save_update_check_settings(enabled, hours)
+    db.session.commit()
+    version_check.reset()  # re-read the cache/interval; the next page load may refetch
+    flash("✅ Update check settings saved.", "success")
+    return redirect(url_for('dashboard.settings', section='info'))
 
 
 def _parse_group_form(form, groups):
@@ -1058,6 +1336,7 @@ def add_entry():
             image_icon=image_icon,
             sort_priority=sort_priority,
             is_static=is_static,
+            ha_publish='ha_publish' in request.form,
         )
         check_form.apply_rows(entry, url_rows, svc_rows)
 
@@ -1126,6 +1405,7 @@ def _restore_checks(entry, item):
             check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
             check.verify_tls = cfg.get('verify_tls') is not False
             check.enabled = bool(cfg.get('enabled'))
+            check.ha_exclude = cfg.get('ha_exclude') is True
             # DNS settings (v0.9.0); absent in older backups, so they stay NULL.
             is_dns = check.check_type == CHECK_TYPE_DNS and kind == CHECK_KIND_SERVICE
             check.dns_name = _text_or_none(cfg.get('dns_name')) if is_dns else None
@@ -1199,7 +1479,10 @@ def edit_entry(id):
                                form=form,
                                url_rows=url_rows,
                                svc_rows=svc_rows,
-                               container_row=container_row)
+                               container_row=container_row,
+                               **_edit_stream_context(entry),
+                               notifications_enabled=NotificationChannel.query.filter_by(
+                                   enabled=True).first() is not None)
 
     # Handle form submission
     if request.method == 'POST':
@@ -1209,8 +1492,11 @@ def edit_entry(id):
 
 
                 # Soft delete: recoverable from Settings -> Deleted. The widget
-                # stays attached; nothing else is removed.
-                entry.deleted_at = datetime.now()
+                # stays attached; nothing else is removed. "Don't re-add" (stream
+                # entries) also blocks the key.
+                streams.soft_delete_entry(
+                    entry, _truthy(request.form.get('block')) and entry.stream_id is not None,
+                    actor=current_user.username)
                 db.session.commit()
                 flash(
                     f"Deleted entry: {entry.container_name}. "
@@ -1239,13 +1525,17 @@ def edit_entry(id):
 
         # === BASIC FIELDS ===
         new_host = request.form.get('host', '').strip()
-        if entry.is_manual:
-            # Host is optional for manual entries.
-            entry.host = new_host or None
-            entry.description = request.form.get('description', '').strip()[:255] or None
+        if not entry.is_docker:
+            # Host is optional for manual entries (stream entries never have one).
+            entry.host = None if entry.is_stream else (new_host or None)
+            if 'description' in request.form:
+                entry.description = request.form.get('description', '').strip()[:255] or None
         else:
             entry.host = new_host
-        entry.container_name = request.form.get('container_name', '').strip()
+        new_name = request.form.get('container_name', '').strip()
+        if entry.is_stream and new_name and new_name != entry.container_name:
+            entry.name_source = NAME_SOURCE_UI_EDIT     # snapshots no longer write the name
+        entry.container_name = new_name
 
         # URL provenance: setting a URL via UI marks it ui_edit (highest
         # precedence, the synthesizer won't touch it). Clearing the URL
@@ -1266,6 +1556,8 @@ def edit_entry(id):
                 entry.url_check(which).last_checked_at = None
         was_locked = entry.is_static
         entry.is_static = 'is_static' in request.form
+        if 'ha_form' in request.form:
+            entry.ha_publish = 'ha_publish' in request.form
         if was_locked and not entry.is_static and entry.container_check is not None:
             # Unlocked: the container state was frozen, so re-evaluate it now.
             entry.container_check.last_checked_at = None
@@ -1449,6 +1741,11 @@ def health_strips():
     return jsonify({str(k): v for k, v in health_history.strips(entries).items()})
 
 
+def _truthy(value):
+    """A form/JSON flag: True, 1, "true", "yes" or "on"."""
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 @dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required
@@ -1460,7 +1757,10 @@ def delete_entry_json(id):
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
 
     # Soft delete: recoverable from Settings -> Deleted. Widget stays attached.
-    entry.deleted_at = datetime.now()
+    # `block` (stream entries): also keep the stream from bringing the entry back.
+    body = request.get_json(silent=True)
+    block = _truthy((body.get('block') if isinstance(body, dict) else None) or request.values.get('block'))
+    streams.soft_delete_entry(entry, block and entry.stream_id is not None, actor=current_user.username)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -1478,7 +1778,7 @@ def create_api_key():
     scope = request.form.get('scope') or ''
     error = api_keys.validate_name(name)
     if not error and scope not in api_keys.SCOPES:
-        error = "Choose a scope: read or write."
+        error = "Choose a scope: read, write or ingest."
     if error:
         flash(error, "danger")
         return redirect(url_for('dashboard.settings', section='api'))
@@ -1526,7 +1826,8 @@ def revoke_api_key(id):
 @is_admin_required
 def restore_deleted_entry(id):
     entry = ServiceEntry.deleted().filter(ServiceEntry.id == id).first_or_404()
-    clash = ServiceEntry.active().filter_by(
+    # Stream entries are unique by stream key, not by (host, name) (PRD 18.6).
+    clash = None if entry.stream_id is not None else ServiceEntry.active().filter_by(
         host=entry.host, container_name=entry.container_name
     ).first()
     if clash:
@@ -1554,6 +1855,316 @@ def purge_deleted_entry(id):
     logger.info(f"Permanently deleted entry '{name}'.")
     flash(f"🗑️ Permanently deleted '{name}'.", "success")
     return redirect(url_for('dashboard.settings', section='deleted'))
+
+
+# --- Settings -> Streams (PRD 18.8) ------------------------------------------------
+# Thin wrappers over streams.py: the lifecycle rules live there, these routes only
+# read the form, call one function and flash the outcome.
+
+PREVIEW_ROW_LIMIT = 1000
+
+
+def _streams_context(preview_slug=None):
+    """Everything the Streams tab renders: one dict per stream (counts, cleanup
+    dialog data, blocks, offers), the read-only Docker row and the optional Preview."""
+    rows = []
+    for stream in InventoryStream.query.order_by(InventoryStream.display_name, InventoryStream.id).all():
+        offers = StreamLinkOffer.query.filter_by(stream_id=stream.id).order_by(StreamLinkOffer.id).all()
+        entry_ids = {o.entry_id for o in offers}
+        names = {e.id: e.container_name for e in
+                 ServiceEntry.query.filter(ServiceEntry.id.in_(entry_ids)).all()} if entry_ids else {}
+        rows.append({
+            'stream': stream,
+            'stats': streams.entry_stats(stream),
+            'customised': streams.customised_entries(stream),
+            'linked': streams.linked_entries(stream),
+            'blocks': InventoryBlock.query.filter_by(stream_id=stream.id).order_by(InventoryBlock.id).all(),
+            'offers': [{'offer': o, 'entry_name': names.get(o.entry_id, '?')} for o in offers],
+            'item_count': len(stream.snapshot) if stream.snapshot is not None else None,
+            # Dry run for streams that are not applying: one read-only plan() each.
+            'would_counts': (streams.would_counts(stream) if stream.status != 'enabled' else None),
+        })
+    docker_q = ServiceEntry.active().filter(ServiceEntry.source == SOURCE_NOTIFIER)
+    docker_row = {'count': docker_q.count(),
+                  'last_register': docker_q.with_entities(func.max(ServiceEntry.last_api_update)).scalar()}
+    preview = None
+    if preview_slug:
+        stream = streams.find_stream(preview_slug)
+        if stream is None:
+            flash("That stream doesn't exist.", "danger")
+        else:
+            try:
+                data = streams.preview(stream)
+                preview = {'stream': stream, 'data': data, 'items': data['items'][:PREVIEW_ROW_LIMIT],
+                           'truncated': max(0, len(data['items']) - PREVIEW_ROW_LIMIT)}
+            except streams.StreamError as exc:
+                flash(exc.message, "danger")
+    return {'stream_rows': rows, 'docker_row': docker_row, 'preview': preview,
+            'pending_streams': sum(1 for r in rows if r['stream'].status == 'pending')}
+
+
+def _streams_redirect():
+    return redirect(url_for('dashboard.settings', section='streams'))
+
+
+def _stream_or_404(slug):
+    stream = streams.find_stream(slug)
+    if stream is None:
+        abort(404)
+    return stream
+
+
+def _stream_action(slug, fn, success, **kwargs):
+    """Run one lifecycle call; flash its message, or the StreamError's. `success`
+    is a callable of the result returning the message."""
+    stream = _stream_or_404(slug)
+    name = stream.display_name
+    try:
+        result = fn(stream, **kwargs)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return False
+    flash(success(name, result), "success")
+    return True
+
+
+def _counts_text(counts):
+    parts = [f"{v} {k.replace('_', ' ')}" for k, v in (counts or {}).items() if v]
+    return ", ".join(parts) or "nothing to change"
+
+
+@dashboard_bp.route('/settings/streams/<slug>/enable', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_enable(slug):
+    if _stream_action(slug, streams.enable, lambda n, r: (
+            f"Enabled stream '{n}': {_counts_text(r['counts'])}." if r['applied']
+            else f"Enabled stream '{n}'. The next snapshot will import its items.")):
+        logger.info(f"Stream '{slug}' enabled by {current_user.username}.")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/ignore', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_ignore(slug):
+    if _stream_action(slug, streams.ignore, lambda n, r: f"Ignoring stream '{n}'. Its snapshots are dropped."):
+        logger.info(f"Stream '{slug}' ignored by {current_user.username}.")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/disable', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_disable(slug):
+    cleanup = request.form.get('cleanup') or streams.CLEANUP_KEEP
+    clear_blocks = _truthy(request.form.get('clear_blocks'))
+    if _stream_action(
+            slug, streams.disable, lambda n, r: f"Disabled stream '{n}' ({cleanup}): {_counts_text(r)}.",
+            cleanup=cleanup, clear_blocks=clear_blocks):
+        logger.info(f"Stream '{slug}' disabled ({cleanup}) by {current_user.username}.")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_delete(slug):
+    cleanup = request.form.get('cleanup') or streams.CLEANUP_KEEP
+    if _stream_action(
+            slug, streams.delete, lambda n, r: f"Deleted stream '{n}' ({cleanup}): {_counts_text(r)}.",
+            cleanup=cleanup):
+        logger.info(f"Stream '{slug}' deleted ({cleanup}) by {current_user.username}.")
+    return _streams_redirect()
+
+
+def _filter_lines(text):
+    """A textarea of filters (one per line, commas also split) -> list."""
+    return [p.strip() for p in re.split(r'[\n,]', text or '') if p.strip()]
+
+
+@dashboard_bp.route('/settings/streams/<slug>/update', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_update(slug):
+    stream = _stream_or_404(slug)
+    try:
+        changes = streams.update(
+            stream, request.form.get('display_name'),
+            _filter_lines(request.form.get('network_include')),
+            _filter_lines(request.form.get('network_exclude')),
+            sent=('display_name', 'network_include', 'network_exclude'))
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' updated by {current_user.username}: {', '.join(changes) or 'no changes'}.")
+    flash(f"Saved stream '{stream.display_name}'." if changes else "Nothing changed.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/default-checks', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_default_checks(slug):
+    stream = _stream_or_404(slug)
+    raw_port = (request.form.get('tcp_port') or '').strip()
+    try:
+        port = int(raw_port) if raw_port else None
+    except ValueError:
+        flash("TCP port must be a number from 1 to 65535.", "danger")
+        return _streams_redirect()
+    try:
+        changes = streams.update(stream, sent=('default_checks',), default_checks={
+            'ping': _truthy(request.form.get('ping')), 'tcp_port': port})
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' default checks saved by {current_user.username}: "
+                f"{'changed' if changes else 'no changes'}.")
+    flash(f"Saved default checks for '{stream.display_name}'. New entries get them; use "
+          "Apply to existing entries for the current ones." if changes else "Nothing changed.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/default-checks/apply', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_default_checks_apply(slug):
+    stream = _stream_or_404(slug)
+    result = streams.apply_default_checks(stream)
+    logger.info(f"Stream '{slug}' default checks applied by {current_user.username}: "
+                f"{result['checks_added']} added to {result['entries_changed']} of {result['entries']} entries.")
+    flash(f"Added {result['checks_added']} check{'' if result['checks_added'] == 1 else 's'} to "
+          f"{result['entries_changed']} of {result['entries']} active "
+          f"entr{'y' if result['entries'] == 1 else 'ies'} of '{stream.display_name}'.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/purge-notifications', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_purge_notifications(slug):
+    """Purge this stream's entries from MQTT and Home Assistant, then republish what is
+    still eligible. Posted with fetch; the counts show inline."""
+    stream = _stream_or_404(slug)
+    return _purge_response(notify.purge_stream, stream.id)
+
+
+@dashboard_bp.route('/settings/streams/<slug>/blocks/<int:block_id>/unblock', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_unblock(slug, block_id):
+    stream = _stream_or_404(slug)
+    try:
+        key = streams.unblock(stream, block_id)
+    except streams.StreamError as exc:
+        flash(exc.message, "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' key {key} unblocked by {current_user.username}.")
+    flash(f"Unblocked {key}. The next snapshot will bring it back.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/offers/<int:offer_id>/<answer>', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_answer_offer(slug, offer_id, answer):
+    """Accept (the manual entry joins the stream) or decline (a new stream entry is
+    created). Posted from the Streams tab and from the manual entry's edit page."""
+    if answer not in ('accept', 'decline'):
+        abort(404)
+    stream = _stream_or_404(slug)
+    target = safe_redirect_target(request.form.get('next'), url_for('dashboard.settings', section='streams'))
+    try:
+        offer = streams.get_offer(stream, offer_id)
+        entry = (streams.accept_offer if answer == 'accept' else streams.decline_offer)(stream, offer)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return redirect(target)
+    logger.info(f"Stream '{slug}' link offer {offer_id} {answer}ed by {current_user.username}.")
+    flash(f"Converted '{entry.container_name}' to a stream entry." if answer == 'accept'
+          else f"Kept '{entry.container_name}' separate from the manual entry.", "success")
+    return redirect(target)
+
+
+@dashboard_bp.route('/edit/<int:id>/stream-link', methods=['POST'])
+@login_required
+@is_admin_required
+def link_entry_to_stream(id):
+    """Link a manual entry to an unmatched item of a stream (`target` is `slug:key`)."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    back = url_for('dashboard.edit_entry', id=id, ref=request.form.get('ref') or None)
+    slug, _, key = (request.form.get('target') or '').partition(':')
+    stream = streams.find_stream(slug) if slug and key else None
+    if stream is None:
+        flash("Choose a stream item to link to.", "danger")
+        return redirect(back)
+    try:
+        streams.link_entry(stream, entry, key)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return redirect(back)
+    logger.info(f"Entry {id} linked to stream '{slug}' by {current_user.username}.")
+    flash(f"Linked '{entry.container_name}' to stream '{stream.display_name}'.", "success")
+    return redirect(back)
+
+
+@dashboard_bp.route('/edit/<int:id>/stream-unlink', methods=['POST'])
+@login_required
+@is_admin_required
+def unlink_entry_from_stream(id):
+    """Unlink a stream entry: it becomes a manual entry again. `block` also keeps the
+    stream from re-adding or re-offering the item."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    ref = request.form.get('ref') or None
+    back = url_for('dashboard.edit_entry', id=id, ref=ref)
+    try:
+        result = streams.unlink_entry(entry, _truthy(request.form.get('block')),
+                                      actor=current_user.username)
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message, "danger")
+        return redirect(back)
+    logger.info(f"Entry {id} unlinked from its stream by {current_user.username}.")
+    msg = f"Unlinked '{entry.container_name}': it is a manual entry again."
+    if result['host_restored']:
+        msg += f" Its host '{result['host']}' is back."
+    elif result['host_clash']:
+        msg += " Its old host was left empty because another entry now uses that host and name."
+    if result['blocked']:
+        msg += " The stream will not add or offer it again (Settings → Streams → Blocked)."
+    flash(msg, "success")
+    return redirect(back)
+
+
+def _edit_stream_context(entry):
+    """Edit page extras for a manual entry: its open link offers, and the stream
+    items it could be linked to by hand."""
+    offers, choices = [], []
+    if entry.source == SOURCE_MANUAL:
+        offers = StreamLinkOffer.query.filter_by(entry_id=entry.id).order_by(StreamLinkOffer.id).all()
+        if not offers:
+            for stream in InventoryStream.query.order_by(InventoryStream.display_name).all():
+                items = streams.unmatched_items(stream)
+                if items:
+                    choices.append({'stream': stream, 'items': items})
+    return {'link_offers': offers, 'link_choices': choices}
+
+
+@dashboard_bp.route('/api/update-status')
+@login_required
+def update_status_api():
+    """Cached update-check status for the header's hourly poll. Starts a
+    background refresh when the cache is stale; never waits on GitHub and is
+    read-only for the caller (GET)."""
+    version_check.maybe_refresh(current_app._get_current_object())
+    running = current_app.config['VERSION_INFO'].get('version', 'unknown')
+    return jsonify(version_check.status(running))
 
 
 @dashboard_bp.route('/api/v1/changelog')

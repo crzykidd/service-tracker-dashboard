@@ -36,6 +36,13 @@
   </div>
 {% endmacro %}
 
+{# "Publish to Home Assistant" (PRD 17.4): ticked = publish; stored inverted as
+   ha_exclude. The hidden marker tells the server the toggle was on the page. #}
+{% macro ha_box(prefix, checked) %}
+  <input type="hidden" name="{{ prefix }}ha_seen" value="1">
+  {{ check_box(prefix ~ 'ha_publish', prefix ~ 'ha_publish', checked, 'Publish to Home Assistant') }}
+{% endmacro %}
+
 {% macro svc_row(r, key) %}
   <div class="check-row rounded-lg border border-dashboard-accent p-3 space-y-3" data-check-row>
     <input type="hidden" name="svc_row" value="{{ key }}">
@@ -93,6 +100,7 @@
       {{ check_box('svc_' ~ key ~ '_enabled', 'svc_' ~ key ~ '_enabled', r.enabled, 'Enabled') }}
       <div data-http-only>{{ check_box('svc_' ~ key ~ '_verify', 'svc_' ~ key ~ '_verify', r.verify, 'Verify TLS certificate') }}</div>
       {{ cert_field('svc_' ~ key ~ '_cert_min_days', 'svc_' ~ key ~ '_cert_min_days', r.cert_days, 'svc_' ~ key ~ '_target') }}
+      {{ ha_box('svc_' ~ key ~ '_', r.get('ha_publish', true)) }}
       <button type="button" class="ml-auto text-sm text-red-400 hover:text-red-300" data-remove-check>
         <i class="ti ti-trash" aria-hidden="true"></i> Remove
       </button>
@@ -127,6 +135,7 @@
       {{ check_box(p ~ 'enabled', p ~ 'enabled', r.enabled, 'Enabled') }}
       {{ check_box(p ~ 'verify', p ~ 'verify', r.verify, 'Verify TLS certificate') }}
       {{ cert_field(p ~ 'cert_min_days', p ~ 'cert_min_days', r.cert_days, r.key ~ '_url') }}
+      {{ ha_box(p, r.get('ha_publish', true)) }}
     </div>
   </div>
   {% endfor %}
@@ -142,10 +151,11 @@
     </div>
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
       {{ check_box('cc_enabled', 'cc_enabled', container_row.enabled, 'Enabled') }}
+      {{ ha_box('cc_', container_row.get('ha_publish', true)) }}
     </div>
   </div>
   {% endif %}
-  <p class="edit-helper">Blank interval or timeout uses the global setting. Interval 30&ndash;86400 seconds, timeout 1&ndash;60. Untick Verify TLS for self-signed certificates. Min cert days (HTTPS only) fails the check when the certificate is that close to expiring. Response body mode expects the page to answer <code>OK</code>.</p>
+  <p class="edit-helper">Blank interval or timeout uses the global setting. Interval 30&ndash;86400 seconds, timeout 1&ndash;60. Untick Verify TLS for self-signed certificates. Min cert days (HTTPS only) fails the check when the certificate is that close to expiring. Response body mode expects the page to answer <code>OK</code>. Publish to Home Assistant only matters when a notification channel has Add to Home Assistant on; untick it to remove that check's entity.</p>
 
   <div class="flex items-center justify-between pt-2">
     <div class="text-sm font-medium text-dashboard-primary">Service checks</div>

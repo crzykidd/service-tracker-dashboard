@@ -7,6 +7,243 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-19
+
+### Added
+
+- **Linked entries are yours: stream cleanup unlinks them, never deletes them.**
+  A manual entry you linked to a stream (Convert, accepting an offer, **Link to
+  stream item…** or the API) goes back to being a manual entry, with the host it
+  had before, when you disable a stream with soft delete or purge, or delete a
+  stream with any option. The Disable…/Delete… dialog lists them and says "N
+  linked entries go back to manual entries (with their host); they are never
+  deleted." Entries the stream created itself behave as before, and Disable with
+  keep still leaves everything attached.
+- **Unlink from stream.** A stream entry's edit page has **Unlink from
+  stream…**: **Allow re-offering** (a later snapshot may offer to link it again)
+  or **Don't re-add** (the item is blocked). The entry keeps its history, checks
+  and settings; a linked entry gets its old host back, unless another entry now
+  has that host and name (it stays without a host and you are told). The stream
+  info box says "Linked from a manual entry". In the API: `POST
+  /api/v1/entries/{id}/unlink` (body `{"block": bool}`), entries report
+  `inventory.linked`, stream disable/delete report `unlinked`; MCP tool
+  `unlink_entry`. A database migration adds two columns to entries; entries
+  linked before this release are detected by their id order (a manual entry
+  linked earlier has a lower id than the stream's own entries), with their old
+  host unknown.
+- **Deleting a notification channel cleans its broker.** The Delete dialog
+  offers **Remove this channel's data from the broker first** (ticked by
+  default): the retained STD topics, the Home Assistant discovery configs and
+  `<base>/status` are cleared, then the channel is deleted. If the channel is
+  disabled or its broker can't be reached, nothing is deleted and the dialog
+  offers **Delete anyway**. Disabling offers the same cleanup, unticked by
+  default. In the API, `DELETE /api/v1/notifications/channels/<id>` takes
+  `cleanup` (default true) and `PATCH` takes `cleanup` too; MCP:
+  `delete_notification_channel`, `update_notification_channel`.
+- **Changing a channel's base topic cleans up the old one.** Saving a channel
+  with a new base topic (or, with Home Assistant on, a new discovery or device
+  name prefix) shows **Remove the old topics from the broker**, ticked by
+  default: everything under the old base and this install's old discovery
+  configs are cleared before the switch. STD remembers the last 5 previous
+  bases per channel (`GET /api/v1/notifications/channels/<id>/previous-bases`,
+  MCP `list_notification_previous_bases`).
+- **Scan for orphans.** A per-channel button lists the retained STD topics on
+  the broker that STD no longer publishes (under the current and remembered
+  base topics, one you type, and this install's discovery configs) and clears
+  them on request (`POST .../orphans/scan` and `.../orphans/clear`, MCP
+  `scan_notification_orphans` and `clear_notification_orphans`).
+- **Purge MQTT/HA per stream.** A button on each stream row in Settings →
+  Streams clears the MQTT topics and Home Assistant devices of every entry of
+  the stream in one batch, then republishes what is still eligible
+  (`POST /api/v1/streams/<id>/notifications/purge`, MCP
+  `purge_stream_notifications`).
+- **Stream status topic and Home Assistant stream devices.** STD publishes a
+  retained `<base>/stream/<stream id>` per inventory stream (status, producer,
+  last snapshot and apply times, active / missing / pending-offer counts, item
+  count). With Home Assistant discovery on, a stream with a published entry gets
+  a device with a status sensor and active / missing count sensors, and its
+  entries' devices hang off it instead of the STD hub. Entry topics are
+  unchanged.
+
+- **Stream default checks.** Each stream can give its entries a ping check on
+  their IP and, optionally, a TCP check on a port. New entries start with them;
+  **Apply to existing entries** (Settings → Streams → Default checks, or
+  `POST /api/v1/streams/<id>/default-checks/apply` and the MCP tool
+  `apply_stream_default_checks`) adds the missing ones to every active entry and
+  skips an entry that already has a ping or TCP check. Set them with
+  `default_checks` on the stream (`PATCH /api/v1/streams/<id>`, `update_stream`).
+- **Pending streams are flagged in the header.** While a stream waits for
+  review, the **Settings** link gets an amber ring and a count and opens
+  Settings → Streams. `GET /api/v1/streams` returns the same count as `pending`.
+- **Streams tab shows what enabling would do.** A pending or disabled stream
+  with a stored snapshot shows "would: created 5, link offers 2" in Last counts;
+  a stream with no snapshot says "Waiting for the next snapshot".
+- **IP, MAC and network in the expanded detail** of an entry, on the Dashboard
+  view.
+- **Home Assistant entries table has a Source column** (Docker, Manual or the
+  stream's name) and the filter box matches it, so typing a stream's name and
+  **Select all** picks its entries.
+
+- **Inventory streams: sidecars can push device lists into STD.** A small
+  separate service (a "sidecar", for example one that reads your DHCP static
+  reservations) can post a full list of devices to
+  `PUT /api/v1/streams/<stream_id>/snapshot` with an API key of the new
+  **`ingest`** scope. That key opens only the two stream routes (snapshot and
+  status) and is bound to the streams it creates. **A new stream waits for your
+  approval**: STD stores what it sent, and nothing appears on the dashboard
+  until you enable the stream. Enabling creates one entry per device (no host,
+  source `stream`, with its IP, MAC and network); later snapshots update them,
+  and a device that drops out of the list is flagged missing, never deleted.
+  Renaming an entry in STD keeps your name; group, icon, description, checks and
+  Home Assistant settings are never overwritten. A device whose name matches one
+  of your manual entries is not created: STD offers to link them, and you
+  accept or decline. Deleting a stream entry can block its key so it does not
+  come back, and disabling or deleting a stream asks what to do with its
+  entries (keep, soft delete or purge). Manage streams, blocks and link offers
+  with the management API (`/api/v1/streams`) or the MCP tools. MQTT entry
+  payloads gain `ip`, `mac`, `network` and `stream`, and the Home Assistant
+  device model is the stream's name. Manage it all from the new Settings →
+  Streams tab (next entry). See the README.
+- **Settings → Streams tab.** Manage inventory streams without the API. The
+  API key form gains an **Ingest (sidecars)** scope. A new stream shows as
+  "New stream waiting: enable it to import N items", with **Preview** (every
+  item and what enabling would do, nothing written), **Enable** and **Ignore**.
+  **Disable…** and **Delete…** show counts first, then offer keep, soft delete
+  or purge for the entries (customised ones are listed by name, and disable
+  with purge can clear the block list too). You can edit a stream's display
+  name and network include / exclude lists, unblock keys on the **Blocked**
+  list, and accept or decline **Link offers**. A read-only **Docker (register)**
+  row shows the notifier's entry count and last register.
+- **Stream entries in the views and on the edit page.** A stream entry shows a
+  pill with the stream's name where Docker entries show their Docker status
+  (Dashboard, Tiled and Compact), replacing the grey "Manual" pill, and an item
+  that dropped out of the latest snapshot is dimmed with a "missing" marker.
+  The **Source** filter lists each stream. On the edit page the MAC, IP, network,
+  attributes and stream are read-only and the name stays editable; deleting asks
+  **Allow re-adding** or **Don't re-add** (also in the delete popover on the
+  views). A manual entry with an open link offer shows **Convert** /
+  **Keep separate**, and one without offers **Link to stream item…**.
+- **Home Assistant "Since" sensor.** Every entry published to Home Assistant
+  gets a **Since** timestamp sensor showing when it last changed state, so the
+  device page reads "Up, since 3 days ago". It is unknown until STD has a
+  value. It appears on the next sync; nothing to configure.
+- **Nightly database snapshot.** The daily backup now also writes
+  `<date>-std_backup.sqlite3` (a consistent copy of the database) next to the
+  YAML file in `backup_path`, and `backup_days_to_keep` prunes both. A failed
+  snapshot is logged and does not stop the YAML backup. See the README for
+  restoring from it.
+- **API revision.** The `/api/v1` contract now has a revision number (2),
+  separate from the STD version. Every `/api/...` response, errors included,
+  carries `X-STD-API-Revision` and `X-STD-Version` headers. New public
+  `GET /api/v1/meta` returns the STD version, API revision and supported
+  features, so producers can log them at startup. `whoami`, the OpenAPI
+  document and the MCP `server_info` tool report the revision too. STD logs
+  each distinct `User-Agent` seen on `/api/v1/register` once per restart.
+- **Notifications: MQTT channels.** New Settings → Notifications tab (admins):
+  add an MQTT broker (host, port, TLS, username, password, client id, base
+  topic, QoS, keepalive), enable or disable it, and see its live connection
+  status. **Send test message** publishes a non-retained message to
+  `<base topic>/test` using the form's values, even before you save. STD
+  announces itself on `<base topic>/status` (`online`, retained, with an
+  `offline` last will, also sent on a clean shutdown) and reconnects on its
+  own; changing a channel reconnects it without a restart. The password is
+  write-only: never shown, returned, logged or audited. Check and state
+  publishing and Home Assistant discovery build on it (below).
+- **Notifications: check and entry state on MQTT.** With an MQTT channel
+  enabled, STD publishes retained state under the base topic:
+  `<base>/entry/<entry id>/state` (up, degraded, down, unknown or none, with
+  name, host, group, source, since and check counts),
+  `<base>/entry/<entry id>/check/<check id>` (result, latency, message,
+  last change) and `<base>/summary` (counts over active entries). Only
+  changes are sent, and everything is republished on every (re)connect and
+  every 10 minutes. Entries and checks that are deleted, soft-deleted or
+  disabled have their topics cleared. Topics use ids, so renaming an entry
+  never moves them. Try `mosquitto_sub -t 'std/#' -v`.
+- **Notification channels in the management API and MCP.** `GET`/`POST
+  /api/v1/notifications/channels`, `GET`/`PATCH`/`DELETE
+  /api/v1/notifications/channels/{id}` and `POST .../{id}/test`, plus the
+  MCP tools `list_notification_channels`, `get_notification_channel` and
+  `test_notification_channel`.
+- **Notifications: Home Assistant discovery.** Tick **Add to Home Assistant**
+  on an MQTT channel (with an optional discovery prefix, default
+  `homeassistant`, and device name prefix, default `STD`) and Home Assistant
+  creates one device per STD entry you opt in, named `STD <entry name>
+  (<host>)` (just `STD <entry name>` when the entry has no host): a State
+  sensor (up, degraded, down, unknown, none) and a problem sensor per check,
+  all under an STD hub device with a connectivity sensor and
+  up/degraded/down/unknown counts. **No entry is published until you tick
+  Publish to Home Assistant**: on the entry's Add or edit page, or for many at
+  once in the **Home Assistant entries** table under Settings → Notifications
+  (filter, Select all / Select none, one Save). Within a published entry, every
+  check appears unless you untick **Publish to Home Assistant** on that check
+  (the management API and MCP carry `ha_publish` on entries and `ha_exclude` on
+  checks). Entity ids start `std_`, so an auto-entities card can match
+  `binary_sensor.std_*`; the group, host, source, check type and target are
+  attributes. Unticked, deleted or disabled entries and checks are cleared from
+  Home Assistant, and everything is republished when Home Assistant restarts.
+- **Notifications: purge MQTT and Home Assistant.** A clean-slate tool for when
+  retained messages or Home Assistant devices have piled up or gone stale.
+  **Settings → Notifications → Purge MQTT and Home Assistant** (per channel,
+  with a confirm dialog and a **Republish afterwards** box, on by default)
+  removes every retained STD message under the channel's base topic and every
+  STD discovery config (Home Assistant devices and entities) from that broker,
+  then shows how many topics it cleared. Only this STD install's Home Assistant
+  devices are touched, and `<base>/status` is left alone. With republish on, STD
+  publishes everything again after about 2 seconds, so Home Assistant recreates
+  the devices; with it off the broker stays empty until something changes or the
+  channel reconnects. On an entry's edit page, **Purge and republish to
+  MQTT/HA** does the same for just that entry on every channel, which gives it
+  fresh entity ids in Home Assistant (for example after a rename). Both are in
+  the management API (`POST /api/v1/notifications/channels/<id>/purge`,
+  `POST /api/v1/entries/<id>/notifications/purge`) and the MCP server
+  (`purge_notification_channel`, `purge_entry_notifications`).
+- **More attributes on published state.** The entry state topic adds
+  `std_entry_id`; the check topic adds `std_entry_id`, `entry_name`, `host`,
+  `group`, `source` and `dashboard_url`.
+- Database migrations add `ha_publish` to entries (off for every entry) and
+  `ha_exclude` to checks (run automatically on start).
+- New dependency `paho-mqtt` 2.x, and a database migration that adds the
+  `notification_channel` table (runs automatically on start).
+- **Version in the header.** The running version shows next to the page title;
+  click it to open the What's New popup. Dev builds show `dev · 0.9.0` with the
+  short commit linked to GitHub.
+- **Update available link.** When GitHub has a newer release, a subtle
+  `update available → vX.Y.Z` link appears next to the version. The check runs
+  on the server when pages are loaded (at most every 6 hours, never delaying a
+  page) and uses releases only.
+- **Update check setting.** Settings → Info can turn the check off or change
+  the interval (also `GET`/`PUT /api/v1/settings/update-check`). Settings →
+  Info now also shows the build channel, linked commit, latest release seen,
+  last checked time and last error.
+- `GET /api/v1/whoami` and `GET /api/v1/config` now include `commit`,
+  `channel`, `build_time` and an `update` status; the MCP `server_info` tool
+  reports them too.
+
+### Changed
+
+- **Link offers match more.** A new stream item is now offered to a manual entry
+  whose name, host, or the first part of its host equals the item's name (or its
+  first DNS label, so `z-wave-house.crzynet.me` matches `z-wave-house`), host or
+  not. Still exactly one match, else the item is created. Converting an entry
+  (accept, or link by hand) clears its host, and the edit page says so; the
+  "Link to stream item…" picker now also shows for entries that have a host.
+- **Disable with purge keeps the stored snapshot**, so you can still preview and
+  re-enable without waiting for the sidecar. The Disable… and Delete… dialog now
+  states exactly what each choice removes.
+- **Tiled and Compact show a small stream icon** (a router; amber when the item
+  is missing from the latest snapshot) instead of the stream pill. Compact now
+  also shows one source icon on every row: Docker status, stream, or manual
+  (link). The full pill stays on the Dashboard view.
+- **Add page:** the field is "Docker host (optional)", the example hostname is
+  gone, and the help says to leave it blank for a device, VM or anything not
+  running in Docker (the edit page says the same for manual entries).
+
+### Fixed
+
+- Auto-refresh now runs only on the Dashboard, Tiled and Compact views.
+  Before, Settings and the Add/Edit pages also reloaded every refresh
+  interval, which could discard unsaved form changes.
+
 ## [0.9.0] — 2026-11-16
 
 ### Added
@@ -980,7 +1217,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.0...v0.7.1

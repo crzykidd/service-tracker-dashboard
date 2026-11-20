@@ -208,8 +208,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.9.0** (latest tag on `main`).
-In flight: nothing scoped (next: version in UI + MQTT notifications; see `prompts/startnewsession.md`).
+Current shipped release: **v0.10.0** (latest tag on `main`).
+In flight: nothing scoped (parked ideas in `docs/FUTURE.md` and `docs/design/2026-11-17-network-inventory-and-profiles.md`).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -307,6 +307,32 @@ A newer STD with an older notifier must keep working:
   developed for the capture fields but never cut as a tag — it shipped
   inside v0.4.0. Do not reference v0.3.2 as a release boundary.)
 
+## Inventory Stream Ingest Rules (v0.10.0+)
+
+`PUT /api/v1/streams/<stream_id>/snapshot` is the second wire contract STD owns
+(PRD §18.5; sidecars such as `std-source-technitium` produce it). Same ordering
+rule as register: STD ships a schema change before any sidecar sends it.
+
+- **STD owns the contract.** `StreamSnapshotPut` / `StreamSnapshotItem` in
+  `mgmt_schemas.py` use `extra="forbid"` at every level; unknown keys are a 400.
+  Don't change wire shapes, status codes or field names without a new
+  `API_REVISION` row and a PRD §18.5 update.
+- **Core fields stay optional when added.** An older sidecar must keep working
+  against a newer STD, so a new core field is never required.
+- **`attributes` are uninterpreted.** Shown in STD, never acted on. A sidecar
+  adds facts there without an STD release; don't read them in logic.
+- **A snapshot is applied whole or not at all** (one transaction under
+  `streams._LOCK`) and is full, not a delta: absent means `inventory_missing`,
+  never delete. STD makes no outbound calls while applying.
+- **`ingest` keys open only the two ingest routes**, bound to the key that
+  created the stream. `scope_allows("ingest", "read" | "write")` must stay false.
+- **Stream entries (`source = stream`) are never touched by register adoption
+  or the restore clash checks.** They are unique by `(stream_id, stream_key)`.
+  `find_duplicate` does see them on purpose: adding a host-less manual entry
+  with a stream entry's name is rejected as a duplicate (one device, one entry).
+- **Snapshot PUTs are not audited**; operator status changes, cleanups,
+  unblocks and link answers are.
+
 ## Database Rules
 
 - **All schema changes go through Alembic.** Hand-editing tables is not
@@ -333,6 +359,8 @@ A newer STD with an older notifier must keep working:
   `exposure_observations`) use dedicated pydantic models with
   `extra="forbid"` so malformed payloads are caught at the schema
   boundary.
+- **Any additive `/api/v1` change bumps `API_REVISION`** in `api_version.py`
+  plus a row in the PRD §18.1 table. Breaking changes need `/api/v2`.
 - **Network and port capture columns are pure observation** —
   overwritten on every register, no ownership semantics. The
   notifier owns them. Don't add UI editing for these columns.
@@ -353,7 +381,8 @@ A newer STD with an older notifier must keep working:
 ```
 app.py              ← thin Flask app factory; wires extensions, blueprints, jobs
 extensions.py       ← SQLAlchemy, login manager, scheduler instances
-models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ApiKey, ApiAudit, ...)
+models.py           ← SQLAlchemy models (ServiceEntry, ServiceExposure, Setting, ApiKey, ApiAudit,
+                      NotificationChannel, ...)
 schemas.py          ← pydantic request/response schemas
 routes_dashboard.py ← /, /tiled_dash, /compact_dash, /add, /edit/<id>,
                       /settings, /settings/exposure
@@ -363,12 +392,26 @@ routes_mgmt_api.py  ← management API blueprint (/api/v1, admin API key only, C
                       entries, checks, health, groups, widgets, settings, config, openapi.json
 mgmt_openapi.py     ← management API route registry (OPERATIONS) + OpenAPI 3.1 generator;
                       add every new management route here (tests enforce it)
+api_version.py      ← API_REVISION, revision history, FEATURES; headers + GET /api/v1/meta use it
 api_keys.py         ← admin API key generate/verify/scope check (std_<prefix>_<secret>, SHA-256)
 mgmt_schemas.py     ← management API pydantic requests (extra=forbid) + response TypedDicts
 mgmt_serializers.py ← model -> response-dict functions for the management API
 mcp/                ← stdio MCP server (std_mcp.py), HTTP client of the management API only;
                       own requirements.in/.txt + README; NOT in the Docker image (.dockerignore);
                       no __init__.py (a package named `mcp` would shadow the SDK)
+notify.py           ← notification channels: registry, CRUD helpers, bounded-queue publisher
+                      thread, non-blocking `enqueue(event)`; never block producers on the broker
+notify_state.py     ← retained state publishing (PRD 17.3): topic/payload builders, change events,
+                      `full_sync()` reconcile, commit listener that requests a sync
+notify_ha.py        ← Home Assistant discovery config builders (PRD 17.4); reconciled by
+                      `notify_state.full_sync()`, never published from anywhere else
+notify_purge.py     ← channel/entry purge of retained topics + HA devices (PRD 17.5); runs on the
+                      publisher thread via `Publisher.call()`, never on a request thread
+notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, test message);
+                      the password (`NotificationChannel.secret`) is write-only everywhere
+streams.py          ← inventory streams (PRD 18): ingest value rules (`normalize_mac`), `plan()` /
+                      `apply()` engine under a module lock, lifecycle, blocks, link offers; plain
+                      functions raising `StreamError`, shared by the management API and the UI
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API
@@ -380,7 +423,8 @@ health.py           ← /healthz (liveness; /readyz not implemented)
 health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) for the badges + status filter
 health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)
 settings_loader.py  ← file/ENV settings; loaded once at startup
-settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
+settings_store.py   ← DB-stored runtime settings (per-interpreter directions, update check)
+version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views

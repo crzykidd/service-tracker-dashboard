@@ -123,3 +123,35 @@ def admin_client(app):
     resp = c.post("/login", data={"username": ADMIN_USER, "password": ADMIN_PASSWORD})
     assert resp.status_code == 302
     return c
+
+
+@pytest.fixture(autouse=True)
+def no_update_check_network(monkeypatch):
+    """Page renders start the GitHub update check; keep tests off the network
+    and off background threads. Tests that exercise it patch these themselves."""
+    import version_check
+
+    version_check.reset()
+    monkeypatch.setattr(version_check, "_spawn", lambda target: None)
+    monkeypatch.setattr(
+        version_check, "_http_get",
+        lambda url, headers: (_ for _ in ()).throw(AssertionError("test reached GitHub")),
+    )
+    yield
+    version_check.reset()
+
+
+@pytest.fixture(autouse=True)
+def no_mqtt_sockets():
+    """Notification tests inject a fake paho client; anything else must never
+    open a real connection. The publisher thread is not started in tests."""
+    import notify
+
+    notify.reset()
+
+    def refuse(client_id):
+        raise AssertionError("test tried to open a real MQTT client")
+
+    notify.set_client_factory(refuse)
+    yield
+    notify.reset()
