@@ -177,21 +177,16 @@ Older releases, including the 0.6.7 move to GHCR, are in the [CHANGELOG](CHANGEL
 
 ## Screenshots
 
-| Main Dashboard | Tiled View | Compact View |
-|---|---|---|
-| [![](docs/screenshots/std_main_dashboard.png)](docs/screenshots/std_main_dashboard.png) | [![](docs/screenshots/std_tile_dashboard.png)](docs/screenshots/std_tile_dashboard.png) | [![](docs/screenshots/std_compact_dashboard.png)](docs/screenshots/std_compact_dashboard.png) |
+| Dashboard, row expanded | Tiled, with uptime |
+|---|---|
+| [![Dashboard view with one row expanded: entry details beside the health history](docs/screenshots/std_dashboard_expanded.png)](docs/screenshots/std_dashboard_expanded.png) | [![Tiled view with uptime strips](docs/screenshots/std_tiled_uptime.png)](docs/screenshots/std_tiled_uptime.png) |
 
-| Mobile View | Widgets | Settings |
-|---|---|---|
-| [![](docs/screenshots/std_mobile.png)](docs/screenshots/std_mobile.png) | [![](docs/screenshots/std_widgets.png)](docs/screenshots/std_widgets.png) | [![](docs/screenshots/std_settings.png)](docs/screenshots/std_settings.png) |
+| Compact | Settings: Home Assistant |
+|---|---|
+| [![Compact view grouped by group](docs/screenshots/std_compact.png)](docs/screenshots/std_compact.png) | [![Settings, Home Assistant section: entries grouped by source](docs/screenshots/std_settings_home_assistant.png)](docs/screenshots/std_settings_home_assistant.png) |
 
-<!-- screenshot needed: Settings -> Streams with one pending stream card (Preview / Enable / Ignore) and one enabled stream card -->
-<!-- screenshot needed: the import preview page (/settings/import/<token>) with grouped rows, one row opened to its per-field table -->
-<!-- screenshot needed: Settings -> Home Assistant entry picker, and the Home Assistant device page of one STD entry -->
-<!-- screenshot needed: the health detail panel (Tiled drawer or Dashboard expand row) with the 24h bar strip -->
-| Streams | Import preview | Home Assistant | Health detail |
-|---|---|---|---|
-| [![](docs/screenshots/std_streams.png)](docs/screenshots/std_streams.png) | [![](docs/screenshots/std_import_preview.png)](docs/screenshots/std_import_preview.png) | [![](docs/screenshots/std_home_assistant.png)](docs/screenshots/std_home_assistant.png) | [![](docs/screenshots/std_health_detail.png)](docs/screenshots/std_health_detail.png) |
+More screenshots (every view, the tile drawer, the Add page and the Settings sections)
+are in the [screenshot gallery](docs/screenshots.md).
 
 ---
 
