@@ -21,7 +21,8 @@ API_REVISION_HISTORY = (
     (4, "0.11.0", "backup settings, backup list and run, export, import plan and apply"),
     (5, "next after 0.11.0",
      "entries: optional image_repo_url (override for the image repository link) on create and "
-     "patch; image_repo_url and image_repo_link in the entry responses"),
+     "patch; image_repo_url and image_repo_link in the entry responses; notifier.image_ref (the "
+     "canonical image reference, read-only) in the entry detail"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later

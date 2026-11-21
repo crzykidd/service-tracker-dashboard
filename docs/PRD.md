@@ -104,6 +104,7 @@
 | 0.94    | 2026-11-21 | v0.11.0 released: §19 Settings modernization and §20 backup, export, import and staged restore marked delivered (API revision 4), plus the Dashboard and Compact expand views (§13.7) and the 0.10.2 fixes (MQTT test bounded to ~5 s, 128-character entry names). Table of contents headings for §16–§20 brought in line with the section headings. |
 | 0.95    | 2026-11-21 | §13.7 image repo link on `dev` (GitHub #6): `image_repo.py` derives the repository page for Docker Hub, GHCR, Quay and LinuxServer images, new operator-owned `service_entry.image_repo_url` override (migration `e9b3d5f7a126`, new §5.11), Add/Edit field, management API and MCP `image_repo_url` / `image_repo_link`, export and import field (§20.2). **`API_REVISION` 5** (§18.1). Register and stream-ingest wire contracts unchanged. |
 | 0.96    | 2026-11-21 | Docs-only: the subsections under §22 (Cross-Repo Coordination) are renumbered 22.1–22.3; they were numbered 21.1–21.3. The existing §22.3 cross-reference in §18 now resolves. No content changes. |
+| 0.97    | 2026-11-21 | Image reference parser (img-01, phase 1 of the image update check; design `docs/design/2026-11-21-image-update-check.md`): new pure `image_ref.py` (distribution reference grammar: ports, nested paths, digests, Docker Hub normalisation) replaces the naive split in `image_utils.resolve_image_metadata`; new observed column `service_entry.image_ref` (migration `a2c6e8f1b345`, indexed, backfilled where the old columns are sound), written by register from the raw `image_name`, shown in the entry facts and returned read-only as `notifier.image_ref` by the management API (**`API_REVISION` 5** row extended, §18.1); `image_repo.py` derives links from it (correct nested GHCR paths). §3.1 module layout, §5.12, §13.7 updated. `schemas.py` and the register wire contract unchanged; not exported. |
 
 ---
 
@@ -290,9 +291,11 @@ settings_sections.py ← Settings section registry: groups, slugs, labels, legac
                       `?section=` aliases, `resolve()` (§19)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
                       URL provenance tracking
-image_utils.py      ← icon fetch + cache
+image_utils.py      ← icon fetch + cache; `resolve_image_metadata` (image string -> registry/owner/name/tag/ref)
+image_ref.py        ← pure, stdlib-only image reference parser (`parse()` -> registry, repository, tag,
+                      digest, canonical string); the one place an image string is split
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
-                      lscr.io; None for anything else) + the `image_repo_url` override rule
+                      lscr.io; None for anything else; reads `image_ref`) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates; `templates/partials/settings/` holds one
                       partial per Settings section plus `_macros.html` (§19)
@@ -542,6 +545,26 @@ Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_ch
 Migration `e9b3d5f7a126`: `service_entry.image_repo_url` (`String(512)`, nullable). A plain
 operator-owned column (see §13.7): no FK, so no index; register never writes it, export
 and import carry it (§20.2), and `ServiceEntry.to_dict()` (the legacy entry list) does not.
+
+### 5.12 Canonical image reference
+
+Migration `a2c6e8f1b345`: `service_entry.image_ref` (`String(512)`, nullable, indexed
+`ix_service_entry_image_ref`; the index is a lookup aid for the image update check, not an
+FK). It holds the canonical reference `registry/repository:tag` (`registry/repository@digest`
+when there is no tag) parsed by `image_ref.parse` from the raw `image_name` the notifier
+sends: ports (`localhost:5000/app:1`), nested paths (`ghcr.io/org/team/app`) and digests
+(`nginx@sha256:...`) are handled; Docker Hub names normalise to `docker.io/library/<name>`
+and a missing tag becomes `latest`. Observed, like the capture columns: register overwrites
+it whenever it carries `image_name` (NULL if the string is not a valid reference), an
+absent `image_name` leaves it alone, the UI never edits it, and export and import do not
+carry it. The legacy `image_registry` / `image_owner` / `image_name` / `image_tag` columns
+are filled from the same parse: `image_registry` stays NULL for Docker Hub, `image_owner` is
+everything before the last path component (`org/team`; NULL for official images), and
+`image_name` is the last component. The migration backfills `image_ref` from those columns
+only where they are sound (the old parser mangled the cases above); the next register fixes
+the rest. The entry facts show `image_ref` when set, else the old `registry/owner/name:tag`
+join. `schemas.py` is unchanged (no wire field). Management API: `notifier.image_ref`,
+read-only (revision 5, §18.1).
 
 ---
 
@@ -1853,7 +1876,10 @@ is an operator-owned override: it wins over the derived link, is edited on `/add
 `entry_rules.validate_image_repo_url`), travels in export and import, and is never
 written by register (`schemas.py` is unchanged). An entry with no Docker image but an
 override shows a "Repo" row with the link. The container name is not linked (it already
-opens the entry's URL). API revision 5 (§18.1).
+opens the entry's URL). API revision 5 (§18.1). Since img-01 the links are derived
+from `image_ref` (§5.12) when set, so a nested GHCR path (`ghcr.io/org/team/app`) links to the
+package `team/app` under `org`; a registry with a port or a `localhost` registry still gets no
+link. Entries without `image_ref` yet fall back to the split columns.
 
 Since 0.11.0 the Dashboard expand row has two columns: the shared entry facts
 (`partials/entry_facts.html`, also the tile drawer's info rows) on the left and the
@@ -2969,7 +2995,7 @@ server supports and log it.
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
-| 5 | next after 0.11.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged |
+| 5 | next after 0.11.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 

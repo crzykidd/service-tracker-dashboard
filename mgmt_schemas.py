@@ -546,6 +546,7 @@ class NotifierOut(TypedDict):
     image_owner: str | None
     image_name: str | None
     image_tag: str | None
+    image_ref: str | None            # canonical reference, observed (revision 5; null until the next register)
     reported_group_name: str | None
     reported_sort_priority: int | None
     networks: Any

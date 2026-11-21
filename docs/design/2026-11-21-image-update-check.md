@@ -643,7 +643,7 @@ favor of the stored, job-written columns.
 
 - Hub API tag listing optimization (§4.2).
 - Release-notes summary from GitHub releases for GHCR/GitHub-sourced images.
-- WUD / Diun ingest as an alternative source.
+- What's Up Docker / Komodo (and possibly Diun) as additional update providers (§14).
 - A per-group or per-stack policy default.
 - Notifier: read host Docker credentials and forward nothing (stays rejected unless
   private-registry demand appears).
@@ -655,5 +655,20 @@ favor of the stored, job-written columns.
   Check now stays, throttled (§5).
 - **2026-11-21, operator:** the check has an on/off switch in Settings. This design
   recommends default off (§5); the operator confirms (Q1).
-- **2026-11-21, interpretation:** "check GitHub for Docker containers" = check the image
-  registries (GHCR, Docker Hub, ...). Confirm in Q11.
+- **2026-11-21, operator (Q11):** "check GitHub for Docker containers" means the image
+  registries (GHCR, Docker Hub, quay, lscr), as designed. GitHub releases stay a possible
+  later add-on (§13).
+- **2026-11-21, operator (Q1):** the switch defaults to **off**.
+- **2026-11-21, operator (Q2):** the tag model's default scope is **`any`** newer version.
+- **2026-11-21, operator (Q5):** **no private registries**; credentials (`img-05`) stay out
+  of the MVP.
+- **2026-11-21, operator (Q6):** the parser fix (`img-01`) is **folded into 0.12.0**, not a
+  separate 0.11.1.
+- **2026-11-21, operator (Q10, providers):** the check is built as an **update provider**
+  behind a small interface. The built-in registry checker is the first and default provider,
+  with its own on/off switch (default off). What's Up Docker and Komodo (which tracks image
+  updates for its stacks/deployments) may be added later as optional providers that report
+  the same per-entry state; they're not in the MVP. `img-02` must keep the provider seam
+  (provider id on the stored result, the job iterating enabled providers) so adding one later
+  needs no schema change.
+- Q3, Q4, Q7, Q8, Q9 not answered yet; the recommendations in §12 stand as defaults.

@@ -86,6 +86,9 @@ class ServiceEntry(db.Model):
     image_name = db.Column(db.String(100), nullable=True)
     image_tag = db.Column(db.String(100), nullable=True)
     image_icon = db.Column(db.String(100), nullable=True)
+    # Canonical image reference (registry/repository:tag or @digest), parsed by image_ref.py
+    # from the raw image the notifier sends. Observed by register only: not editable, not exported.
+    image_ref = db.Column(db.String(512), nullable=True, index=True)
     # Operator-owned override for the image repository link (v0.11.1); never written by register.
     image_repo_url = db.Column(db.String(512), nullable=True)
     is_static = db.Column(db.Boolean, nullable=False, default=False)

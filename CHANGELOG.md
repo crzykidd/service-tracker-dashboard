@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Entry details showed wrong or empty image fields for some images.** Images from a
+  registry with a port (`localhost:5000/app:1`), nested paths (`ghcr.io/org/team/app`),
+  two-part names on another registry (`quay.io/app:1`) and digest references
+  (`nginx@sha256:...`) were split wrongly or left blank. The image is now parsed the way
+  Docker reads it, and the details show the full reference (`registry/repository:tag`,
+  Docker Hub as `docker.io/library/...`, a missing tag as `latest`). The repository link
+  now works for nested GHCR paths too. Entries correct themselves on their next register;
+  existing ones that were already read correctly are filled in on upgrade. Management API
+  revision 5: the entry detail carries the read-only `notifier.image_ref`.
+
 ### Added
 
 - **The Docker image in an entry's details links to its repository page (closes #6).**

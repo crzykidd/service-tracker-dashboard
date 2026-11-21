@@ -296,6 +296,10 @@ def upsert_service(canonical, app):
                 entry.image_icon = image_meta["image_icon"]
             if image_meta["image_tag"]:
                 entry.image_tag = image_meta["image_tag"]
+            if canonical.get("image_name"):
+                # Observed: the canonical reference of the image the notifier reported
+                # (NULL when it is not a valid reference). Absent image_name leaves it be.
+                entry.image_ref = image_meta.get("image_ref")
 
             # Observed container facts — pure overwrite, no ownership.
             # `key in canonical` (rather than a truthy check) so the
@@ -348,6 +352,7 @@ def upsert_service(canonical, app):
                 image_name=image_meta["image_name"],
                 image_icon=image_meta["image_icon"],
                 image_tag=image_meta["image_tag"],
+                image_ref=image_meta.get("image_ref"),
                 sort_priority=canonical.get('sort_priority'),
                 notifier_reported_group_name=canonical.get('group_name'),
                 notifier_reported_sort_priority=canonical.get('sort_priority'),

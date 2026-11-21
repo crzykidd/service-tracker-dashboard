@@ -452,7 +452,9 @@ settings_sections.py ← Settings section registry (groups, slugs, labels, legac
                       `resolve()`); pure data, the sidebar and the routes both read it
 version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
-image_utils.py      ← icon fetch + cache
+image_utils.py      ← icon fetch + cache; `resolve_image_metadata` (image string -> registry/owner/name/tag/ref)
+image_ref.py        ← pure stdlib image reference parser (`parse()`); the one place an image string is split;
+                      feeds `resolve_image_metadata`, `image_repo.py` and `service_entry.image_ref`
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
                       lscr.io; None for anything else) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views

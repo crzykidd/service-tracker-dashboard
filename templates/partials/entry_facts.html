@@ -57,7 +57,10 @@
                                       <span class="text-gray-400 text-xs ml-1">({{ entry.last_api_update | time_since }})</span>
                                     {% endif %}
                                     {% set _image = [entry.image_registry, entry.image_owner, entry.image_name] | select | join('/') %}
-                                    {% if _image or entry.image_tag %}
+                                    {% if entry.image_ref %}
+                                      {% set _repo = entry.image_repo_link %}
+                                      <span class="text-gray-400 text-xs ml-1">— {% if _repo %}<a href="{{ _repo }}" target="_blank" rel="noopener noreferrer" class="image-repo-link text-blue-400 hover:underline"><code>{{ entry.image_ref }}</code></a>{% else %}<code>{{ entry.image_ref }}</code>{% endif %}</span>
+                                    {% elif _image or entry.image_tag %}
                                       {% set _repo = entry.image_repo_link %}
                                       <span class="text-gray-400 text-xs ml-1">— {% if _repo %}<a href="{{ _repo }}" target="_blank" rel="noopener noreferrer" class="image-repo-link text-blue-400 hover:underline"><code>{{ _image }}{% if _image and entry.image_tag %}:{% endif %}{{ entry.image_tag or '' }}</code></a>{% else %}<code>{{ _image }}{% if _image and entry.image_tag %}:{% endif %}{{ entry.image_tag or '' }}</code>{% endif %}</span>
                                     {% endif %}

@@ -5,6 +5,33 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Image reference parser (img-01)
+
+- **Legacy columns map from the parse like this:** `image_name` = last path component,
+  `image_owner` = everything before it (`org/team` for `ghcr.io/org/team/app`),
+  `image_registry` = the registry host[:port]. Docker Hub keeps the old shape: registry
+  stays NULL (not `docker.io`) and the implicit `library` owner is NULL, so existing
+  entries, `image_repo.py` and the display don't change meaning; the canonical string
+  lives in the new `image_ref`. Rejected: storing `docker.io` / `library` in the legacy
+  columns (rewrites every existing Hub row's meaning for no gain).
+- **`image_tag` now defaults to `latest`** when the reference has neither tag nor digest
+  (it was NULL), matching the canonical string; a digest-only reference leaves it NULL.
+- **`image_ref` is `String(512)` and indexed.** The prompt said 512 and no index unless
+  design section 6 asks; the design asks for an index (the check groups entries by
+  reference) and says 400. 512 wins on length (a superset); the index follows the design.
+- **Register overwrites `image_ref` only when it carries `image_name`**, like the other
+  `image_*` fields, so an absent field never clobbers it; an invalid string sets NULL.
+- **Not exported or imported**: it is observed (design 6.2), like the other `image_*` columns.
+- **Backfill reimplements the rules inside the migration** (migrations stay independent of
+  app code) and skips rows the old parser mangled (owner that is a host, tag with a `/`,
+  name with `@`); the next register fixes those.
+- **Nested GHCR links:** `ghcr.io/org/team/app` is the package `team/app` under `org`, so
+  the package segment is percent-encoded (`team%2Fapp`). Docker Hub nested namespaces and
+  registries with a port get no link.
+- **The conftest `fake_resolve` is left as is;** register reads `image_ref` with `.get`.
+
+---
+
 ## 2026-11-21 — Image repo link (GitHub #6)
 
 - **GHCR uses `github.com/users/<owner>/packages/container/package/<name>`.** Checked

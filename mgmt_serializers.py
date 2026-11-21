@@ -151,6 +151,7 @@ def entry_detail_out(entry: ServiceEntry) -> EntryDetailOut:
         "image_owner": entry.image_owner,
         "image_name": entry.image_name,
         "image_tag": entry.image_tag,
+        "image_ref": entry.image_ref,
         "reported_group_name": entry.notifier_reported_group_name,
         "reported_sort_priority": entry.notifier_reported_sort_priority,
         "networks": entry.networks,

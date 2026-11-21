@@ -1344,7 +1344,7 @@ def test_migration_on_an_empty_db_reaches_a_single_head(tmp_path):
     db_path = str(tmp_path / "empty.db")
     _alembic(tmp_path, db_path, "upgrade", "head")
     heads = _alembic(tmp_path, db_path, "heads").stdout
-    assert heads.count("(head)") == 1 and "e9b3d5f7a126" in heads
+    assert heads.count("(head)") == 1 and "a2c6e8f1b345" in heads
     tables, cols, _ = _schema(db_path)
     assert "inventory_stream" in tables and "name_source" in cols
     _alembic(tmp_path, db_path, "downgrade", "base")
