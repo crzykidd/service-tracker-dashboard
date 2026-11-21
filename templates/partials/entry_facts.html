@@ -56,8 +56,9 @@
                                     {% if entry.last_api_update %}
                                       <span class="text-gray-400 text-xs ml-1">({{ entry.last_api_update | time_since }})</span>
                                     {% endif %}
-                                    {% if entry.image_tag %}
-                                      <span class="text-gray-400 text-xs ml-1">— <code>{{ entry.image_tag }}</code></span>
+                                    {% set _image = [entry.image_registry, entry.image_owner, entry.image_name] | select | join('/') %}
+                                    {% if _image or entry.image_tag %}
+                                      <span class="text-gray-400 text-xs ml-1">— <code>{{ _image }}{% if _image and entry.image_tag %}:{% endif %}{{ entry.image_tag or '' }}</code></span>
                                     {% endif %}
                                 </span>
                             </div>

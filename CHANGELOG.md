@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An entry's details show the full Docker image**, for example
+  `ghcr.io/crzykidd/service-tracker-dashboard:dev`, not only the tag, on the Dashboard
+  row, the tile drawer and the Compact dialog.
 - **The dashboard's delete-entry call moved from `/api/v1/entries/<id>/delete` to
   `/entries/<id>/delete`.** It is a browser (login) route, not part of the management
   API, and was never in the OpenAPI spec. API clients keep using

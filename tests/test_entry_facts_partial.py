@@ -65,3 +65,23 @@ def test_exposed_only_ports_are_listed(app, admin_client):
     for path in ("/", "/tiled_dash"):
         html = admin_client.get(path).get_data(as_text=True)
         assert "8080/tcp, 9000/udp (exposed)" in html, path
+
+
+def test_docker_line_shows_the_full_image(app, admin_client):
+    """The details show the image (registry/owner/name:tag), not only the tag (issue #5)."""
+    now = datetime.now()
+    with app.app_context():
+        db.session.add_all([
+            ServiceEntry(host="img-host", container_name="img-full", source="notifier",
+                         last_updated=now, last_api_update=now, docker_status="running",
+                         image_registry="ghcr.io", image_owner="crzykidd",
+                         image_name="service-tracker-dashboard", image_tag="dev"),
+            ServiceEntry(host="img-host", container_name="img-short", source="notifier",
+                         last_updated=now, last_api_update=now, docker_status="running",
+                         image_name="nginx", image_tag=None),
+        ])
+        db.session.commit()
+    for path in ("/", "/tiled_dash"):
+        html = admin_client.get(path).get_data(as_text=True)
+        assert "<code>ghcr.io/crzykidd/service-tracker-dashboard:dev</code>" in html, path
+        assert "<code>nginx</code>" in html, path
