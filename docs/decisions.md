@@ -5,6 +5,36 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Settings modernization, set-02 (notifications and Home Assistant)
+
+Calls made while building phase 2 (`prompts/2026-11-20-set-02-notifications-ha.md`).
+
+- **Field errors are rendered server-side.** The save error path passes
+  `notification_error_fields` (the `config.` prefix stripped) to the template, which
+  sets `aria-invalid` and opens Advanced; no client script maps errors, so the state is
+  correct before JS runs and testable from pytest. The cleanup error has no input, so
+  it shows only as the banner.
+- **The Enabled switch is two shapes.** Enabled: a checkbox carrying
+  `data-channel-remove="disable"` (clicking opens the existing dialog; the dialog's
+  `close` flips it back unless the call succeeded). Disabled: a checkbox inside the toggle
+  form that submits on change. Both keep the existing routes and fetch flow.
+- **Card Send test reuses the form route** with the embedded saved config and a blank
+  password, so no route was added; the dialog Send test posts the live form as before.
+- **`ha_discovery_on` was removed.** `ha_discovery_live` (enabled channels only) replaces
+  it; nothing else read it. A disabled channel publishes nothing, so counting it was the
+  wrong answer for the warning.
+- **When no channel is live the warning replaces the discovery line**, but the
+  "N of M entries published" count stays, since it is the saved state either way.
+- **The HA toolbar sits outside the form.** The search box and Select links are not
+  form fields, so Discard (a form reset) does not clear the search or confuse the guard.
+- **Group key `stream:<id>` becomes `stream-<id>` in the DOM** (the macro uses the key in
+  an element id); `ha_groups` itself keeps the design's key.
+- **`settings_group` got a `check_label` argument** for the "Publish all <label> entries"
+  aria-label; the default stays "Select all in <label>".
+- **A new channel still defaults to Enabled off**, as before the redesign.
+
+---
+
 ## 2026-11-20 — Settings modernization, set-01 (foundation)
 
 Calls made while building phase 1 (`prompts/2026-11-20-set-01-foundation.md`).

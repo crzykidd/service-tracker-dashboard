@@ -26,6 +26,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   style, every section has a one-line description with the long explanation behind
   "Learn more", and the panels on the Edit page now have the same card background.
 
+- **Notification channels are cards.** Each channel shows a status dot, its broker
+  and base topic, and any last error, with **Edit**, an **Enabled** switch (turning
+  it off asks first, and cancelling flips it back) and a ⋯ menu: Send test, Scan for
+  orphans, Purge MQTT and Home Assistant, Delete. Adding or editing happens in a
+  dialog with Advanced options folded away and **Send test** beside Save, and an
+  error keeps the dialog open with what you typed.
+- **Settings → Home Assistant is a grouped picker.** Entries are grouped by source
+  (Docker, Manual, then each stream), collapsed, with a select-all checkbox per
+  group. Search opens the groups that match. The channels that publish discovery and
+  "N of M entries published" sit on top, and a Save bar appears only while you have
+  unsaved changes. The "no channel publishes discovery" warning now ignores disabled
+  channels, and the Home Assistant link shows an amber dot when entries are ticked
+  but no enabled channel publishes.
+
 ### Fixed
 
 - **Setting a user's password** no longer sends you back to Info and no longer shows

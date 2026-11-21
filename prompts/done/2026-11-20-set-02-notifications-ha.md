@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-set-02-notifications-ha
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: Notification cards + channel dialog and grouped Home Assistant section built; tests and docs updated; not committed.
 ---
 
 # Task: Settings modernization phase 2: Notifications cards + channel modal, Home Assistant section

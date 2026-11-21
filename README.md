@@ -1027,19 +1027,24 @@ changes is recorded in the audit log under the key's name. Details, settings
 STD can publish to an MQTT broker (the first notification channel; state
 publishing and Home Assistant discovery build on it). Configure it under **Settings → Notifications** (admins only).
 
-1. **Add the broker.** Name, host, port (1883, or 8883 with TLS), optional
-   username and password, and a **base topic** (default `std`; a trailing `/`
-   is dropped). Optional: TLS (with "skip certificate verification" for a
-   self-signed broker), a client id (default `std-<instance id>`), QoS (1 by
-   default) and keepalive. Tick **Enabled** and save.
-2. **Check it.** **Send test message** connects with the values currently in
+1. **Add the broker.** Click **Add channel**. In the dialog: name, host, port
+   (1883, or 8883 with TLS), a **base topic** (default `std`; a trailing `/`
+   is dropped), and optional username and password. Under **Advanced**: a
+   client id (default `std-<instance id>`), QoS (1 by default), keepalive and
+   "skip certificate verification" for a self-signed broker. Turn on
+   **Enabled** and save. Each channel is a card; **Edit** reopens the dialog,
+   and a save that fails keeps it open with what you typed.
+2. **Check it.** **Send test** (next to Save in the dialog, or in a saved
+   channel's ⋯ menu) connects with the values currently in
    the form (saved or not) and publishes a JSON message to
    `<base topic>/test` (not retained). Success or the reason for the failure
    shows right next to the button (a broker that does not answer is reported within about 5 seconds). Subscribe with
    `mosquitto_sub -t 'std/#' -v` to watch.
-3. **Watch the status.** The channel list shows connected, connecting,
-   error (with the last error) or disabled, and refreshes while the tab is
-   open.
+3. **Watch the status.** Each card shows connected, connecting,
+   error (with the last error) or disabled, and refreshes while the section is
+   open. The **Enabled** switch turns a channel off (it asks first) or on; the
+   ⋯ menu also has **Scan for orphans**, **Purge MQTT and Home Assistant** and
+   **Delete**.
 
 STD announces itself on `<base topic>/status`: `online` (retained) when it
 connects, and `offline` (retained) as the broker's last will if STD
@@ -1105,9 +1110,12 @@ What gets created:
 
 Entries are **opt-in**: nothing is published until you tick **Publish to Home
 Assistant** on an entry (Add or edit page), or pick several in **Settings →
-Home Assistant**, a table of your entries with a
-filter box, **Select all** / **Select none** (they act on the rows the filter
-shows) and one **Save** that applies every change at once. Within a published
+Home Assistant**, your entries grouped by source (Docker, Manual, each stream;
+collapsed, with a checkbox per group), a search box that opens the groups that
+match, **Select all** / **Select none** (they act on the entries the search
+shows) and one **Save** that applies every change at once. The top of the
+section lists the channels that publish discovery and how many entries are
+published. Within a published
 entry its checks appear automatically; untick **Publish to Home Assistant** on
 a single check to leave it out. The management API and MCP carry `ha_publish`
 on entries and `ha_exclude` on checks. Unticked, deleted or disabled entries

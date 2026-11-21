@@ -709,6 +709,40 @@ def _initial_section(section=None):
     return ''
 
 
+def _ha_context(channels):
+    """Template variables for Settings -> Home Assistant (design 9.7): the entries grouped
+    by source (Docker, Manual, then one group per stream by display name; empty groups
+    omitted; rows sorted by name then host), the channels that publish discovery and the
+    saved published count. A disabled channel publishes nothing, so `ha_discovery_live`
+    counts enabled ones only."""
+    entries = ServiceEntry.active().options(
+        joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).all()
+    entries.sort(key=lambda e: ((e.container_name or '').lower(), (e.host or '').lower()))
+    docker, manual, streams = [], [], {}
+    for e in entries:
+        if e.is_stream:
+            sid = e.stream.stream_id if e.stream else (e.stream_id or '')
+            label = e.stream.display_name if e.stream else 'Stream'
+            streams.setdefault(sid, {'key': f'stream:{sid}', 'label': label, 'entries': []})['entries'].append(e)
+        elif e.is_docker:
+            docker.append(e)
+        else:
+            manual.append(e)
+    groups = [{'key': 'docker', 'label': 'Docker', 'entries': docker},
+              {'key': 'manual', 'label': 'Manual', 'entries': manual}]
+    groups += sorted(streams.values(), key=lambda g: g['label'].lower())
+    groups = [g for g in groups if g['entries']]
+    ha_channels = [{'name': c['name'], 'enabled': c['enabled'],
+                    'prefix': c['config'].get('ha_prefix') or 'homeassistant',
+                    'device_prefix': c['config'].get('ha_device_prefix') or 'STD'}
+                   for c in channels if c['config'].get('ha_discovery')]
+    published = sum(1 for e in entries if e.ha_publish)
+    live = any(c['enabled'] for c in ha_channels)
+    return {'ha_groups': groups, 'ha_channels': ha_channels, 'ha_published': published,
+            'ha_total': len(entries), 'ha_discovery_live': live,
+            'ha_needs_channel': bool(published) and not live}
+
+
 def _render_settings(*, section=None, open_modal=None, forms=None, status=200, **extra):
     """Render the Settings page. `forms['group']` (a failed Groups save) is shown in
     place of the stored groups, with its per-row errors, on the Groups section;
@@ -788,6 +822,7 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
     initial_section = _initial_section(section)
     notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
                                  NotificationChannel.query.order_by(NotificationChannel.id).all()]
+    ha = _ha_context(notification_channels_out)
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -826,8 +861,7 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          notification_channels=notification_channels_out,
          notification_form=notification_form,
-         ha_entries=ServiceEntry.active().options(joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
-         ha_discovery_on=any(c['config'].get('ha_discovery') for c in notification_channels_out),
+         **ha,
          notifications_enabled=any(c['enabled'] for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
@@ -910,7 +944,9 @@ def save_notification_channel():
         for e in errors:
             flash(f"Notification channel: {e['field']} {e['message']}", "danger")
         form = {'id': raw_id, 'name': name, 'enabled': enabled, **config}
-        return _render_settings(section='notifications', forms={'notification': form},
+        error_fields = sorted({e['field'].removeprefix('config.') for e in errors})
+        return _render_settings(section='notifications', open_modal='channel-modal',
+                                forms={'notification': form}, notification_error_fields=error_fields,
                                 status=409 if cleanup_failed else 400)
     logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
     flash(f"✅ Notification channel '{channel.name}' saved.", "success")

@@ -1,71 +1,61 @@
-{% from "partials/settings/_macros.html" import section_header, flash_slot, inline_warning with context %}
+{% from "partials/settings/_macros.html" import section_header, flash_slot, inline_warning, settings_group, save_bar, empty_state with context %}
 <section id="section-home-assistant" class="settings-section{% if (initial_section or settings_default_section) != 'home-assistant' %} hidden{% endif %}">
   {% call section_header('Home Assistant', 'Choose which entries get a device in Home Assistant.') %}
     <p>
-      Only ticked entries get a device in Home Assistant; none are published by default.
-      Select all / none act on the rows the filter shows.
+      Discovery creates one device per ticked entry (a roll-up state sensor plus a problem sensor per check) under an STD hub
+      device. New checks appear automatically; opt a check out on the entry's edit page. Nothing is published by default.
+      Select all / none act on the entries the search shows.
     </p>
   {% endcall %}
   {{ flash_slot('home-assistant') }}
 
   <!-- Home Assistant entries: opt-in picker (PRD 17.4) -->
-  <h3 class="settings-sub" style="margin-top:0">Home Assistant entries</h3>
-  {% if not ha_discovery_on %}
-  {% call inline_warning('warn') %}
-    <div><strong>No channel has Add to Home Assistant on yet</strong>, so nothing is published until one does.</div>
+  {% if not ha_discovery_live %}
+  {% call inline_warning('warn', id='ha-discovery-warning') %}
+    <span>No channel publishes discovery, so nothing reaches Home Assistant.
+      Turn on <strong>Add to Home Assistant</strong> on a channel in <a href="#notifications" class="underline">Notifications &rarr;</a></span>
   {% endcall %}
+  {% endif %}
+  <div class="ha-status" id="ha-status">
+    {% if ha_discovery_live %}
+    <span>Discovery:
+      {% for c in ha_channels %}{% if not loop.first %}; {% endif %}<strong>{{ c.name }}</strong>{% if not c.enabled %} (disabled){% endif %}
+      (<code>{{ c.prefix }}/</code>, devices &quot;{{ c.device_prefix }} &hellip;&quot;){% endfor %}</span>
+    {% endif %}
+    <span><strong>{{ ha_published }} of {{ ha_total }}</strong> entries published</span>
+  </div>
+
+  {% if ha_groups %}
+  <div class="toolbar">
+    <input type="search" id="ha-filter" placeholder="Search by name, host or group" class="input-clean" aria-label="Search entries">
+    <button type="button" id="ha-select-all" class="linkish">Select all</button>
+    <button type="button" id="ha-select-none" class="linkish">Select none</button>
+  </div>
   {% endif %}
   <form method="POST" action="{{ url_for('dashboard.save_ha_entries') }}" id="ha-entries-form" data-unsaved-guard>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="flex flex-wrap items-center gap-3 my-3">
-      <input type="text" id="ha-filter" placeholder="Filter by name, host, source or group" class="input-clean" style="width:16rem" aria-label="Filter entries">
-      <button type="button" id="ha-select-all" class="btn-secondary btn-sm">Select all</button>
-      <button type="button" id="ha-select-none" class="btn-secondary btn-sm">Select none</button>
-      <button type="submit" data-unsaved-save class="btn-primary">Save</button>
-      <span data-unsaved-hint class="hidden text-yellow-400 text-sm">Unsaved changes</span>
-    </div>
-    {% if ha_entries %}
-    <div class="settings-card overflow-x-auto">
-    <table class="settings-table" id="ha-entries-table">
-      <thead>
-        <tr><th class="py-2 px-3">Publish</th><th class="py-2 px-3">Name</th><th class="py-2 px-3">Host</th><th class="py-2 px-3">Source</th><th class="py-2 px-3">Group</th></tr>
-      </thead>
-      <tbody>
-      {% for e in ha_entries %}
-        <tr data-ha-row>
-          <td class="py-1 px-3">
+    {% if ha_groups %}
+    <div class="settings-card settings-card-list" id="ha-groups">
+      {% for g in ha_groups %}
+      {% call settings_group(g.key|replace(':', '-'), g.label, g.entries|length, g.entries|selectattr('ha_publish')|list|length, collapsed=True, check_label='Publish all ' ~ g.label ~ ' entries') %}
+        {% for e in g.entries %}
+        <div class="ha-row" data-ha-row data-ha-source="{{ g.label }}">
+          <span>
             <input type="hidden" name="ha_entry_ids" value="{{ e.id }}">
-            <input type="checkbox" name="ha_publish" value="{{ e.id }}" class="form-checkbox h-4 w-4" aria-label="Publish {{ e.container_name }}" {% if e.ha_publish %}checked{% endif %}>
-          </td>
-          <td class="py-1 px-3">{{ e.container_name }}</td>
-          <td class="py-1 px-3">{{ e.host or '' }}</td>
-          <td class="py-1 px-3" data-ha-source>{% if e.is_stream %}{{ e.stream.display_name if e.stream else 'Stream' }}{% elif e.is_docker %}Docker{% else %}Manual{% endif %}</td>
-          <td class="py-1 px-3">{{ e.group.group_name if e.group else '' }}</td>
-        </tr>
+            <input type="checkbox" name="ha_publish" value="{{ e.id }}" aria-label="Publish {{ e.container_name }}" {% if e.ha_publish %}checked{% endif %}>
+          </span>
+          <span class="name">{{ e.container_name }}</span>
+          <span class="muted host">{{ e.host or '' }}</span>
+          <span class="pill" data-ha-group>{{ e.group.group_name if e.group else '' }}</span>
+        </div>
+        {% endfor %}
+      {% endcall %}
       {% endfor %}
-      </tbody>
-    </table>
     </div>
+    <p class="settings-empty" id="ha-no-match" hidden>No entries match.</p>
+    {{ save_bar() }}
     {% else %}
-    <p class="settings-empty">No entries yet.</p>
+    {{ empty_state('No entries yet.') }}
     {% endif %}
   </form>
-  <script>
-    (function () {
-      const form = document.getElementById('ha-entries-form');
-      if (!form) return;
-      const rows = () => Array.from(form.querySelectorAll('tr[data-ha-row]'));
-      const visible = () => rows().filter((r) => !r.hidden);
-      const setAll = (on) => visible().forEach((r) => {
-        const box = r.querySelector('input[type=checkbox]');
-        if (box.checked !== on) { box.checked = on; box.dispatchEvent(new Event('change', { bubbles: true })); }
-      });
-      document.getElementById('ha-select-all').addEventListener('click', () => setAll(true));
-      document.getElementById('ha-select-none').addEventListener('click', () => setAll(false));
-      document.getElementById('ha-filter').addEventListener('input', (ev) => {
-        const q = ev.target.value.trim().toLowerCase();
-        rows().forEach((r) => { r.hidden = q !== '' && !r.textContent.toLowerCase().includes(q); });
-      });
-    })();
-  </script>
 </section>

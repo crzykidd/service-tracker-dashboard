@@ -97,10 +97,10 @@
 {% endmacro %}
 
 {# Collapsible group with a tri-state checkbox (design 6.8); the behaviour is in ui.js. #}
-{% macro settings_group(key, label, total, checked_count, collapsed=True) %}
+{% macro settings_group(key, label, total, checked_count, collapsed=True, check_label=None) %}
 <section class="settings-group" data-group-key="{{ key }}" data-collapsed="{{ 'true' if collapsed else 'false' }}">
   <div class="settings-group-header">
-    <input type="checkbox" class="settings-group-check" aria-label="Select all in {{ label }}">
+    <input type="checkbox" class="settings-group-check" aria-label="{{ check_label or ('Select all in ' ~ label) }}">
     <button type="button" class="settings-group-toggle" aria-expanded="{{ 'false' if collapsed else 'true' }}" aria-controls="grp-{{ key }}">
       <span class="chevron" aria-hidden="true"></span> {{ label }}
       <span class="settings-group-count">{{ checked_count }} of {{ total }}</span>

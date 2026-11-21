@@ -33,6 +33,8 @@
           {% if _pending %}<span class="settings-nav-badge settings-nav-badge--warn" title="{{ _pending }} pending">{{ _pending }}</span>{% endif %}
           {% if _stale %}<span class="settings-nav-badge settings-nav-badge--bad" title="{{ _stale }} stale">{{ _stale }}</span>{% endif %}
         </span>
+        {% elif slug == 'home-assistant' and ha_needs_channel %}
+        <span class="settings-nav-badges"><span class="settings-nav-dot" title="Entries are ticked but no enabled channel publishes discovery"></span><span class="sr-only">No channel publishes discovery</span></span>
         {% elif slug == 'deleted' and _deleted %}
         <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--muted">{{ _deleted }}</span></span>
         {% endif %}
@@ -102,5 +104,7 @@
 <script src="{{ static_v('js/settings/nav.js') }}"></script>
 <script src="{{ static_v('js/settings/backup.js') }}"></script>
 <script src="{{ static_v('js/settings/groups.js') }}"></script>
+<script src="{{ static_v('js/settings/notifications.js') }}"></script>
+<script src="{{ static_v('js/settings/home_assistant.js') }}"></script>
 <script src="{{ static_v('js/settings/access.js') }}"></script>
 {% endblock %}

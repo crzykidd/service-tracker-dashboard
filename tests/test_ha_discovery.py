@@ -523,7 +523,7 @@ def test_bulk_save_publishes_and_clears_in_one_sync(app, factory, admin_client):
         _sync(pub, app)
         client.published.clear()
     page = admin_client.get("/settings?section=notifications").get_data(as_text=True)
-    assert "Home Assistant entries" in page and "Select all" in page
+    assert "entries published" in page and "Select all" in page
     resp = admin_client.post("/settings/notifications/ha-entries",
                              data={"ha_entry_ids": [str(a), str(b), str(c)], "ha_publish": [str(b), str(c)]})
     assert resp.status_code == 302

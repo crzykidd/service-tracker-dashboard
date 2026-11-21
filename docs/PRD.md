@@ -90,6 +90,7 @@
 | 0.80    | 2026-11-20 | v0.10.1 release prep: §18.9 stream observability (API revision 3) marked Delivered in v0.10.1; §18.1 revision 3 row names 0.10.1. No content change. |
 | 0.81    | 2026-11-20 | 0.10.2 fixes (unreleased): `service_entry.container_name` widened to `String(128)` (migration `d7a3e9b2c418`, §5.10) to match the 128-character stream item name; entry name limit 128 in `/add` and the management API (register `container_name` has no length cap, unchanged); notification **Send test message** bounded to about 5 s in total (§17.2). Register and stream contracts unchanged, API revision stays 3. |
 | 0.82    | 2026-11-20 | Added §19 (v0.11.0 — Settings modernization, planned; design in `docs/design/2026-11-20-settings-modernization.md`) and delivered its phase 1 on `dev`: section registry, grouped sidebar with deep links, flash policy, shared UI kit and restyle. Former §19–§21 renumbered §20–§22 and live cross-references updated (older revision rows keep the numbers of their day). §3.1 module layout updated. No schema, wire-contract or `/api/v1` change. |
+| 0.83    | 2026-11-20 | §19 phase 2 delivered on `dev` (set-02): Settings → Notifications channel cards with ⋯ menu and Enabled switch, Add/Edit channel dialog (Send test beside Save, validation errors reopen it), Settings → Home Assistant grouped by source with search and a sticky Save bar; §17.2/§17.4 UI text updated; the "no channel publishes discovery" warning counts enabled channels only. No schema, wire-contract or `/api/v1` change. |
 
 ---
 
@@ -2561,9 +2562,12 @@ No register-contract change: the notifier is not involved.
   publisher reload: a changed channel is stopped cleanly and reconnected
   with the new settings, without restarting STD.
 - Settings → Notifications tab (admin): channel list with live status
-  (connected / connecting / error with the last error / disabled), add, edit,
-  enable/disable, delete; write-only password (blank keeps it, a checkbox
-  clears it); **Send test message** publishes a non-retained JSON message to
+  (connected / connecting / error with the last error / disabled) as cards (status
+  dot, broker and base topic, Edit, an Enabled switch, a ⋯ menu with Send test,
+  Scan for orphans, Purge and Delete), add and edit in one dialog (Connection,
+  Authentication, Home Assistant, a collapsed Advanced block; a failed save reopens
+  it with the typed values), enable/disable, delete; write-only password (blank keeps it, a checkbox
+  clears it); **Send test** (in the dialog, or on a saved channel's ⋯ menu, which uses the stored password) publishes a non-retained JSON message to
   `<base>/test` using the submitted, possibly unsaved, values (a throwaway
   client with a `-test` client id, so the live connection is not dropped). The test runs on the request thread under one budget of about 5 s in total (connect wait 4 s, the publish wait gets the remainder, at least 1 s), so a broker that does not answer ends with "No answer from host:port within 4 seconds."
 - Management API: `GET`/`POST /api/v1/notifications/channels`,
@@ -2692,10 +2696,15 @@ topics are still published for an unpublished entry; only discovery is withheld.
 checkbox, **Discovery prefix** and **Device name prefix**. The entry edit page
 and the Add Entry page have **Publish to Home Assistant** (default off; a hidden
 marker keeps a form without the field from changing the stored value). Settings →
-Notifications has a **Home Assistant entries** panel: a table of active entries
-(name, host, group) with a Publish checkbox, a filter, Select all / Select none
-(visible rows) and one Save that applies every change in a single commit (one
-sync). Every check row (URL, container, service)
+Home Assistant (its own section) lists active entries grouped by source (Docker,
+Manual, then one group per stream; collapsed, tri-state group checkbox, live
+"N of M"), each with a Publish checkbox, name, host and group, a search that opens
+matching groups, Select all / Select none (visible rows) and a sticky Save bar,
+shown only while dirty, that applies every change in a single commit (one sync).
+A status line names the channels with discovery on and "N of M entries published";
+when no *enabled* channel has discovery on (a disabled one publishes nothing) it
+is an amber warning instead, and the section's nav link gets an amber dot if any
+entry is ticked. Every check row (URL, container, service)
 has **Publish to Home Assistant** (default on; stored inverted as `ha_exclude`;
 a form that lacks the toggle's hidden marker leaves the stored value alone). The
 controls are always visible and say they only matter with a Home Assistant
@@ -3399,7 +3408,7 @@ previously undefined `bg-dashboard-info-box`).
 | Phase | Prompt | Status |
 |---|---|---|
 | 1 | `prompts/2026-11-20-set-01-foundation.md`: registry, partial split, grouped sidebar, deep links, flash policy, shared kit, restyle of every section (no new layouts) | Delivered on `dev` |
-| 2 | `prompts/2026-11-20-set-02-notifications-ha.md`: Notifications cards and channel modal; Home Assistant groups | Planned |
+| 2 | `prompts/2026-11-20-set-02-notifications-ha.md`: Notifications cards and channel modal; Home Assistant groups | Delivered on `dev` |
 | 3 | `prompts/2026-11-20-set-03-streams.md`: Streams cards, Edit stream modal, Preview modal | Planned |
 | 4 | `prompts/2026-11-20-set-04-remaining.md`: Groups, Users, API keys (show-once modal), Docker, Audit log, Backup, Deleted | Planned |
 

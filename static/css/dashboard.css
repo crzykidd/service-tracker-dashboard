@@ -1239,6 +1239,11 @@ select.input-clean, textarea.input-clean { font-family: inherit; }
 .status-dot--bad { background: var(--color-status-bad); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2); }
 .status-dot--off { background: var(--color-status-muted); }
 .status-dot--info { background: var(--color-status-blue); }
+.settings-tag--ha { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
+.settings-nav-dot { width: 8px; height: 8px; border-radius: 50%; background: #fbbf24; display: inline-block; }
+.settings-card-result { color: var(--color-text-secondary); font-size: 0.8125rem; }
+.settings-card-result:not(:empty) { margin-top: 0.25rem; }
+.settings-hint { color: var(--color-text-muted); font-size: 0.75rem; font-style: normal; margin: 0.25rem 0 0; }
 .settings-state-word { font-size: 0.75rem; font-weight: 500; }
 /* The live notification status recolours through data-state, so the poll needs no new JS. */
 .notification-state[data-state="connected"] { color: #4ade80; }
@@ -1399,3 +1404,34 @@ details.std-modal-advanced[open] summary { margin-bottom: 0.75rem; }
 }
 .settings-savebar-hint { margin-right: auto; color: #fde68a; font-size: 0.875rem; }
 form[data-unsaved-dirty="false"] .settings-savebar { display: none; }
+
+/* ── Channel dialog fields, Home Assistant picker ────────── */
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 1rem; }
+.field-grid .field-span2 { grid-column: span 2; }
+.field-grid .field-grid-end { align-self: end; }
+.field-grid .input-clean { width: 100%; }
+.check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+.is-dimmed { opacity: 0.55; }
+.ha-status { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; color: var(--color-text-muted); margin-bottom: 1rem; }
+.ha-status strong { color: var(--color-text-primary); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
+.toolbar .input-clean { max-width: 22rem; width: 100%; }
+.linkish { background: none; border: 0; padding: 0; color: var(--color-status-blue); cursor: pointer; font: inherit; }
+.ha-row {
+  display: grid; grid-template-columns: 1.25rem minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1fr); gap: 0.75rem;
+  align-items: center; padding: 0.3rem 0; border-top: 1px solid rgba(55, 65, 81, 0.6);
+}
+.ha-row input { width: 1rem; height: 1rem; accent-color: var(--color-accent); }
+.ha-row .muted { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ha-row .pill {
+  justify-self: start; font-size: 0.6875rem; padding: 0.05rem 0.45rem; border-radius: 999px;
+  background: var(--color-bg-raised); color: var(--color-text-muted);
+}
+.ha-row .pill:empty { display: none; }
+.ha-row[data-changed] .name::after { content: " \2022 changed"; color: #fbbf24; font-size: 0.75rem; }
+@media (max-width: 767px) {
+  .field-grid { grid-template-columns: 1fr; }
+  .field-grid .field-span2 { grid-column: auto; }
+  .ha-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
+  .ha-row .host { display: none; }
+}
