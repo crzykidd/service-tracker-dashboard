@@ -5,6 +5,32 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Image repo link (GitHub #6)
+
+- **GHCR uses `github.com/users/<owner>/packages/container/package/<name>`.** Checked
+  against github.com: the `/users/` form redirects to the right package page for both a
+  user (`crzykidd/service-tracker-dashboard`) and an organisation (`home-assistant`,
+  which lands on `home-assistant/core`), and `/orgs/` gives the same result. The
+  `<owner>/<name>/pkgs/container/<name>` form is wrong whenever the repo name differs
+  from the package name.
+- **Only four registries are derived** (Docker Hub, `ghcr.io`, `quay.io`, `lscr.io` for
+  `linuxserver`). `gcr.io`, `mcr.microsoft.com` and `registry.gitlab.com` have no stable,
+  browsable page URL from `owner/name` alone (GitLab nests groups), and private registries
+  must never be guessed; those entries get no link unless the operator sets the override.
+  A two-part reference whose "owner" looks like a host (`ghcr.io/app`, `localhost:5000/app`;
+  the notifier-side parser files it as owner/name) is treated as unknown, not as a Hub user.
+- **The container name is not linked.** It already opens the entry's URL on every view and
+  is not in the shared facts partial; the image string carries the link. An entry with an
+  override but no Docker image gets a "Repo" row instead.
+- **The override is operator-owned for every kind** in export/import (unlike `image_icon`,
+  which register rewrites on an unlocked Docker entry), because register never writes it.
+  It is left out of the legacy `ServiceEntry.to_dict()` list on purpose; that format is only
+  read for old files.
+- **`API_REVISION` 5**, labelled "next after 0.11.0" until `/release-prep` assigns the
+  version. The MCP `update_entry` field list gained `image_repo_url`.
+
+---
+
 ## 2026-11-21 — CodeQL findings on the 0.11.0 pull request
 
 CodeQL raised 15 alerts on PR #82. Fixed: an unexpected exception during import apply no

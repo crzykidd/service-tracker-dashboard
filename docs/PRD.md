@@ -102,6 +102,8 @@
 | 0.92    | 2026-11-21 | §13.7: the Dashboard expand row shows the shared entry facts (`partials/entry_facts.html`, the tile drawer's info rows) beside the health detail, two columns stacking below 768px. No schema, API or wire-contract change. |
 | 0.93    | 2026-11-21 | §13.7: Compact view gets an expand button per tile that opens a details dialog (facts, health detail, Edit / Delete / Dozzle) fetched from the new `GET /service/<id>/details` session route (`partials/compact_details.html`, `static/js/compact_details.js`). Tile size, grid and click-to-open unchanged. No schema, API or wire-contract change. |
 | 0.94    | 2026-11-21 | v0.11.0 released: §19 Settings modernization and §20 backup, export, import and staged restore marked delivered (API revision 4), plus the Dashboard and Compact expand views (§13.7) and the 0.10.2 fixes (MQTT test bounded to ~5 s, 128-character entry names). Table of contents headings for §16–§20 brought in line with the section headings. |
+| 0.95    | 2026-11-21 | §13.7 image repo link on `dev` (GitHub #6): `image_repo.py` derives the repository page for Docker Hub, GHCR, Quay and LinuxServer images, new operator-owned `service_entry.image_repo_url` override (migration `e9b3d5f7a126`, new §5.11), Add/Edit field, management API and MCP `image_repo_url` / `image_repo_link`, export and import field (§20.2). **`API_REVISION` 5** (§18.1). Register and stream-ingest wire contracts unchanged. |
+| 0.96    | 2026-11-21 | Docs-only: the subsections under §22 (Cross-Repo Coordination) are renumbered 22.1–22.3; they were numbered 21.1–21.3. The existing §22.3 cross-reference in §18 now resolves. No content changes. |
 
 ---
 
@@ -289,6 +291,8 @@ settings_sections.py ← Settings section registry: groups, slugs, labels, legac
 synthesizer.py      ← exposure → internalurl/externalurl translation +
                       URL provenance tracking
 image_utils.py      ← icon fetch + cache
+image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
+                      lscr.io; None for anything else) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates; `templates/partials/settings/` holds one
                       partial per Settings section plus `_macros.html` (§19)
@@ -530,6 +534,14 @@ Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_ch
 | Value | `service_entry.source` gains `stream` (`VALID_SOURCES`). The downgrade turns `stream` entries into `manual` ones. |
 | Value | `api_key.scope` gains `ingest` (the column was already wide enough; no DDL). |
 | Backups | `to_dict()` carries `mac`, `ip`, `network` and `attributes`. A stream entry restores as a manual entry (it has no stream to rejoin); a backup record never overwrites a live stream entry. |
+
+---
+
+### 5.11 Image repo link override
+
+Migration `e9b3d5f7a126`: `service_entry.image_repo_url` (`String(512)`, nullable). A plain
+operator-owned column (see §13.7): no FK, so no index; register never writes it, export
+and import carry it (§20.2), and `ServiceEntry.to_dict()` (the legacy entry list) does not.
 
 ---
 
@@ -1825,6 +1837,24 @@ on the 24h/7d toggle, renders with DOM calls (no innerHTML of server text),
 and drives the tooltip and Check now (`stdPost`, then re-fetch every 2 s until every shown check has a result newer than the request's `requested_at`, up to 75 s).
 Dashboard gets a leading chevron column and an expand row (group-header
 `colspan` is now 13); an open row pauses auto-refresh like an open drawer.
+**Image repo link (post-0.11.0, GitHub #6).** In the entry facts the Docker image
+string is a link (`target="_blank" rel="noopener noreferrer"`) to the image's
+repository page. `image_repo.image_repo_url(registry, owner, name)` derives it from
+`image_registry` / `image_owner` / `image_name`: Docker Hub hosts (empty, `docker.io`,
+`index.docker.io`, `registry-1.docker.io`) give `hub.docker.com/_/<name>` for official
+images (owner empty or `library`) or `hub.docker.com/r/<owner>/<name>`; `ghcr.io` gives
+`github.com/users/<owner>/packages/container/package/<name>`; `quay.io` gives
+`quay.io/repository/<owner>/<name>`; `lscr.io/linuxserver/<name>` gives
+`github.com/linuxserver/docker-<name>`. Any other registry, or a missing name or owner,
+gives no link: STD never guesses for private or self-hosted registries. The nullable
+`service_entry.image_repo_url` (`String(512)`, migration `e9b3d5f7a126`, no FK, no index)
+is an operator-owned override: it wins over the derived link, is edited on `/add` and
+`/edit` and through the management API (`http(s)` only, validated by
+`entry_rules.validate_image_repo_url`), travels in export and import, and is never
+written by register (`schemas.py` is unchanged). An entry with no Docker image but an
+override shows a "Repo" row with the link. The container name is not linked (it already
+opens the entry's URL). API revision 5 (§18.1).
+
 Since 0.11.0 the Dashboard expand row has two columns: the shared entry facts
 (`partials/entry_facts.html`, also the tile drawer's info rows) on the left and the
 health detail (facts hidden) on the right; the columns stack below 768px.
@@ -2939,6 +2969,7 @@ server supports and log it.
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
+| 5 | next after 0.11.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3606,7 +3637,8 @@ YAML opens with a short comment listing what is not included.
   Exported: lock, description, group (by name), sort priority, `ha_publish`, widget
   reference, every check's configuration (`HealthCheck.to_config()`), **a URL only when
   operator-owned** (source `ui_edit`, or any URL on a manual or stream entry; the source
-  is written so import can restore it), and **`image_icon` only for manual, stream and
+  is written so import can restore it), **`image_repo_url`** (the operator's image repo
+  link override, §13.7, every kind), and **`image_icon` only for manual, stream and
   locked Docker entries** (an unlocked Docker entry's icon is rewritten on every
   register). Not exported: status, container ids, image metadata, networks and ports,
   IP, MAC, `attributes`, missing markers, exposure observations, label-owned
@@ -3627,7 +3659,7 @@ YAML opens with a short comment listing what is not included.
   `Cache-Control: no-store`) backs the **Download YAML** / **Download JSON** buttons on
   the Exports card; the management API (§14.4) has `GET /export` and the backup routes;
   the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
-  `API_REVISION` is 4 (§18.1).
+  `API_REVISION` is 5 (§18.1).
 
 ### 20.3 Import (Delivered in 0.11.0; bak-03 engine, bak-04 UI and API)
 
@@ -3804,7 +3836,7 @@ route (a whole-database swap through an API key is too sharp).
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 21.1 Contract ownership
+### 22.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -3817,7 +3849,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 21.2 Release history
+### 22.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -3842,7 +3874,7 @@ not lead.
 
 ---
 
-### 21.3 Inventory stream producers (§18; delivered in 0.10.0)
+### 22.3 Inventory stream producers (§18; delivered in 0.10.0)
 
 From 0.10.0 STD also owns the **ingest contract** (§18.5), and inventory
 sidecars are its producers. The first is

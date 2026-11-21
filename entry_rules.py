@@ -12,6 +12,7 @@ import os
 
 import requests
 
+import image_repo
 import synthesizer
 from extensions import db
 from image_utils import icon_path_in_dir, safe_icon_filename
@@ -23,6 +24,7 @@ NAME_MAX = 128   # = service_entry.container_name and the stream item name max
 HOST_MAX = 100
 DESCRIPTION_MAX = 255
 URL_MAX = 255
+IMAGE_REPO_URL_MAX = 512
 
 GROUP_NAME_MAX = 100
 GROUP_ICON_MAX = 255
@@ -62,6 +64,17 @@ def validate_url(field, value):
     """URLs are free text (as on the Edit page) apart from the column limit."""
     if value and len(value) > URL_MAX:
         return [{"field": field, "message": f"{field} is limited to {URL_MAX} characters"}]
+    return []
+
+
+def validate_image_repo_url(field, value):
+    """The optional image repo override: an http(s) URL, at most 512 characters."""
+    if not value:
+        return []
+    if len(value) > IMAGE_REPO_URL_MAX:
+        return [{"field": field, "message": f"{field} is limited to {IMAGE_REPO_URL_MAX} characters"}]
+    if not image_repo.valid_repo_override(value):
+        return [{"field": field, "message": f"{field} must be an http:// or https:// URL"}]
     return []
 
 

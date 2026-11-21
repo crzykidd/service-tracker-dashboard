@@ -54,7 +54,7 @@ SCRIPT_URL = "https://raw.githubusercontent.com/crzykidd/service-tracker-dashboa
 # readable error, not a round trip. The server stays the authority.
 ENTRY_PATCH_FIELDS = {
     "name", "host", "description", "group", "internalurl", "externalurl",
-    "icon", "sort_priority", "locked", "ha_publish",
+    "icon", "image_repo_url", "sort_priority", "locked", "ha_publish",
 }
 CHECK_PATCH_FIELDS = {
     "enabled", "name", "check_type", "target", "mode", "interval_seconds",
@@ -523,7 +523,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def update_entry(entry_id: int, fields: dict) -> dict:
         """Edit an entry. `fields` names only what changes; a field left out is untouched and a field set to null clears it.
 
-        Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, sort_priority, locked, ha_publish (true publishes the entry's device to Home Assistant, default false; only matters when a notification channel has Add to Home Assistant on).
+        Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, image_repo_url (http(s) override for the image repository link; null clears it), sort_priority, locked, ha_publish (true publishes the entry's device to Home Assistant, default false; only matters when a notification channel has Add to Home Assistant on).
         Docker-owned fields of notifier entries are rejected. A URL you edit here is protected from being overwritten by the notifier.
         Example fields: {"description": "Media server", "group": "Media", "externalurl": null}
         """

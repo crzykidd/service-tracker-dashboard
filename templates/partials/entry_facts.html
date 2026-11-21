@@ -58,9 +58,18 @@
                                     {% endif %}
                                     {% set _image = [entry.image_registry, entry.image_owner, entry.image_name] | select | join('/') %}
                                     {% if _image or entry.image_tag %}
-                                      <span class="text-gray-400 text-xs ml-1">— <code>{{ _image }}{% if _image and entry.image_tag %}:{% endif %}{{ entry.image_tag or '' }}</code></span>
+                                      {% set _repo = entry.image_repo_link %}
+                                      <span class="text-gray-400 text-xs ml-1">— {% if _repo %}<a href="{{ _repo }}" target="_blank" rel="noopener noreferrer" class="image-repo-link text-blue-400 hover:underline"><code>{{ _image }}{% if _image and entry.image_tag %}:{% endif %}{{ entry.image_tag or '' }}</code></a>{% else %}<code>{{ _image }}{% if _image and entry.image_tag %}:{% endif %}{{ entry.image_tag or '' }}</code>{% endif %}</span>
                                     {% endif %}
                                 </span>
+                            </div>
+                            {% endif %}
+
+                            {# Operator-set image repo link on entries without a Docker image line #}
+                            {% if not entry.is_docker and entry.image_repo_url %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Repo</span>
+                                <span class="drawer-value"><a href="{{ entry.image_repo_url }}" target="_blank" rel="noopener noreferrer" class="image-repo-link text-blue-400 hover:underline break-all">{{ entry.image_repo_url }}</a></span>
                             </div>
                             {% endif %}
 

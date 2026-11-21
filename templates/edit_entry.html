@@ -132,6 +132,12 @@
           <p class="edit-helper">Filename of the SVG icon (e.g., service.svg). Will try to match automatically from the application name above.</p>
         </div>
 
+        <div>
+          <label for="image_repo_url" class="block text-sm font-medium text-dashboard-secondary mb-1">Image repo URL</label>
+          <input type="url" name="image_repo_url" id="image_repo_url" maxlength="512" class="form-input" value="{{ fv('image_repo_url', entry.image_repo_url or '') }}">
+          <p class="edit-helper">Optional. Overrides the repository link derived from the Docker image (Docker Hub, GHCR, Quay, LinuxServer); needed for any other registry. Clear it to go back to the derived link.</p>
+        </div>
+
         <div class="flex items-center">
           <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-4 w-4" {% if (form is not none and 'is_static' in form) or (form is none and entry.is_static) %}checked{% endif %}>
           <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Lock (ignore notifier updates)</label>

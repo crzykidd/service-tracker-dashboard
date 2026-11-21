@@ -453,6 +453,8 @@ settings_sections.py ← Settings section registry (groups, slugs, labels, legac
 version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
+image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
+                      lscr.io; None for anything else) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates; templates/partials/settings/ = one partial per Settings
                       section + _macros.html (see PRD §19)

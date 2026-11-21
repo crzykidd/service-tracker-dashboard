@@ -176,6 +176,7 @@ class EntryRecord(_Rec):
     is_static: bool = False
     description: str | None = None
     image_icon: str | None = None
+    image_repo_url: str | None = None   # operator-owned override, all kinds
     group: str | None = None
     sort_priority: int | None = None
     internalurl: UrlValue | None = None
@@ -298,6 +299,7 @@ def _entry_record(entry):
         kind=kind, identity=identity, is_static=bool(entry.is_static),
         description=entry.description or None,
         image_icon=(entry.image_icon or None) if icon_owned else None,
+        image_repo_url=entry.image_repo_url or None,
         group=entry.group.group_name if entry.group else None,
         sort_priority=entry.sort_priority,
         internalurl=_url_value(entry, "internalurl"),

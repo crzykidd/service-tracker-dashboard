@@ -177,6 +177,7 @@ class EntryCreate(_Request):
     internalurl: str | None = None
     externalurl: str | None = None
     icon: str | None = None              # icon file name; fetched if missing
+    image_repo_url: str | None = None    # http(s) override for the image repository link
     sort_priority: int | None = None
     locked: bool = False
     ha_publish: bool = False             # true: publish this entry's device to Home Assistant
@@ -196,6 +197,7 @@ class EntryPatch(_Request):
     internalurl: str | None = None
     externalurl: str | None = None
     icon: str | None = None
+    image_repo_url: str | None = None    # null/"" clears the override
     sort_priority: int | None = None
     locked: bool | None = None
     ha_publish: bool | None = None       # true publishes the entry's Home Assistant device
@@ -586,6 +588,8 @@ class EntryOut(TypedDict):
     internalurl_source: str | None   # ui_edit | explicit_label | synthesized | null
     externalurl_source: str | None
     icon: str | None
+    image_repo_url: str | None       # operator override (null: derived from the image fields)
+    image_repo_link: str | None      # the link shown: the override, else derived, else null
     sort_priority: int | None
     locked: bool
     ha_publish: bool                 # true: published to Home Assistant (opt-in)

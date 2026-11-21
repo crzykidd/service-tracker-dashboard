@@ -1200,6 +1200,7 @@ def add_entry():
         host = (request.form.get('host') or '').strip() or None
         container_name = (request.form.get('container_name') or '').strip()
         description = (request.form.get('description') or '').strip() or None
+        image_repo_url = (request.form.get('image_repo_url') or '').strip() or None
         internalurl = request.form.get('internal_url')
         externalurl = request.form.get('external_url')
         group_mode = request.form.get('group_mode')  # 'existing' or 'new'
@@ -1226,6 +1227,11 @@ def add_entry():
             return render_error()
         if basic_errors:
             flash('Name and Host are limited to 100 characters, Description to 255.', 'danger')
+            return render_error()
+
+        repo_errors = entry_rules.validate_image_repo_url('image_repo_url', image_repo_url)
+        if repo_errors:
+            flash(f"Image repo URL: {repo_errors[0]['message'].split(' ', 1)[1]}.", 'danger')
             return render_error()
 
         # Check for duplicates. An empty host is its own value: the key is
@@ -1279,6 +1285,7 @@ def add_entry():
             last_updated=datetime.now(),
             group_id=group_obj.id if group_obj else None,
             image_icon=image_icon,
+            image_repo_url=image_repo_url,
             sort_priority=sort_priority,
             is_static=is_static,
             ha_publish='ha_publish' in request.form,
@@ -1397,6 +1404,13 @@ def edit_entry(id):
                 return render_edit(form=request.form, url_rows=url_rows, svc_rows=svc_rows,
                                    container_row=container_row)
 
+        # === IMAGE REPO URL: validate first, change nothing on error ===
+        new_repo_url = request.form.get('image_repo_url', '').strip() or None
+        repo_errors = entry_rules.validate_image_repo_url('image_repo_url', new_repo_url)
+        if repo_errors:
+            flash(f"Image repo URL: {repo_errors[0]['message'].split(' ', 1)[1]}.", 'danger')
+            return render_edit(form=request.form)
+
         # === BASIC FIELDS ===
         new_host = request.form.get('host', '').strip()
         if not entry.is_docker:
@@ -1410,6 +1424,8 @@ def edit_entry(id):
         if entry.is_stream and new_name and new_name != entry.container_name:
             entry.name_source = NAME_SOURCE_UI_EDIT     # snapshots no longer write the name
         entry.container_name = new_name
+        if 'image_repo_url' in request.form:
+            entry.image_repo_url = new_repo_url
 
         # URL provenance: setting a URL via UI marks it ui_edit (highest
         # precedence, the synthesizer won't touch it). Clearing the URL

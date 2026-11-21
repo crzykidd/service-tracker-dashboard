@@ -487,6 +487,7 @@ def _entry_snapshot(entry):
         "internalurl": entry.internalurl,
         "externalurl": entry.externalurl,
         "icon": entry.image_icon or None,
+        "image_repo_url": entry.image_repo_url or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
         "ha_publish": bool(entry.ha_publish),
@@ -602,6 +603,8 @@ def create_entry():
     icon, icon_error = entry_rules.resolve_icon(data.icon)
     if icon_error:
         errors.append({"field": "icon", "message": icon_error})
+    image_repo_url = (data.image_repo_url or "").strip() or None
+    errors += entry_rules.validate_image_repo_url("image_repo_url", image_repo_url)
     if group_name and len(group_name) > 100:
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
 
@@ -648,8 +651,8 @@ def create_entry():
             internalurl_source=synthesizer.SOURCE_UI_EDIT if internalurl else None,
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(), group_id=group.id if group else None,
-            image_icon=icon, sort_priority=data.sort_priority, is_static=data.locked,
-            ha_publish=data.ha_publish,
+            image_icon=icon, image_repo_url=image_repo_url, sort_priority=data.sort_priority,
+            is_static=data.locked, ha_publish=data.ha_publish,
         )
         ensure_url_checks(entry)
         for which, values in url_values.items():
@@ -714,6 +717,10 @@ def patch_entry(id):
         icon, icon_error = entry_rules.resolve_icon(data.icon)
         if icon_error:
             errors.append({"field": "icon", "message": icon_error})
+    new_repo_url = None
+    if "image_repo_url" in sent:
+        new_repo_url = (data.image_repo_url or "").strip() or None
+        errors += entry_rules.validate_image_repo_url("image_repo_url", new_repo_url)
     group_name = (data.group or "").strip() or None if "group" in sent else None
     if group_name and len(group_name) > 100:
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
@@ -754,6 +761,8 @@ def patch_entry(id):
                 entry.url_check(which).last_checked_at = None
         if "icon" in sent:
             entry.image_icon = icon or ""
+        if "image_repo_url" in sent:
+            entry.image_repo_url = new_repo_url
         if "sort_priority" in sent:
             entry.sort_priority = data.sort_priority
         if "ha_publish" in sent and data.ha_publish is not None:

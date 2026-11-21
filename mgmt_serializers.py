@@ -121,6 +121,8 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "internalurl_source": entry.internalurl_source,
         "externalurl_source": entry.externalurl_source,
         "icon": entry.image_icon or None,
+        "image_repo_url": entry.image_repo_url or None,
+        "image_repo_link": entry.image_repo_link,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
         "ha_publish": bool(entry.ha_publish),

@@ -376,7 +376,8 @@ authors is [PRD §18.5](docs/PRD.md) and the OpenAPI document.
 ### Manual entries
 
 The **Add** page (or `POST /api/v1/entries`, or MCP) creates an entry with a name, an
-optional host, a description, URLs, group, icon, sort priority and health checks.
+optional host, a description, URLs, group, icon, image repo URL, sort priority and health
+checks.
 Manual entries are never stale. If the notifier later registers the same host and
 name, the container adopts the entry (unless it is locked). A manual entry can also be
 linked to a stream item from its Edit page.
@@ -740,7 +741,7 @@ Everything is in **Settings → Backup & restore** (`/settings#backup`).
   mounted volume.
 - **Export** (**Download YAML** / **Download JSON**, the daily export,
   `GET /api/v1/export`): groups, the URLs you typed, the icon of manual, stream and
-  locked entries, lock, description, group, sort priority, Home Assistant picks, health
+  locked entries, the image repo URL, lock, description, group, sort priority, Home Assistant picks, health
   checks, widgets (no API key), notification channels (no password), inventory streams
   with filters, default checks and blocks, users (no password), and the exposure,
   update-check and backup-schedule settings. Records are matched by name, never by

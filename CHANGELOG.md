@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Docker image in an entry's details links to its repository page (closes #6).**
+  On the Dashboard, Tiled and Compact details, the image (`registry/owner/name:tag`) is
+  a link, derived from the image the notifier reports: Docker Hub (official and user
+  images), GitHub Container Registry, Quay and LinuxServer (`lscr.io`). For any other or
+  private registry no link is guessed. Set **Image repo URL** on the Add or Edit page
+  (or `image_repo_url` through the management API, MCP, or an import) to point the link
+  somewhere else, or to add one for an entry with no Docker image; clear it to go back to
+  the derived link. The override is included in exports and imports. Management API
+  revision 5: entries carry `image_repo_url` and the resulting `image_repo_link`.
+
 ## [0.11.0] — 2026-11-21
 
 ### Added

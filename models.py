@@ -86,6 +86,8 @@ class ServiceEntry(db.Model):
     image_name = db.Column(db.String(100), nullable=True)
     image_tag = db.Column(db.String(100), nullable=True)
     image_icon = db.Column(db.String(100), nullable=True)
+    # Operator-owned override for the image repository link (v0.11.1); never written by register.
+    image_repo_url = db.Column(db.String(512), nullable=True)
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
@@ -322,6 +324,14 @@ class ServiceEntry(db.Model):
         """True for entries owned by the Docker notifier (`source == notifier`)."""
         # A not-yet-flushed instance has source None; the column default is notifier.
         return (self.source or SOURCE_NOTIFIER) == SOURCE_NOTIFIER
+
+    @property
+    def image_repo_link(self):
+        """The image's repository page: the operator override, else derived from
+        the image fields, else None (see image_repo.py)."""
+        from image_repo import effective_repo_url
+
+        return effective_repo_url(self)
 
     @property
     def is_docker_status_stale(self):
