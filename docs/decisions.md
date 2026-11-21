@@ -5,6 +5,83 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Settings modernization design (0.11.0)
+
+Design in `docs/design/2026-11-20-settings-modernization.md` (mockup alongside),
+built by `prompts/2026-11-20-set-01` … `set-04`.
+
+- **Operator answers to the design's open questions:** no separate 0.10.2 release (its
+  fixes ship in 0.11.0); `bg-dashboard-info-box` gets defined (Edit page panels gain the
+  card background); the Docker (register) card moves to the Docker section (in phase 4,
+  so phase 3 stays green).
+
+**Operator decisions (final):**
+- Sidebar in six labelled groups, one deep-linkable section each (`/settings#<section>`,
+  reload and post-save redirects return to it): General (About, Configuration),
+  Dashboard (Groups, Widgets), Sources (Docker = today's Exposure interpreter, Streams
+  incl. Blocked and Link offers), Integrations (Notifications, Home Assistant as its own
+  section), Access (Users, API keys, Audit log as its own section), Data (Backup &
+  restore, Deleted incl. detached widgets).
+- Success flashes become an auto-dismissing toast. Errors stay as a persistent,
+  dismissible banner in the section or modal where they happened, and validation errors
+  reopen the modal with the input kept. Warnings that ask the operator to act stay
+  inline. The long paragraph on top of each section shrinks to a one-line subtitle, with
+  detail behind "ⓘ Learn more".
+- List + Add + modal pattern (cards with a status dot, summary, Edit and a ⋯ menu; one
+  modal for Add and Edit) for channels, users, API keys (show-once key in the modal),
+  groups and stream actions. Destructive actions sit in ⋯ and keep their confirm dialogs,
+  restyled.
+- The Notifications card and modal layout (Connection, Authentication, Home Assistant,
+  and a collapsed Advanced block; Send test beside Save; the cleanup prompt inside the
+  modal). The Home Assistant section: discovery channels and "N of M entries published"
+  in the header, entries grouped by source, collapsed by default, tri-state group
+  checkbox, search expands matches, sticky Save bar only while dirty.
+- Visual language of Add/Edit (`btn-primary`/`btn-secondary`, `input-clean`, info-box
+  cards, `rounded-lg`, the `dashboard.css` tokens).
+
+**Design calls:**
+- **Deep links: hash for the browser, `?section=` for the server.** Sidebar items are
+  `<a href="#slug">`. Redirects keep `url_for('dashboard.settings', section=…)`, because
+  the server must know the section to put an error banner inside it, and a fragment never
+  reaches the server. A validation error is a re-render of the POST URL, so the page
+  carries `data-initial-section` / `data-open-modal` itself. On load, `nav.js`
+  `replaceState`s to `/settings?<query minus section>#slug`. This also turns a reload
+  after a failed save, or after creating an API key, into a plain GET instead of a
+  resubmission. Legacy values (`info`, `exposure`, `api`) are aliases in a new
+  `settings_sections.py` registry. Rejected: a hash in the redirect `Location` (the
+  server can't place errors) and query-only (every section click would be a reload or a
+  `pushState` dance). Section elements keep `id="section-<slug>"`, so a hash never
+  scrolls.
+- **Flash mapping in the template, no new `toast` category.** `success` / `info` /
+  `message` become toasts, `danger` / `error` become error banners, and `warning`
+  becomes an amber persistent banner. The ~60 `flash()` calls keep describing the
+  outcome, not the presentation, and tests (which read messages from the session) are
+  unaffected. A `flash_text` filter strips one leading emoji ("✅ ", "🗑️ ") in toasts.
+  The messages themselves stay unchanged. `routes_auth.set_user_password` moves from
+  `error` to `danger` and gets a section. Banners keep `class="flash-alert"` first
+  (Add/Edit tests count it).
+- **Fetch results stay inline** (test, purge, orphan scan, stream purge): they carry
+  counts the operator is reading, so they are not toasts.
+- **Base topic goes in the Connection block** of the channel modal (the decision didn't
+  place it; it is required and shown on every card, so it is not "advanced").
+- **The HA "discovery off" warning counts enabled channels.** Today's check counts any
+  channel with discovery on, including a disabled one, which publishes nothing.
+- **Groups' modal stages into the one form.** `save_groups` is all-or-nothing and needs
+  every group id, so the modal's inputs have no `name` and Apply writes into the card's
+  hidden `group-<id>-*` fields. The sticky save bar commits. Column sorting is dropped
+  (cards are in priority order).
+- **The Edit stream modal has three forms** (name and networks, staleness and missing,
+  default checks), because the three routes stay. A combined route is under "Later".
+- **Mobile: a `<select>` with an `<optgroup>` per group**, not a horizontal scroller
+  (13 chips don't fit, and a scroller hides the group labels).
+- **`unsaved_guard.js` gains `reset()`.** A modal filled by JS takes a new baseline, so
+  opening Edit no longer marks the form dirty.
+- **`bg-dashboard-info-box` is undefined today.** No CSS rule or Tailwind config defines
+  it, so the Edit page's panels have no background. Phase 1 defines it as the card
+  surface unless the operator objects (open question Q2 in the design).
+
+---
+
 ## 2026-11-20 — 0.10.2: MQTT test budget and 128-char entry names
 
 - **Test budget split.** `test_connection` had `TEST_TIMEOUT_SECONDS = 8` plus
