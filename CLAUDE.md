@@ -413,7 +413,13 @@ streams.py          ← inventory streams (PRD 18): ingest value rules (`normali
                       `apply()` engine under a module lock, lifecycle, blocks, link offers; plain
                       functions raising `StreamError`, shared by the management API and the UI
 export_format.py    ← export format v1 (PRD 20.2): pydantic models (lenient on read), `build_export()`
-                      applying the field ownership table, `dump(doc, yaml|json)`; never a secret
+                      applying the field ownership table, `dump(doc, yaml|json)`; never a secret;
+                      `from_legacy()` reads the old entry list (format 0)
+importer.py         ← import engine (PRD 20.3-20.4): `parse` (v1 + legacy, record validation),
+                      pure `plan()` (matcher, per-field missing/differs), `fingerprint`, `apply()`
+                      (takes `routes_api._UPSERT_LOCK` then `streams._LOCK`, re-plans, one
+                      transaction; no secret is ever written), and the `import-staging/` store;
+                      no routes or UI yet (bak-04)
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot/export runs,
                       per-kind retention, file list + confined `resolve_file`; run functions record
                       `backup_last_runs`

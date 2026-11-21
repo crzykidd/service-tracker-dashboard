@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-bak-03-import-engine
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: importer.py (parse, plan, fingerprint, apply, staging), export_format.from_legacy, User.has_password; 40 tests in tests/test_import_engine.py; decisions recorded under bak-03
 ---
 
 # Task: Backup phase 3: import engine (parse v1 + legacy v0, matcher, plan/apply), no UI

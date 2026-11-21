@@ -183,6 +183,8 @@ class EntryRecord(_Rec):
     ha_publish: bool = False
     widget: WidgetRef | None = None
     checks: list[CheckRecord] = []
+    # Legacy (format 0) files only: the row carried `deleted_at`. Never written by v1.
+    deleted_in_file: bool | None = None
 
 
 class UserRecord(_Rec):
@@ -428,3 +430,159 @@ def dump(doc, fmt) -> bytes:
     if fmt == "json":
         return (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     raise ValueError(f"unknown export format {fmt!r} (use 'yaml' or 'json')")
+
+
+# --- legacy (format version 0) -------------------------------------------------------------
+
+LEGACY_KEY_WARNING = ("This file contains widget API keys in clear text. They are not imported. "
+                      "Delete old copies stored where others can read them.")
+LEGACY_NO_GROUPS_WARNING = "This file has no groups (made by the daily job before 0.11.0)."
+
+_CHECK_KEYS = tuple(CheckRecord.model_fields)
+_LEGACY_URL_KINDS = (("internal", "internal_url", "Internal URL"), ("external", "external_url", "External URL"))
+
+
+def _positive_int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _legacy_checks(rec, warnings, label):
+    """The v1 `checks` of a legacy record: its `checks` list when it has one, else the
+    pre-0.7 fields mapped onto the two URL rows (absent means disabled / the global timeout /
+    verify TLS on, the `_restore_checks` legacy branch)."""
+    raw = rec.get("checks")
+    out = []
+    if isinstance(raw, list):
+        for cfg in raw:
+            if not isinstance(cfg, dict):
+                continue
+            try:
+                out.append(CheckRecord(**{k: v for k, v in cfg.items() if k in _CHECK_KEYS}))
+            except Exception as exc:
+                warnings.append(f"{label}: a health check was skipped ({_first_error(exc)}).")
+        return out
+    legacy_keys = ("internal_health_check_enabled", "external_health_check_enabled",
+                   "health_check_timeout", "health_check_verify_tls")
+    if not any(k in rec for k in legacy_keys):
+        return out
+    timeout = _positive_int(rec.get("health_check_timeout"))
+    verify = rec.get("health_check_verify_tls") is not False
+    for which, kind, name in _LEGACY_URL_KINDS:
+        out.append(CheckRecord(kind=kind, name=name, check_type="http", mode="status",
+                               timeout_seconds=timeout, verify_tls=verify,
+                               enabled=bool(rec.get(f"{which}_health_check_enabled"))))
+    return out
+
+
+def _first_error(exc):
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            first = errors()[0]
+            where = ".".join(str(p) for p in first.get("loc", ()))
+            return f"{where}: {first.get('msg')}" if where else str(first.get("msg"))
+        except Exception:
+            pass
+    return str(exc)
+
+
+def _legacy_url(rec, which, operator_owned):
+    value = rec.get(f"{which}url")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    source = rec.get(f"{which}url_source")
+    has_source = f"{which}url_source" in rec
+    if source not in ("ui_edit", "explicit_label", "synthesized"):
+        source = None
+    if source == "ui_edit" or operator_owned or not has_source:
+        return UrlValue(value=value.strip(), source=source)
+    return None          # explicit_label / synthesized come back by themselves
+
+
+def from_legacy(records, invalid=None, now=None):
+    """Read a format-0 file (today's entry list: `ServiceEntry.to_dict()` rows, the UI backup
+    with `group_name`) as a v1 `ExportDoc` plus a list of warnings (design 9).
+
+    `invalid`, when a list, collects `{"index", "label", "message"}` for records that cannot be
+    read (not a mapping, no `container_name`); they are skipped. Observation columns are
+    ignored, a widget's API key is never read into the document, `source: stream` rows become
+    a stream record without a stream id (the importer matches them by MAC) or, with no usable
+    MAC, a manual one, and a row that carried `deleted_at` is flagged `deleted_in_file`."""
+    from streams import normalize_mac
+
+    warnings, entries, group_names, widgets = [], [], {}, {}
+    saw_group_key = saw_widget_key = False
+    for index, rec in enumerate(records):
+        if not isinstance(rec, dict):
+            if invalid is not None:
+                invalid.append({"index": index, "label": f"record {index + 1}",
+                                "message": "not a mapping"})
+            continue
+        name = rec.get("container_name")
+        if not isinstance(name, str) or not name.strip():
+            if invalid is not None:
+                invalid.append({"index": index, "label": f"record {index + 1}",
+                                "message": "container_name is required"})
+            continue
+        host = rec.get("host") if isinstance(rec.get("host"), str) and rec.get("host").strip() else None
+        source = rec.get("source")
+        if source is None:
+            source = "notifier" if rec.get("last_api_update") else "manual"
+        mac = normalize_mac(rec.get("mac")) if source == "stream" else None
+        if source == "stream" and mac:
+            kind = "stream"
+            identity = EntryIdentity(container_name=name, stream=None, stream_key=mac)
+        elif source in ("manual", "stream"):
+            kind = "manual"
+            identity = EntryIdentity(container_name=name, host=host)
+        else:
+            kind = "docker"
+            identity = EntryIdentity(container_name=name, host=host)
+        label = f"{host or '-'}/{name}"
+        owned = kind != "docker"
+        is_static = bool(rec.get("is_static"))
+        icon = rec.get("image_icon") if isinstance(rec.get("image_icon"), str) else None
+        icon_owned = kind != "docker" or is_static
+        group = None
+        if "group_name" in rec:
+            saw_group_key = True
+            if isinstance(rec["group_name"], str) and rec["group_name"].strip():
+                group = rec["group_name"].strip()
+                group_names.setdefault(group, GroupRecord(name=group))
+        widget = None
+        raw_widget = rec.get("widget")
+        if isinstance(raw_widget, dict) and raw_widget.get("widget_name") and raw_widget.get("widget_url"):
+            key = (str(raw_widget["widget_name"]), str(raw_widget["widget_url"]))
+            if raw_widget.get("widget_api_key"):
+                saw_widget_key = True
+            fields = raw_widget.get("widget_fields")
+            widgets.setdefault(key, WidgetRecord(
+                widget_name=key[0], widget_url=key[1],
+                widget_fields=list(fields) if isinstance(fields, list) else [],
+                api_key_set=bool(raw_widget.get("widget_api_key"))))
+            widget = WidgetRef(widget_name=key[0], widget_url=key[1])
+        sort_priority = rec.get("sort_priority")
+        if isinstance(sort_priority, bool) or not isinstance(sort_priority, int):
+            sort_priority = None
+        description = rec.get("description")
+        entries.append(EntryRecord(
+            kind=kind, identity=identity, is_static=is_static,
+            description=description if isinstance(description, str) and description.strip() else None,
+            image_icon=(icon or None) if icon_owned else None,
+            group=group, sort_priority=sort_priority,
+            internalurl=_legacy_url(rec, "internal", owned),
+            externalurl=_legacy_url(rec, "external", owned),
+            ha_publish=bool(rec.get("ha_publish")), widget=widget,
+            checks=_legacy_checks(rec, warnings, label),
+            deleted_in_file=True if rec.get("deleted_at") else None))
+    if not saw_group_key:
+        warnings.append(LEGACY_NO_GROUPS_WARNING)
+    if saw_widget_key:
+        warnings.append(LEGACY_KEY_WARNING)
+    now = _utc(now or datetime.now(timezone.utc))
+    doc = ExportDoc(
+        format=FORMAT, format_version=0, exported_at=now, std_version="legacy", api_revision=0,
+        groups=sorted(group_names.values(), key=lambda g: g.name),
+        widgets=sorted(widgets.values(), key=lambda w: (w.widget_name, w.widget_url)),
+        entries=entries)
+    return doc, warnings

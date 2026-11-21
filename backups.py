@@ -469,6 +469,11 @@ def _run(app, kind, trigger):
                     prune(directory, kind, eff[kind]["keep_days"]["value"])
                 except Exception:
                     logger.exception("Retention for %s backups failed", kind)
+                try:
+                    import importer  # lazy: importer imports this module
+                    importer.prune_expired()
+                except Exception:
+                    logger.exception("Pruning the import staging folder failed")
             except Exception as e:
                 result["error"] = str(e) or e.__class__.__name__
                 logger.error(f"❌ {trigger.capitalize()} {kind} failed: {e}")

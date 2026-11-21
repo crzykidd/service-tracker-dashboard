@@ -95,6 +95,7 @@
 | 0.85    | 2026-11-20 | §19 phase 4 delivered on `dev` (set-04), completing the Settings modernization except Backup & restore, which the separate backup project (`docs/design/2026-11-20-backup-export-import.md`) rebuilds: Groups as cards with a staging dialog inside the single form; Widgets as cards (⋯ Copy API key); Docker with a Layer directions card, collapsible per-host overrides and a sticky **Save & recompute URLs** bar, and the Docker (register) card moved there from Streams; Users as cards with Add user and Set password dialogs; API keys as cards with a Create key dialog and the key shown once in a dialog on the Settings page (`api_key_created.html` removed); About, Configuration, Deleted and detached widgets restyled. §12.5, §12.6, §14.2, §14.6, §15.3, §15.4, §16 and §18.8 UI text updated; §19 marked Delivered. No schema, wire-contract or `/api/v1` change. |
 | 0.86    | 2026-11-20 | Added §20 (v0.11.0 — Backup, export and import, planned; design in `docs/design/2026-11-20-backup-export-import.md`) and delivered its phase 1 (§20.1, bak-01) on `dev`: backup path, snapshot and export settings editable in Settings with env > UI > `settings.yml` > default precedence, two daily jobs (snapshot 00:05, export 00:10) replacing the single 00:05 job, per-kind retention and Run now, a backup file list with download and delete, last-run status with a failure warning and navigation badge, new `backups.py`. §3 job list, §3.1 module layout and §4 settings table updated. Former §20–§22 renumbered §21–§23 and live cross-references updated (older revision rows keep the numbers of their day); the §19 TOC entry now says Delivered. No schema (the existing `setting` table is used), wire-contract or `/api/v1` change. |
 | 0.87    | 2026-11-20 | §20.2 delivered on `dev` (bak-02): export format v1 (`std-export`, YAML or JSON, same document, never a secret) built by the new `export_format.py` with the §5.3 field ownership rules, the daily and manual export job now writes `<date>-std_export.yml\|json` (replacing the entry-list YAML; old `-std_backup.yml` files stay listed and age out with export retention), `GET /settings/backups/export` download with Download YAML / JSON buttons on the Exports card, and management API routes `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export` with MCP tools `backup_settings`, `list_backups`, `export_config`, `run_backup`. **`API_REVISION` 4** (§18.1) and the `backup` feature. §3.1 module layout, §14.4 route list and §20.6 updated. No schema change; register and stream-ingest wire contracts unchanged. |
+| 0.88    | 2026-11-20 | §20.3 and §20.4 describe the import engine as built on `dev` (bak-03; still Planned for operators, because nothing reaches it until bak-04): new `importer.py` (`parse` for v1 and the legacy entry list, a pure `plan()`, `fingerprint`, `apply()` under the register and stream locks, a staging store under `CONFIG_DIR/import-staging/`), `export_format.from_legacy()`, and a `User.has_password` property for users created with the `!unset` hash. §3.1 module layout and §20.6 updated. No schema, wire-contract or `/api/v1` change. |
 
 ---
 
@@ -259,7 +260,10 @@ health_history.py   ← history bars, uptime, recent failures for the detail pan
 health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions, backup settings)
-export_format.py    ← export format v1 (PRD 20.2): pydantic models, `build_export()`, `dump()`
+export_format.py    ← export format v1 (PRD 20.2): pydantic models, `build_export()`, `dump()`,
+                      `from_legacy()` (format 0)
+importer.py         ← import engine (§20.3-20.4): `parse`, pure `plan()`, `fingerprint`, `apply()`,
+                      staging store; no routes or UI until bak-04
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot and export
                       runs, retention, file list and confined file lookup (§20.1)
 settings_sections.py ← Settings section registry: groups, slugs, labels, legacy
@@ -3591,7 +3595,7 @@ YAML opens with a short comment listing what is not included.
   the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
   `API_REVISION` is 4 (§18.1).
 
-### 20.3 Import (Planned; bak-03, bak-04)
+### 20.3 Import (Engine built, unreleased; UI and API in bak-04)
 
 Import matches the file's records against the database **now** and shows a dry-run
 preview; only ticked rows apply. A row is one of: matched with missing settings
@@ -3603,14 +3607,49 @@ and case-sensitive, to agree with what register adoption does later. Import neve
 streams or changes a stream's status, never modifies existing users, and creates new
 users with no usable password.
 
-### 20.4 Import engine and plan handoff (Planned; bak-03)
+As built (`importer.plan()`):
+
+- **A field the file leaves empty is not compared**, so a file without a group (the daily
+  job's old list) never reports a difference for it. Booleans (`is_static`, `ha_publish`)
+  are always compared.
+- **Checks are compared as units.** URL rows and the Container check by `kind`, service
+  checks by `(check_type, name)`; a check is *missing* when the local one still has its
+  fresh configuration, *differs* otherwise. A service check with no local match is
+  missing (added); one that matches with another config is *differs*; several local checks
+  sharing a `(type, name)` are never touched. Local checks the file lacks are left alone.
+- **Docker group and sort priority** count as fresh when they equal the notifier's own
+  reported value; under `register_field_ownership = notifier_wins` they are left out with
+  a note. A URL is fresh when empty or `synthesized`; it is written as `ui_edit`.
+- **Import as new** creates a manual entry (a Docker or stream record included), never
+  sets the lock, and is a *Conflict* when `(host, name)` is already taken, also by another
+  record of the same file. A stream record becomes a manual entry with its pre-link host,
+  and the stream's link-offer matching pairs it later. An open link offer for a stream
+  record's key matches the offered manual entry; import never answers it.
+- **Stream mapping** is automatic by equal id and key type, can be set per stream (same
+  key type only, each local stream once) or skipped. Stream settings and blocks apply to a
+  mapped stream whatever its status; its entries wait until it is enabled.
+- **Channels:** the three topic namespace keys are never written to an existing channel;
+  a new channel with `secret_set` is created disabled and without a secret.
+- **Settings:** exposure layers (global and per host), the update check and the backup
+  schedule, not the backup folder and not a value pinned by an environment variable.
+- **Legacy files** (a list, format version 0) are converted by `export_format.from_legacy()`:
+  widget API keys are ignored with a warning, a row with `deleted_at` is shown unticked,
+  and a stream row is matched by MAC across `mac` streams.
+
+### 20.4 Import engine and plan handoff (Engine built, unreleased; bak-03)
 
 `importer.plan()` and `apply()` mirror `streams.plan()` / `apply()`. The plan is never
 kept as an object: the UI stages the parsed upload as a JSON file in
-`CONFIG_DIR/import-staging/` (60 minute TTL, bound to the user) and `apply()` **re-plans
-under the register and stream locks** and compares a sha256 fingerprint of the selected
-rows with the one shown; a difference writes nothing (the UI asks for a re-review; the API
-answers 409). One transaction. The legacy entry-list YAML is read as format version 0.
+`CONFIG_DIR/import-staging/` (60 minute TTL, bound to the user, pruned by the daily
+backup jobs) and `apply()` **re-plans under the register and stream locks** (in that
+order, the same as the management API's unlink route) and compares a sha256 fingerprint of
+the selected rows with the one shown; a difference raises `ImportStale` and writes
+nothing (the UI asks for a re-review; the API answers 409). Each plan row carries a digest
+(`plan.digests`), so the fingerprint of whatever the operator ticked is
+`fingerprint_from_digests(digests, selection, stream_map)`; `plan.fingerprint` is the one
+for the default selection. Observed data is not in a digest. One transaction: any error
+rolls it back (`ImportApplyError`). The legacy entry-list YAML is read as format version 0.
+A 5,000-entry apply takes about 2 seconds, including the re-plan, under the locks.
 
 ### 20.5 Staged database restore (Planned; bak-05)
 
@@ -3627,7 +3666,7 @@ stops STD from starting if anything fails. No management API for it.
 |---|---|---|---|
 | 1 | `bak-01-scheduled-backups` | Backup settings, two jobs, manual run, list, path validation, last-run status (§20.1) | Delivered (unreleased) |
 | 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP (§20.2) | Delivered (unreleased) |
-| 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Planned |
+| 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Delivered (unreleased) |
 | 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Planned |
 | 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Planned |
 

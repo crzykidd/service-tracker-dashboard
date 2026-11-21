@@ -5,6 +5,91 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Backup, export and import, bak-03 (import engine)
+
+Calls made while building phase 3 (`prompts/2026-11-20-bak-03-import-engine.md`), with the
+operator asleep. The design stays the reference; these are the places it left a choice.
+
+- **The fingerprint is built from per-row digests.** The design hashes "the selected rows"
+  but the preview cannot know what the operator will tick. Every plan row therefore has a
+  digest (`plan.digests`: rid, status, target, candidates and the field diffs, never
+  observed data), and `fingerprint_from_digests(digests, selection, stream_map)` hashes the
+  digests of the rows that are selected at apply time. `plan.fingerprint` is the one for the
+  default selection; `fingerprint(plan, selection)` is the same thing from a plan object.
+  bak-04 keeps the digests with the staged upload (or the page) so a changed selection does
+  not read as a stale plan. A vanished row hashes as absent, so it still counts as stale.
+- **A field the file leaves empty is not compared.** `None` in the file never reports a
+  difference against a local value (group, sort priority, description, icon, URLs, widget).
+  The design says "None == absent" for equality, but reading it strictly would make every
+  legacy file from the daily job (no groups) show a difference on every row, and an export
+  only carries what is set. Booleans are always compared.
+- **Checks are compared and written as units** (`check:<kind>` or
+  `check:service:<type>:<name>`), not per column. *Missing* means the local check still
+  has the fresh configuration of a new row. Partial per-column merging would need
+  cross-field validation (target against check type) for every combination. A check is
+  validated and written through `check_form` (`validate_*`, `apply_check_values`,
+  `new_service_check`), and an invalid one in the file makes the whole entry *Invalid* at
+  parse time.
+- **A Container check in the file is skipped, with a note, when the local entry has none**
+  (a manual entry that the notifier has not adopted yet). It is filled on the re-run. An
+  entry created with "Import as new" never gets one.
+- **An applied URL is always `ui_edit`**, whatever source the file carried. Equal values
+  count as identical even when the local source is `synthesized` (nothing visible changes,
+  and the synthesizer keeps its value).
+- **The icon is compared in its stored form** (`resolve_icon`: `name` becomes `name.svg`)
+  on both sides, so a hand-written `name` does not differ forever from `name.svg`.
+  Icons are not downloaded: an import makes no outbound call, least of all under the locks.
+- **`notifier_wins` fields are left out of the diff**, not shown as non-applicable, so the
+  row can still be identical on the re-run. A note and a plan warning say why.
+- **Other never-applied fields are shown as `differs` with `applicable: False`**: the
+  channel topic namespace keys and every difference on an existing user. Those rows stay
+  *differs* on a re-plan, which is the truth (the file and the install disagree and import
+  will not change it).
+- **A new channel created disabled does not make the re-plan differ.** The `enabled`
+  difference of a channel whose file says `secret_set` and enabled, and whose local copy has
+  no secret yet, is not reported ("needs its password"), so plan, apply and plan reach
+  *identical*.
+- **Matched stream entries keep what they are.** Import does not set `stream_linked` or
+  `pre_link_host` on an entry the stream created itself, and `linked` in the file only
+  selects the identity used to match or re-create it. Setting it would change what stream
+  cleanup does (unlink instead of delete) without the operator asking.
+- **A stream record's manual fallback match also tries an offer first**, in the design's
+  order: the stream's own entry by key, an open offer for the key, then a manual entry with
+  `(pre_link_host, name)`. Two manual candidates make the row *Ambiguous*. When the stream is
+  not enabled and nothing matches, the row is *Waiting*, otherwise *Not found*.
+- **Two records of one file that would import as the same new entry make the second one a
+  *Conflict*.** The legacy daily file has two devices called `dup-name`, and applying both
+  as new would otherwise roll the whole import back at the second.
+- **A not-found legacy stream row falls back to the manual identity** `(host, name)`, with
+  `source_group` `manual`; its `rid` keeps `entry:stream:-/<mac>`. `ExportDoc` gained
+  `EntryRecord.deleted_in_file` (never written by v1) for the legacy `deleted_at` flag.
+- **Group choices.** An *Ambiguous* group row (`media` against `Media`) is answered with
+  `target_id` (use the local group; entries naming the file's group then use it too) or
+  `create`. It stays ambiguous on a re-plan while no exact-case group exists. A missing
+  group is created by its own row or, when only an entry names it, by that entry.
+- **Restore is an option, not implied.** A *deleted locally* row applies only with
+  `options: ["restore"]`; ticking the row without it is skipped ("restore not ticked").
+- **Selection details.** A row without `apply` in its selection entry counts as selected;
+  `fields: None` means every actionable field of the mode (fill: *missing*; overwrite:
+  both). A `differs` field named in `fields` is still not written in fill mode.
+- **A bad stream mapping stops the apply** (`ImportApplyError`, nothing written) rather than
+  silently skipping the rows that depend on it. The plan reports it per stream.
+- **`ImportError` is an alias of `ImportApplyError`** because the design and the prompt
+  use that name; the builtin is not used in `importer.py`.
+- **Settings rows** cover exposure layers (one row per layer, per host and layer), the
+  update check and each backup schedule. Applying exposure changes runs
+  `synthesizer.recompute_all()` in the same transaction, as the Docker settings page does.
+  A backup value is applied through `backups.save_settings` (the UI's validator), and a
+  value pinned by an environment variable is skipped with a note.
+- **Measured:** 5,000 Docker entries, each with a field to fill and a check to change: plan
+  1.4 s, apply including its re-plan 1.8 s. The locks are held for that time. At the 20,000
+  record cap expect roughly 6 to 8 s, which blocks registers for that long.
+- **Staging files are 0600**, named by a 16-byte token (the token is checked against a
+  strict pattern before it becomes a path), and `backups._run` prunes expired ones after
+  each backup job's retention.
+
+---
+
 ## 2026-11-20 — Backup, export and import, bak-02 (export format v1)
 
 Calls made while building phase 2 (`prompts/2026-11-20-bak-02-export.md`).
