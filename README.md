@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.10.0-blue)
+![Version](https://img.shields.io/badge/version-0.10.1-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -45,6 +45,29 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.10.1 (2026-11-20)
+
+Inventory streams you can watch: a dead sidecar or a removed reservation no
+longer goes unnoticed. One database migration runs on startup (five stream
+columns and `inventory_missing_since` on entries); no notifier change is
+needed. API revision 3: sidecars may now advertise their snapshot interval.
+
+- **Stale streams:** an enabled stream with no snapshot for twice its expected
+  interval (yours, else the sidecar's, else 15 minutes) shows a red badge in
+  Settings → Streams and on the Settings link, a `down` line in the health
+  summary, `stale` on MQTT and a **Problem** sensor in Home Assistant. Its
+  entries keep their own health.
+- **Rejected snapshots:** the stream row shows when and why STD refused a
+  sidecar's snapshot.
+- **Missing since:** an entry that dropped out of its snapshot gets an amber
+  badge with how long ago; its checks still decide its health. Optionally,
+  soft delete entries missing for N days (off by default; entries you edited
+  are never removed).
+- **Checks follow a changed IP:** ping, TCP, DNS and HTTP checks on the old IP
+  move to the new one when the stream reports it.
+- **MCP `server_info`** re-checks STD's version on every call and tells you
+  when to restart or update the MCP server.
 
 ### v0.10.0 (2026-11-19)
 
@@ -814,7 +837,19 @@ document.
    manual entry again (a linked one gets its old host back). **Allow
    re-offering** lets a later snapshot offer the link again; **Don't re-add**
    blocks the item.
-6. **Blocked** lists items you deleted with "Don't re-add", with **Unblock**.
+7. **Staleness and missing entries** (a panel per stream): an enabled stream
+   that sends nothing for **twice** its expected interval is **stale**: a red
+   badge on the row ("No snapshot for 42 min (expected every 5 min)"), a red
+   count on the header's Settings link, a `down` line in the health summary and a
+   **Problem** sensor in Home Assistant. The interval is the one you set here,
+   else the one the sidecar advertises, else 15 minutes. Its entries keep their
+   own health. The same panel can **soft-delete entries missing for N days** (off
+   by default; the daily cleanup job does it, and an item that comes back restores
+   its entry). Entries you edited are never removed: linked, renamed, locked,
+   grouped, described, with an icon, URLs, a sort priority, a widget, Home
+   Assistant, or any check other than an untouched default check. A snapshot STD
+   refused shows on the row as "Rejected 3 min ago: 400: ...".
+8. **Blocked** lists items you deleted with "Don't re-add", with **Unblock**.
    **Link offers** lists manual entries that match a new item, with **Accept**
    and **Decline**.
 
@@ -822,8 +857,12 @@ Stream entries show a blue pill with the stream's name on the Dashboard view.
 Tiled and Compact show a small router icon instead (green; amber when the item
 dropped out of the latest snapshot); Compact shows one source icon on every row
 (Docker status, stream or manual). On the Dashboard an item that dropped out of
-the latest snapshot is dimmed with a "missing" marker, never deleted. The
-expanded detail shows a stream entry's IP, MAC and network.
+the latest snapshot gets an amber **missing** badge with how long ago ("missing
+3 days ago"); Tiled and Compact say "since" in the icon tooltip and the drawer.
+It is a warning, never Down: the entry's checks still decide its health, and it
+is never deleted unless you turn on the stream's missing-entry expiry (below). The
+expanded detail shows a stream entry's IP, MAC and network (and "Missing ...
+since").
 The **Source** filter lists each stream by name (`?source=stream:dhcp`). On a
 stream entry's edit page the MAC, IP, network, attributes and stream are
 read-only and the name stays editable (your name then wins over the sidecar's).
@@ -863,7 +902,19 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/jso
   `network_exclude` (set with `PATCH /api/v1/streams/dhcp`) leave networks out.
   Stream entries get no health checks unless the stream has
   `default_checks` (`{"ping": true, "tcp_port": 22}`, set with `PATCH` and
-  applied to existing entries with `POST .../default-checks/apply`).
+  applied to existing entries with `POST .../default-checks/apply`). When the
+  sidecar reports a new IP, checks that pointed at the old IP (ping, TCP, DNS
+  server, an HTTP URL with the IP as host) move to the new one; hostname targets
+  are left alone.
+- **Staleness and rejections (API revision 3).** A sidecar may add
+  `"snapshot_interval_seconds": 300` to its snapshot (send it only when
+  `GET /api/v1/meta` reports `api_revision` 3 or later; older STDs reject it).
+  `PATCH /api/v1/streams/dhcp` takes `expected_interval_seconds` (wins over the
+  sidecar's) and `missing_expiry_days`. `GET /api/v1/streams` reports `stale`,
+  `stale_message`, `effective_interval_seconds`, `last_rejected_at`,
+  `last_rejection`, `rejecting` and more, plus a `stale` count;
+  `GET /api/v1/health/summary` adds `streams`, `stale_streams` and
+  `counts.streams_stale`; entries report `inventory.missing_since`.
 - **Link offers.** A new item whose name (or first DNS label) equals, ignoring
   case, exactly one active manual entry's name, host or host's first label is
   not created. It waits as a link offer: accept it
@@ -957,9 +1008,11 @@ claude mcp add std -s user \
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script itself,
 so there is no virtualenv to set up. Without a checkout, point `uv run` at a
 release tag instead (updating means changing the tag):
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.1/mcp/std_mcp.py`.
 The server warns Claude when it is older or newer than your STD, and Claude can
-check with the `server_info` tool. A venv-based install and a Claude Desktop
+check with the `server_info` tool, which re-checks STD's version on every call
+and says when to restart the MCP server (STD was upgraded since it started) or to
+update the script and restart the MCP client (the script is older than STD). A venv-based install and a Claude Desktop
 example are in [`mcp/README.md`](mcp/README.md).
 
 Then ask Claude in plain language, as in the examples above. Everything it
@@ -1040,8 +1093,11 @@ What gets created:
   version.
 - One **device per inventory stream** that has at least one published entry,
   named `<prefix> <stream name> stream`, linked to the hub, with a **Status**
-  sensor and **Active entries** and **Missing entries** count sensors read from
-  `<base>/stream/<stream id>`. Its configs are removed with the stream.
+  sensor, **Active entries** and **Missing entries** count sensors and a
+  **Problem** binary sensor (on while the stream is stale) read from
+  `<base>/stream/<stream id>` (which also carries `stale`). Its configs are
+  removed with the stream. An entry's state topic carries `missing` and
+  `missing_since` for stream entries.
 - Entity ids start with `std_` and include the host (for example
   `binary_sensor.std_plex_nas1_http`), so
   they are easy to find. The entry's group, host, source, check type, target,

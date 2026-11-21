@@ -130,7 +130,10 @@ def test_stream_topic_payload(app, factory):
         "stream_id": "dhcp", "display_name": "DHCP", "status": "enabled",
         "producer": "std-source-test", "producer_version": "1.2.3",
         "last_snapshot_at": "2026-11-19T10:00:05Z", "last_applied_at": "2026-11-19T10:00:06Z",
-        "counts": {"active": 3, "missing": 1, "pending_offers": 1}, "item_count": 3}
+        "counts": {"active": 3, "missing": 1, "pending_offers": 1}, "item_count": 3,
+        # PRD 18.9: computed at publish time; this snapshot is days old, so the stream is stale.
+        "stale": True, "expected_interval_seconds": 900, "last_error": None,
+        "last_rejected_at": None, "last_rejection": None}
     assert all(r for *_x, r in client.published)                       # retained
     assert "stream/dhcp" in pub.state.topics                           # tracked, so it can be cleared
 
@@ -276,7 +279,8 @@ def test_stream_purge_clears_every_entry_of_the_stream_in_one_batch(app, factory
     node = _node(app)
     state, discovery = _entry_topics(app, ids)
     mine = state | discovery | {"std/stream/dhcp"} | {
-        f"homeassistant/sensor/{node}/stream_dhcp_{p}/config" for p in ("status", "active", "missing")}
+        f"homeassistant/sensor/{node}/stream_dhcp_{p}/config" for p in ("status", "active", "missing")} | {
+        f"homeassistant/binary_sensor/{node}/stream_dhcp_problem/config"}
     client.published.clear()
 
     with app.app_context():
@@ -292,7 +296,7 @@ def test_stream_purge_clears_every_entry_of_the_stream_in_one_batch(app, factory
     assert not any(f"/{other}/" in t or f"entry_{other}_" in t for t, *_ in log)
     assert result == {"stream_id": "dhcp", "entries": 3, "topics_cleared": len(mine), "republished": True,
                       "channels": [{"id": _first_channel(app), "name": "ha",
-                                    "state_topics": len(state) + 1, "discovery_topics": len(discovery) + 3}]}
+                                    "state_topics": len(state) + 1, "discovery_topics": len(discovery) + 4}]}
 
 
 def test_stream_purge_of_a_disabled_stream_brings_nothing_back(app, factory):

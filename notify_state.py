@@ -56,11 +56,12 @@ SUMMARY_TOPIC = "summary"
 # on purpose: every health tick writes those, and a sync per tick is wasteful.
 _ENTRY_ATTRS = ("container_name", "host", "group_id", "source", "deleted_at",
                 "internalurl", "externalurl", "is_static", "image_tag", "ha_publish",
-                "ip", "mac", "network", "stream_id", "inventory_missing")
+                "ip", "mac", "network", "stream_id", "inventory_missing", "inventory_missing_since")
 # The `stream` field of a stream entry's payload and everything the per-stream status topic
 # carries (PRD 18.6).
 _STREAM_ATTRS = ("display_name", "status", "producer", "producer_version", "last_snapshot_at",
-                 "last_applied_at", "last_item_count", "last_counts")
+                 "last_applied_at", "last_item_count", "last_counts", "expected_interval_seconds",
+                 "producer_interval_seconds", "last_rejected_at", "last_error")
 _CHECK_ATTRS = ("enabled", "kind", "name", "check_type", "target", "ha_exclude")
 _GROUP_ATTRS = ("group_name",)
 
@@ -164,16 +165,28 @@ def entry_payload(entry, health, since):
         "mac": entry.mac,
         "network": entry.network,
         "stream": entry.stream.display_name if entry.stream_id is not None and entry.stream else None,
+        # PRD 18.9: a warning marker only, the state still comes from the checks.
+        "missing": bool(entry.inventory_missing) if entry.stream_id is not None else None,
+        "missing_since": _iso(entry.inventory_missing_since) if entry.stream_id is not None else None,
         "dashboard_url": dashboard_url(entry.id),
         "since": _iso(since),
         "checks": check_counts_by_state(entry),
     }
 
 
-def stream_payload(stream, active, missing, pending_offers):
+def stream_payload(stream, active, missing, pending_offers, now=None):
     """The per-stream status topic (PRD 18.6). `active` counts entries that are not
-    soft-deleted; `missing` those flagged absent from the latest snapshot."""
+    soft-deleted; `missing` those flagged absent from the latest snapshot. `stale`
+    (PRD 18.9) is computed at publish time; the health scheduler asks for a sync when
+    it flips, so it follows the clock and not only commits."""
+    import streams
+    health = streams.stream_health(stream, now)
     return {
+        "stale": health["stale"],
+        "expected_interval_seconds": health["effective_interval_seconds"],
+        "last_error": stream.last_error,
+        "last_rejected_at": _iso(stream.last_rejected_at),
+        "last_rejection": stream.last_rejection,
         "stream_id": stream.stream_id,
         "display_name": stream.display_name,
         "status": stream.status,
@@ -380,7 +393,7 @@ def desired_state(state, now=None):
     for stream in InventoryStream.query.order_by(InventoryStream.id).all():
         desired[stream_topic(stream.stream_id)] = stream_payload(
             stream, stream_active.get(stream.id, 0), stream_missing.get(stream.id, 0),
-            offers.get(stream.id, 0))
+            offers.get(stream.id, 0), now)
     state.entries, state.checks = entry_meta, check_meta
     return desired
 

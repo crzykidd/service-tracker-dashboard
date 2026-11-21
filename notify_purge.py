@@ -215,6 +215,8 @@ def _purge_entries(publisher, entry_ids, stream=None):
         if stream is not None:
             discovery |= {notify_ha.config_topic(prefix, "sensor", node, f"stream_{stream.stream_id}_{part}")
                           for part in ("status", "active", "missing")}
+            discovery.add(notify_ha.config_topic(prefix, "binary_sensor", node,
+                                                 f"stream_{stream.stream_id}_problem"))
         with state.lock:
             for t in state.ha_topics.get(key, ()):
                 m = entry_cfg_re.search(t)

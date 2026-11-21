@@ -86,6 +86,8 @@
 | 0.76    | 2026-11-19 | Notification cleanup (notif-06), still API revision 2: §17.5 channel delete cleans the broker first (default on; `cleanup` on `DELETE`/`PATCH`), disable offers it (default off), a base topic / discovery prefix change clears the old one and remembers the last 5 bases (`setting` key `notify_previous_bases`, §5.8), per-stream purge (`POST /streams/{id}/notifications/purge`), orphan scan and clear (`/notifications/channels/{id}/orphans/scan` and `/clear`, `GET .../previous-bases`), MCP tools for all; §17.3/§18.6 per-stream retained status topic `<base>/stream/<stream_id>` (part of the desired set, so `full_sync` reconciles and clears it); §17.4 one HA hub device per stream with a published entry (status and active / missing count sensors; its entry devices use `via_device` the stream device). The "channel delete/disable leaves its configs" caveat is gone. No schema migration, no register-contract change. |
 | 0.77    | 2026-11-19 | Linked stream entries are unlinked, never deleted (inv-07), still API revision 2: §5.10 migration `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, backfill heuristic); §18.7 `POST /entries/{id}/unlink`, `unlinked` in disable/delete results, `inventory.linked`, `linked` in the stream entry counts, MCP `unlink_entry`; §18.8 dialog linked box, edit page Unlink from stream…. |
 | 0.78    | 2026-11-19 | v0.10.0 release prep: §16, §17 and §18 (version in the UI, MQTT and Home Assistant notifications, inventory streams and API revision 2) marked Delivered in v0.10.0. No content change. |
+| 0.79    | 2026-11-20 | Stream observability (inv-08), API revision 3 (unreleased, next after 0.10.0): new §18.9 (rejected snapshots, staleness with grace factor 2 and the expected / advertised interval, `missing` lifecycle with `inventory_missing_since` and the optional per-stream auto soft-delete and its "edited by a human" exemptions, IP-following checks instead of templated targets, MCP `server_info` re-check); §5.10 migration `c6f2a8d4e157`; §18.1 revision 3 row; §18.5 optional `snapshot_interval_seconds` and rejection recording; §18.7 `PATCH` fields; §14.3 health summary `streams` / `stale_streams` / `counts.streams_stale`; §17.3 stream topic `stale` etc. and entry `missing` / `missing_since`; §17.4 stream hub `problem` binary sensor. Register contract unchanged. |
+| 0.80    | 2026-11-20 | v0.10.1 release prep: §18.9 stream observability (API revision 3) marked Delivered in v0.10.1; §18.1 revision 3 row names 0.10.1. No content change. |
 
 ---
 
@@ -473,7 +475,7 @@ Migrations `d8e2a6f4b915` and `e3b7c1d9a204` (§17.4). No foreign keys, no new i
 
 ### 5.10 Inventory stream schema changes
 
-Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_checks`, below) and `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, below). Every FK column has its index in the same migration.
+Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_checks`, below), `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, below) and `c6f2a8d4e157` (stream observability, §18.9, below). Every FK column has its index in the same migration.
 
 | Change | Detail |
 |--------|--------|
@@ -483,6 +485,7 @@ Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_ch
 | Table | `stream_link_offer`: `id`, `stream_id` (FK ON DELETE CASCADE, indexed), `key`, `entry_id` (FK `service_entry.id` ON DELETE CASCADE, indexed), `item` (JSON, the stored snapshot item), `created_at`; unique `ux_stream_link_offer_stream_key` on `(stream_id, key)`. |
 | Columns | `service_entry.stream_id` (FK `inventory_stream.id`, nullable, indexed `ix_service_entry_stream_id`), `stream_key` (`String(128)`), `mac` (`String(17)`), `ip` (`String(64)`), `network` (`String(64)`), `attributes` (JSON), `inventory_missing` (Boolean, NOT NULL, default false), `name_source` (`String(16)`: NULL, `stream` or `ui_edit`). NULL for notifier and manual entries. |
 | Columns | `service_entry.stream_linked` (Boolean, NOT NULL, server default false) and `pre_link_host` (`String(100)`, nullable); migration `b4e7a1c9d325`, plain columns, no FK, no index. `_convert` (accept / link / Convert) sets `stream_linked` and keeps the old host in `pre_link_host`; unlinking clears both and restores the host. **Backfill** for entries linked before the migration (no created timestamp exists): per stream, an entry with `name_source = 'ui_edit'` and an `id` lower than the smallest id of the stream's `name_source = 'stream'` entries is marked linked (host unknown, `pre_link_host` NULL); a stream with no stream-named entry has no reference point, so nothing is marked. |
+| Columns | Migration `c6f2a8d4e157` (§18.9), plain nullable columns, no FK, no index: `inventory_stream.expected_interval_seconds`, `producer_interval_seconds`, `missing_expiry_days` (Integer), `last_rejected_at` (DateTime, naive UTC), `last_rejection` (`String(255)`); `service_entry.inventory_missing_since` (DateTime, naive UTC). **Backfill:** entries already flagged missing get the upgrade time (`CURRENT_TIMESTAMP`), which can only delay an auto soft-delete. |
 | Index | `ux_service_entry_stream_key`: partial unique index on `(stream_id, stream_key)` where `stream_id IS NOT NULL`. Soft-deleted rows count. |
 | Value | `service_entry.source` gains `stream` (`VALID_SOURCES`). The downgrade turns `stream` entries into `manual` ones. |
 | Value | `api_key.scope` gains `ingest` (the column was already wide enough; no DDL). |
@@ -2006,6 +2009,9 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 - `GET /health/summary` counts are `matches_status` over active entries (the
   same rule as the filter-bar chips); `since` is the earliest failed sample
   after the latest passing one, falling back to the last check time.
+  Revision 3 (§18.9) adds `streams` (one compact row per inventory stream),
+  `stale_streams` (a `down` line per stale stream) and `counts.streams_stale`;
+  `failing` stays entry-only.
 
 ### 14.4 Groups, widgets and runtime settings [`v080-03-groups-widgets-settings`] — Delivered in v0.8.0
 
@@ -2569,10 +2575,10 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
 | Topic | Payload |
 |-------|---------|
 | `<base>/status` | `online` / `offline` (§17.2). |
-| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). |
+| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). Stream entries (§18.9): `missing` and `missing_since` (null for other sources); they never change `state`. |
 | `<base>/entry/<entry_id>/check/<check_id>` | One check: `ok` (true / false / null before its first run), `state` (`up` / `down` / `unknown`), `entry_id`, `check_id`, `name`, `kind` (`container`, `internal_url`, `external_url`, `service`), `check_type` (`http`, `tcp`, `ping`, `dns`, or `container`), `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` (when `ok` last changed). |
 | `<base>/summary` | `{up, degraded, down, unknown, none, total}` over active (not soft-deleted) entries. |
-| `<base>/stream/<stream_id>` | One inventory stream (§18.6): `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at` (null before the first), `counts` (`{active, missing, pending_offers}`: entries not soft-deleted, those flagged missing, open link offers), `item_count` (the last snapshot's item count). |
+| `<base>/stream/<stream_id>` | One inventory stream (§18.6): `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at` (null before the first), `counts` (`{active, missing, pending_offers}`: entries not soft-deleted, those flagged missing, open link offers), `item_count` (the last snapshot's item count). §18.9 adds `stale` (computed at publish time; the health tick requests a sync when it flips), `expected_interval_seconds` (the effective one), `last_error`, `last_rejected_at` and `last_rejection`. |
 
 - **Stream topic (notif-06).** Published for every stream, whatever its status
   (a `pending` stream shows an automation that it is waiting for review). It is
@@ -2638,6 +2644,7 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 | Entry `sensor` "Since" | object id `entry_<id>_since`, unique id `<node>_entry_<id>_since`, `device_class: timestamp`; state topic `<base>/entry/<id>/state` with `value_template` `{{ value_json.since if value_json.since else None }}` (ISO 8601 UTC; null renders `None`, which MQTT sensors read as unknown). |
 | Entry `sensor` "State" | object id `entry_<id>_state`, unique id `<node>_entry_<id>_state`, `device_class: enum`, `options: [up, degraded, down, unknown, none]`; state and `json_attributes_topic` = `<base>/entry/<id>/state`. |
 | Stream hub `sensor` "Status" | object id `stream_<stream_id>_status`, unique id `<node>_stream_<stream_id>_status`, `device_class: enum`, `options: [pending, enabled, disabled, ignored]`; state and `json_attributes_topic` = `<base>/stream/<stream_id>`, `value_template` `{{ value_json.status }}`. |
+| Stream hub `binary_sensor` "Problem" (§18.9) | object id `stream_<stream_id>_problem`, unique id `<node>_stream_<stream_id>_problem`, `device_class: problem`, ON while the stream is stale (`value_json.stale`); state and `json_attributes_topic` = `<base>/stream/<stream_id>`. On the existing stream hub device (streams have no `ha_publish` of their own). Cleared by the stream purge. |
 | Stream hub `sensor`s "Active entries", "Missing entries" | object ids `stream_<stream_id>_active` / `_missing`, unique ids `<node>_stream_<stream_id>_<field>`, `state_class: measurement`; state topic `<base>/stream/<stream_id>`, `value_template` `{{ value_json.counts.active }}` / `.missing`. |
 | Check `binary_sensor` | object id `check_<check_id>`, unique id `<node>_check_<check_id>`, `device_class: problem`, ON when the check's `state` is `down`; state and `json_attributes_topic` = `<base>/entry/<id>/check/<check_id>`. Name is the check's label (`HTTP`, `TCP 443`, `Container`, ...). |
 
@@ -2859,6 +2866,7 @@ server supports and log it.
 |---|---|---|
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
+| 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -2980,6 +2988,7 @@ scope **`ingest`** (or `write`, for testing with curl).
 | `items[].mac` | string? | as `key` for MAC forms. With `key_type: mac` and no `mac`, STD copies the key |
 | `items[].network` | string? | 1–64 chars (for DHCP, the scope name). The stream's network filter matches on it |
 | `items[].attributes` | object? | ≤ 32 keys matching `^[A-Za-z0-9_.-]{1,64}$`. Values are string (≤ 256 chars), number, boolean or null. Shown in STD, never interpreted |
+| `snapshot_interval_seconds` | int? | **Revision 3** (§18.9). 60–86400: how often the producer posts. STD uses it for staleness unless the operator set an expected interval. Absent clears the stored value. An STD before revision 3 rejects it (`extra="forbid"`), so send it only when `meta` reports `api_revision >= 3` |
 
 - Request body ≤ 2 MiB (413 above that). A snapshot is applied whole or not at
   all.
@@ -3008,7 +3017,10 @@ sidecar may log it at startup.
 - follow §18.1 (User-Agent, revision logging, `meta` at startup).
 
 Snapshot PUTs aren't written to the API audit log, because they'd flood it every
-few minutes. The stream row keeps the last counts. Stream status changes made by
+few minutes. The stream row keeps the last counts. A 400, 409 or 413 answered to a
+key bound to an existing stream is also kept on the row (`last_rejected_at`,
+`last_rejection` = `"<status>: <first error>"`, §18.9); a 403 or a rejection before
+the stream exists is not. Stream status changes made by
 the operator are audited.
 
 ### 18.6 Applying a snapshot [`inv-04`] — Delivered
@@ -3045,8 +3057,9 @@ stream:
    - otherwise create an entry: `source = stream`, `host` NULL, `container_name` =
      name, `name_source = stream` (`created`).
 5. **Missing.** Every entry of this stream whose key isn't in the snapshot, and
-   isn't soft-deleted, gets `inventory_missing = true` (`missing`). Nothing is
-   deleted.
+   isn't soft-deleted, gets `inventory_missing = true` (`missing`) and, when newly
+   flagged, `inventory_missing_since` (§18.9). Nothing is deleted here; an optional
+   per-stream expiry soft-deletes long-missing entries later (§18.9).
 
 Also:
 - **Enable** applies the stored snapshot immediately, with the same rules.
@@ -3072,7 +3085,7 @@ Also:
 | Route | Scope | What it does |
 |---|---|---|
 | `GET /streams`, `GET /streams/{stream_id}` | read | status, producer and version, counts, filters, `default_checks`, last error, entry counts, blocks and offers. The list also returns `pending` (streams waiting for review). Additive inside revision 2 |
-| `PATCH /streams/{stream_id}` | write | `display_name`, `network_include`, `network_exclude`, `default_checks` (null clears) |
+| `PATCH /streams/{stream_id}` | write | `display_name`, `network_include`, `network_exclude`, `default_checks` (null clears); revision 3: `expected_interval_seconds` (60–86400, null = producer's or 15 min), `missing_expiry_days` (1–3650, null = off) (§18.9) |
 | `POST /streams/{stream_id}/default-checks/apply` | write | add the stream's missing default checks to its active entries; returns `{stream, entries, entries_changed, checks_added}` |
 | `GET /streams/{stream_id}/preview` | read | counts plus the per-item action, and the entries that would go missing (409 with no stored snapshot) |
 | `POST .../enable`, `.../disable`, `.../ignore` | write | `enable`: pending, disabled or ignored, applies the stored snapshot. `disable` (body `cleanup`, `clear_blocks`): enabled only. `ignore`: pending or disabled; discards the stored snapshot. Any other state is 409 |
@@ -3092,7 +3105,7 @@ Also:
 API (read / write scope) and MCP:
 
 - **List / get streams:** status, producer and version, counts, filters, last
-  error.
+  error (and, from revision 3, the §18.9 observability fields).
 - **Preview** a stream's stored snapshot: what an apply would do (counts plus the
   per-item action), with no writes.
 - **Enable** (applies now), **Disable**, **Ignore**.
@@ -3199,7 +3212,7 @@ becomes a flash, never a 500). Deviations and details:
 - **Entries:**
   - stream entries show a pill with the stream's display name where Docker
     entries show the Docker pill (Dashboard, Tiled, Compact);
-  - "missing from the latest snapshot" shows as a muted marker;
+  - "missing from the latest snapshot" shows as a muted marker (an amber warning badge with "since" from §18.9);
   - the source filter lists each stream.
 - **Edit page** for a stream entry:
   - read-only MAC, IP, network, attributes and stream;
@@ -3212,6 +3225,95 @@ becomes a flash, never a 500). Deviations and details:
 - README: an "Inventory streams and sidecars" section (what a stream is, the
   `ingest` key, the pending → enable flow, cleanup, the block list, a link to
   §18.5 for sidecar authors) — delivered.
+
+### 18.9 Stream observability [`inv-08-stream-observability`] — Delivered in v0.10.1
+
+A dead producer or a removed record must not go unnoticed. API revision 3. Design
+decisions and rejected alternatives: `docs/decisions.md` (2026-11-20).
+
+**Per-stream state.** `inventory_stream` gains (migration `c6f2a8d4e157`, §5.10)
+`expected_interval_seconds`, `producer_interval_seconds`, `missing_expiry_days`,
+`last_rejected_at` and `last_rejection`.
+- **Rejected snapshots:** a 400 (pydantic or the value rules), 409 (`key_type`) or
+  413 answered to a key bound to an existing stream sets `last_rejected_at` and
+  `last_rejection` (`"<status>: <first error>"`, truncated to 255) in its own commit
+  (`streams.record_rejection`). Kept apart from `last_error` (an STD-side apply
+  failure, cleared by a good apply); a later good snapshot does not clear the
+  rejection, `rejecting` (rejected after the last accepted snapshot) says whether it
+  is current. Not audited. A 403, or a rejection before the stream row exists, is not
+  recorded.
+- **Exposed** on `GET /streams` (plus `stale`, the count of stale streams), `GET
+  /streams/{id}`, MCP `list_streams` / `get_stream`, and a compact `streams` block in
+  `GET /health/summary` (`stream_id`, `display_name`, `status`, `stale`,
+  `last_snapshot_at`, `last_item_count`, `effective_interval_seconds`, `last_error`,
+  `last_rejected_at`, `last_rejection`, `entries_active`, `entries_missing`). The
+  Settings → Streams row shows the interval and its source, a red **stale** badge
+  with the reason, "Apply error: ..." and "Rejected <time>: ...".
+
+**Staleness** (`streams.stream_health`, computed on read):
+- effective interval = the operator's `expected_interval_seconds`, else the
+  producer's advertised `snapshot_interval_seconds` (§18.5, stored as
+  `producer_interval_seconds` on every accepted snapshot), else 900 s;
+  `interval_source` is `operator` | `producer` | `default`.
+- **stale** = status `enabled` and `now - (last_snapshot_at or first_seen_at) > 2 x
+  interval` (`STALE_GRACE_FACTOR = 2`, strictly greater). Pending, disabled and
+  ignored streams are never stale.
+- Surfaced as: the Settings badge; a red count beside the pending count on the
+  header's Settings link (`inject_globals` supplies `stale_streams`); in the health
+  summary one `stale_streams` line per stale stream (`state: "down"`, `message` such
+  as "No snapshot for 42 min (expected every 5 min)" plus the last rejection when the
+  stream is rejecting, `since`) and `counts.streams_stale`; MQTT `stale` on
+  `<base>/stream/<id>` (§17.3) and a `problem` binary sensor on the stream hub device
+  (§17.4).
+- **Entries of a stale stream are not marked stale**: their checks decide their
+  health. They get a muted "stream stale" hint (pill and icon tooltips, Tiled
+  drawer, detail facts, edit page).
+- MQTT follows the clock through the existing health scheduler tick:
+  `streams.watch_staleness()` runs at most every 30 s (one query), logs each
+  transition once and calls `notify.request_sync()` when the stale set changes. No
+  new thread.
+
+**`missing` lifecycle.**
+- An entry absent from the latest snapshot gets `inventory_missing = true` and
+  `inventory_missing_since` (naive UTC, kept while it stays missing, cleared when the
+  key returns, on unlink and on link). It is a **warning**, never Down: the health
+  roll-up ignores it and checks keep running. UI: an amber **missing** badge with
+  "since" on the Dashboard, the amber router icon with "since" in its tooltip on
+  Tiled and Compact (and the Tiled drawer), a "Missing ... since" fact in the
+  detail panel and a note on the edit page. API: `inventory.missing_since`. MQTT
+  entry state: `missing`, `missing_since` (null for other sources).
+- **Auto soft-delete (optional, per stream):** `missing_expiry_days` (1–3650, NULL =
+  off, the default; Settings → Streams "Staleness and missing entries", `PATCH`,
+  MCP `update_stream`). `streams.expire_missing()` runs in the daily soft-delete
+  purge job (00:25) before the purge, for enabled streams only, and soft-deletes
+  every active entry missing for longer, **except** entries edited by a human
+  (`streams.human_edits`): `stream_linked`, renamed (`name_source = ui_edit`),
+  locked, a group, a description, an icon, an internal or external URL, a sort
+  priority, a widget, `ha_publish`, or any service check that is not an untouched
+  default check (exactly as `add_default_checks` made it). Each delete and each kept
+  entry is logged. The item coming back restores the entry by key (§18.6 step 3);
+  after `deleted_retention_days` the normal purge hard-deletes it (with retention 0,
+  in the same run).
+
+**Checks follow the IP** (templated targets rejected, see decisions). When an
+apply or a link changes an entry's IP, `streams.follow_ips()` rewrites each service
+check whose target points at the old IP (ping target; TCP / DNS host of
+`host[:port]`; HTTP URL host, keeping port, path and userinfo; IPv6 bracketed),
+logs it and requests a run at the next tick. Hostname targets are untouched. If the
+item loses its IP the checks keep their target and a warning is logged. One query
+loads the service checks of every IP-changed entry.
+
+**Not monitored by default** (unchanged, now pinned by a test): a new stream entry
+has only the dormant URL rows unless the stream has `default_checks`.
+
+**MCP `server_info`** calls `GET /api/v1/meta` (3 s timeout) on every call and
+returns the startup values (`startup`: version, revision, `checked_at`) beside the
+current ones (`current`); on failure it falls back to the startup values with
+`std_version_source: "as of startup <time>"`. `restart_advised` when STD's version or
+revision changed since the MCP started; `update_advised` when the script is older
+than STD (major.minor), with the `uv run .../v<std>/mcp/std_mcp.py` / `git pull`
+command and "restart the MCP client". The startup notice stays. `list_streams`,
+`get_stream` and `health_summary` describe every field they return.
 
 ---
 

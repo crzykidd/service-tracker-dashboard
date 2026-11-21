@@ -1023,7 +1023,38 @@ def health_summary():
         ]
         failing.append({"id": e.id, "name": e.container_name, "host": e.host, "state": entry_health(e).state,
                         "failures": failures})
-    return jsonify({"counts": counts, "failing": failing})
+    stream_rows, stale_rows = _summary_streams(entries)
+    counts["streams_stale"] = len(stale_rows)
+    return jsonify({"counts": counts, "failing": failing, "streams": stream_rows,
+                    "stale_streams": stale_rows})
+
+
+def _summary_streams(entries):
+    """The compact per-stream block of the health summary, and one `down` line per
+    stale stream. Entries of a stale stream are not marked: their own checks decide
+    their health (PRD 18.9)."""
+    active, missing = {}, {}
+    for e in entries:
+        if e.stream_id is not None:
+            active[e.stream_id] = active.get(e.stream_id, 0) + 1
+            if e.inventory_missing:
+                missing[e.stream_id] = missing.get(e.stream_id, 0) + 1
+    rows, stale = [], []
+    now = datetime.utcnow()
+    for s in InventoryStream.query.order_by(InventoryStream.id).all():
+        h = streams.stream_health(s, now)
+        rows.append({"stream_id": s.stream_id, "display_name": s.display_name, "status": s.status,
+                     "stale": h["stale"], "last_snapshot_at": health_history.iso_z(s.last_snapshot_at),
+                     "last_item_count": s.last_item_count,
+                     "effective_interval_seconds": h["effective_interval_seconds"],
+                     "last_error": s.last_error,
+                     "last_rejected_at": health_history.iso_z(s.last_rejected_at),
+                     "last_rejection": s.last_rejection,
+                     "entries_active": active.get(s.id, 0), "entries_missing": missing.get(s.id, 0)})
+        if h["stale"]:
+            stale.append({"stream_id": s.stream_id, "display_name": s.display_name, "state": "down",
+                          "message": h["message"], "since": h["stale_since"]})
+    return rows, stale
 
 
 # --- groups --------------------------------------------------------------------
@@ -1590,11 +1621,28 @@ def put_stream_snapshot(stream_id):
         streams.check_binding(existing, g.api_key)
         if existing.status == "ignored":
             return jsonify({"stream_id": stream_id, "stream_status": "ignored", "applied": False}), 202
-    payload = StreamSnapshotPut.model_validate(_snapshot_body())
-    items, errors = streams.normalize_items(payload.key_type, payload.items)
-    if errors:
-        return _fail(errors)
-    status, body = streams.receive_snapshot(stream_id, payload, items, g.api_key)
+    pk = existing.id if existing is not None else None
+    try:
+        payload = StreamSnapshotPut.model_validate(_snapshot_body())
+        items, errors = streams.normalize_items(payload.key_type, payload.items)
+        if errors:
+            if pk is not None:
+                first = errors[0]
+                streams.record_rejection(pk, 400, f"{first['field']}: {first['message']}")
+            return _fail(errors)
+        status, body = streams.receive_snapshot(stream_id, payload, items, g.api_key)
+    except ValidationError as exc:
+        if pk is not None:
+            first = (exc.errors() or [{}])[0]
+            loc = ".".join(str(p) for p in first.get("loc", ())) or "body"
+            streams.record_rejection(pk, 400, f"{loc}: {first.get('msg')}")
+        raise
+    except (ApiError, streams.StreamError) as exc:
+        # A rejection of a stream this key may use (the binding passed above); the
+        # stream row keeps it for the operator. A 403 from a re-check is not recorded.
+        if pk is not None and exc.status in (400, 409, 413):
+            streams.record_rejection(pk, exc.status, exc.message)
+        raise
     return jsonify(body), status
 
 
@@ -1631,7 +1679,8 @@ def list_streams():
     rows = query.limit(limit).offset(offset).all()
     body = {"items": [stream_out(s) for s in rows], "total": query.order_by(None).count(),
             "limit": limit, "offset": offset,
-            "pending": InventoryStream.query.filter_by(status=streams.STREAM_PENDING).count()}
+            "pending": InventoryStream.query.filter_by(status=streams.STREAM_PENDING).count(),
+            "stale": len(streams.stale_streams())}
     return jsonify(body)
 
 
@@ -1652,7 +1701,9 @@ def patch_stream(stream_id):
         return _fail([{"field": "body", "message": "name at least one field to change"}])
     default_checks = data.default_checks.model_dump() if data.default_checks is not None else None
     changes = streams.update(stream, data.display_name, data.network_include,
-                             data.network_exclude, sent, default_checks=default_checks)
+                             data.network_exclude, sent, default_checks=default_checks,
+                             expected_interval_seconds=data.expected_interval_seconds,
+                             missing_expiry_days=data.missing_expiry_days)
     audit("stream", stream_id, changes)
     return jsonify(stream_out(stream))
 

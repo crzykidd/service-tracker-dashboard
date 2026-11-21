@@ -175,6 +175,8 @@ class ServiceEntry(db.Model):
     network = db.Column(db.String(64), nullable=True)
     attributes = db.Column(db.JSON, nullable=True)
     inventory_missing = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # When the entry was flagged missing (naive UTC; NULL while present). PRD 18.9.
+    inventory_missing_since = db.Column(db.DateTime, nullable=True)
     name_source = db.Column(db.String(16), nullable=True)
     # A manual entry that joined a stream (Convert / accept / Link) belongs to the
     # operator: stream cleanup unlinks it instead of deleting it, and `pre_link_host`
@@ -813,6 +815,16 @@ class InventoryStream(db.Model):
     last_item_count = db.Column(db.Integer, nullable=True)
     last_counts = db.Column(db.JSON, nullable=True)
     last_error = db.Column(db.String(255), nullable=True)
+    # Observability (PRD 18.9). The operator's expected snapshot interval wins over the
+    # one the producer advertises (`snapshot_interval_seconds`); both NULL = 15 min.
+    expected_interval_seconds = db.Column(db.Integer, nullable=True)
+    producer_interval_seconds = db.Column(db.Integer, nullable=True)
+    # Soft-delete entries missing for this many days (NULL = off, the default).
+    missing_expiry_days = db.Column(db.Integer, nullable=True)
+    # The last snapshot PUT refused with 400/409/413 ("<status>: <first error>").
+    # Separate from `last_error`, which is an STD-side apply failure.
+    last_rejected_at = db.Column(db.DateTime, nullable=True)
+    last_rejection = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

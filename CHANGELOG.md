@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-11-20
+
+### Added
+
+- **Stale inventory streams are flagged.** An enabled stream that sends no
+  snapshot for twice its expected interval is **stale**: a red badge in
+  Settings → Streams (with "No snapshot for 42 min (expected every 5 min)"), a
+  red count on the header's Settings link, a `down` line in the health summary
+  (API and MCP `health_summary`), `stale` on the MQTT topic
+  `<base>/stream/<stream id>` and a **Problem** binary sensor on the stream's
+  Home Assistant device. The interval is the one you set, else the one the
+  sidecar advertises, else 15 minutes. Pending, disabled and ignored streams are
+  never stale, and the stream's entries keep their own health (their tooltips
+  just mention the stale stream). Each change is logged once.
+- **Rejected snapshots are recorded.** When STD refuses a sidecar's snapshot
+  (invalid payload, a changed key type, too large), the stream row shows
+  "Rejected 3 min ago: 400: items.4.ip: ..." in Settings → Streams, and the API
+  and MCP report `last_rejected_at`, `last_rejection` and `rejecting`. Apply
+  errors are now labelled "Apply error".
+- **Per-stream "Staleness and missing entries" settings** (Settings → Streams,
+  `PATCH /api/v1/streams/{id}`, MCP `update_stream`): the expected snapshot
+  interval, and an optional **soft delete of entries missing for N days** (off by
+  default). The daily cleanup job soft-deletes them, and an item that comes back
+  restores its entry. Entries you edited are never removed: linked, renamed,
+  locked, grouped, described, with an icon, URLs, a sort priority, a widget, Home
+  Assistant, or any check other than an untouched default check.
+- **"Missing since".** An entry that dropped out of its stream's snapshot shows
+  an amber **missing** badge with how long ago (Dashboard), "since" in the
+  Tiled/Compact icon tooltip and drawer, the expanded detail and the edit page.
+  It is a warning only: the entry's checks still decide its health. The API
+  reports `inventory.missing_since`; the MQTT entry state adds `missing` and
+  `missing_since`.
+- **Checks follow a changed IP.** When a stream reports a new IP for an entry,
+  every check that pointed at the old IP (ping, TCP, DNS server, or an HTTP URL
+  with the IP as host) moves to the new one and runs at once; the change is
+  logged. Checks that use a hostname are left alone.
+- **MCP `server_info` re-checks STD's version on every call** (with a 3-second
+  timeout; it falls back to the startup values, labelled "as of startup"). It
+  says to restart the MCP server when STD changed since it started, and to update
+  the script (`uv run .../v<version>/mcp/std_mcp.py` or `git pull`) and restart
+  the MCP client when the script is older than STD. `list_streams`, `get_stream`
+  and `health_summary` now describe every field they return.
+- **API revision 3.** Sidecars may send `snapshot_interval_seconds` (60-86400)
+  with a snapshot so STD knows how often to expect one; older STDs reject the
+  field, so a sidecar should send it only to revision 3 or later. New stream
+  fields (`expected_interval_seconds`, `producer_interval_seconds`,
+  `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`,
+  `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`,
+  rejection fields), `stale` on the stream list, and `streams` /
+  `stale_streams` / `counts.streams_stale` in the health summary. A database
+  migration adds five stream columns and `inventory_missing_since` on entries.
+
 ## [0.10.0] — 2026-11-19
 
 ### Added
@@ -1217,7 +1269,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.7.1...v0.8.0

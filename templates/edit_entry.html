@@ -250,7 +250,8 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
       <p class="text-xs text-dashboard-secondary mb-4">
         Observed facts from the latest snapshot of
         <strong>{{ entry.stream.display_name if entry.stream else 'its stream' }}</strong>. Read-only.
-        {% if entry.inventory_missing %}<span class="text-amber-300">This item is missing from the latest snapshot.</span>{% endif %}
+        {% if entry.inventory_missing %}<span class="text-amber-300" id="stream-missing-note">This item is missing from the latest snapshot{% if entry.inventory_missing_since %} since {{ entry.inventory_missing_since.strftime('%Y-%m-%d %H:%M') }} UTC ({{ entry.inventory_missing_since | time_since_utc }}){% endif %}. It is a warning only: its checks still decide its health{% if entry.stream and entry.stream.missing_expiry_days %}; the stream soft-deletes entries missing for {{ entry.stream.missing_expiry_days }} days unless you edited them{% endif %}.</span>{% endif %}
+        {% if entry.stream and stream_health(entry.stream).stale %}<span class="text-gray-400" id="stream-stale-note">The stream is stale (no recent snapshot), so these facts may be out of date.</span>{% endif %}
       </p>
       {% if entry.stream_linked %}<p class="text-xs text-dashboard-secondary mb-4" id="stream-linked-note">Linked from a manual entry{% if entry.pre_link_host %} (host <code>{{ entry.pre_link_host }}</code>, restored if you unlink){% endif %}. Stream cleanup unlinks it and never deletes it.</p>{% endif %}
       <dl class="text-sm text-gray-100 grid grid-cols-[8rem_1fr] gap-y-2">

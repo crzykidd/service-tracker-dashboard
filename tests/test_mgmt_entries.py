@@ -628,7 +628,9 @@ def test_health_summary_counts_and_failures(app, client, rkey):
             db.session.add(HealthResult(check_id=d1, ok=ok, ts=now - timedelta(minutes=minutes), message="x"))
         db.session.commit()
     body = client.get("/api/v1/health/summary", headers=rkey).get_json()
-    assert body["counts"] == {"total": 6, "passing": 1, "failing": 2, "unknown": 3, "stale": 1}
+    assert body["counts"] == {"total": 6, "passing": 1, "failing": 2, "unknown": 3, "stale": 1,
+                              "streams_stale": 0}
+    assert body["streams"] == [] and body["stale_streams"] == []
     by_name = {f["name"]: f for f in body["failing"]}
     assert set(by_name) == {"down", "degraded"}
     assert by_name["down"]["state"] == "down" and by_name["degraded"]["state"] == "degraded"

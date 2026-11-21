@@ -35,6 +35,7 @@ from sqlalchemy import func
 
 import checker
 import notify
+import streams
 from extensions import db
 from image_utils import fetch_icon_if_missing
 from models import (
@@ -386,6 +387,13 @@ class HealthScheduler:
             if changed:
                 # After the commits; builds dicts here, enqueues, never blocks.
                 notify.publish_changes(changed)
+            try:
+                # Stream staleness follows the clock (PRD 18.9): at most every 30 s, one
+                # query; logs transitions and asks for a sync when the stale set changes.
+                streams.watch_staleness()
+            except Exception:
+                db.session.rollback()
+                logger.exception("Stream staleness check failed; continuing.")
             return written, submitted
 
     def shutdown(self):
@@ -650,13 +658,25 @@ def prune_widget_values(app):
 
 
 def purge_deleted_entries(app):
-    """Hard-delete soft-deleted entries older than deleted_retention_days.
+    """Soft-delete expired missing stream entries (`streams.expire_missing`, per-stream
+    `missing_expiry_days`), then hard-delete soft-deleted entries older than
+    deleted_retention_days.
 
     0 purges every soft-deleted entry at the next run. Each purge goes
     through `hard_delete_entry`. Wrapped in try/except so a transient DB
     error never kills the scheduler.
     """
     with app.app_context():
+        try:
+            # Missing stream entries past their stream's expiry go to soft delete first
+            # (PRD 18.9); they are purged later like any soft-deleted entry.
+            expired_missing = streams.expire_missing()
+            if expired_missing["soft_deleted"] or expired_missing["kept"]:
+                logger.info(f"🧹 Missing stream entries: {expired_missing['soft_deleted']} soft-deleted, "
+                            f"{expired_missing['kept']} kept (edited by a human).")
+        except Exception:
+            logger.exception("Missing-entry expiry failed; rolling back.")
+            db.session.rollback()
         try:
             retention_days = int(app.config.get("deleted_retention_days", 30))
             cutoff = datetime.now() - timedelta(days=retention_days)

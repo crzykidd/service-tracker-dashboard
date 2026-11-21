@@ -37,7 +37,7 @@ claude mcp add std -s user \
 claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.0/mcp/std_mcp.py
+  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.1/mcp/std_mcp.py
 ```
 
 Updating means changing the tag in that URL (and re-running `claude mcp add`).
@@ -119,7 +119,13 @@ Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
 `update_notification_channel`, `scan_notification_orphans`, `clear_notification_orphans`, `update_stream`, `enable_stream`, `disable_stream`,
 `ignore_stream`, `delete_stream`, `unblock_stream_key`, `answer_link_offer`,
 `link_entry_to_stream_item`, `apply_stream_default_checks`. `update_stream` also sets a
-stream's `default_checks`; `list_streams` returns the `pending` stream count.
+stream's `default_checks`, `expected_interval_seconds` and `missing_expiry_days`;
+`list_streams` returns the `pending` and `stale` stream counts. `list_streams` and
+`get_stream` report each stream's observability fields (`last_snapshot_at`,
+`last_applied_at`, `last_item_count`, `last_error`, `last_rejected_at` /
+`last_rejection` / `rejecting`, `stale` / `stale_message`, the effective interval and
+its source, entry counts including missing), and `health_summary` adds a `streams`
+block and a `stale_streams` line per stale stream (STD API revision 3).
 
 `update_entry` and `update_check` take a `fields` object: name only what should
 change, and send `null` to clear a value. Errors come back as tool errors that
@@ -148,6 +154,16 @@ On a difference the server prints one line to stderr and tells Claude in its
 instructions, so Claude can say "update the MCP server" when a tool is missing
 or returns 404. It never refuses to start over a version difference. Ask Claude
 to run `server_info` to see both versions.
+
+`server_info` re-checks STD on every call (`GET /api/v1/meta`, public, 3-second
+timeout) and returns the startup values (`startup`) beside the current ones
+(`current`). If the re-check fails it answers with the startup values, labelled
+`std_version_source: "as of startup <time>"`. `restart_advised` is true when STD's
+version or API revision changed since this server started (restart or reconnect
+the MCP server so the tools are current); `update_advised` is true when this script
+is older than STD, and the advice names the fix: `uv run
+https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v<std_version>/mcp/std_mcp.py`
+in the MCP config (or `git pull` in your checkout), then restart the MCP client.
 
 ## Try it without Claude
 

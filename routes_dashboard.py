@@ -1881,6 +1881,7 @@ def _streams_context(preview_slug=None):
             'blocks': InventoryBlock.query.filter_by(stream_id=stream.id).order_by(InventoryBlock.id).all(),
             'offers': [{'offer': o, 'entry_name': names.get(o.entry_id, '?')} for o in offers],
             'item_count': len(stream.snapshot) if stream.snapshot is not None else None,
+            'health': streams.stream_health(stream),
             # Dry run for streams that are not applying: one read-only plan() each.
             'would_counts': (streams.would_counts(stream) if stream.status != 'enabled' else None),
         })
@@ -2001,6 +2002,39 @@ def stream_update(slug):
         return _streams_redirect()
     logger.info(f"Stream '{slug}' updated by {current_user.username}: {', '.join(changes) or 'no changes'}.")
     flash(f"Saved stream '{stream.display_name}'." if changes else "Nothing changed.", "success")
+    return _streams_redirect()
+
+
+@dashboard_bp.route('/settings/streams/<slug>/monitoring', methods=['POST'])
+@login_required
+@is_admin_required
+def stream_monitoring(slug):
+    """Expected snapshot interval (minutes in the form, seconds stored) and the
+    missing-entry expiry (days). Blank clears either (PRD 18.9)."""
+    stream = _stream_or_404(slug)
+    values = {}
+    for field_name, label in (('expected_interval_minutes', 'Expected interval'),
+                              ('missing_expiry_days', 'Missing expiry')):
+        raw = (request.form.get(field_name) or '').strip()
+        try:
+            values[field_name] = int(raw) if raw else None
+        except ValueError:
+            flash(f"{label} must be a whole number.", "danger")
+            return _streams_redirect()
+    minutes = values['expected_interval_minutes']
+    try:
+        changes = streams.update(
+            stream, sent=('expected_interval_seconds', 'missing_expiry_days'),
+            expected_interval_seconds=minutes * 60 if minutes is not None else None,
+            missing_expiry_days=values['missing_expiry_days'])
+    except streams.StreamError as exc:
+        db.session.rollback()
+        flash(exc.message.replace('expected_interval_seconds must be 60-86400 seconds',
+                                  'Expected interval must be 1-1440 minutes'), "danger")
+        return _streams_redirect()
+    logger.info(f"Stream '{slug}' monitoring saved by {current_user.username}: {', '.join(changes) or 'no changes'}.")
+    flash(f"Saved staleness and missing-entry settings for '{stream.display_name}'." if changes
+          else "Nothing changed.", "success")
     return _streams_redirect()
 
 
