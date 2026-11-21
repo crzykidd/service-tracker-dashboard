@@ -176,6 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **The hidden "reset password to changeme123" action is gone.** No page used it;
+  admins set a new password for a user from Settings → Users instead.
 - **Column sorting on the groups table.** Groups are listed as cards in priority
   order (then by name), so there is nothing left to sort.
 - **The old Restore form and "Save backup to server" are gone.** Use export and

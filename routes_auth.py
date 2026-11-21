@@ -158,22 +158,6 @@ def add_user():
     return redirect(url_for("dashboard.settings", section="users"))
 
 
-@auth_bp.route("/reset_user_password", methods=["POST"])
-@login_required
-@is_admin_required
-def reset_user_password():
-    user_id = request.form.get("user_id")
-    user = db.session.get(User, user_id)
-    if user:
-        user.set_password("changeme123")
-        db.session.commit()
-        refresh_default_password_flag(current_app._get_current_object())
-        flash(f"🔁 Password reset for {user.username} to 'changeme123'", "info")
-    else:
-        flash("❌ User not found", "danger")
-    return redirect(url_for("dashboard.settings", section="users"))
-
-
 @auth_bp.route("/delete_user", methods=["POST"])
 @login_required
 @is_admin_required
