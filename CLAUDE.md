@@ -344,6 +344,8 @@ rule as register: STD ships a schema change before any sidecar sends it.
 - **WAL mode is enabled.** All SQLite backup operations must use
   `sqlite3.Connection.backup()` rather than `shutil.copy*`. The WAL
   sidecar can hold uncommitted writes that `shutil.copy2` silently misses.
+  The staged-restore swap (`restore_swap.py`) follows this too: it keeps the current
+  database with `Connection.backup()`, never a file copy, and a failed swap never blocks startup.
 - **`(host, container_name)` is the logical key for `services`** — every
   register call hits this column pair. It must be indexed.
 - **`widget_value` retention is enforced by a scheduled job** (introduced
@@ -421,6 +423,10 @@ importer.py         ← import engine (PRD 20.3-20.4): `parse` (v1 + legacy, rec
                       transaction; no secret is ever written), and the `import-staging/` store
                       (it also keeps the preview state, `plan.digests`: the UI hashes the submitted
                       selection with `fingerprint_from_digests`)
+restore_staging.py  ← staged database restore, app side (PRD 20.5): validate a snapshot, stage it as
+                      `<CONFIG_DIR>/restore/pending.sqlite3`; routes in `routes_restore.py`
+restore_swap.py     ← the swap at container start: STDLIB ONLY, no app import; run by
+                      `entrypoint.sh` before `alembic upgrade head`; must always exit 0
 routes_import.py    ← Settings import routes on `dashboard_bp` (upload, preview, stream mapping,
                       apply, cancel); templates/settings_import.html +
                       partials/settings/import_rows.html, static/js/settings/import.js; the

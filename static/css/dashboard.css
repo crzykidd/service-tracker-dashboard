@@ -1298,6 +1298,7 @@ table.settings-table tbody tr:first-child td { border-top: 0; }
 .inline-warning[hidden] { display: none; }
 .inline-warning--warn { background: rgba(120, 53, 15, 0.35); border-color: #d97706; color: #fde68a; }
 .inline-warning--bad { background: rgba(127, 29, 29, 0.45); border-color: #b91c1c; color: #fee2e2; }
+.inline-warning--ok { background: rgba(6, 78, 59, 0.35); border-color: #059669; color: #a7f3d0; }
 .toast-region {
   position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 60;
 }

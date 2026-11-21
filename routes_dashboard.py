@@ -52,6 +52,7 @@ import health_history
 import jobs
 import mgmt_serializers
 import notify
+import restore_staging
 import settings_sections
 import settings_store
 import streams
@@ -563,6 +564,8 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
          backup_list_error=backup_list_error,
          backup_outside_config=backups.outside_config(BACKUP_DIR),
          backup_attention=backups.attention_needed(backup_runs),
+         restore_pending=restore_staging.pending(),
+         restore_result=restore_staging.last_result(),
          version_info=current_app.config['VERSION_INFO'],
          version_display=version_check.display_info(current_app.config['VERSION_INFO']),
          update_status=version_check.status(current_app.config['VERSION_INFO'].get('version', 'unknown')),

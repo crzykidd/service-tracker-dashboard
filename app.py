@@ -23,6 +23,7 @@ from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
 import routes_import  # noqa: F401  (registers the import routes on dashboard_bp)
+import routes_restore  # noqa: F401  (registers the staged-restore routes on dashboard_bp)
 import streams
 import version_check
 from api_version import API_REVISION

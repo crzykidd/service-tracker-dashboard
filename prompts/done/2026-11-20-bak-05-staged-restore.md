@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-bak-05-staged-restore
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: Staged restore built: restore_staging.py, restore_swap.py, routes_restore.py, UI, entrypoint swap, tests, docs; not committed.
 ---
 
 # Task: Backup phase 5 (optional): staged database restore from a snapshot

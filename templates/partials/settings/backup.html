@@ -10,13 +10,14 @@
   {% for f in files %}
   {% set idx = loop.index %}
   <div class="backup-file-row">
-    <span class="backup-file-name">{{ f.name }}{% if f.manual %} <span class="settings-tag settings-tag--manual">manual</span>{% endif %}{% if f.legacy %} <span class="settings-tag settings-tag--legacy">legacy</span>{% endif %}</span>
+    <span class="backup-file-name">{{ f.name }}{% if f.manual %} <span class="settings-tag settings-tag--manual">manual</span>{% endif %}{% if f.legacy %} <span class="settings-tag settings-tag--legacy">legacy</span>{% endif %}{% if f.pre_restore %} <span class="settings-tag settings-tag--legacy">pre-restore</span>{% endif %}</span>
     <span class="backup-file-size">{{ f.size_text }}</span>
     <span class="backup-file-when">{{ f.modified.strftime('%Y-%m-%d %H:%M') }}</span>
     <span class="settings-card-actions">
       <a class="btn-secondary btn-sm" href="{{ url_for('dashboard.download_backup_file', name=f.name) }}">Download</a>
       {% call kebab('backup-menu-' ~ f.kind ~ '-' ~ idx, f.name) %}
         {% if f.kind == 'export' %}<button type="submit" form="backup-imp-{{ idx }}" class="kebab-item" role="menuitem" tabindex="-1">Import&hellip;</button>{% endif %}
+        {% if f.kind == 'snapshot' %}<button type="submit" form="backup-rst-{{ idx }}" class="kebab-item" role="menuitem" tabindex="-1">Restore&hellip;</button>{% endif %}
         <button type="submit" form="backup-del-{{ f.kind }}-{{ idx }}" class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button>
       {% endcall %}
     </span>
@@ -192,6 +193,72 @@
       </div>
     </form>
   </div>
+
+  <!-- Restore database (design 12.1 card 5): staged, applied at the next container start -->
+  <div class="settings-card" id="backup-restore">
+    <h3 class="settings-card-heading">Restore database</h3>
+    <p class="settings-subtitle-note">Pick a snapshot above (&#8943; &rarr; Restore&hellip;) or upload one. It is checked now and swapped in on the next container restart; there is no live swap. The current database is kept as <code>pre-restore-&lt;timestamp&gt;.sqlite3</code> in the backup folder.</p>
+
+    {% if restore_result and not restore_result.seen %}
+    {% if restore_result.ok %}
+    {% call inline_warning('ok', id='restore-result', attrs='data-restore-result="ok"') %}
+      <span>Restored from <code>{{ restore_result.source_name }}</code> at {{ restore_result.at|replace('T', ' ') }}.{% if restore_result.kept_as %} The previous database was kept as <code>{{ restore_result.kept_as }}</code>.{% endif %}</span>
+      <form method="POST" action="{{ url_for('dashboard.restore_dismiss') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-secondary btn-sm">Dismiss</button></form>
+    {% endcall %}
+    {% else %}
+    {% call inline_warning('bad', id='restore-result', attrs='data-restore-result="error"') %}
+      <span>The restore of <code>{{ restore_result.source_name }}</code> failed at {{ restore_result.at|replace('T', ' ') }}: {{ restore_result.error }}. The current database was kept and STD started normally.</span>
+      <form method="POST" action="{{ url_for('dashboard.restore_dismiss') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-secondary btn-sm">Dismiss</button></form>
+    {% endcall %}
+    {% endif %}
+    {% endif %}
+
+    {% if restore_pending %}
+    {% call inline_warning('warn', id='restore-pending') %}
+      <span><code>{{ restore_pending.source_name }}</code> (revision {{ restore_pending.revision }}{% if restore_pending.entries is not none %}, {{ restore_pending.entries }} entries{% endif %}) is staged and will be applied on the next container restart.</span>
+      <form method="POST" action="{{ url_for('dashboard.restore_cancel') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-secondary btn-sm">Cancel restore</button></form>
+    {% endcall %}
+    {% endif %}
+
+    {% if restore_confirm %}
+    {% set rc = restore_confirm %}
+    <div class="settings-card" id="restore-confirm" style="margin-top:.75rem">
+      <h4 class="settings-card-heading">Found in {{ rc.source_name }}</h4>
+      <ul class="settings-subtitle-note">
+        <li>Schema revision <code>{{ rc.info.revision }}</code> (an older revision is migrated forward on start)</li>
+        <li>{{ rc.info.entries }} entr{{ 'y' if rc.info.entries == 1 else 'ies' }}{% if rc.info.latest_update %}, latest change {{ rc.info.latest_update }}{% endif %}</li>
+        <li>Install id {% if rc.info.instance_id %}<code>{{ rc.info.instance_id[:8] }}</code>, {{ 'the same install as this one' if rc.info.same_install else 'a different install' }}{% else %}not recorded{% endif %}</li>
+      </ul>
+      <form method="POST" action="{{ url_for('dashboard.restore_confirm') }}" class="settings-card-actions"
+            data-confirm="Restore {{ rc.source_name }}? Everything since the snapshot is lost, including API keys created since. The current database is kept as pre-restore-&lt;timestamp&gt;.sqlite3. It is applied on the next container restart."
+            data-confirm-label="Stage restore" data-confirm-title="Restore database" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if rc.token %}<input type="hidden" name="token" value="{{ rc.token }}"><input type="hidden" name="source_name" value="{{ rc.source_name }}">{% else %}<input type="hidden" name="server_file" value="{{ rc.server_file }}">{% endif %}
+        <button type="submit" class="btn-danger">Stage restore</button>
+        <a class="btn-ghost" href="{{ url_for('dashboard.settings', section='backup') }}">Cancel</a>
+      </form>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('dashboard.restore_stage') }}" enctype="multipart/form-data" id="restore-upload-form" class="backup-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="imp-dropzone">
+        <label class="settings-label" for="restore-file">Upload a snapshot (.sqlite3, up to 200 MB)</label>
+        <input id="restore-file" name="snapshot_file" type="file" accept=".sqlite3,.db">
+      </div>
+      <div class="settings-card-actions">
+        <button type="submit" class="btn-secondary">Check snapshot</button>
+        <span class="settings-subtitle-note">Nothing is staged until you confirm.</span>
+      </div>
+    </form>
+  </div>
+
+  {% for f in backup_files.snapshots %}
+  <form id="backup-rst-{{ loop.index }}" method="POST" action="{{ url_for('dashboard.restore_stage') }}" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="server_file" value="{{ f.name }}">
+  </form>
+  {% endfor %}
 
   {% for f in backup_files.exports %}
   <form id="backup-imp-{{ loop.index }}" method="POST" action="{{ url_for('dashboard.import_upload') }}" hidden>

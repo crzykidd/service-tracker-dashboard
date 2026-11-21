@@ -5,6 +5,45 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Backup, export and import, bak-05 (staged restore)
+
+Calls made while building phase 5 (`prompts/2026-11-20-bak-05-staged-restore.md`), with the
+operator asleep. The operator chose to build this phase (design Q4).
+
+- **Immutable read-only opens.** `validate`, `stage` and the swap's integrity check open the
+  snapshot with `file:...?mode=ro&immutable=1`. A plain `mode=ro` open of a WAL-mode file
+  creates `-wal` / `-shm` files beside it (a snapshot is a backup of a WAL database, so its
+  header says WAL), which litters the backup folder and fails on a read-only folder.
+  `immutable=1` skips locking and sidecars, which is right for a file nothing writes.
+- **The swap moves the old files aside instead of deleting them first.** `services.db`,
+  `-wal` and `-shm` are renamed to `*.restore-old`, the staged file is `os.replace`d in, and
+  the aside files are deleted only after that succeeds. A failure puts them back, so "put
+  back the current database" is a rename and cannot itself fail halfway. The design said
+  "remove" the three files; the end state is the same.
+- **An unreadable current database does not block the restore.** The restore is often the
+  fix for a damaged database, so if `Connection.backup()` of the current file fails the swap
+  keeps the raw file as `pre-restore-<ts>-unreadable.sqlite3` and goes on. A *good* current
+  database is always kept through `backup()`.
+- **Confirmation is the Backup section re-rendered, not a modal.** The stage route validates
+  and renders Settings with `restore_confirm` (the found metadata and a danger-confirm
+  form); nothing is staged until `/settings/restore/confirm`. A server file is re-resolved
+  and re-validated on confirm (never trusted from the form); an upload is kept as
+  `restore/upload-<token>.sqlite3` between the two requests (the token must match a strict
+  pattern) and deleted after staging or on a validation failure.
+- **`pre-restore-*.sqlite3` count as snapshots in the list** (tag "pre-restore", Download,
+  Delete, Restore...) but retention matches `-std_backup.sqlite3` only, so they are never
+  pruned. Tested.
+- **`keep_dir` is the effective backup path at staging time**, as the design says; if it is
+  gone or unwritable at start the swap fails safe (the restore does not happen) rather than
+  writing the kept copy somewhere surprising.
+- **The last-result banner reuses the `at` timestamp as its identity**: dismissing stores that
+  value in `restore_last_seen`. The restored database brings its own `restore_last_seen`, so
+  a result is always newer than what a snapshot knows and shows once.
+- **`entrypoint.sh` calls the swap with `|| echo ...`** on top of the script's own exit 0, a
+  second guard for the one case the script cannot cover (the interpreter failing to start it).
+  No Dockerfile change: `COPY . .` already includes `restore_swap.py` (`.dockerignore` only
+  excludes `mcp/`).
+
 ## 2026-11-20 — Backup, export and import, bak-04 (import UI, API, MCP)
 
 Calls made while building phase 4 (`prompts/2026-11-20-bak-04-import-ui.md`), with the

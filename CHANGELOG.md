@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Restore the database from a snapshot in Settings → Backup & restore.** Pick a
+  snapshot in the list (⋯ → **Restore…**) or upload a `.sqlite3` file. STD checks it
+  first (not damaged, an STD database, made by this or an older STD) and shows what it
+  found: the schema revision, the number of entries and whether it is from this
+  install. After you confirm, the restore is **staged**, not applied: a banner on
+  every Settings section says it will be applied on the next container restart, with
+  **Cancel restore**. On that restart the current database is kept as
+  `pre-restore-<timestamp>.sqlite3` in the backup folder (listed with the snapshots,
+  never deleted automatically), the snapshot takes its place, and the usual
+  migrations bring an older snapshot up to date. Everything since the snapshot is
+  lost, including API keys created since. A restore that cannot be applied never
+  stops STD from starting: the current database stays, and the Backup & restore page
+  shows the reason until you dismiss it.
 - **Backup settings are editable in Settings → Backup & restore.** Set the backup
   folder, and for the **database snapshot** and the **export** separately: on or
   off, the time of day, and how many days to keep. Each has a **Run now** button

@@ -54,6 +54,9 @@ DEFAULT_TIMES = {"snapshot": "00:05", "export": "00:10"}
 DEFAULT_FORMAT = "yaml"
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _MANUAL_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}-")
+# The copy of the live database the staged restore keeps (restore_swap.py). Listed with the
+# snapshots, never pruned (retention matches by SNAPSHOT_SUFFIX only).
+PRE_RESTORE_RE = re.compile(r"^pre-restore-[\w.-]+\.sqlite3$")
 
 # Keys the UI can reset (delete the DB row so the value falls back to settings.yml/default).
 SETTING_KEYS = (
@@ -294,7 +297,7 @@ def human_size(num):
 
 
 def _kind_of(name):
-    if name.endswith(SNAPSHOT_SUFFIX):
+    if name.endswith(SNAPSHOT_SUFFIX) or PRE_RESTORE_RE.match(name):
         return "snapshot"
     if name.endswith(EXPORT_SUFFIXES) or name in LEGACY_NAMES:
         return "export"
@@ -323,6 +326,7 @@ def list_files(directory=None):
             "name": name, "kind": kind, "size": st.st_size, "size_text": human_size(st.st_size),
             "modified": datetime.fromtimestamp(st.st_mtime), "manual": bool(_MANUAL_RE.match(name)),
             "legacy": _is_legacy(name),
+            "pre_restore": bool(PRE_RESTORE_RE.match(name)),
         })
     for rows in out.values():
         rows.sort(key=lambda r: (r["modified"], r["name"]), reverse=True)
@@ -338,7 +342,7 @@ def resolve_file(name, directory=None, suffixes=None):
     if name != os.path.basename(name) or name in (".", "..") or "\x00" in name or "\\" in name:
         return None
     allowed = tuple(suffixes) if suffixes else KNOWN_SUFFIXES
-    if not (name.endswith(allowed) or (not suffixes and name in LEGACY_NAMES)):
+    if not (name.endswith(allowed) or (not suffixes and (name in LEGACY_NAMES or PRE_RESTORE_RE.match(name)))):
         return None
     root = os.path.realpath(directory or backup_dir())
     path = os.path.realpath(os.path.join(root, name))

@@ -1278,6 +1278,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/config/std.log`        | Main app log (rotated).          |
 | `/config/images/`        | Cached service icons.            |
 | `/config/backups/`       | Daily and manual snapshots (`*-std_backup.sqlite3`) and exports (`*-std_export.yml` or `.json`; older `*-std_backup.yml` entry lists are still listed). The folder is editable in Settings → Backup & restore. |
+| `/config/restore/`       | A staged database restore (`pending.sqlite3`, `pending.json`), the last result (`last.json`) and any `failed-*` files from a restore that could not be applied. Managed by Settings → Backup & restore. |
 | `/config/settings.yml`   | Optional config file.            |
 
 ---
@@ -1564,7 +1565,25 @@ restored.
     an old YAML backup goes through the same import. The daily job no longer writes
     that list, but old `*-std_backup.yml` files in the folder are still listed and
     importable.
-- To restore from a snapshot (manual steps; an old entry-list YAML is imported from
+- **Restore a snapshot from Settings → Backup & restore** (staged; nothing changes
+  until the container restarts):
+  1. Pick a snapshot in the list (⋯ → **Restore…**) or upload a `.sqlite3` in the
+     **Restore database** card. STD checks it (not damaged, an STD database, made by
+     this or an older STD) and shows the revision, entry count and install id.
+  2. Confirm. A banner on every Settings section says the restore is staged, with
+     **Cancel restore**.
+  3. Restart the container (`docker compose restart std`). Before the migrations run,
+     the entrypoint keeps the current database as
+     `pre-restore-<timestamp>.sqlite3` in the backup folder (listed with the
+     snapshots, never deleted automatically), puts the snapshot in its place and
+     migrates it forward. Everything since the snapshot is lost, including API keys
+     created since; users, API keys and channels come from the snapshot.
+  4. Backup & restore shows the result until you dismiss it. If the restore could not
+     be applied, STD still starts with the current database and shows why.
+
+  The swap runs in `entrypoint.sh`; running `python app.py` yourself does not apply a
+  staged restore. There is no live swap.
+- To restore from a snapshot by hand instead (manual steps; an old entry-list YAML is imported from
   Settings → Backup & restore → Import):
   1. Stop the container: `docker compose stop std`.
   2. Keep the current database: copy `/config/services.db` (and

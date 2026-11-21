@@ -64,6 +64,17 @@
       {# Banners for a message with no known section (every redirect carries one). #}
       {{ flash_slot('page') }}
 
+      {# A staged database restore is shown on every section until it is applied or cancelled. #}
+      {% if restore_pending %}
+      <div class="inline-warning inline-warning--warn mb-4" id="restore-staged-banner" data-restore-pending>
+        <span>A database restore is staged (<code>{{ restore_pending.source_name }}</code>) and will be applied on the next container restart. The current database is kept as <code>pre-restore-&lt;timestamp&gt;.sqlite3</code>.</span>
+        <form method="POST" action="{{ url_for('dashboard.restore_cancel') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn-secondary btn-sm">Cancel restore</button>
+        </form>
+      </div>
+      {% endif %}
+
       {% include "partials/settings/about.html" %}
       {% include "partials/settings/configuration.html" %}
       {% include "partials/settings/groups.html" %}

@@ -97,6 +97,7 @@
 | 0.87    | 2026-11-20 | §20.2 delivered on `dev` (bak-02): export format v1 (`std-export`, YAML or JSON, same document, never a secret) built by the new `export_format.py` with the §5.3 field ownership rules, the daily and manual export job now writes `<date>-std_export.yml\|json` (replacing the entry-list YAML; old `-std_backup.yml` files stay listed and age out with export retention), `GET /settings/backups/export` download with Download YAML / JSON buttons on the Exports card, and management API routes `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export` with MCP tools `backup_settings`, `list_backups`, `export_config`, `run_backup`. **`API_REVISION` 4** (§18.1) and the `backup` feature. §3.1 module layout, §14.4 route list and §20.6 updated. No schema change; register and stream-ingest wire contracts unchanged. |
 | 0.88    | 2026-11-20 | §20.3 and §20.4 describe the import engine as built on `dev` (bak-03; still Planned for operators, because nothing reaches it until bak-04): new `importer.py` (`parse` for v1 and the legacy entry list, a pure `plan()`, `fingerprint`, `apply()` under the register and stream locks, a staging store under `CONFIG_DIR/import-staging/`), `export_format.from_legacy()`, and a `User.has_password` property for users created with the `!unset` hash. §3.1 module layout and §20.6 updated. No schema, wire-contract or `/api/v1` change. |
 | 0.89    | 2026-11-20 | §20.3 delivered on `dev` (bak-04): the import UI (Settings → Backup & restore → Import card, `/settings/import/<token>` preview page with stream mapping, the fill / overwrite mode switch, grouped rows with tri-state and per-field ticks, sticky apply bar, summary with "Still to do"), users created without a password (a muted tag in Users), management API `POST /import/plan` and `POST /import/apply` and MCP `import_plan` / `import_apply`. The old Restore form, "Save backup to server" and the `action=backup\|restore` branches of `/settings` are removed (old YAML backups import through the new flow). **`API_REVISION` 4** row extended (§18.1), `import` feature added; no new revision. §3.1 module layout, §14.4 route list, §20.3, §20.4, §20.6 updated. No schema, register or stream-ingest wire-contract change. |
+| 0.90    | 2026-11-20 | §20.5 delivered on `dev` (bak-05), completing §20 (Backup, export and import; all five phases delivered, unreleased): staged database restore. `restore_staging.py` validates and stages a snapshot (⋯ → Restore… or an upload, ≤ 200 MB); `restore_swap.py`, run by `entrypoint.sh` before `alembic upgrade head`, keeps the current database as `pre-restore-<timestamp>.sqlite3` (`Connection.backup()`), swaps the file and never blocks startup; pending banner on every Settings section, last-result banner, `pre-restore-*` files listed with the snapshots and never pruned. §3 (startup sequence) and §3.1 updated. No schema, wire-contract or `/api/v1` change. |
 
 ---
 
@@ -220,6 +221,11 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               └─────────────────────────────────────────┘
 ```
 
+**Container start sequence** (`entrypoint.sh`): (1) `python restore_swap.py` applies a
+staged database restore if one is pending (§20.5; it exits 0 whatever happens), (2)
+`alembic upgrade head` migrates the database (a restored older snapshot included), (3)
+gunicorn starts (one worker; `run_startup_tasks` runs in the worker).
+
 ### 3.1 Module layout
 
 ```
@@ -265,6 +271,10 @@ export_format.py    ← export format v1 (PRD 20.2): pydantic models, `build_exp
                       `from_legacy()` (format 0)
 importer.py         ← import engine (§20.3-20.4): `parse`, pure `plan()`, `fingerprint`, `apply()`,
                       staging store
+restore_staging.py  ← staged database restore, app side (§20.5): `validate`, `stage`, `pending`,
+                      `cancel`, `last_result`; routes in `routes_restore.py`
+restore_swap.py     ← the swap at container start (§20.5): stdlib only, run by `entrypoint.sh`
+                      before `alembic upgrade head`; never fails startup
 routes_import.py    ← Settings import routes on `dashboard_bp` (§20.3): upload, preview, stream
                       mapping, apply, cancel; templates `settings_import.html`,
                       `partials/settings/import_rows.html`; `static/js/settings/import.js`
@@ -288,7 +298,8 @@ tests/              ← pytest suite (v0.6.9)
 requirements-dev.txt ← pytest + runtime deps; CI/dev only
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
-Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+Dockerfile, entrypoint.sh (restore swap, then migrations, then the server), docker-compose.yml,
+requirements.txt
 gunicorn.conf.py    ← production server config (workers must stay 1)
 requirements.in     ← direct deps; requirements.txt is compiled from it
 settings.example.yml, .env.example
@@ -3494,14 +3505,14 @@ the backup, export and import project rebuilds it (`docs/design/2026-11-20-backu
 
 ---
 
-## 20. v0.11.0 — Backup, export and import (In progress)
+## 20. v0.11.0 — Backup, export and import (Delivered, unreleased)
 
 Settings → Backup & restore becomes two features: **database backups** for disaster
 recovery and **export and import** of operator-set state. The full design (field
 ownership tables, matching rules, the import engine, API and UI) is
 [`docs/design/2026-11-20-backup-export-import.md`](design/2026-11-20-backup-export-import.md)
 (mockup alongside) and its operator decisions are in `docs/decisions.md`. It is built in
-five phases (`prompts/2026-11-20-bak-01` … `bak-05`); §20.1 to §20.4 have shipped on `dev`.
+five phases (`prompts/2026-11-20-bak-01` … `bak-05`); all of §20.1 to §20.5 have shipped on `dev`.
 No change to the register or stream-ingest wire contracts.
 
 **Goals (design §1).** The scenario "new machine, empty `/config`, restore what the
@@ -3692,14 +3703,34 @@ for the default selection. Observed data is not in a digest. One transaction: an
 rolls it back (`ImportApplyError`). The legacy entry-list YAML is read as format version 0.
 A 5,000-entry apply takes about 2 seconds, including the re-plan, under the locks.
 
-### 20.5 Staged database restore (Planned; bak-05)
+### 20.5 Staged database restore (Delivered, unreleased; bak-05)
 
-Pick or upload a `.sqlite3`, validate it read-only (`integrity_check`, an STD schema, a
-migration revision known to this code), then **stage** it: nothing is swapped live. A
-banner offers **Cancel restore** until the next start, when `restore_swap.py` (stdlib
-only, run by `entrypoint.sh` before `alembic upgrade head`) keeps the current database as
-`pre-restore-<timestamp>.sqlite3` through `Connection.backup()`, swaps the file, and never
-stops STD from starting if anything fails. No management API for it.
+Pick a snapshot (⋯ → **Restore…** in the snapshot list; `pre-restore-*` files are listed
+there too) or upload a `.sqlite3` (≤ 200 MB, streamed to `<CONFIG_DIR>/restore/`), and
+`restore_staging.validate()` checks it through a read-only, immutable `sqlite3`
+connection: `PRAGMA integrity_check` is `ok`, the `alembic_version`, `service_entry` and
+`setting` tables exist, and the revision is known to this code (an ancestor of `head` or
+`head`; anything else is "made by a newer STD"). The confirmation shows the revision, the
+entry count, the latest change and whether the `instance_id` is this install's. On
+confirm the file is **staged** (`Connection.backup()` into `restore/pending.sqlite3`,
+`pending.json` with `source_name`, `sha256`, `revision`, `staged_at`, `staged_by`,
+`keep_dir`). Nothing is swapped live. A banner on every Settings section offers
+**Cancel restore** until the next start.
+
+At start `entrypoint.sh` runs `python restore_swap.py` **before** `alembic upgrade head`.
+The script is stdlib only (no app import): with no `pending.json` it exits at once;
+otherwise it re-checks the sha256 and integrity, keeps the current database through
+`Connection.backup()` as `<keep_dir>/pre-restore-YYYYMMDD-HHMMSS.sqlite3` (WAL-safe; a
+current database that cannot be read is kept as its raw file instead), moves the old
+files aside, `os.replace`s the staged file into `services.db`, and writes
+`restore/last.json`. On any failure it puts the current database back, renames the staged
+files to `failed-<ts>.*`, records the error and **exits 0**, so a failed restore never
+stops STD from starting. The migrations then bring an older snapshot up to date. Backup &
+restore shows the result (ok or error) until dismissed (`settings_store` key
+`restore_last_seen`). Routes (admin, CSRF): `POST /settings/restore/stage`, `/confirm`,
+`/cancel`, `/dismiss`. `python app.py` outside the entrypoint does not swap. The restored
+database brings its own users, API keys, channels and `instance_id`. No management API
+route (a whole-database swap through an API key is too sharp).
 
 ### 20.6 Phases (design §16)
 
@@ -3709,7 +3740,7 @@ stops STD from starting if anything fails. No management API for it.
 | 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP (§20.2) | Delivered (unreleased) |
 | 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Delivered (unreleased) |
 | 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Delivered (unreleased) |
-| 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Planned |
+| 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Delivered (unreleased) |
 
 ---
 

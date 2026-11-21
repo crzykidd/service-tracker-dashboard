@@ -75,6 +75,7 @@ KEY_BACKUP_EXPORT_TIME = "backup_export_time"
 KEY_BACKUP_EXPORT_KEEP_DAYS = "backup_export_keep_days"
 KEY_BACKUP_EXPORT_FORMAT = "backup_export_format"
 KEY_BACKUP_LAST_RUNS = "backup_last_runs"
+KEY_RESTORE_LAST_SEEN = "restore_last_seen"
 
 DEFAULT_UPDATE_CHECK_ENABLED = True
 DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
@@ -277,3 +278,14 @@ def get_backup_last_runs() -> dict:
 def set_backup_last_runs(runs: dict) -> None:
     """Store the whole last-runs dict. Caller commits."""
     _set_value(KEY_BACKUP_LAST_RUNS, runs)
+
+
+def get_restore_last_seen():
+    """The `at` of the last restore result the operator dismissed (restore/last.json), or None."""
+    value = _get_value(KEY_RESTORE_LAST_SEEN, None)
+    return value if isinstance(value, str) else None
+
+
+def set_restore_last_seen(at) -> None:
+    """Mark a restore result seen. Caller commits."""
+    _set_value(KEY_RESTORE_LAST_SEEN, at)
