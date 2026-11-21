@@ -876,8 +876,10 @@ def test_a_failure_mid_apply_writes_nothing(app, register, monkeypatch):
         raise RuntimeError("disk on fire")
 
     monkeypatch.setattr(importer._Applier, "_apply_entries", boom)
-    with pytest.raises(ImportApplyError, match="Nothing was changed: disk on fire"):
+    with pytest.raises(ImportApplyError, match="Nothing was changed") as info:
         do_apply(app, parsed)
+    # The raw exception text stays in the server log, never in the message a client sees.
+    assert "disk on fire" not in str(info.value)
     with app.app_context():
         assert Group.query.count() == 0 and NotificationChannel.query.count() == 0
         assert ServiceEntry.query.one().description is None
@@ -1290,3 +1292,10 @@ def test_import_never_writes_a_secret(app, client, register):
         assert User.query.filter(User.password_hash != "!unset").count() == 0
         assert all(c.secret is None for c in NotificationChannel.query.all())
         assert all(w.widget_api_key is None for w in Widget.query.all())
+
+
+def test_staging_path_stays_inside_the_staging_folder():
+    assert importer._staging_path("../../etc/passwd") is None
+    assert importer._staging_path("a" * 15) is None
+    path = importer._staging_path("A" * 20)
+    assert path.startswith(os.path.realpath(importer.staging_dir()) + os.sep)

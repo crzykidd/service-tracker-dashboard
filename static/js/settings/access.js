@@ -59,7 +59,10 @@
       var dlg = document.getElementById('password-modal');
       if (!dlg) { return; }
       var form = dlg.querySelector('form');
-      form.action = pw.getAttribute('data-password-url');
+      var pwUrl = pw.getAttribute('data-password-url') || '';
+      // Only a same-site path (from url_for); never a scheme or protocol-relative URL.
+      if (pwUrl.charAt(0) !== '/' || pwUrl.charAt(1) === '/') { return; }
+      form.action = pwUrl;
       blank(form);
       clearErrors(dlg);
       document.getElementById('password-modal-title').textContent = 'Set password for ' + pw.getAttribute('data-user-name');

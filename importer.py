@@ -1868,7 +1868,7 @@ def apply(doc, stream_map, selection, mode, fingerprint, actor):
             except Exception as exc:
                 db.session.rollback()
                 logger.exception("Import failed")
-                raise ImportApplyError(f"Nothing was changed: {exc}") from exc
+                raise ImportApplyError("Nothing was changed: the import failed. The server log has the details.") from exc
     if applier.channels_changed:
         notify.request_reload()
     if applier.backup_changed:
@@ -1891,7 +1891,11 @@ def staging_dir():
 def _staging_path(token):
     if not isinstance(token, str) or not _TOKEN_RE.match(token):
         return None
-    return os.path.join(staging_dir(), f"{token}.json")
+    base = os.path.realpath(staging_dir())
+    path = os.path.realpath(os.path.join(base, f"{token}.json"))
+    if not path.startswith(base + os.sep):   # belt and braces: the token regex already rules this out
+        return None
+    return path
 
 
 def stage(parsed, user_id):

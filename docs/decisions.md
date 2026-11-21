@@ -5,6 +5,20 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — CodeQL findings on the 0.11.0 pull request
+
+CodeQL raised 15 alerts on PR #82. Fixed: an unexpected exception during import apply no
+longer puts its text in the `ImportApplyError` message (it reached API clients and the UI;
+it is logged instead); `importer._staging_path` and `restore_staging._path` resolve the
+path and refuse anything outside their folder, on top of the existing token regex (CodeQL
+does not see the regex as a sanitizer, and the containment check is a real second guard);
+the Set password dialog only accepts a same-site path as its form action. Dismissed as
+false positives: unsafe deserialization (the loader is a `yaml.SafeLoader` subclass that
+also refuses aliases), clear-text password logging (the line logs import counts only), and
+stack-trace exposure in `json_error` where the remaining sources are our own messages.
+
+---
+
 ## 2026-11-21 — Code fixes from the README audit
 
 - **The UI delete route moved to `/entries/<id>/delete`** instead of staying under

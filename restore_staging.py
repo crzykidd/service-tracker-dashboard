@@ -32,7 +32,13 @@ def restore_dir():
 
 
 def _path(name):
-    return os.path.join(restore_dir(), name)
+    """`name` inside the restore folder. Raises RestoreError for a name that would leave it
+    (callers pass fixed names or a token already checked against a strict regex)."""
+    base = os.path.realpath(restore_dir())
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):
+        raise RestoreError("Invalid restore file name.")
+    return path
 
 
 def _known_revisions():
