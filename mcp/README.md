@@ -3,7 +3,7 @@
 > **Not fully tested yet.** This MCP server and the management API it wraps are
 > new in v0.8.0. They pass the automated test suite but have not been fully tested
 > against real instances. Start with a **read** key, check the audit log in
-> Settings → API after any writes, and keep a recent backup before letting an
+> Settings → Audit log after any writes, and keep a recent backup before letting an
 > agent make changes.
 
 A small [MCP](https://modelcontextprotocol.io) server that lets Claude Code (or
@@ -37,7 +37,7 @@ claude mcp add std -s user \
 claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.1/mcp/std_mcp.py
+  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.11.0/mcp/std_mcp.py
 ```
 
 Updating means changing the tag in that URL (and re-running `claude mcp add`).
@@ -74,7 +74,7 @@ may not see your shell `PATH`: if it cannot start `uv`, put the absolute path
 
 ## Create a key
 
-In STD, open **Settings → API** and create a key. Use **write** if Claude should
+In STD, open **Settings → API keys** and create a key. Use **write** if Claude should
 be able to change things, **read** to let it look only. A read key exposes only
 the read tools; the server checks the key with `GET /api/v1/whoami` when it
 starts. Revoke the key from the same page at any time. **Rotate** on the same
@@ -96,7 +96,7 @@ The key ends up in your Claude configuration, so keep that file private.
 | Variable         | Meaning                                              | Default |
 | ---------------- | ---------------------------------------------------- | ------- |
 | `STD_URL`        | Base URL of your STD, for example `http://std.lan:8815` | required |
-| `STD_API_KEY`    | The API key from Settings → API                      | required |
+| `STD_API_KEY`    | The API key from Settings → API keys                     | required |
 | `STD_VERIFY_TLS` | `false` to accept a self-signed certificate          | `true`  |
 | `STD_TIMEOUT`    | Request timeout in seconds                           | `15`    |
 
@@ -108,6 +108,8 @@ Read (any key): `list_entries`, `get_entry`, `health_summary`,
 `list_notification_previous_bases`,
 `list_streams`, `get_stream`, `preview_stream`, `list_stream_blocks`,
 `list_stream_offers`, `list_stream_unmatched_items` (inventory streams),
+`backup_settings`, `list_backups`, `export_config` (the export of your settings as
+JSON, never any secret; STD API revision 4),
 `get_config` (secrets are masked), `server_info` (the
 versions of this script and of your STD, and whether they match).
 
@@ -118,7 +120,14 @@ Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
 `purge_entry_notifications`, `purge_stream_notifications`, `delete_notification_channel`,
 `update_notification_channel`, `scan_notification_orphans`, `clear_notification_orphans`, `update_stream`, `enable_stream`, `disable_stream`,
 `ignore_stream`, `delete_stream`, `unblock_stream_key`, `answer_link_offer`,
-`link_entry_to_stream_item`, `apply_stream_default_checks`. `update_stream` also sets a
+`link_entry_to_stream_item`, `apply_stream_default_checks`, `run_backup` (`snapshot` or
+`export`, synchronous; a snapshot stays in STD's backup folder, it is never returned),
+`import_plan` (a dry run: matches an export or an old YAML backup against STD and returns
+every row with its status, the per-field differences and a `fingerprint`; call it first and
+show the operator the plan) and `import_apply` (applies the selected rows in one
+transaction, with `mode` `fill` or `overwrite` and the fingerprint from the plan; if a
+selected row changed since, nothing is written and you plan again; never deletes, never
+writes a secret; STD API revision 4). `update_stream` also sets a
 stream's `default_checks`, `expected_interval_seconds` and `missing_expiry_days`;
 `list_streams` returns the `pending` and `stale` stream counts. `list_streams` and
 `get_stream` report each stream's observability fields (`last_snapshot_at`,
@@ -133,7 +142,7 @@ keep the API's message and details, for example `HTTP 409 (conflicts with the
 current state): ...`.
 
 Every change made through a write key is recorded in STD's audit log
-(Settings → API) under the key's name.
+(Settings → Audit log) under the key's name.
 
 ## Versions
 

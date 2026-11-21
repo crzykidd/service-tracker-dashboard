@@ -122,3 +122,38 @@ def test_token_missing_notice_on_settings(app, admin_client):
         assert b"API token not set" in admin_client.get("/settings").data
     finally:
         app.config["api_token"] = original
+
+
+def test_quoted_int_in_file_is_cast(settings_file):
+    settings_file('health_check_timeout: "5"\n')
+    final, _, from_file = settings_loader.load_settings()
+    assert final["health_check_timeout"] == 5 and isinstance(final["health_check_timeout"], int)
+    assert from_file["health_check_timeout"] == 5
+
+
+def test_uncastable_file_value_warns_and_keeps_raw(settings_file, caplog):
+    settings_file("health_check_timeout: soon\n")
+    with caplog.at_level("WARNING"):
+        final, _, _ = settings_loader.load_settings()
+    assert final["health_check_timeout"] == "soon"
+    assert "health_check_timeout" in caplog.text
+
+
+def test_bool_strings_are_cast():
+    cast = settings_loader.cast_value
+    assert cast(bool, "false") is False and cast(bool, "Yes") is True
+    assert cast(bool, True) is True
+    with pytest.raises(ValueError):
+        cast(bool, "maybe")
+
+
+def test_env_still_beats_quoted_file_value(settings_file, monkeypatch):
+    settings_file('health_check_timeout: "5"\n')
+    monkeypatch.setenv("HEALTH_CHECK_TIMEOUT", "9")
+    final, from_env, from_file = settings_loader.load_settings()
+    assert final["health_check_timeout"] == 9 and from_env and not from_file
+
+
+def test_widget_reload_fallback_is_the_documented_default():
+    import jobs
+    assert jobs.WIDGET_BACKGROUND_RELOAD_DEFAULT == 900

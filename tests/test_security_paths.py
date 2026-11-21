@@ -131,29 +131,25 @@ def test_edit_bad_icon_flashes_and_writes_nothing(app, admin_client, fetched):
     assert fetched == []
     assert _outside_files(app.config["IMAGE_DIR"]) == []
     with app.app_context():
-        assert ServiceEntry.query.get(eid).image_icon == "keep.svg"
+        assert db.session.get(ServiceEntry, eid).image_icon == "keep.svg"
 
 
-# --- restore / widget_config -------------------------------------------------
+# --- import / widget_config -------------------------------------------------
 
 
 @pytest.mark.parametrize("name", ["../x.yml", "sub/x.yml", "/etc/passwd", "notes.txt"])
-def test_restore_rejects_bad_filenames(admin_client, name):
-    resp = admin_client.post("/settings", data={
-        "action": "restore", "restore_source": "server", "server_backup_filename": name,
-    }, follow_redirects=True)
-    assert "Invalid server filename selected." in resp.get_data(as_text=True)
+def test_import_rejects_bad_filenames(admin_client, name):
+    resp = admin_client.post("/settings/import", data={"server_file": name}, follow_redirects=True)
+    assert "is not an export in the backup folder" in resp.get_data(as_text=True)
 
 
-def test_restore_accepts_plain_backup_name(app, admin_client):
+def test_import_accepts_plain_backup_name(app, admin_client):
     path = os.path.join(app.config["backup_path"], "sectest.yml")
     with open(path, "w") as f:
         f.write("[]\n")
     try:
-        resp = admin_client.post("/settings", data={
-            "action": "restore", "restore_source": "server", "server_backup_filename": "sectest.yml",
-        }, follow_redirects=True)
-        assert "Invalid server filename" not in resp.get_data(as_text=True)
+        resp = admin_client.post("/settings/import", data={"server_file": "sectest.yml"})
+        assert resp.status_code == 302 and "/settings/import/" in resp.headers["Location"]
     finally:
         os.remove(path)
 

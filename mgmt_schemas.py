@@ -13,7 +13,7 @@ are plain functions returning these dicts, and the OpenAPI generator
 `pydantic.TypeAdapter(SomeTypedDict).json_schema()`.
 """
 
-from typing import Annotated, Any, Generic, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -25,6 +25,7 @@ from pydantic import (
     StrictStr,
     StringConstraints,
     field_validator,
+    model_validator,
 )
 
 # pydantic refuses `typing.TypedDict` before Python 3.12, and CI runs 3.11.
@@ -262,6 +263,71 @@ class UpdateCheckSettingsPut(_Request):
     interval_hours: int | None = None   # whole hours, 1 or more
 
 
+class BackupJobPut(_Request):
+    """One daily backup job. Omitted fields keep their value."""
+
+    enabled: bool | None = None
+    time: str | None = None             # HH:MM, 00:00 to 23:59, container time
+    keep_days: int | None = None        # 1 to 365
+
+
+class BackupExportJobPut(BackupJobPut):
+    format: Literal["yaml", "json"] | None = None
+
+
+class BackupSettingsPut(_Request):
+    """Change the backup settings (same rules as Settings -> Backup & restore). Omitted
+    fields keep their value; at least one is required. A field pinned by an environment
+    variable is a 409 unless the value is unchanged."""
+
+    path: str | None = None             # absolute folder; created when missing
+    snapshot: BackupJobPut | None = None
+    export: BackupExportJobPut | None = None
+
+
+class BackupRunRequest(_Request):
+    kind: Literal["snapshot", "export"]
+
+
+class ImportSelectionRow(_Request):
+    """One row of an import selection (design 7.1). A row left out of `selection` is not applied;
+    `fields: null` means every field that is actionable in the chosen mode."""
+
+    apply: bool = True
+    fields: list[str] | None = None
+    target_id: int | None = None
+    create: bool = False
+    options: list[str] = []
+
+
+class ImportPlanRequest(_Request):
+    """Dry-run an import. Send the export as `document` (a v1 object) or `document_text` (YAML or
+    JSON text, also an old YAML backup); exactly one. `stream_map` maps a file stream id to a local
+    stream id (`null` skips it); a stream left out is matched by id. `selection` (optional) is the
+    set of rows you intend to apply, and `fingerprint` in the answer is the one for exactly those
+    rows; without it the answer carries the default (pre-ticked) selection."""
+
+    document: dict[str, Any] | None = None
+    document_text: str | None = None
+    stream_map: dict[str, str | None] | None = None
+    selection: dict[str, ImportSelectionRow] | None = None
+
+    @model_validator(mode="after")
+    def _one_document(self):
+        if (self.document is None) == (self.document_text is None):
+            raise ValueError("send exactly one of document and document_text")
+        return self
+
+
+class ImportApplyRequest(ImportPlanRequest):
+    """Apply the selected rows. `fingerprint` must be the one `POST /import/plan` returned for this
+    same `selection` and `stream_map`; if the rows changed since, nothing is written (409)."""
+
+    selection: dict[str, ImportSelectionRow]
+    mode: Literal["fill", "overwrite"] = "fill"
+    fingerprint: str
+
+
 class NotificationChannelCreate(_Request):
     """Add a notification channel. `config` holds the non-secret settings of the
     channel type (for `mqtt`: host, port, tls, tls_insecure, username, client_id,
@@ -402,7 +468,7 @@ class StreamStatusOut(TypedDict):
 class MetaOut(TypedDict):
     std_version: str                 # bare semver, e.g. "0.10.0"
     api_revision: int                # /api/v1 contract revision
-    features: list[str]              # register | management | notifications | streams
+    features: list[str]              # register | management | notifications | streams | backup
 
 
 class CheckDeleteOut(TypedDict):
@@ -693,6 +759,91 @@ class ExposureSettingsOut(TypedDict):
 
 class ExposureSettingsSavedOut(ExposureSettingsOut):
     recomputed: int                  # services whose URLs were recomputed
+
+
+class BackupSettingOut(TypedDict):
+    value: Any
+    origin: str                      # "env" | "ui" | "file" | "default"
+
+
+class BackupJobOut(TypedDict):
+    enabled: BackupSettingOut
+    time: BackupSettingOut           # HH:MM
+    keep_days: BackupSettingOut
+
+
+class BackupExportJobOut(BackupJobOut):
+    format: BackupSettingOut         # "yaml" | "json"
+
+
+class BackupRunInfoOut(TypedDict):
+    at: str                          # container local time, ISO 8601
+    ok: bool
+    file: str | None
+    size: int | None
+    error: str | None
+    trigger: str                     # "schedule" | "manual"
+
+
+class BackupSettingsOut(TypedDict):
+    path: BackupSettingOut
+    snapshot: BackupJobOut
+    export: BackupExportJobOut
+    last_runs: dict[str, BackupRunInfoOut]   # by kind; absent before the first run
+    next_runs: dict[str, str | None]         # by kind; null when disabled (container local time)
+
+
+class BackupSettingsSavedOut(BackupSettingsOut):
+    warnings: list[str]              # for example: the folder is outside /config
+
+
+class BackupFileOut(TypedDict):
+    name: str
+    kind: str                        # "snapshot" | "export"
+    size: int                        # bytes
+    modified: str                    # ISO 8601, UTC, with Z
+    manual: bool                     # made by Run now (the name carries a time)
+    legacy: bool                     # a pre-0.11 entry-list file
+
+
+class BackupListOut(TypedDict):
+    items: list[BackupFileOut]       # snapshots and exports, newest first
+
+
+class BackupRunOut(TypedDict):
+    kind: str
+    ok: bool
+    file: str | None
+    size: int | None
+    error: str | None
+    at: str
+    trigger: str
+
+
+class ImportPlanOut(TypedDict):
+    header: dict[str, Any]
+    stream_mapping: list[dict[str, Any]]
+    rows: list[dict[str, Any]]
+    counts: dict[str, Any]
+    warnings: list[str]
+    stream_map: dict[str, str | None]
+    default_selection: dict[str, dict[str, Any]]
+    fingerprint: str
+
+
+class ImportResultOut(TypedDict):
+    mode: str
+    counts: dict[str, int]
+    skipped: dict[str, int]
+    still_to_do: dict[str, Any]
+    notes: list[str]
+    applied: list[str]
+
+
+class ImportStaleOut(TypedDict):
+    error: str
+    details: None
+    plan: ImportPlanOut
 
 
 class UpdateCheckSettingsOut(TypedDict):

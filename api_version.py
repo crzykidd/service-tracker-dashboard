@@ -6,7 +6,7 @@ the release that ships it, plus one row in `API_REVISION_HISTORY` and in the PRD
 18.1 table. Breaking changes need `/api/v2`.
 """
 
-API_REVISION = 3
+API_REVISION = 4
 
 # (revision, STD release, what it adds): the PRD 18.1 table as data.
 API_REVISION_HISTORY = (
@@ -18,8 +18,9 @@ API_REVISION_HISTORY = (
     (3, "0.10.1",
      "stream observability: optional snapshot_interval_seconds on the snapshot PUT; stream staleness, "
      "rejections, expected interval and missing expiry; health summary streams; inventory.missing_since"),
+    (4, "0.11.0", "backup settings, backup list and run, export, import plan and apply"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later
 # prompt (inv-04) of the same release.
-FEATURES = ("register", "management", "notifications", "streams")
+FEATURES = ("register", "management", "notifications", "streams", "backup", "import")

@@ -27,6 +27,7 @@ window.stdPost = function (url, options) {
   function isInteracting() {
     if (currentOpenDrawer) return true;
     if (document.querySelector('.health-expand-row:not([hidden])')) return true;
+    if (document.querySelector('dialog.compact-details[open]')) return true;
     const changelogModal = document.getElementById('changelog-modal');
     const deletePopover  = document.getElementById('delete-popover');
     if (changelogModal && !changelogModal.classList.contains('hidden')) return true;
@@ -359,7 +360,7 @@ window.stdPost = function (url, options) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ block: true })
     } : {};
-    stdPost(`/api/v1/entries/${entryId}/delete`, opts)
+    stdPost(`/entries/${entryId}/delete`, opts)
       .then(r => r.ok ? onSuccess() : onError())
       .catch(onError);
   }

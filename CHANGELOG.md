@@ -7,6 +7,211 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-21
+
+### Added
+
+- **Compact view: an expand button opens an entry's details.** Each tile has a small
+  chevron button (it does not open the tile's URL). It opens a dialog with the same
+  details as the Dashboard and Tiled views: the entry facts beside the health history
+  and Check now, and Edit, Delete and Dozzle logs buttons. Escape or the close button
+  dismisses it, and auto-refresh pauses while it is open. The tile size, grid and
+  click-to-open are unchanged.
+
+- **Restore the database from a snapshot in Settings → Backup & restore.** Pick a
+  snapshot in the list (⋯ → **Restore…**) or upload a `.sqlite3` file. STD checks it
+  first (not damaged, an STD database, made by this or an older STD) and shows what it
+  found: the schema revision, the number of entries and whether it is from this
+  install. After you confirm, the restore is **staged**, not applied: a banner on
+  every Settings section says it will be applied on the next container restart, with
+  **Cancel restore**. On that restart the current database is kept as
+  `pre-restore-<timestamp>.sqlite3` in the backup folder (listed with the snapshots,
+  never deleted automatically), the snapshot takes its place, and the usual
+  migrations bring an older snapshot up to date. Everything since the snapshot is
+  lost, including API keys created since. A restore that cannot be applied never
+  stops STD from starting: the current database stays, and the Backup & restore page
+  shows the reason until you dismiss it.
+- **Backup settings are editable in Settings → Backup & restore.** Set the backup
+  folder, and for the **database snapshot** and the **export** separately: on or
+  off, the time of day, and how many days to keep. Each has a **Run now** button
+  and shows its next and last run. The page lists the backup files (newest first)
+  with **Download** and a ⋯ **Delete** that asks first. The folder is checked when
+  you save (it must be an absolute path and writable; a folder outside `/config`
+  gets a warning to make sure it is a mounted volume). A failed backup now shows a
+  warning on its card, and a red `!` on the Backup & restore link, until the next run
+  succeeds. A snapshot contains every secret, so the page says to keep it private.
+- **The README describes how to restore a database snapshot by hand.**
+- **Export your settings as a YAML or JSON file, with no secrets.** In Settings →
+  Backup & restore → Exports, **Download YAML** and **Download JSON** give you one
+  versioned file of everything you chose: groups, the URLs you typed, health checks,
+  lock, description, sort priority and Home Assistant picks, widgets, notification
+  channels, inventory streams with their filters and blocks, users, and the exposure,
+  update-check and backup-schedule settings. It never contains a password or key
+  (user passwords, API keys, widget API keys, the MQTT password): the file only says
+  that one was set, so you know what to enter again on a new install. Things STD
+  rebuilds on its own (container status, IPs, health history) and soft-deleted entries
+  are left out. YAML is the default; the daily export uses the format you pick in
+  Settings.
+- **Import an export, or an old YAML backup, with a preview first.** Settings →
+  Backup & restore → Import takes an upload (`.yml`, `.yaml`, `.json`, up to 10 MB)
+  or a file from the backup folder (also **Import…** in the ⋯ menu of an export).
+  You get a preview page and nothing changes until you apply. Streams in the file
+  are mapped to your local streams (same id by default; change or skip one). Every
+  record is matched against your database as it is now, by host and name or by
+  stream and key, and shown in groups (Docker, Manual, one per stream, Groups,
+  Notification channels, Streams & blocks, Users, Settings) as *missing settings*,
+  *differs*, *identical*, *deleted locally*, *ambiguous*, *not found*, *waiting*,
+  *conflict* or *invalid*. Open a row to see each field, in the file and here. The
+  default mode **fills only what is missing** and never overwrites a value you set;
+  **Also overwrite differences** lets you tick the differing fields you want, and asks
+  before it applies. A record that is *not found* can be **imported as new** (a
+  manual entry the notifier adopts when the container registers). Apply is one
+  transaction, and if something you ticked changed since the preview (a register, a
+  snapshot) nothing is written and you review again with your ticks kept. The summary
+  lists what changed and what to set up again. Import never deletes anything, never
+  writes a password or key, and can be run again once the notifier and sidecars have
+  reported in. Users are imported **without a password** and show "No password set,
+  cannot sign in" until you set one in Users.
+- **Import in the management API and MCP** (API revision 4): `POST
+  /api/v1/import/plan` (a dry run that returns every row, its status and fields,
+  and a fingerprint) and `POST /api/v1/import/apply` (applies the rows you selected,
+  or answers 409 with a fresh plan when they changed), and the MCP tools
+  `import_plan` and `import_apply`, which tell the agent to plan and show you the
+  result first.
+- **Management API routes and MCP tools for backups and export** (API revision 4):
+  `GET`/`PUT /api/v1/settings/backup`, `GET /api/v1/backups`, `POST /api/v1/backups/run`
+  (Run now, snapshot or export) and `GET /api/v1/export` (`?format=json` or `yaml`),
+  and the MCP tools `backup_settings`, `list_backups`, `export_config` and `run_backup`.
+  There is no download route for snapshots, because they contain every secret.
+
+### Changed
+
+- **An entry's details show the full Docker image**, for example
+  `ghcr.io/crzykidd/service-tracker-dashboard:dev`, not only the tag, on the Dashboard
+  row, the tile drawer and the Compact dialog.
+- **The dashboard's delete-entry call moved from `/api/v1/entries/<id>/delete` to
+  `/entries/<id>/delete`.** It is a browser (login) route, not part of the management
+  API, and was never in the OpenAPI spec. API clients keep using
+  `DELETE /api/v1/entries/<id>`.
+- **The main dashboard's expanded row shows the same details as the tile drawer.**
+  The chevron on a Dashboard row now opens two columns: on the left the host,
+  description, stack, internal and external URLs with their last check, Docker status,
+  stream and network facts, networks, ports, exposure observations and widget data; on
+  the right the health history. On narrow screens the columns stack.
+- **One daily backup job became two.** The database snapshot runs at 00:05 and the
+  export at 00:10 by default, each with its own keep days (old backups of each kind
+  are pruned separately). The export now writes the new settings export
+  (`<date>-std_export.yml`, or `.json` when you pick JSON) instead of the YAML list of
+  every entry. Older `-std_backup.yml` files are still listed, still age out with the
+  export keep days, and can be imported once import ships.
+- **`backup_path` and `backup_days_to_keep` in `settings.yml` are now initial
+  values.** Settings can change them, and a value saved there wins over the file.
+  An environment variable (`BACKUP_PATH`, `BACKUP_DAYS_TO_KEEP`) still wins over
+  both and shows read-only in Settings. `backup_days_to_keep` is the starting value
+  of both keep-days settings.
+
+- **Settings is regrouped and every section has its own link.** The sidebar now
+  has six labelled groups: General (About, Configuration), Dashboard (Groups,
+  Widgets), Sources (Docker, Streams), Integrations (Notifications, Home
+  Assistant), Access (Users, API keys, Audit log) and Data (Backup & restore,
+  Deleted). Each section opens from a link such as `/settings#streams`, a reload
+  stays on it, and a save returns to it. On a phone the sidebar is a menu. Old
+  `?section=info`, `exposure` and `api` links still work. **Info** is now **About**
+  plus **Configuration**, **Exposure** is now **Docker**, and the Home Assistant
+  entries and the Audit log are their own sections.
+- **Messages are quieter.** A success shows as a short message in the corner that
+  fades by itself. An error stays as a red banner in the section where it happened
+  until you dismiss it, and the confirm prompts (delete a user, revoke or rotate a
+  key, purge) use the app's own dialog instead of the browser's.
+- **Settings looks like Add and Edit.** Buttons, fields, cards and tables share one
+  style, every section has a one-line description with the long explanation behind
+  "Learn more", and the panels on the Edit page now have the same card background.
+
+- **Notification channels are cards.** Each channel shows a status dot, its broker
+  and base topic, and any last error, with **Edit**, an **Enabled** switch (turning
+  it off asks first, and cancelling flips it back) and a ⋯ menu: Send test, Scan for
+  orphans, Purge MQTT and Home Assistant, Delete. Adding or editing happens in a
+  dialog with Advanced options folded away and **Send test** beside Save, and an
+  error keeps the dialog open with what you typed.
+- **Settings → Home Assistant is a grouped picker.** Entries are grouped by source
+  (Docker, Manual, then each stream), collapsed, with a select-all checkbox per
+  group. Search opens the groups that match. The channels that publish discovery and
+  "N of M entries published" sit on top, and a Save bar appears only while you have
+  unsaved changes. The "no channel publishes discovery" warning now ignores disabled
+  channels, and the Home Assistant link shows an amber dot when entries are ticked
+  but no enabled channel publishes.
+- **Settings → Streams shows a card per stream.** Each card has a status dot, the
+  producer, last snapshot, interval and counts, an **Edit** button and a ⋯ menu
+  (Preview, Enable, Ignore, Purge MQTT/HA, Disable…, Delete…). The name, network
+  filters, staleness and missing-entry settings, and default checks are edited in
+  one dialog; a bad value keeps the dialog open with what you typed. **Preview**
+  opens in a dialog. Pending and stale streams are flagged at the top, with
+  **Preview**, **Enable** and **Ignore** right there. Blocked items and link offers
+  are compact lists, and the Streams link shows an amber count while link offers
+  wait for an answer.
+
+- **Users, API keys, groups and deleted items are cards.** Each has a ⋯ menu and
+  the forms moved into dialogs: **Add user** and **Set password**, **Create key**,
+  and **Edit group**. A mistake (a duplicate user or key name, a short password, a
+  duplicate group name) keeps the dialog open with what you typed; a password is
+  never sent back. Deleting a user, rotating or revoking a key and deleting a
+  deleted item for good ask first, as before. Revoked keys sit last, dimmed.
+- **A new or rotated API key is shown once in a dialog on the Settings page.** It
+  has a **Copy** button, and reloading the page neither shows the key again nor
+  creates another.
+- **Groups are edited in a dialog and saved together.** **Edit** (or **Add group**)
+  stages the change on the group's card; the Save bar at the bottom saves every
+  change at once, **Delete** marks a group "Will be deleted" until you save or
+  undo, and a rejected save reopens the dialog on the first group with a problem.
+- **Docker has a Save bar.** Layer directions and the per-host overrides (one
+  collapsible group per host) save with **Save & recompute URLs**, which appears
+  while you have unsaved changes. The always-on **Docker (register)** card moved
+  here from Streams.
+- **About, Configuration, Audit log and Widgets are restyled.** About has a Version
+  grid and an Update check card, Configuration shows where each value came from as
+  a coloured label, and widgets are cards whose ⋯ menu copies the widget's API key
+  (it is no longer shown in the page).
+
+### Fixed
+
+- **Exposed-only ports show in an entry's details.** A container that exposes ports
+  without publishing them showed an empty Ports row in the tile drawer; it now lists
+  them as "(exposed)".
+- **Values in `settings.yml` are converted to each setting's type**, the same way
+  environment values are, so a quoted number such as `health_check_timeout: "5"` works.
+  A value that cannot be converted logs a warning.
+- **An invalid `widget_background_reload` falls back to the documented 900 seconds**
+  (it was 300).
+- **Setting a user's password** no longer sends you back to Info and no longer shows
+  a too-short password or an unknown user as a green success bar; a too-short
+  password reopens the Set password dialog with the error, an unknown user shows
+  it in Users.
+- **Restore errors** (no file chosen, a bad or missing server file) return to
+  Backup & restore instead of Info.
+
+- **Send test message no longer hangs on a silent broker.** Against a broker that
+  does not answer, the Settings → Notifications test button used to block for about
+  13 seconds; the whole test now gives up after about 5 seconds with "No answer from
+  host:port within 4 seconds."
+- **Entry names can be 128 characters.** Inventory stream items were allowed names
+  up to 128 characters while entries stored 100 (SQLite let it through, the Add form
+  and the management API did not). The limit is now 128 everywhere an entry name is
+  entered or stored. A migration widens the column; existing entries are untouched.
+
+### Removed
+
+- **The hidden "reset password to changeme123" action is gone.** No page used it;
+  admins set a new password for a user from Settings → Users instead.
+- **Column sorting on the groups table.** Groups are listed as cards in priority
+  order (then by name), so there is nothing left to sort.
+- **The old Restore form and "Save backup to server" are gone.** Use export and
+  import instead. An old YAML backup (`*-std_backup.yml`, `backup.yml`, or one from
+  Download Full Backup) imports through the new flow, which shows what it would
+  change first and never overwrites a value you set unless you opt in. The new
+  import does not carry observed data (container status, IPs) or widget API keys, and
+  never removes a check. The daily job no longer writes the old list, but older files
+  in the folder stay listed and importable.
+
 ## [0.10.1] — 2026-11-20
 
 ### Added
@@ -1269,7 +1474,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.8.0...v0.9.0

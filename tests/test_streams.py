@@ -808,8 +808,8 @@ def test_ui_delete_with_block(app, put, op, admin_client):
     with app.app_context():
         a = stream_entries()["aa:bb:cc:00:00:01"].id
         b = stream_entries()["aa:bb:cc:00:00:02"].id
-    assert admin_client.post(f"/api/v1/entries/{a}/delete", json={"block": True}).get_json() == {"ok": True}
-    assert admin_client.post(f"/api/v1/entries/{b}/delete").get_json() == {"ok": True}
+    assert admin_client.post(f"/entries/{a}/delete", json={"block": True}).get_json() == {"ok": True}
+    assert admin_client.post(f"/entries/{b}/delete").get_json() == {"ok": True}
     with app.app_context():
         keys = {x.key: x.blocked_by for x in InventoryBlock.query.all()}
         assert keys == {"aa:bb:cc:00:00:01": "admin"}
@@ -1173,31 +1173,38 @@ def test_entry_api_carries_the_inventory_block(app, put, op, manual):
 # --- backups ---------------------------------------------------------------------------------------
 
 
-def test_a_stream_entry_restores_from_backup_as_manual(app, put, op, admin_client):
-    from tests.test_entry_sources import _restore
+def _import_legacy(admin_client, records, **kw):
+    import yaml
+
+    from tests.import_helpers import import_flow
+    return import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml", **kw)
+
+
+def test_a_stream_entry_from_an_old_backup_imports_as_manual(app, put, op, admin_client):
     enabled_stream(app, put, op)
     with app.app_context():
         record = stream_entries()["aa:bb:cc:00:00:01"].to_dict()
         assert record["source"] == "stream" and record["mac"] == "aa:bb:cc:00:00:01"
         assert "stream_id" not in record and "stream_key" not in record
     op("DELETE", "/streams/dhcp", query_string={"cleanup": "purge"})
-    assert _restore(admin_client, [record]).status_code == 302
+    assert _import_legacy(admin_client, [record]).status_code == 200
     with app.app_context():
         e = ServiceEntry.query.filter_by(container_name="shelly-pump").one()
-        assert (e.source, e.stream_id, e.stream_key, e.ip, e.mac, e.host) == \
-            ("manual", None, None, "10.0.40.21", "aa:bb:cc:00:00:01", None)
+        # No stream here owns the MAC any more: a manual entry. Observed facts (ip, mac) are not imported.
+        assert (e.source, e.stream_id, e.stream_key, e.ip, e.host) == ("manual", None, None, None, None)
 
 
-def test_restore_does_not_overwrite_a_live_stream_entry(app, put, op, admin_client):
-    from tests.test_entry_sources import _restore
+def test_import_does_not_overwrite_a_live_stream_entry(app, put, op, admin_client):
     enabled_stream(app, put, op)
     with app.app_context():
         record = stream_entries()["aa:bb:cc:00:00:01"].to_dict()
     record["ip"] = "1.2.3.4"
-    assert _restore(admin_client, [record]).status_code == 302
+    record["description"] = "from the backup"
+    assert _import_legacy(admin_client, [record], mode="overwrite").status_code == 200
     with app.app_context():
         e = stream_entries()["aa:bb:cc:00:00:01"]
-        assert e.ip == "10.0.40.21" and e.source == "stream"
+        # Matched by key, never re-created; the stream's own facts stay, an operator setting is filled.
+        assert e.ip == "10.0.40.21" and e.source == "stream" and e.description == "from the backup"
         assert ServiceEntry.query.filter_by(container_name="shelly-pump").count() == 1
 
 
@@ -1337,7 +1344,21 @@ def test_migration_on_an_empty_db_reaches_a_single_head(tmp_path):
     db_path = str(tmp_path / "empty.db")
     _alembic(tmp_path, db_path, "upgrade", "head")
     heads = _alembic(tmp_path, db_path, "heads").stdout
-    assert heads.count("(head)") == 1 and "c6f2a8d4e157" in heads
+    assert heads.count("(head)") == 1 and "d7a3e9b2c418" in heads
     tables, cols, _ = _schema(db_path)
     assert "inventory_stream" in tables and "name_source" in cols
     _alembic(tmp_path, db_path, "downgrade", "base")
+
+
+def test_128_char_item_name_is_stored_whole(app, put, op):
+    name = "n" * 128
+    body = snapshot(items=[{"key": "aa:bb:cc:00:00:99", "name": name, "ip": "10.0.40.99"}])
+    assert put(body).status_code == 202
+    assert op("POST", "/streams/dhcp/enable").status_code == 200
+    with app.app_context():
+        assert stream_entries()["aa:bb:cc:00:00:99"].container_name == name
+
+
+def test_129_char_item_name_is_rejected(put):
+    body = snapshot(items=[{"key": "aa:bb:cc:00:00:99", "name": "n" * 129}])
+    assert put(body).status_code == 400

@@ -25,10 +25,10 @@ def test_delete_hides_from_dashboard_and_health_query(app, admin_client):
         keep, gone = _make("keep"), _make("gone")
         gone_id = gone.id
         assert keep.id
-    resp = admin_client.post(f"/api/v1/entries/{gone_id}/delete")
+    resp = admin_client.post(f"/entries/{gone_id}/delete")
     assert resp.status_code == 200
     with app.app_context():
-        assert ServiceEntry.query.get(gone_id).deleted_at is not None
+        assert db.session.get(ServiceEntry, gone_id).deleted_at is not None
         # The query the dashboards and the health loop use.
         assert _names(ServiceEntry.active()) == ["keep"]
     body = admin_client.get("/tiled_dash").get_data(as_text=True)
@@ -45,7 +45,7 @@ def test_edit_page_delete_is_soft(app, admin_client):
     )
     assert resp.status_code == 302
     with app.app_context():
-        assert ServiceEntry.query.get(eid).deleted_at is not None
+        assert db.session.get(ServiceEntry, eid).deleted_at is not None
 
 
 def test_delete_keeps_widget_attached(app, admin_client):
@@ -55,10 +55,10 @@ def test_delete_keeps_widget_attached(app, admin_client):
         db.session.flush()
         e = _make("svc1", widget_id=w.id)
         eid, wid = e.id, w.id
-    admin_client.post(f"/api/v1/entries/{eid}/delete")
+    admin_client.post(f"/entries/{eid}/delete")
     with app.app_context():
-        assert Widget.query.get(wid) is not None
-        assert ServiceEntry.query.get(eid).widget_id == wid
+        assert db.session.get(Widget, wid) is not None
+        assert db.session.get(ServiceEntry, eid).widget_id == wid
 
 
 def test_restore_brings_it_back(app, admin_client):
@@ -79,7 +79,7 @@ def test_delete_permanently_removes_row(app, admin_client):
         eid = e.id
     admin_client.post(f"/settings/deleted/{eid}/delete")
     with app.app_context():
-        assert ServiceEntry.query.get(eid) is None
+        assert db.session.get(ServiceEntry, eid) is None
 
 
 def test_permanent_delete_refuses_active_entry(app, admin_client):
@@ -87,7 +87,7 @@ def test_permanent_delete_refuses_active_entry(app, admin_client):
         eid = _make("svc1").id
     assert admin_client.post(f"/settings/deleted/{eid}/delete").status_code == 404
     with app.app_context():
-        assert ServiceEntry.query.get(eid) is not None
+        assert db.session.get(ServiceEntry, eid) is not None
 
 
 def test_purge_removes_expired_keeps_recent(app):
@@ -144,7 +144,7 @@ def test_hard_delete_detaches_widget(app):
         wid = w.id
         hard_delete_entry(e)
         db.session.commit()
-        assert Widget.query.get(wid) is not None
+        assert db.session.get(Widget, wid) is not None
         assert WidgetValue.query.filter_by(widget_id=wid).count() == 1
         assert [x.id for x in Widget.detached().all()] == [wid]
 
@@ -173,7 +173,7 @@ def test_attach_makes_widget_active_again(app, admin_client):
     resp = admin_client.post(f"/settings/widgets/{wid}/attach", data={"entry_id": eid})
     assert resp.status_code == 302
     with app.app_context():
-        assert ServiceEntry.query.get(eid).widget_id == wid
+        assert db.session.get(ServiceEntry, eid).widget_id == wid
         assert Widget.detached().count() == 0
 
 
@@ -185,7 +185,7 @@ def test_attach_rejects_entry_with_widget(app, admin_client):
         db.session.commit()
     admin_client.post(f"/settings/widgets/{wid}/attach", data={"entry_id": eid})
     with app.app_context():
-        assert ServiceEntry.query.get(eid).widget_id != wid
+        assert db.session.get(ServiceEntry, eid).widget_id != wid
         assert Widget.detached().count() == 1
 
 
@@ -195,7 +195,7 @@ def test_delete_detached_widget_removes_values(app, admin_client):
         db.session.commit()
     assert admin_client.post(f"/settings/widgets/{wid}/delete").status_code == 302
     with app.app_context():
-        assert Widget.query.get(wid) is None
+        assert db.session.get(Widget, wid) is None
         assert WidgetValue.query.filter_by(widget_id=wid).count() == 0
 
 
@@ -207,7 +207,7 @@ def test_delete_widget_refuses_attached(app, admin_client):
         db.session.commit()
     assert admin_client.post(f"/settings/widgets/{wid}/delete").status_code == 404
     with app.app_context():
-        assert Widget.query.get(wid) is not None
+        assert db.session.get(Widget, wid) is not None
 
 
 def test_register_resurrects_with_curated_state(app, register):
@@ -233,8 +233,8 @@ def test_register_prefers_active_row_over_deleted(app, register):
         did, aid = deleted.id, active.id
     assert register(docker_status="running").status_code == 200
     with app.app_context():
-        assert ServiceEntry.query.get(aid).docker_status == "running"
-        assert ServiceEntry.query.get(did).deleted_at is not None
+        assert db.session.get(ServiceEntry, aid).docker_status == "running"
+        assert db.session.get(ServiceEntry, did).deleted_at is not None
 
 
 def test_group_count_and_delete_ignore_deleted_entries(app, admin_client):
@@ -244,39 +244,50 @@ def test_group_count_and_delete_ignore_deleted_entries(app, admin_client):
         db.session.flush()
         _make("svc1", group_id=g.id, deleted_at=datetime.now())
         gid = g.id
-        assert Group.query.get(gid).services_count == 0
+        assert db.session.get(Group, gid).services_count == 0
     admin_client.post("/settings/groups/save", data={
         f"group-{gid}-name": "G", f"group-{gid}-icon": "", f"group-{gid}-priority": "",
         f"group-{gid}-delete": "1"})
     with app.app_context():
-        assert Group.query.get(gid) is None
+        assert db.session.get(Group, gid) is None
 
 
-def test_backup_round_trips_deleted_at(app, admin_client):
+def test_old_backup_with_deleted_at_imports_active_only_when_ticked(app, admin_client):
+    # The old Restore round-tripped deleted_at. Import never recreates a trashed entry on its own:
+    # a record the old backup carried as deleted is off by default, and ticking it makes it active.
+    import io
+
+    from tests.import_helpers import Page, import_flow, token_of
     stamp = datetime(2026, 1, 2, 3, 4, 5)
     with app.app_context():
         _make("svc1", deleted_at=stamp)
         _make("svc2")
-    resp = admin_client.post("/settings", data={"action": "backup",
-                                                "backup_operation": "download_all"})
-    assert resp.status_code == 200
-    records = yaml.safe_load(resp.get_data(as_text=True))
-    by_name = {r["container_name"]: r for r in records}
-    assert by_name["svc1"]["deleted_at"] == "2026-01-02 03:04:05"
-    assert by_name["svc2"]["deleted_at"] is None
-
-    with app.app_context():
+        records = [e.to_dict() for e in ServiceEntry.query.order_by(ServiceEntry.container_name)]
+        assert records[0]["deleted_at"] == "2026-01-02 03:04:05" and records[1]["deleted_at"] is None
         ServiceEntry.query.delete()
         db.session.commit()
-    # v0.6.8-style record for svc2: no deleted_at key at all.
-    del by_name["svc2"]["deleted_at"]
-    payload = yaml.dump([by_name["svc1"], by_name["svc2"]])
-    import io
-    resp = admin_client.post("/settings", data={
-        "action": "restore", "restore_source": "upload", "restore_scope": "all",
-        "restore_file": (io.BytesIO(payload.encode()), "b.yaml"),
-    }, content_type="multipart/form-data")
-    assert resp.status_code == 302
+    payload = yaml.dump(records).encode()
+    resp = admin_client.post("/settings/import", data={"import_file": (io.BytesIO(payload), "b.yaml")},
+                             content_type="multipart/form-data")
+    page = Page(admin_client.get(f"/settings/import/{token_of(resp)}").get_data(as_text=True))
+    assert "Deleted in the file" in page.html
+    import_flow(admin_client, payload, name="b.yaml")
+    with app.app_context():
+        assert {e.container_name: e.deleted_at for e in ServiceEntry.query.all()} == {"svc1": None, "svc2": None}
+    # A local entry that is in the trash: the record restores it only with the option ticked.
+    with app.app_context():
+        ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at = stamp
+        db.session.commit()
+    import_flow(admin_client, payload, name="b.yaml")
     with app.app_context():
         assert ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at == stamp
-        assert ServiceEntry.query.filter_by(container_name="svc2").one().deleted_at is None
+    import_flow(admin_client, payload, name="b.yaml", restore=True)
+    with app.app_context():
+        assert ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at is None
+
+
+def test_old_api_prefixed_delete_path_is_a_json_404(client):
+    """The UI delete moved off /api/v1; an API client hitting the old path gets the normal JSON 404."""
+    resp = client.post("/api/v1/entries/1/delete", headers={"Accept": "application/json"})
+    assert resp.status_code == 404
+    assert resp.get_json()["error"]

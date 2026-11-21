@@ -693,7 +693,7 @@ MCP additions explicitly.
   update it, along with the register-adoption docstring in `routes_api.py`.
 - Notifier labels for profile and tags are register contract changes: STD ships first
   (CLAUDE.md ordering rule). The draft already said this.
-- **New cross-repo pairing.** CLAUDE.md "Cross-Repo Coordination" and PRD §20 describe one
+- **New cross-repo pairing.** CLAUDE.md "Cross-Repo Coordination" and PRD §21 describe one
   producer (the notifier). The slice 3a PRD section must add the stream contract and the
   Technitium sidecar repo, with the same ordering rule and a safe-degradation note (an older
   sidecar against a newer STD keeps working; `attributes` absorbs new facts).

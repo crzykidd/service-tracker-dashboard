@@ -474,7 +474,7 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
         const redirectUrl   = this.dataset.redirect || '/';
         if (typeof showDeletePopover === 'function') {
           showDeletePopover(this, containerName, (block) => {
-            stdPost(`/api/v1/entries/${entryId}/delete`, block ? {
+            stdPost(`/entries/${entryId}/delete`, block ? {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ block: true })
             } : {})

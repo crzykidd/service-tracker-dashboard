@@ -1,0 +1,76 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot, card_row, kebab, menu_form_item, empty_state with context %}
+<section id="section-deleted" class="settings-section{% if (initial_section or settings_default_section) != 'deleted' %} hidden{% endif %}">
+  {% call section_header('Deleted', 'Deleted entries and detached widgets, kept for a while before they are removed.') %}
+    <p>
+      Deleted services are kept for
+      {% if deleted_retention_days == 0 %}
+        no time (<code>deleted_retention_days</code> is 0): they are removed at the next nightly purge (00:25).
+      {% else %}
+        {{ deleted_retention_days }} day{{ '' if deleted_retention_days == 1 else 's' }} (<code>deleted_retention_days</code>), then removed permanently by a nightly job (00:25).
+      {% endif %}
+      Restoring brings back the entry with its group, priority, and widget intact.
+    </p>
+  {% endcall %}
+  {{ flash_slot('deleted') }}
+
+  {% if deleted_rows %}
+    <div class="settings-card settings-card-list" id="deleted-list">
+      {% for row in deleted_rows %}
+      {% call(part) card_row(attrs='data-deleted-id="' ~ row.entry.id ~ '"') %}
+        {% if part == 'main' %}
+          <div class="settings-card-title">{{ row.entry.container_name }}{% if row.entry.host %} <span class="settings-hint-inline">{{ row.entry.host }}</span>{% endif %}</div>
+          <div class="settings-card-summary">Deleted {{ row.entry.deleted_at.strftime('%Y-%m-%d %H:%M') }} &middot;
+            {% if row.days_left == 0 %}purged at the next nightly run{% else %}purged in {{ row.days_left }} day{{ '' if row.days_left == 1 else 's' }}{% endif %}</div>
+        {% else %}
+          <form method="POST" action="{{ url_for('dashboard.restore_deleted_entry', id=row.entry.id) }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-secondary btn-sm">Restore</button>
+          </form>
+          {% call kebab('deleted-menu-' ~ row.entry.id, row.entry.container_name) %}
+            {{ menu_form_item(url_for('dashboard.purge_deleted_entry', id=row.entry.id), 'Delete permanently', danger=True,
+                confirm='Permanently delete this entry? This cannot be undone.') }}
+          {% endcall %}
+        {% endif %}
+      {% endcall %}
+      {% endfor %}
+    </div>
+  {% else %}
+    {{ empty_state('No deleted entries.') }}
+  {% endif %}
+
+  <h3 class="settings-sub">Detached widgets</h3>
+  <p class="settings-subtitle-note">
+    When a service is permanently deleted its widget settings and history are kept here.
+    Detached widgets are not refreshed. Attach one to a service that has no widget, or delete it.
+  </p>
+  {% if detached_widgets %}
+    <div class="settings-card settings-card-list" id="detached-list">
+      {% for row in detached_widgets %}
+      {% call(part) card_row(attrs='data-detached-id="' ~ row.widget.id ~ '"') %}
+        {% if part == 'main' %}
+          <div class="settings-card-title">{{ row.widget.widget_name }}</div>
+          <div class="settings-card-summary" title="{{ row.widget.widget_url or '' }}">{{ row.widget.widget_url or '' }}</div>
+          <div class="settings-card-second">Last value {{ row.last_value.strftime('%Y-%m-%d %H:%M') if row.last_value else 'never' }}</div>
+        {% else %}
+          <form method="POST" action="{{ url_for('dashboard.attach_detached_widget', id=row.widget.id) }}" class="flex gap-2 items-center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="entry_id" required class="input-clean" style="width:14rem" aria-label="Attach {{ row.widget.widget_name }} to a service">
+              <option value="">Attach to service...</option>
+              {% for e in attachable_entries %}
+              <option value="{{ e.id }}">{{ e.container_name }} ({{ e.host or "no host" }})</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn-secondary btn-sm">Attach</button>
+          </form>
+          {% call kebab('detached-menu-' ~ row.widget.id, row.widget.widget_name) %}
+            {{ menu_form_item(url_for('dashboard.delete_detached_widget', id=row.widget.id), 'Delete', danger=True,
+                confirm='Delete this widget and its stored values? This cannot be undone.') }}
+          {% endcall %}
+        {% endif %}
+      {% endcall %}
+      {% endfor %}
+    </div>
+  {% else %}
+    {{ empty_state('No detached widgets.') }}
+  {% endif %}
+</section>

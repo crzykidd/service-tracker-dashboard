@@ -320,7 +320,8 @@ def test_settings_create_show_once_and_revoke(app, admin_client):
 @pytest.mark.parametrize("name,scope", [("", "read"), ("x" * 65, "read"), ("ok", "admin"), ("ok", "")])
 def test_settings_create_rejects_bad_input(app, admin_client, name, scope):
     r = admin_client.post("/settings/api-keys", data={"name": name, "scope": scope})
-    assert r.status_code == 302
+    assert r.status_code == 400                      # re-rendered with the dialog open
+    assert 'data-open-modal="api-key-modal"' in r.get_data(as_text=True)
     with app.app_context():
         assert ApiKey.query.count() == 0
 
@@ -503,7 +504,9 @@ def test_migration_rotate_and_name_reuse_up_down_up(tmp_path):
 def test_name_reuse_after_revoke_and_active_clash_rejected(app, admin_client):
     _key(app, "dup", "read")
     r = admin_client.post("/settings/api-keys", data={"name": "dup", "scope": "read"})
-    assert r.status_code == 302
+    assert r.status_code == 400
+    html = r.get_data(as_text=True)
+    assert 'data-open-modal="api-key-modal"' in html and 'value="dup"' in html   # name kept
     with app.app_context():
         assert ApiKey.query.count() == 1
         api_keys.revoke_key(ApiKey.query.one())
@@ -513,7 +516,7 @@ def test_name_reuse_after_revoke_and_active_clash_rejected(app, admin_client):
         assert ApiKey.query.filter_by(name="dup").count() == 2
         assert ApiKey.query.filter_by(name="dup", revoked_at=None).count() == 1
     r = admin_client.post("/settings/api-keys", data={"name": "dup", "scope": "write"})
-    assert r.status_code == 302
+    assert r.status_code == 400
     with app.app_context():
         assert ApiKey.query.filter_by(name="dup").count() == 2
 
@@ -591,8 +594,7 @@ def test_rotate_route_shows_new_key_once_with_no_store(app, admin_client, client
         assert new_full not in str(dict(sess))
     page = admin_client.get("/settings?section=api").get_data(as_text=True)
     assert new_full not in page and new_full.split("_", 2)[2] not in page
-    assert "Rotated" in page
-    assert re.search(r"<td[^>]*>\d{4}-\d\d-\d\d \d\d:\d\d UTC</td>", page)  # the Rotated cell holds a date
+    assert re.search(r"rotated \d{4}-\d\d-\d\d \d\d:\d\d UTC", page)  # the card summary holds the date
     # The management API: old key 401, new key 200.
     assert client.get("/api/v1/whoami", headers=_bearer(old_full)).status_code == 401
     assert client.get("/api/v1/whoami", headers=_bearer(new_full)).status_code == 200
@@ -602,10 +604,10 @@ def test_settings_list_has_rotated_column_and_buttons(app, admin_client):
     kid, _ = _key(app, "listed", "read")
     rid, _ = _key(app, "dead", "read")
     page = admin_client.get("/settings?section=api").get_data(as_text=True)
-    assert "<th class=\"px-4 py-2\">Rotated</th>" in page
+    assert 'id="api-key-list"' in page
     assert f"/settings/api-keys/{kid}/rotate" in page
     assert "The current key stops working immediately" in page and "listed" in page
-    assert "<td class=\"px-4 py-2\">—</td>" in page  # never rotated
+    assert "rotated —" in page  # never rotated
     admin_client.post(f"/settings/api-keys/{kid}/rotate")
     with app.app_context():
         stamp = db.session.get(ApiKey, kid).rotated_at.strftime("%Y-%m-%d %H:%M")

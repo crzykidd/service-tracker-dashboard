@@ -23,9 +23,9 @@ from datetime import datetime, timedelta
 
 import markdown as _md
 import requests
-import yaml
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
@@ -44,12 +44,16 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
 import api_keys
+import backups
 import check_form
 import entry_rules
+import export_format
 import health_history
 import jobs
 import mgmt_serializers
 import notify
+import restore_staging
+import settings_sections
 import settings_store
 import streams
 import synthesizer
@@ -57,22 +61,12 @@ import version_check
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
-    CHECK_KIND_CONTAINER,
-    CHECK_KIND_SERVICE,
-    CHECK_MODES,
-    CHECK_TYPE_DNS,
-    CHECK_TYPE_HTTP,
-    CHECK_TYPES,
     NAME_SOURCE_UI_EDIT,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
-    SOURCE_STREAM,
-    URL_CHECK_KINDS,
-    VALID_SOURCES,
     ApiAudit,
     ApiKey,
     Group,
-    HealthCheck,
     InventoryBlock,
     InventoryStream,
     NotificationChannel,
@@ -82,13 +76,11 @@ from models import (
     Widget,
     WidgetValue,
     check_counts,
-    ensure_container_check,
     ensure_url_checks,
     hard_delete_entry,
 )
 from notify_purge import PurgeError
 from routes_auth import is_admin_required
-from settings_loader import CONFIG_DIR
 from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
@@ -177,19 +169,6 @@ def _restore_hint():
         f"It can be restored from Settings → Deleted for {days} "
         f"day{'' if days == 1 else 's'}."
     )
-
-
-def _parse_backup_datetime(value):
-    """Parse a backup timestamp ('%Y-%m-%d %H:%M:%S' or a YAML datetime)."""
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S')
-    except ValueError:
-        logger.warning(f"Ignoring unparseable deleted_at in backup: {value!r}")
-        return None
 
 
 def _detached_widget_rows():
@@ -423,274 +402,88 @@ def _audit_change_lines(changes):
     return lines
 
 
-@dashboard_bp.route('/settings', methods=['GET', 'POST'])
+@dashboard_bp.route('/settings', methods=['GET'])
 @login_required
 @is_admin_required
 def settings():
-    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
-    BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
-    os.makedirs(BACKUP_DIR, exist_ok=True)
-
-    if request.method == 'POST':
-        action = request.form.get('action')
-
-        if action == 'backup':
-            backup_operation = request.form.get('backup_operation')
-
-            # Backup is always for all entries now, soft-deleted included
-            # (to_dict carries deleted_at so a restore round-trips it).
-            entries = ServiceEntry.query.all()
-            data = []
-            for e in entries:
-                entry_data = e.to_dict()
-
-                # Add authoritative group_name from the relationship if group is linked
-                if e.group:
-                    entry_data['group_name'] = e.group.group_name
-                else:
-                    entry_data['group_name'] = None  # fallback for safety
-
-                data.append(entry_data)
-
-
-            try:
-                with open(BACKUP_PATH, 'w') as f:
-                    yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-                logger.info(f"📦 Default YAML backup updated at {BACKUP_PATH} (all entries)")
-
-                if backup_operation == 'save_on_server':
-                    # If the goal was just to save on the server, we're done.
-                    flash(f"✅ Backup saved to server: {BACKUP_PATH}", "success")
-                    return redirect(url_for('dashboard.settings', section='backup'))
-
-                elif backup_operation == 'download_all':
-                    # If the goal is to download, send the file that was just written.
-                    logger.info(f"📦 Preparing YAML backup for download from {BACKUP_PATH} (all entries)")
-                    return send_file(
-                        BACKUP_PATH,
-                        mimetype='text/yaml',
-                        as_attachment=True,
-                        download_name=f'service_backup_all_{datetime.now().strftime("%Y%m%d_%H%M%S")}.yaml' # Added timestamp to download
-                    )
-                else:
-                    flash("Unknown backup operation.", "danger")
-                    return redirect(url_for('dashboard.settings', section='backup'))
-
-            except Exception as e:
-                logger.exception("❌ Backup operation failed")
-                flash(f"Backup operation failed: {str(e)}", "danger")
-                return redirect(url_for('dashboard.settings'))
-
-        elif action == 'restore':
-            restore_source = request.form.get('restore_source')
-            restore_scope = request.form.get('restore_scope', 'all') # Defaults to 'all'
-
-            records = None
-            source_description = "unknown source"
-
-            try:
-                if restore_source == 'upload':
-                    file = request.files.get('restore_file')
-                    if file and file.filename:
-                        content = file.read().decode('utf-8')
-                        records = yaml.safe_load(content)
-                        source_description = f"uploaded file '{file.filename}'"
-                    else:
-                        flash("No file uploaded for restore.", "warning")
-                        return redirect(url_for('dashboard.settings'))
-
-                elif restore_source == 'server':
-                    selected_filename = request.form.get('server_backup_filename')
-                    if selected_filename:
-                        # Confine to BACKUP_DIR: a bare filename with a backup
-                        # extension whose resolved path stays inside the folder.
-                        safe_name = os.path.basename(selected_filename)
-                        backup_root = os.path.realpath(BACKUP_DIR)
-                        file_path = os.path.realpath(os.path.join(backup_root, safe_name))
-                        if (
-                            safe_name != selected_filename
-                            or not safe_name.endswith(('.yaml', '.yml'))
-                            or not file_path.startswith(backup_root + os.sep)
-                        ):
-                            flash("Invalid server filename selected.", "danger")
-                            return redirect(url_for('dashboard.settings'))
-
-                        if os.path.exists(file_path) and os.path.isfile(file_path):
-                            with open(file_path, 'r') as f:
-                                records = yaml.safe_load(f)
-                            source_description = f"server file '{selected_filename}'"
-                        else:
-                            flash(f"Selected server backup file '{selected_filename}' not found or is invalid.", "danger")
-                            return redirect(url_for('dashboard.settings'))
-                    else:
-                        flash("No server backup file selected.", "warning")
-                        return redirect(url_for('dashboard.settings'))
-                else:
-                    flash("Invalid restore source selected.", "danger")
-                    return redirect(url_for('dashboard.settings'))
-
-                if records is None:
-                    if not flash_is_present(request): # Avoid double flashing if already flashed above
-                         flash("Could not load records for restore.", "danger")
-                    return redirect(url_for('dashboard.settings'))
-
-                restored_count = 0
-                skipped_count = 0
-
-                for item in records:
-                    # Source: backups from before v0.7.0 have none; use the
-                    # migration's backfill rule (never registered -> manual).
-                    item_source = item.get('source')
-                    if item_source is None:
-                        item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
-                    elif item_source not in VALID_SOURCES or item_source == SOURCE_STREAM:
-                        # Unknown (e.g. a source from a newer STD): operator-made. A stream
-                        # entry has no stream to rejoin on restore, so it comes back manual.
-                        item_source = SOURCE_MANUAL
-                    item_host = (item.get('host') or '').strip() or None
-
-                    # Host is optional for manual entries only.
-                    if not item.get('container_name') or (item_host is None and item_source != SOURCE_MANUAL):
-                        logger.warning(f"⛔ Skipping entry with missing host/container_name: {item}")
-                        skipped_count +=1
-                        continue
-
-                    item_is_static_from_backup = item.get('is_static', False)
-
-                    # Apply restore_scope: if scope is 'static', skip non-static items from backup
-                    if restore_scope == 'static' and not item_is_static_from_backup:
-                        skipped_count +=1
-                        continue
-
-                    # Handle embedded widget data if present
-                    # --- 1. Restore or create the widget ---
-                    widget_data = item.get('widget')
-                    widget_obj = None
-
-                    if widget_data:
-                        widget_obj = Widget.query.filter_by(
-                            widget_name=widget_data.get('widget_name'),
-                            widget_url=widget_data.get('widget_url')
-                        ).first()
-
-                        if not widget_obj:
-                            widget_obj = Widget(
-                                widget_name=widget_data.get('widget_name'),
-                                widget_url=widget_data.get('widget_url'),
-                                widget_fields=widget_data.get('widget_fields') or [],
-                                widget_api_key=widget_data.get('widget_api_key'),
-                            )
-                            db.session.add(widget_obj)
-                        else:
-                            widget_obj.widget_fields = widget_data.get('widget_fields') or []
-                            widget_obj.widget_api_key = widget_data.get('widget_api_key')
-
-                        db.session.flush()  # ensure widget_obj.id is available
-
-
-
-                    entry = ServiceEntry.query.filter_by(
-                        container_name=item['container_name'],
-                        host=item_host
-                    ).first()
-
-                    group_name = item.get('group_name')
-                    group_obj = None
-
-                    if group_name:
-                        group_obj = Group.query.filter_by(group_name=group_name).first()
-                        if not group_obj:
-                            group_obj = Group(group_name=group_name)
-                            db.session.add(group_obj)
-                            db.session.flush()
-
-                    # Fetch or create entry
-                    entry = ServiceEntry.query.filter_by(
-                        container_name=item['container_name'],
-                        host=item_host
-                    ).first()
-
-                    if not entry:
-                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
-                        db.session.add(entry)
-                    elif entry.stream_id is not None:
-                        # A live stream entry is owned by its stream; a backup never overwrites it.
-                        skipped_count += 1
-                        continue
-
-                    # Assign group_id only now (after entry exists)
-                    entry.group_id = group_obj.id if group_obj else None
-
-
-                    if entry: # Entry exists in DB
-                        # Rule: Protect existing static entries in DB from being overwritten by non-static items
-                        # during a 'restore all' operation.
-                        if entry.is_static and restore_scope == 'all' and not item_is_static_from_backup:
-                            logger.info(f"ℹ️ Skipping update for DB static entry '{entry.container_name}' "
-                                        f"by non-static item from backup during 'all' scope restore.")
-                            skipped_count +=1
-                            continue
-                        # Otherwise (entry is not static, or item from backup is static, or scope is 'static'), proceed to update.
-                    else: # New entry, create it
-                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
-                        db.session.add(entry)
-                    if widget_obj:
-                        entry.widget_id = widget_obj.id
-
-                    # Apply fields from backup item to DB entry
-                    for field, value in item.items():
-                        # Ensure 'is_static' is handled correctly based on the item from backup
-                        if field == 'is_static':
-                            if hasattr(entry, 'is_static'):
-                                entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls', 'host', 'source', 'checks', 'internal_health_check_enabled', 'external_health_check_enabled']:
-                            setattr(entry, field, value)
-
-                    entry.source = item_source
-                    entry.host = item_host
-
-                    # deleted_at round-trips; absent (v0.6.8 backups) means active.
-                    entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
-
-                    # Health checks (v0.7.0): a new-format backup carries `checks`;
-                    # an older one is mapped from the legacy fields.
-                    _restore_checks(entry, item)
-
-                    # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
-                    # (especially if item_is_static_from_backup was derived from .get with a default)
-                    if not entry.id and hasattr(entry, 'is_static'): # if it's a new entry being added
-                         if 'is_static' not in item: # if 'is_static' was not explicitly in the backup item dict
-                            entry.is_static = item_is_static_from_backup # ensure it's set from .get default
-
-                    entry.last_updated = datetime.now()
-                    restored_count += 1
-
-                db.session.commit()
-                flash_message = f"✅ Restored {restored_count} entries"
-                if restore_scope == 'static':
-                    flash_message += " (static entries only)"
-                flash_message += f" from {source_description}."
-                if skipped_count > 0:
-                    flash_message += f" Skipped {skipped_count} items."
-                flash(flash_message, "success")
-                logger.info(f"♻️ {flash_message}")
-
-            except Exception as e:
-                db.session.rollback() # Rollback in case of error during DB operations
-                logger.exception("❌ Restore failed")
-                flash(f"Restore failed: {str(e)}", "danger")
-
-            return redirect(url_for('dashboard.settings', section='backup'))
-
+    # The old backup / restore branches (a POST with `action=backup|restore`) were removed
+    # in 0.11.0: export and import (routes_import.py) replace them.
     return _render_settings()
 
 
-def _render_settings(group_form=None, status=200, notification_form=None):
-    """Render the Settings page. `group_form` (a failed Groups save) is shown in
-    place of the stored groups, with its per-row errors, on the Groups tab."""
-    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
+def _settings_redirect(section, **params):
+    """Redirect to a Settings section (`?section=<slug>`). Every redirect to Settings
+    goes through here so the page lands on, and places its flashes in, that section."""
+    return redirect(url_for('dashboard.settings', section=section, **params))
+
+
+def _initial_section(section=None):
+    """Which Settings section the server says to open (design 5.2): an explicit
+    `section` (a validation re-render) > `?section=` (slug or legacy alias) >
+    `streams` when `?preview=` is present > `audit-log` when `?audit_key=` is present > ''."""
+    explicit = settings_sections.resolve(section)
+    if explicit:
+        return explicit
+    from_query = settings_sections.resolve(request.args.get('section'))
+    if from_query:
+        return from_query
+    if request.args.get('preview'):
+        return 'streams'
+    if request.args.get('audit_key'):
+        return 'audit-log'
+    return ''
+
+
+def _ha_context(channels):
+    """Template variables for Settings -> Home Assistant (design 9.7): the entries grouped
+    by source (Docker, Manual, then one group per stream by display name; empty groups
+    omitted; rows sorted by name then host), the channels that publish discovery and the
+    saved published count. A disabled channel publishes nothing, so `ha_discovery_live`
+    counts enabled ones only."""
+    entries = ServiceEntry.active().options(
+        joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).all()
+    entries.sort(key=lambda e: ((e.container_name or '').lower(), (e.host or '').lower()))
+    docker, manual, streams = [], [], {}
+    for e in entries:
+        if e.is_stream:
+            sid = e.stream.stream_id if e.stream else (e.stream_id or '')
+            label = e.stream.display_name if e.stream else 'Stream'
+            streams.setdefault(sid, {'key': f'stream:{sid}', 'label': label, 'entries': []})['entries'].append(e)
+        elif e.is_docker:
+            docker.append(e)
+        else:
+            manual.append(e)
+    groups = [{'key': 'docker', 'label': 'Docker', 'entries': docker},
+              {'key': 'manual', 'label': 'Manual', 'entries': manual}]
+    groups += sorted(streams.values(), key=lambda g: g['label'].lower())
+    groups = [g for g in groups if g['entries']]
+    ha_channels = [{'name': c['name'], 'enabled': c['enabled'],
+                    'prefix': c['config'].get('ha_prefix') or 'homeassistant',
+                    'device_prefix': c['config'].get('ha_device_prefix') or 'STD'}
+                   for c in channels if c['config'].get('ha_discovery')]
+    published = sum(1 for e in entries if e.ha_publish)
+    live = any(c['enabled'] for c in ha_channels)
+    return {'ha_groups': groups, 'ha_channels': ha_channels, 'ha_published': published,
+            'ha_total': len(entries), 'ha_discovery_live': live,
+            'ha_needs_channel': bool(published) and not live}
+
+
+def _render_settings(*, section=None, open_modal=None, forms=None, status=200, **extra):
+    """Render the Settings page. `forms['group']` (a failed Groups save) is shown in
+    place of the stored groups, with its per-row errors, on the Groups section;
+    `forms['notification']` keeps a failed channel save's typed values;
+    `forms['stream:<slug>:<block>']` those of a failed Edit stream block. `section` and
+    `open_modal` say where a validation re-render lands (design 5.2)."""
+    forms = forms or {}
+    group_form = forms.get('group')
+    notification_form = forms.get('notification')
+    backup_form = forms.get('backup')
+    BACKUP_DIR = backups.backup_dir(current_app)
     image_dir = current_app.config['IMAGE_DIR']
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+    except OSError:
+        logger.warning("Could not create the backup folder %s", BACKUP_DIR)
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
 
     if group_form:
@@ -700,26 +493,22 @@ def _render_settings(group_form=None, status=200, notification_form=None):
                        'priority': '' if g.group_sort_priority is None else g.group_sort_priority,
                        'services_count': g.services_count, 'delete': False} for g in groups]
 
-    # List backup files for the restore dropdown
-    server_backup_files = []
-    if os.path.exists(BACKUP_DIR):
-        try:
-            # List files and filter for .yaml or .yml, sort them (e.g., reverse for newest first if names allow)
-            all_files = [f for f in os.listdir(BACKUP_DIR) if os.path.isfile(os.path.join(BACKUP_DIR, f)) and (f.endswith('.yaml') or f.endswith('.yml'))]
-            # You might want to sort these files, e.g., by modification time or name
-            all_files.sort(reverse=True) # Example: newest first if names are sortable by time
-            server_backup_files = all_files
-        except Exception as e:
-            logger.exception(f"Error listing backup files from {BACKUP_DIR}")
-            flash(f"Could not list server backup files: {str(e)}", "warning")
+    backup_list_error = None
+    try:
+        backup_files = backups.list_files(BACKUP_DIR)
+    except OSError as e:
+        backup_files = {'snapshots': [], 'exports': []}
+        backup_list_error = f"Could not read the backup folder {BACKUP_DIR}: {e.strerror or e}."
+    backup_runs = backups.last_runs()
+    backup_next = {k: (v.strftime('%Y-%m-%d %H:%M') if v else None)
+                   for k, v in jobs.next_run_times().items()}
 
-# Check which icon files are missing
-        missing_icons = []
-        all_entries = ServiceEntry.active().all()
-        for entry in all_entries:
-            icon = entry.image_icon
-            if icon and not os.path.exists(os.path.join(image_dir, icon)):
-                missing_icons.append(f"{entry.container_name} → {icon}")
+    # Check which icon files are missing
+    missing_icons = []
+    for entry in ServiceEntry.active().all():
+        icon = entry.image_icon
+        if icon and not os.path.exists(os.path.join(image_dir, icon)):
+            missing_icons.append(f"{entry.container_name} → {icon}")
     widgets = Widget.query.all()
     users = User.query.order_by(User.username.asc()).all()
 
@@ -756,14 +545,27 @@ def _render_settings(group_form=None, status=200, notification_form=None):
                                       'label': f'{kname} (revoked)' if revoked_at else kname})
 
     stream_ctx = _streams_context(request.args.get('preview'))
+    if stream_ctx['preview'] and not open_modal:
+        open_modal = 'stream-preview-modal'
+    initial_section = _initial_section(section)
     notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
                                  NotificationChannel.query.order_by(NotificationChannel.id).all()]
+    ha = _ha_context(notification_channels_out)
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
          config_from_env=current_app.config['CONFIG_FROM_ENV'],
          config_from_file=current_app.config['CONFIG_FROM_FILE'],
-         server_backup_files=server_backup_files,
+         backup_settings=backups.effective_settings(current_app),
+         backup_form=backup_form,
+         backup_files=backup_files,
+         backup_last_runs=backup_runs,
+         backup_next_runs=backup_next,
+         backup_list_error=backup_list_error,
+         backup_outside_config=backups.outside_config(BACKUP_DIR),
+         backup_attention=backups.attention_needed(backup_runs),
+         restore_pending=restore_staging.pending(),
+         restore_result=restore_staging.last_result(),
          version_info=current_app.config['VERSION_INFO'],
          version_display=version_check.display_info(current_app.config['VERSION_INFO']),
          update_status=version_check.status(current_app.config['VERSION_INFO'].get('version', 'unknown')),
@@ -772,7 +574,13 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          groups=groups,
          group_form=group_form,
          group_rows=group_rows,
-         force_section='groups' if group_form else ('notifications' if notification_form else ('streams' if stream_ctx['preview'] else '')),
+         initial_section=initial_section,
+         open_modal=open_modal or '',
+         flash_target=open_modal or initial_section or 'page',
+         settings_groups=settings_sections.GROUPS,
+         settings_sections=settings_sections.SECTIONS,
+         settings_default_section=settings_sections.DEFAULT,
+         settings_aliases=settings_sections.ALIASES,
          **stream_ctx,
          users=users,
          deleted_rows=_deleted_entry_rows(),
@@ -790,14 +598,22 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          notification_channels=notification_channels_out,
          notification_form=notification_form,
-         ha_entries=ServiceEntry.active().options(joinedload(ServiceEntry.stream), joinedload(ServiceEntry.group)).order_by(ServiceEntry.container_name.asc(), ServiceEntry.host.asc()).all(),
-         ha_discovery_on=any(c['config'].get('ha_discovery') for c in notification_channels_out),
+         stream_forms={k: v for k, v in forms.items() if k.startswith('stream:')},
+         **ha,
          notifications_enabled=any(c['enabled'] for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
          exposure_host_overrides=exposure_host_overrides,
+         **extra,
     ), status
+
+
+def render_settings_for(**kwargs):
+    """Public wrapper over `_render_settings` for other route modules (routes_auth re-renders
+    Settings with a dialog open). Returns `(html, status)`; imported lazily there because
+    this module imports routes_auth."""
+    return _render_settings(**kwargs)
 
 
 # --- Settings -> Notifications (PRD 17.2) -----------------------------------------
@@ -873,10 +689,13 @@ def save_notification_channel():
         for e in errors:
             flash(f"Notification channel: {e['field']} {e['message']}", "danger")
         form = {'id': raw_id, 'name': name, 'enabled': enabled, **config}
-        return _render_settings(notification_form=form, status=409 if cleanup_failed else 400)
+        error_fields = sorted({e['field'].removeprefix('config.') for e in errors})
+        return _render_settings(section='notifications', open_modal='channel-modal',
+                                forms={'notification': form}, notification_error_fields=error_fields,
+                                status=409 if cleanup_failed else 400)
     logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
     flash(f"✅ Notification channel '{channel.name}' saved.", "success")
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    return _settings_redirect('notifications')
 
 
 @dashboard_bp.route('/settings/notifications/ha-entries', methods=['POST'])
@@ -899,7 +718,7 @@ def save_ha_entries():
     db.session.commit()
     logger.info(f"Home Assistant entries saved by {current_user.username} ({changed} changed).")
     flash(f"✅ Home Assistant entries saved ({changed} changed).", "success")
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    return _settings_redirect('home-assistant')
 
 
 def _wants_json():
@@ -915,11 +734,11 @@ def _channel_action_result(call, success):
         if _wants_json():
             return jsonify({'ok': False, 'message': exc.message}), exc.status
         flash(exc.message, 'danger')
-        return redirect(url_for('dashboard.settings', section='notifications'))
+        return _settings_redirect('notifications')
     flash(message, 'success')
     if _wants_json():
         return jsonify({'ok': True, 'message': message})
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    return _settings_redirect('notifications')
 
 
 @dashboard_bp.route('/settings/notifications/<int:id>/toggle', methods=['POST'])
@@ -1060,7 +879,7 @@ def save_exposure_settings():
         f"✅ Exposure settings saved. Recomputed URLs for {touched} service(s).",
         "success",
     )
-    return redirect(url_for('dashboard.settings', section='exposure'))
+    return _settings_redirect('docker')
 
 
 @dashboard_bp.route('/settings/update-check', methods=['POST'])
@@ -1076,12 +895,132 @@ def save_update_check():
             raise ValueError
     except ValueError:
         flash("Update check interval must be a whole number of hours, 1 or more.", "danger")
-        return redirect(url_for('dashboard.settings', section='info'))
+        return _settings_redirect('about')
     settings_store.save_update_check_settings(enabled, hours)
     db.session.commit()
     version_check.reset()  # re-read the cache/interval; the next page load may refetch
     flash("✅ Update check settings saved.", "success")
-    return redirect(url_for('dashboard.settings', section='info'))
+    return _settings_redirect('about')
+
+
+# --- Settings -> Backup & restore (design 4) -----------------------------------------------
+
+
+def _backup_form_values(form):
+    """The backup settings form as `{setting key: submitted value}`; an unchecked switch
+    is False."""
+    values = {'path': form.get('path', '')}
+    for kind in backups.KINDS:
+        values[f'{kind}_enabled'] = form.get(f'{kind}_enabled') == '1'
+        values[f'{kind}_time'] = form.get(f'{kind}_time', '')
+        values[f'{kind}_keep_days'] = form.get(f'{kind}_keep_days', '')
+    values['export_format'] = form.get('export_format', '')
+    return values
+
+
+@dashboard_bp.route('/settings/backups/settings', methods=['POST'])
+@login_required
+@is_admin_required
+def save_backup_settings():
+    """Save the backup folder and the two daily jobs' settings, then reschedule. A
+    validation error re-renders the section (400) with what was typed."""
+    values = _backup_form_values(request.form)
+    old_path = backups.backup_dir(current_app)
+    errors, warnings = backups.save_settings(current_app, values)
+    if errors:
+        db.session.rollback()
+        flash("Nothing was saved. " + " ".join(errors.values()), "danger")
+        return _render_settings(section='backup', status=400,
+                                forms={'backup': {'values': values, 'errors': errors}})
+    db.session.commit()
+    jobs.reschedule_backups(current_app)
+    for message in warnings:
+        flash(message, "warning")
+    message = "Backup settings saved. Schedules updated."
+    if backups.backup_dir(current_app) != old_path:
+        message += " Existing backups stay in the old folder."
+    flash(message, "success")
+    return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/settings/reset', methods=['POST'])
+@login_required
+@is_admin_required
+def reset_backup_setting():
+    """Delete one saved backup setting so it falls back to settings.yml or the default."""
+    key = request.form.get('key', '')
+    if not backups.reset(key):
+        db.session.rollback()
+        flash("Unknown backup setting.", "danger")
+        return _settings_redirect('backup')
+    db.session.commit()
+    jobs.reschedule_backups(current_app)
+    flash("Setting reset to its default.", "success")
+    return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/run', methods=['POST'])
+@login_required
+@is_admin_required
+def run_backup_now():
+    """Run a snapshot or an export now (synchronously)."""
+    kind = request.form.get('kind', '')
+    if kind not in backups.KINDS:
+        flash("Unknown backup kind.", "danger")
+        return _settings_redirect('backup')
+    result = backups.run_snapshot(current_app, 'manual') if kind == 'snapshot' \
+        else backups.run_export(current_app, 'manual')
+    label = kind.capitalize()
+    if result['ok']:
+        flash(f"{label} saved: {result['file']}, {backups.human_size(result['size'])}", "success")
+    else:
+        flash(f"{label} failed: {result['error']}", "danger")
+    return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/export', methods=['GET'])
+@login_required
+@is_admin_required
+def download_export():
+    """Download the export of operator-set state now (format v1, never any secret).
+    `?format=yaml` (default) or `json`; nothing is written to the backup folder."""
+    fmt = (request.args.get('format') or 'yaml').strip().lower()
+    if fmt not in ('yaml', 'json'):
+        abort(400)
+    data = export_format.dump(export_format.build_export(), fmt)
+    ext, mimetype = ('yml', 'application/yaml') if fmt == 'yaml' else ('json', 'application/json')
+    name = f"std_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+    resp = Response(data, mimetype=mimetype)
+    resp.headers['Content-Disposition'] = f'attachment; filename="{name}"'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@dashboard_bp.route('/settings/backups/<name>/download', methods=['GET'])
+@login_required
+@is_admin_required
+def download_backup_file(name):
+    path = backups.resolve_file(name)
+    if path is None:
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+
+
+@dashboard_bp.route('/settings/backups/<name>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_backup_file(name):
+    path = backups.resolve_file(name)
+    if path is None:
+        abort(404)
+    try:
+        os.remove(path)
+    except OSError as e:
+        flash(f"Could not delete {name}: {e.strerror or e}", "danger")
+        return _settings_redirect('backup')
+    logger.info("Backup file deleted from Settings: %s", name)
+    flash(f"Deleted {name}.", "success")
+    return _settings_redirect('backup')
 
 
 def _parse_group_form(form, groups):
@@ -1168,7 +1107,13 @@ def save_groups():
     if errors:
         group_form = {'rows': rows, 'new': new_row, 'errors': errors}
         flash("Nothing was saved. Fix the marked rows and save again.", "danger")
-        return _render_settings(group_form=group_form, status=400)
+        # Open the staging dialog on the first row with a message (design 9.3); a stale
+        # table has no row to edit, so its banner stays in the Groups section.
+        first = next((r['id'] for r in rows if r['id'] in errors), 'new' if 'new' in errors else None)
+        if first is not None:
+            return _render_settings(section='groups', forms={'group': group_form}, status=400,
+                                    open_modal='group-modal', group_modal_id=first)
+        return _render_settings(section='groups', forms={'group': group_form}, status=400)
 
     updated = added = deleted = 0
     try:
@@ -1206,11 +1151,11 @@ def save_groups():
         db.session.rollback()
         logger.exception("Saving groups failed")
         flash("Saving groups failed; nothing was changed.", "danger")
-        return redirect(url_for('dashboard.settings', section='groups'))
+        return _settings_redirect('groups')
 
     parts = [f'{n} {label}' for n, label in ((updated, 'updated'), (added, 'added'), (deleted, 'deleted')) if n]
     flash(f"✅ Saved: {', '.join(parts)}." if parts else "No changes.", "success")
-    return redirect(url_for('dashboard.settings', section='groups'))
+    return _settings_redirect('groups')
 
 
 @dashboard_bp.route('/images/<path:filename>')
@@ -1361,77 +1306,6 @@ def _text_or_none(value):
     return value or None
 
 
-def _restore_checks(entry, item):
-    """Apply a backup record's health-check configuration to `entry`.
-
-    New format: `item['checks']` is a list of check configs. URL-kind rows
-    are matched by kind; service rows are replaced wholesale. Old format (no
-    `checks`): the legacy `*_health_check_enabled`, `health_check_timeout`
-    and `health_check_verify_tls` fields are mapped onto the two URL rows,
-    absent meaning disabled / global timeout / verify TLS on.
-    """
-    ensure_url_checks(entry)
-    ensure_container_check(entry)
-    checks = item.get('checks')
-    if isinstance(checks, list):
-        # Service rows are replaced wholesale by what the backup carries.
-        for old in entry.service_checks:
-            entry.checks.remove(old)
-        for cfg in checks:
-            if not isinstance(cfg, dict):
-                continue
-            kind = cfg.get('kind')
-            if kind == CHECK_KIND_CONTAINER:
-                # Notifier entries only; just enabled + interval round-trip.
-                check = entry.container_check
-                if check is not None:
-                    check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
-                    check.enabled = bool(cfg.get('enabled'))
-                continue
-            if kind in URL_CHECK_KINDS:
-                check = entry.url_check(kind)
-            elif kind == CHECK_KIND_SERVICE:
-                check = HealthCheck(kind=CHECK_KIND_SERVICE, consecutive_failures=0)
-                entry.checks.append(check)
-            else:
-                continue
-            check.name = cfg.get('name')
-            if cfg.get('check_type') in CHECK_TYPES:
-                check.check_type = cfg['check_type']
-            check.target = cfg.get('target') if kind == CHECK_KIND_SERVICE else None
-            if cfg.get('mode') in CHECK_MODES:
-                check.mode = cfg['mode']
-            check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
-            check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
-            check.verify_tls = cfg.get('verify_tls') is not False
-            check.enabled = bool(cfg.get('enabled'))
-            check.ha_exclude = cfg.get('ha_exclude') is True
-            # DNS settings (v0.9.0); absent in older backups, so they stay NULL.
-            is_dns = check.check_type == CHECK_TYPE_DNS and kind == CHECK_KIND_SERVICE
-            check.dns_name = _text_or_none(cfg.get('dns_name')) if is_dns else None
-            rtype = _text_or_none(cfg.get('dns_record_type'))
-            check.dns_record_type = rtype.upper() if is_dns and rtype else None
-            rcode = _text_or_none(cfg.get('dns_expected_rcode'))
-            check.dns_expected_rcode = rcode.upper() if is_dns and rcode else None
-            check.dns_expected_answer = _text_or_none(cfg.get('dns_expected_answer')) if is_dns else None
-            # Certificate-expiry minimum (v0.9.0); absent in older backups. Only
-            # http checks use it, and the cached expiry is never restored.
-            days = cfg.get('cert_min_days')
-            is_http = check.check_type == CHECK_TYPE_HTTP
-            valid = isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= 365
-            check.cert_min_days = days if is_http and valid else None
-            check.last_cert_expires_at = None
-        return
-
-    timeout = _positive_int(item.get('health_check_timeout'))
-    verify = item.get('health_check_verify_tls') is not False
-    for which in ('internal', 'external'):
-        check = entry.url_check(which)
-        check.enabled = bool(item.get(f'{which}_health_check_enabled'))
-        check.timeout_seconds = timeout
-        check.verify_tls = verify
-
-
 @dashboard_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 @is_admin_required
@@ -1458,7 +1332,7 @@ def edit_entry(id):
     # Fetch current widget association
     selected_widget = None
     if entry.widget_id:
-        selected_widget = Widget.query.get(entry.widget_id)
+        selected_widget = db.session.get(Widget, entry.widget_id)
         if selected_widget:
             logger.debug(f"Selected widget: {selected_widget.widget_name}")
         else:
@@ -1575,7 +1449,7 @@ def edit_entry(id):
         if group_mode == 'existing':
             group_id = request.form.get('group_id_existing')
             if group_id:
-                group = Group.query.get(int(group_id))  # safely cast to int
+                group = db.session.get(Group, int(group_id))  # safely cast to int
 
         elif group_mode == 'new':
             group_name = request.form.get('group_name_new', '').strip()
@@ -1643,7 +1517,7 @@ def edit_entry(id):
                 entry.widget_id = None
         else:
             if entry.widget_id:
-                widget = Widget.query.get(entry.widget_id)
+                widget = db.session.get(Widget, entry.widget_id)
                 if widget:
                     widget.widget_name = widget_name
                     widget.widget_url = widget_url
@@ -1717,6 +1591,28 @@ def entry_health_detail(id):
     return jsonify(health_history.entry_payload(entry, range_name))
 
 
+@dashboard_bp.route('/service/<int:id>/details')
+@login_required
+def entry_details(id):
+    """HTML fragment for the Compact view's details dialog (PRD 13.7): header,
+    the shared entry facts beside the health panel, and the action row.
+    Fetched when the dialog opens; 404 for an unknown or deleted entry."""
+    entry = (
+        ServiceEntry.active()
+        .options(selectinload(ServiceEntry.checks))
+        .filter(ServiceEntry.id == id)
+        .first_or_404()
+    )
+    widget_values, widget_fields = _load_widget_values()
+    return render_template(
+        'partials/compact_details.html',
+        entry=entry,
+        widget_values=widget_values,
+        widget_fields=widget_fields,
+        STD_DOZZLE_URL=current_app.config.get('std_dozzle_url'),
+    )
+
+
 @dashboard_bp.route('/health/strips')
 @login_required
 def health_strips():
@@ -1746,7 +1642,7 @@ def _truthy(value):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-@dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
+@dashboard_bp.route('/entries/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required
 def delete_entry_json(id):
@@ -1765,6 +1661,23 @@ def delete_entry_json(id):
     return jsonify({'ok': True})
 
 
+def _api_key_secret_response(key, full_key, rotated):
+    """Render Settings with the new key in the show-once dialog (design 9.10).
+
+    The key is not flashed or put in the session; it exists only in this response's
+    HTML (nav.js then replaces the POST URL, so a reload is a plain Settings GET)."""
+    html, _status = _render_settings(
+        section='api-keys', open_modal='api-key-secret-modal',
+        api_key_secret={'name': key.name, 'scope': key.scope, 'full_key': full_key, 'rotated': rotated})
+    response = make_response(html)
+    if rotated:
+        response.headers['Cache-Control'] = 'no-store, no-cache'
+        response.headers['Pragma'] = 'no-cache'
+    else:
+        response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @dashboard_bp.route('/settings/api-keys', methods=['POST'])
 @login_required
 @is_admin_required
@@ -1781,12 +1694,11 @@ def create_api_key():
         error = "Choose a scope: read, write or ingest."
     if error:
         flash(error, "danger")
-        return redirect(url_for('dashboard.settings', section='api'))
+        return _render_settings(section='api-keys', open_modal='api-key-modal', status=400,
+                                api_key_form={'name': name, 'scope': scope})
     key, full_key = api_keys.create_key(name, scope, created_by=current_user.id)
     logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
-    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
-    response.headers['Cache-Control'] = 'no-store'
-    return response
+    return _api_key_secret_response(key, full_key, rotated=False)
 
 
 @dashboard_bp.route('/settings/api-keys/<int:id>/rotate', methods=['POST'])
@@ -1800,14 +1712,10 @@ def rotate_api_key(id):
     key = db.session.get(ApiKey, id)
     if key is None or key.revoked_at is not None:
         flash("That API key doesn't exist or is revoked, so it can't be rotated.", "danger")
-        return redirect(url_for('dashboard.settings', section='api'))
+        return _settings_redirect('api-keys')
     full_key = api_keys.rotate_key(key)
     logger.info(f"Rotated API key id={key.id} by {current_user.username}.")
-    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key,
-                                             rotated=True))
-    response.headers['Cache-Control'] = 'no-store, no-cache'
-    response.headers['Pragma'] = 'no-cache'
-    return response
+    return _api_key_secret_response(key, full_key, rotated=True)
 
 
 @dashboard_bp.route('/settings/api-keys/<int:id>/revoke', methods=['POST'])
@@ -1818,7 +1726,7 @@ def revoke_api_key(id):
     api_keys.revoke_key(key)
     logger.info(f"Revoked API key '{key.name}' ({key.prefix}) by {current_user.username}.")
     flash(f"Revoked API key '{key.name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='api'))
+    return _settings_redirect('api-keys')
 
 
 @dashboard_bp.route('/settings/deleted/<int:id>/restore', methods=['POST'])
@@ -1841,7 +1749,7 @@ def restore_deleted_entry(id):
         db.session.commit()
         logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host or 'no host'}'.")
         flash(f"✅ Restored '{entry.container_name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')
 
 
 @dashboard_bp.route('/settings/deleted/<int:id>/delete', methods=['POST'])
@@ -1854,7 +1762,7 @@ def purge_deleted_entry(id):
     db.session.commit()
     logger.info(f"Permanently deleted entry '{name}'.")
     flash(f"🗑️ Permanently deleted '{name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')
 
 
 # --- Settings -> Streams (PRD 18.8) ------------------------------------------------
@@ -1901,11 +1809,20 @@ def _streams_context(preview_slug=None):
             except streams.StreamError as exc:
                 flash(exc.message, "danger")
     return {'stream_rows': rows, 'docker_row': docker_row, 'preview': preview,
-            'pending_streams': sum(1 for r in rows if r['stream'].status == 'pending')}
+            'pending_streams': sum(1 for r in rows if r['stream'].status == 'pending'),
+            'open_offers': sum(len(r['offers']) for r in rows)}
+
+
+def _stream_edit_error(slug, block, values, message):
+    """A failed Edit stream block: re-render Settings with that dialog open and the
+    typed values kept (design 9.8), instead of a flash and a redirect."""
+    flash(message, "danger")
+    return _render_settings(section='streams', open_modal=f'stream-edit-{slug}',
+                            forms={f'stream:{slug}:{block}': values}, status=400)
 
 
 def _streams_redirect():
-    return redirect(url_for('dashboard.settings', section='streams'))
+    return _settings_redirect('streams')
 
 
 def _stream_or_404(slug):
@@ -1998,8 +1915,10 @@ def stream_update(slug):
             sent=('display_name', 'network_include', 'network_exclude'))
     except streams.StreamError as exc:
         db.session.rollback()
-        flash(exc.message, "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'name', {
+            'display_name': request.form.get('display_name') or '',
+            'network_include': request.form.get('network_include') or '',
+            'network_exclude': request.form.get('network_exclude') or ''}, exc.message)
     logger.info(f"Stream '{slug}' updated by {current_user.username}: {', '.join(changes) or 'no changes'}.")
     flash(f"Saved stream '{stream.display_name}'." if changes else "Nothing changed.", "success")
     return _streams_redirect()
@@ -2012,15 +1931,16 @@ def stream_monitoring(slug):
     """Expected snapshot interval (minutes in the form, seconds stored) and the
     missing-entry expiry (days). Blank clears either (PRD 18.9)."""
     stream = _stream_or_404(slug)
+    typed = {k: (request.form.get(k) or '').strip()
+             for k in ('expected_interval_minutes', 'missing_expiry_days')}
     values = {}
     for field_name, label in (('expected_interval_minutes', 'Expected interval'),
                               ('missing_expiry_days', 'Missing expiry')):
-        raw = (request.form.get(field_name) or '').strip()
+        raw = typed[field_name]
         try:
             values[field_name] = int(raw) if raw else None
         except ValueError:
-            flash(f"{label} must be a whole number.", "danger")
-            return _streams_redirect()
+            return _stream_edit_error(slug, 'monitoring', typed, f"{label} must be a whole number.")
     minutes = values['expected_interval_minutes']
     try:
         changes = streams.update(
@@ -2029,9 +1949,8 @@ def stream_monitoring(slug):
             missing_expiry_days=values['missing_expiry_days'])
     except streams.StreamError as exc:
         db.session.rollback()
-        flash(exc.message.replace('expected_interval_seconds must be 60-86400 seconds',
-                                  'Expected interval must be 1-1440 minutes'), "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'monitoring', typed, exc.message.replace(
+            'expected_interval_seconds must be 60-86400 seconds', 'Expected interval must be 1-1440 minutes'))
     logger.info(f"Stream '{slug}' monitoring saved by {current_user.username}: {', '.join(changes) or 'no changes'}.")
     flash(f"Saved staleness and missing-entry settings for '{stream.display_name}'." if changes
           else "Nothing changed.", "success")
@@ -2044,18 +1963,17 @@ def stream_monitoring(slug):
 def stream_default_checks(slug):
     stream = _stream_or_404(slug)
     raw_port = (request.form.get('tcp_port') or '').strip()
+    typed = {'ping': _truthy(request.form.get('ping')), 'tcp_port': raw_port}
     try:
         port = int(raw_port) if raw_port else None
     except ValueError:
-        flash("TCP port must be a number from 1 to 65535.", "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'checks', typed, "TCP port must be a number from 1 to 65535.")
     try:
         changes = streams.update(stream, sent=('default_checks',), default_checks={
-            'ping': _truthy(request.form.get('ping')), 'tcp_port': port})
+            'ping': typed['ping'], 'tcp_port': port})
     except streams.StreamError as exc:
         db.session.rollback()
-        flash(exc.message, "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'checks', typed, exc.message)
     logger.info(f"Stream '{slug}' default checks saved by {current_user.username}: "
                 f"{'changed' if changes else 'no changes'}.")
     flash(f"Saved default checks for '{stream.display_name}'. New entries get them; use "
@@ -2247,7 +2165,7 @@ def attach_detached_widget(id):
         db.session.commit()
         logger.info(f"Attached widget {widget.id} ('{widget.widget_name}') to '{entry.container_name}'.")
         flash(f"✅ Attached widget '{widget.widget_name}' to '{entry.container_name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')
 
 
 @dashboard_bp.route('/settings/widgets/<int:id>/delete', methods=['POST'])
@@ -2261,4 +2179,4 @@ def delete_detached_widget(id):
     db.session.commit()
     logger.info(f"Deleted detached widget {id} ('{name}').")
     flash(f"🗑️ Deleted detached widget '{name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')

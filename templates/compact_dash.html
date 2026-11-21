@@ -19,7 +19,7 @@
       {% set _target_url = item.entry.internalurl or item.entry.externalurl %}
       {% set _h = entry_health(item.entry) %}
       <div class="compact-tile{% if not _target_url %} cursor-default{% endif %}{% if _h.state in ('degraded', 'down') %} entry-health-{{ _h.state }}{% endif %}"
-           {% if _target_url %}onclick="if (event.target.closest('.uptime-strip')) return; window.open('{{ _target_url }}', '_blank')"{% endif %}>
+           {% if _target_url %}onclick="if (event.target.closest('.uptime-strip, .compact-expand-btn')) return; window.open('{{ _target_url }}', '_blank')"{% endif %}>
         <div>
           {% if item.entry.image_icon %}
             <img src="{{ url_for('dashboard.serve_image', filename=item.entry.image_icon) }}"
@@ -36,6 +36,12 @@
           {% endif %}
         </div>
         <span class="compact-end">
+          <button type="button" class="compact-expand-btn" data-compact-expand="{{ item.entry.id }}"
+                  aria-haspopup="dialog"
+                  aria-label="Show details for {{ item.entry.container_name }}"
+                  title="Show details">
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
           {% with entry=item.entry %}{% include "partials/source_icon.html" %}{% endwith %}
           {% with entry=item.entry, variant='compact' %}{% include "partials/health_badge.html" %}{% endwith %}
           {% if item.entry.last_api_update and item.entry.is_docker_status_stale %}
@@ -49,7 +55,14 @@
     {% endif %}
   {% endfor %}
 </div>
+<dialog id="compact-details" class="std-modal std-modal--lg compact-details" aria-labelledby="compact-details-title">
+  <div id="compact-details-content" class="compact-details-content"></div>
+</dialog>
 {% else %}
   <p class="text-center mt-6 text-gray-400">No entries found for this view.</p>
 {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ static_v('js/compact_details.js') }}" defer></script>
 {% endblock %}

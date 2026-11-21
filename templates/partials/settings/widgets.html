@@ -1,0 +1,31 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot, card_row, kebab, menu_item, empty_state with context %}
+<section id="section-widgets" class="settings-section{% if (initial_section or settings_default_section) != 'widgets' %} hidden{% endif %}">
+  {{ section_header('Widgets', "Widgets attached to entries. Configure them on an entry's edit page.") }}
+  {{ flash_slot('widgets') }}
+  {% if widgets %}
+  <div class="settings-card settings-card-list" id="widget-list">
+    {% for widget in widgets %}
+    {% set last_value = widget.widget_values|sort(attribute='last_updated')|last %}
+    {% call(part) card_row(attrs='data-widget-id="' ~ widget.id ~ '"') %}
+      {% if part == 'main' %}
+        <div class="settings-card-title">{{ widget.widget_name }}
+          {% if widget.services and widget.services[0] %}
+          <span class="settings-hint-inline">{{ widget.services[0].container_name }} ({{ widget.services[0].host or "no host" }})</span>
+          {% else %}<span class="settings-hint-inline">not attached</span>{% endif %}
+        </div>
+        <div class="settings-card-second">Last update {{ last_value.last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_value else '—' }}
+          &middot; Fields: <code>{{ widget.widget_fields | join(', ') }}</code></div>
+        <div class="settings-card-summary settings-code" title="{{ widget.widget_url }}">{{ widget.widget_url }}</div>
+      {% else %}
+        {% call kebab('widget-menu-' ~ widget.id, widget.widget_name) %}
+          {% set copy_attrs %}data-copy-text="{{ widget.widget_api_key or '' }}" data-copy-label="API key copied"{% endset %}
+          {{ menu_item('Copy API key', copy_attrs) }}
+        {% endcall %}
+      {% endif %}
+    {% endcall %}
+    {% endfor %}
+  </div>
+  {% else %}
+    {{ empty_state('No widgets yet. Add one from an entry\'s edit page.', id='widget-empty') }}
+  {% endif %}
+</section>

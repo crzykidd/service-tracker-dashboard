@@ -13,6 +13,7 @@ import yaml
 
 from extensions import db
 from models import ServiceEntry
+from tests.import_helpers import Page, import_flow, token_of
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREVIOUS_HEAD = "f6b2d8e41c03"
@@ -285,40 +286,43 @@ def test_views_render_manual_and_hostless_entries(app, admin_client):
 # --- backups -------------------------------------------------------------------
 
 
-def _download(admin_client):
-    resp = admin_client.post("/settings", data={"action": "backup", "backup_operation": "download_all"})
-    assert resp.status_code == 200
-    return yaml.safe_load(resp.get_data(as_text=True))
+def _export_bytes(app):
+    """The v1 export of the current database (what Settings -> Backup & restore downloads)."""
+    import export_format
+    with app.app_context():
+        return export_format.dump(export_format.build_export(), "yaml")
 
 
-def _restore(admin_client, records):
-    payload = yaml.dump(records)
-    return admin_client.post("/settings", data={
-        "action": "restore", "restore_source": "upload", "restore_scope": "all",
-        "restore_file": (io.BytesIO(payload.encode()), "b.yaml"),
-    }, content_type="multipart/form-data")
+def _import(admin_client, records, **kw):
+    """Import a legacy (v0) list through the UI flow; replaces the old Restore form."""
+    return import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml", **kw)
 
 
-def test_backup_round_trips_source_description_and_null_host(app, admin_client):
+def _legacy_rids(admin_client, records):
+    """The row ids the preview shows for a legacy list (kind and identity of every record)."""
+    resp = admin_client.post("/settings/import", data={"import_file": (io.BytesIO(yaml.dump(records).encode()), "b.yaml")},
+                             content_type="multipart/form-data")
+    page = Page(admin_client.get(f"/settings/import/{token_of(resp)}").get_data(as_text=True))
+    return sorted(i["name"][len("create-"):] for i in page.inputs if (i["name"] or "").startswith("create-"))
+
+
+def test_export_round_trips_source_description_and_null_host(app, admin_client):
     with app.app_context():
         _make("man", host=None, source="manual", description="d")
         _make("note", last_api_update=datetime.now())
-    records = _download(admin_client)
-    by_name = {r["container_name"]: r for r in records}
-    assert (by_name["man"]["source"], by_name["man"]["description"], by_name["man"]["host"]) == ("manual", "d", None)
-    assert by_name["note"]["source"] == "notifier"
-
+    data = _export_bytes(app)
     with app.app_context():
         ServiceEntry.query.delete()
         db.session.commit()
-    assert _restore(admin_client, records).status_code == 302
+    assert import_flow(admin_client, data, name="e.yml").status_code == 200
     with app.app_context():
         man, note = _get("man"), _get("note")
         assert (man.source, man.host, man.description) == ("manual", None, "d")
-        assert note.source == "notifier"
+        # A Docker entry imported as new is a manual entry; the notifier adopts it on register.
+        assert note.source == "manual" and note.host == "host1"
 
 
-def test_restore_of_old_backup_without_source_uses_backfill_rule(app, admin_client):
+def test_import_of_old_backup_without_source_uses_backfill_rule(app, admin_client):
     base = {"last_updated": "2026-01-01 00:00:00"}
     records = [
         {**base, "host": "h", "container_name": "registered", "last_api_update": "2026-01-01 00:00:00"},
@@ -326,14 +330,17 @@ def test_restore_of_old_backup_without_source_uses_backfill_rule(app, admin_clie
         {**base, "container_name": "nohost-never", "last_api_update": None},
         {**base, "container_name": "nohost-registered", "last_api_update": "2026-01-01 00:00:00"},
     ]
-    assert _restore(admin_client, records).status_code == 302
+    # Registered at least once -> a Docker record; never registered or no host -> manual.
+    # A Docker record with no host cannot be imported as new (the notifier always sends a host),
+    # so it offers no "Import as new" switch and is skipped.
+    assert _legacy_rids(admin_client, records) == [
+        "entry:docker:h/registered", "entry:manual:/nohost-never", "entry:manual:h/never-registered"]
+    assert _import(admin_client, records).status_code == 200
     with app.app_context():
-        assert _get("registered").source == "notifier"
-        assert _get("never-registered").source == "manual"
-        nohost = _get("nohost-never")
-        assert nohost.source == "manual" and nohost.host is None
-        # A notifier entry needs a host, so that record is skipped.
-        assert ServiceEntry.query.filter_by(container_name="nohost-registered").count() == 0
+        assert {e.container_name for e in ServiceEntry.query.all()} == {
+            "registered", "never-registered", "nohost-never"}
+        assert all(e.source == "manual" for e in ServiceEntry.query.all())
+        assert _get("nohost-never").host is None
 
 
 # --- is_docker and source filters (PRD 18.3) --------------------------------------
@@ -364,15 +371,16 @@ def test_source_filters_accept_every_valid_source(app):
         assert normalize_source_filter(None) == "all"
 
 
-def test_restore_unknown_source_becomes_manual(app, admin_client):
+def test_import_unknown_source_becomes_manual(app, admin_client):
     base = {"last_updated": "2026-01-01 00:00:00", "last_api_update": "2026-01-01 00:00:00"}
     records = [
         {**base, "container_name": "future-nohost", "source": "stream"},
         {**base, "host": "h", "container_name": "future-host", "source": "stream"},
     ]
-    assert _restore(admin_client, records).status_code == 302
+    # A stream row with no usable MAC is a manual record, so no host is required.
+    assert _legacy_rids(admin_client, records) == ["entry:manual:/future-nohost", "entry:manual:h/future-host"]
+    assert _import(admin_client, records).status_code == 200
     with app.app_context():
-        # Unknown source restores as manual, so no host is required.
         nohost = _get("future-nohost")
         assert nohost.source == "manual" and nohost.host is None
         assert _get("future-host").source == "manual"

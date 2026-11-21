@@ -27,6 +27,18 @@ Keys currently in use:
                            STD install for MQTT client ids and Home Assistant
                            unique ids (PRD 17.2). Never changes after creation.
 
+- `backup_path`, `backup_snapshot_enabled|time|keep_days`,
+  `backup_export_enabled|time|keep_days|format`
+                           The backup settings the operator saved in the UI (design
+                           docs/design/2026-11-20-backup-export-import.md 4.1). A missing
+                           row means "not set in the UI": `backups.effective_settings`
+                           falls back to settings.yml / the default (env always wins).
+                           Read and written through `get_backup_value` /
+                           `set_backup_value` / `delete_backup_value`.
+
+- `backup_last_runs`       dict: {"snapshot": {...}, "export": {...}}, each {at, ok, file,
+                           size, error, trigger}. Observed; written by the backup runs.
+
 - `exposure_layers_per_host`  dict[str, dict[str, str]]
                               e.g. {"docker-edge": {"traefik": "external"}}
                               Per-host override for `exposure_layers`.
@@ -54,20 +66,30 @@ KEY_UPDATE_CHECK_ENABLED = "update_check_enabled"
 KEY_UPDATE_CHECK_INTERVAL = "update_check_interval_hours"
 KEY_UPDATE_CHECK_CACHE = "update_check_cache"
 KEY_INSTANCE_ID = "instance_id"
+KEY_BACKUP_PATH = "backup_path"
+KEY_BACKUP_SNAPSHOT_ENABLED = "backup_snapshot_enabled"
+KEY_BACKUP_SNAPSHOT_TIME = "backup_snapshot_time"
+KEY_BACKUP_SNAPSHOT_KEEP_DAYS = "backup_snapshot_keep_days"
+KEY_BACKUP_EXPORT_ENABLED = "backup_export_enabled"
+KEY_BACKUP_EXPORT_TIME = "backup_export_time"
+KEY_BACKUP_EXPORT_KEEP_DAYS = "backup_export_keep_days"
+KEY_BACKUP_EXPORT_FORMAT = "backup_export_format"
+KEY_BACKUP_LAST_RUNS = "backup_last_runs"
+KEY_RESTORE_LAST_SEEN = "restore_last_seen"
 
 DEFAULT_UPDATE_CHECK_ENABLED = True
 DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
 
 
 def _get_value(key: str, default):
-    row = Setting.query.get(key)
+    row = db.session.get(Setting, key)
     if row is None or row.value is None:
         return default
     return row.value
 
 
 def _set_value(key: str, value) -> None:
-    row = Setting.query.get(key)
+    row = db.session.get(Setting, key)
     if row is None:
         row = Setting(key=key, value=value)
         db.session.add(row)
@@ -219,6 +241,51 @@ def get_instance_id() -> str:
     return value
 
 
+def peek_instance_id():
+    """The install's UUID if it has been created, else None. Never writes (the export
+    header is informational and a read must not create a row)."""
+    value = _get_value(KEY_INSTANCE_ID, None)
+    return value if isinstance(value, str) and value else None
+
+
 def short_instance_id(instance_id: str) -> str:
     """The first 8 hex digits, for client ids (`std-1a2b3c4d`)."""
     return instance_id.replace("-", "")[:8]
+
+
+def get_backup_value(key: str):
+    """A backup setting saved in the UI, or None when there is no row."""
+    return _get_value(key, None)
+
+
+def set_backup_value(key: str, value) -> None:
+    """Store one backup setting. Caller validates and commits."""
+    _set_value(key, value)
+
+
+def delete_backup_value(key: str) -> None:
+    """Remove a backup setting row (Reset). Caller commits."""
+    row = db.session.get(Setting, key)
+    if row is not None:
+        db.session.delete(row)
+
+
+def get_backup_last_runs() -> dict:
+    raw = _get_value(KEY_BACKUP_LAST_RUNS, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def set_backup_last_runs(runs: dict) -> None:
+    """Store the whole last-runs dict. Caller commits."""
+    _set_value(KEY_BACKUP_LAST_RUNS, runs)
+
+
+def get_restore_last_seen():
+    """The `at` of the last restore result the operator dismissed (restore/last.json), or None."""
+    value = _get_value(KEY_RESTORE_LAST_SEEN, None)
+    return value if isinstance(value, str) else None
+
+
+def set_restore_last_seen(at) -> None:
+    """Mark a restore result seen. Caller commits."""
+    _set_value(KEY_RESTORE_LAST_SEEN, at)

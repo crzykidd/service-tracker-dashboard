@@ -15,6 +15,11 @@
  * (a page re-rendered after a failed save already holds unsaved input).
  * Scripts that change a value programmatically should dispatch a bubbling
  * `change` event on the form so the guard re-checks.
+ *
+ * `form._unsavedGuard` exposes { isDirty, disarm, refresh, reset }. `reset()` takes the
+ * form's current values as the new baseline, clears `data-unsaved-start-dirty`, re-arms
+ * the guard (after a disarm) and refreshes. Use it after filling a form from script
+ * (for example a modal opened for Add or Edit), so a freshly filled form is clean.
  */
 (function () {
   'use strict';
@@ -65,6 +70,14 @@
       refresh();
     }
 
+    function reset() {
+      baseline = serialize(form);
+      startDirty = false;
+      form.removeAttribute('data-unsaved-start-dirty');
+      armed = true;
+      refresh();
+    }
+
     form.addEventListener('input', refresh);
     form.addEventListener('change', refresh);
     form.addEventListener('submit', disarm);
@@ -78,7 +91,7 @@
     });
 
     refresh();
-    form._unsavedGuard = { isDirty: isDirty, disarm: disarm, refresh: refresh };
+    form._unsavedGuard = { isDirty: isDirty, disarm: disarm, refresh: refresh, reset: reset };
     return form._unsavedGuard;
   }
 

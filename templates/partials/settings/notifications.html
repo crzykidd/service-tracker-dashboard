@@ -1,0 +1,213 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot, card_row, kebab, menu_item, menu_sep, modal, modal_block, switch, inline_warning, empty_state with context %}
+{% set nf = notification_form or {} %}
+{% set err = notification_error_fields or [] %}
+{% set _state_dot = {'connected': 'ok', 'connecting': 'warn', 'error': 'bad'} %}
+<section id="section-notifications" class="settings-section{% if (initial_section or settings_default_section) != 'notifications' %} hidden{% endif %}"
+         data-test-url="{{ url_for('dashboard.test_notification_channel_form') }}"
+         data-status-url="{{ url_for('dashboard.notification_status') }}"
+         data-settings-url="{{ url_for('dashboard.settings', section='notifications') }}">
+  {% call section_header('Notifications', 'Brokers STD publishes entry state to.', add_label='Add channel', add_attrs='data-notification-add') %}
+    <p>
+      Channels STD publishes to. MQTT is the first: STD announces <code class="text-xs bg-gray-700 px-1 rounded">&lt;base&gt;/status</code>
+      (<code class="text-xs bg-gray-700 px-1 rounded">online</code>, retained, with an <code class="text-xs bg-gray-700 px-1 rounded">offline</code> last will)
+      and publishes one retained topic set per entry. <strong>Send test</strong> checks the broker settings, in the channel dialog before you save
+      or on a saved channel in its &#8943; menu.
+    </p>
+  {% endcall %}
+  {{ flash_slot('notifications') }}
+
+  <script type="application/json" id="notification-channels-data">{{ notification_channels|tojson }}</script>
+
+  {% if notification_channels %}
+  <div class="settings-card settings-card-list" id="notification-list">
+    {% for ch in notification_channels %}
+    {% set cname = ch.name %}
+    {% set st = ch.status.state %}
+    <div class="settings-card-row" data-channel-id="{{ ch.id }}">
+      <span class="status-dot status-dot--{{ _state_dot.get(st, 'off') }}" aria-hidden="true"></span>
+      <div class="settings-card-main">
+        <div class="settings-card-title">{{ ch.name }}
+          <span class="settings-tag">{{ ch.type|upper }}</span>{% if ch.config.ha_discovery %}<span class="settings-tag settings-tag--ha">HA</span>{% endif %}
+          <span class="notification-state settings-state-word" data-state="{{ st }}">{{ st }}</span></div>
+        <div class="settings-card-summary settings-code">{{ ch.config.host }}:{{ ch.config.port }}{% if ch.config.tls %} TLS{% endif %} &middot; {{ ch.config.base_topic }}/&hellip;</div>
+        <div class="settings-card-error notification-error"{% if st != 'error' %} hidden{% endif %}>{{ ch.status.last_error or '' }}</div>
+        <div class="settings-card-result notification-purge-result" role="status"></div>
+      </div>
+      <div class="settings-card-actions">
+        <button type="button" class="btn-secondary btn-sm" data-notification-edit="{{ ch.id }}">Edit</button>
+        {% if ch.enabled %}
+        <label class="switch-label"><input type="checkbox" role="switch" class="switch" checked
+               aria-label="Enabled: {{ ch.name }}"
+               data-channel-remove="disable" data-channel-id="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+               data-channel-connected="{{ 1 if st == 'connected' else 0 }}"
+               data-action-url="{{ url_for('dashboard.toggle_notification_channel', id=ch.id) }}"> <span>Enabled</span></label>
+        {% else %}
+        <form method="POST" action="{{ url_for('dashboard.toggle_notification_channel', id=ch.id) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="switch-label"><input type="checkbox" role="switch" class="switch" aria-label="Enabled: {{ ch.name }}" data-switch-submit> <span>Disabled</span></label>
+        </form>
+        {% endif %}
+        {% call kebab('notif-menu-' ~ ch.id, ch.name) %}
+          {{ menu_item('Send test', 'data-notification-test="' ~ ch.id ~ '"') }}
+          {% set orphan_attrs %}data-notification-orphans="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+            data-scan-url="{{ url_for('dashboard.scan_notification_orphans', id=ch.id) }}"
+            data-clear-url="{{ url_for('dashboard.clear_notification_orphans', id=ch.id) }}"
+            title="List retained STD topics on this broker that nothing publishes any more (previous base topics, deleted entries)"{% endset %}
+          {{ menu_item('Scan for orphans', orphan_attrs) }}
+          {% set purge_attrs %}data-notification-purge="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+            data-purge-url="{{ url_for('dashboard.purge_notification_channel', id=ch.id) }}"
+            title="Remove every retained STD message and Home Assistant discovery config from this broker"{% endset %}
+          {{ menu_item('Purge MQTT and Home Assistant', purge_attrs) }}
+          {{ menu_sep() }}
+          {% set delete_attrs %}data-channel-remove="delete" data-channel-id="{{ ch.id }}" data-channel-name="{{ ch.name|e }}"
+            data-channel-connected="{{ 1 if st == 'connected' else 0 }}"
+            data-action-url="{{ url_for('dashboard.delete_notification_channel', id=ch.id) }}"{% endset %}
+          {{ menu_item('Delete', delete_attrs, danger=True) }}
+        {% endcall %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="settings-card">
+    {{ empty_state('No notification channels yet.', id='notification-empty') }}
+    <button type="button" class="btn-primary mt-3" data-notification-add>+ Add channel</button>
+  </div>
+  {% endif %}
+
+  <dialog id="purge-dialog" class="std-modal" aria-labelledby="purge-title">
+    <div class="std-modal-header">
+      <h3 id="purge-title">Purge MQTT and Home Assistant: <span id="purge-name"></span></h3>
+      <button type="button" class="std-modal-close" aria-label="Close" data-modal-close>&#10005;</button>
+    </div>
+    <div class="std-modal-body">
+      <p class="text-sm mb-3">Removes every retained STD message under this channel's base topic and every STD discovery config
+        (Home Assistant devices and entities) from the broker. Other STD installs and the availability topic
+        (<code>&lt;base&gt;/status</code>) are left alone. Use it to start clean; to redo a single entry use the button on its edit page.</p>
+      <label class="flex items-center text-sm mb-4"><input type="checkbox" id="purge-republish" class="mr-2" checked>
+        Republish afterwards (after about 2 seconds, so Home Assistant recreates the devices with fresh entity ids)</label>
+      <p class="text-xs text-gray-400">Unticked, the broker stays empty until something changes or the channel reconnects.</p>
+    </div>
+    <div class="std-modal-footer">
+      <button type="button" id="purge-cancel" class="btn-secondary">Cancel</button>
+      <button type="button" id="purge-confirm" class="btn-danger">Purge</button>
+    </div>
+  </dialog>
+
+  <dialog id="channel-remove-dialog" class="std-modal" aria-labelledby="remove-heading">
+    <div class="std-modal-header">
+      <h3 id="remove-heading"><span id="remove-title"></span>: <span id="remove-name"></span></h3>
+      <button type="button" class="std-modal-close" aria-label="Close" data-modal-close>&#10005;</button>
+    </div>
+    <div class="std-modal-body">
+      <p class="text-sm mb-3" id="remove-intro"></p>
+      <label class="flex items-center text-sm mb-1"><input type="checkbox" id="remove-cleanup" class="mr-2">
+        <span id="remove-cleanup-label"></span></label>
+      <p class="text-xs text-gray-400 mb-3" id="remove-cleanup-note"></p>
+      <p class="text-sm text-red-300 mb-3" id="remove-error" role="alert" hidden></p>
+    </div>
+    <div class="std-modal-footer">
+      <button type="button" id="remove-cancel" class="btn-secondary">Cancel</button>
+      <button type="button" id="remove-confirm" class="btn-danger"></button>
+    </div>
+  </dialog>
+
+  <dialog id="orphan-dialog" class="std-modal std-modal--lg" aria-labelledby="orphan-heading">
+    <div class="std-modal-header">
+      <h3 id="orphan-heading">Scan for orphans: <span id="orphan-name"></span></h3>
+      <button type="button" class="std-modal-close" aria-label="Close" data-modal-close>&#10005;</button>
+    </div>
+    <div class="std-modal-body">
+      <p class="text-sm mb-3">Looks on the broker for retained STD topics that STD no longer publishes: topics under the
+        base topics this channel used before (STD remembers the last 5), under a base topic you type below, and this
+        install's Home Assistant discovery configs for entries that are gone. Nothing is cleared until you press
+        <strong>Clear</strong>. Only topics shaped like STD's own are listed.</p>
+      <div class="flex items-end gap-2 mb-3">
+        <div class="flex-1">
+          <label class="settings-label" for="orphan-extra">Also scan this base topic <span class="text-xs text-gray-500">(optional)</span></label>
+          <input type="text" id="orphan-extra" maxlength="128" placeholder="old/base" class="input-clean">
+        </div>
+        <button type="button" id="orphan-scan" class="btn-primary">Scan</button>
+      </div>
+      <p class="text-sm mb-2" id="orphan-status" role="status"></p>
+      <ul class="text-xs font-mono max-h-64 overflow-auto mb-3 border border-gray-700 rounded-lg p-2" id="orphan-list" hidden></ul>
+    </div>
+    <div class="std-modal-footer">
+      <button type="button" id="orphan-close" class="btn-secondary">Close</button>
+      <button type="button" id="orphan-clear" class="btn-danger" hidden></button>
+    </div>
+  </dialog>
+
+  {% set form_attrs %}method="POST" action="{{ url_for('dashboard.save_notification_channel') }}" id="notification-form" data-unsaved-guard{% if notification_form %} data-unsaved-start-dirty{% endif %}{% endset %}
+  {% call(part) modal('channel-modal', 'Edit MQTT channel' if nf.get('id') else 'Add MQTT channel', size='md', form_attrs=form_attrs) %}
+  {% if part == 'body' %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="channel_id" id="nf-channel-id" value="{{ nf.get('id', '') }}">
+    {% call modal_block('Connection') %}
+    <div class="field-grid">
+      <div><label class="settings-label" for="nf-name">Name</label>
+        <input type="text" name="name" id="nf-name" maxlength="64" required value="{{ nf.get('name', '') }}" class="input-clean"{% if 'name' in err %} aria-invalid="true"{% endif %}></div>
+      <div class="field-grid-end">{{ switch('enabled', nf.get('enabled'), 'Enabled', id='nf-enabled') }}</div>
+      <div><label class="settings-label" for="nf-host">Host</label>
+        <input type="text" name="host" id="nf-host" required placeholder="mqtt.lan" value="{{ nf.get('host', '') }}" class="input-clean"{% if 'host' in err %} aria-invalid="true"{% endif %}></div>
+      <div><label class="settings-label" for="nf-port">Port</label>
+        <input type="number" name="port" id="nf-port" min="1" max="65535" placeholder="1883 (8883 with TLS)" value="{{ nf.get('port') if nf.get('port') is not none else '' }}" class="input-clean"{% if 'port' in err %} aria-invalid="true"{% endif %}></div>
+      <div><label class="check"><input type="checkbox" name="tls" id="nf-tls" value="1" {% if nf.get('tls') %}checked{% endif %}> Use TLS</label></div>
+      <div></div>
+      <div class="field-span2"><label class="settings-label" for="nf-base-topic">Base topic</label>
+        <input type="text" name="base_topic" id="nf-base-topic" maxlength="128" value="{{ nf.get('base_topic', 'std') }}" class="input-clean settings-code"{% if 'base_topic' in err %} aria-invalid="true"{% endif %}></div>
+    </div>
+    {% endcall %}
+    {% call modal_block('Authentication') %}
+    <div class="field-grid">
+      <div><label class="settings-label" for="nf-username">Username</label>
+        <input type="text" name="username" id="nf-username" maxlength="128" autocomplete="off" value="{{ nf.get('username') or '' }}" class="input-clean"{% if 'username' in err %} aria-invalid="true"{% endif %}></div>
+      <div><label class="settings-label" for="nf-password">Password <span class="settings-hint" id="nf-password-state"></span></label>
+        <input type="password" name="password" id="nf-password" autocomplete="new-password" maxlength="256" class="input-clean">
+        <label class="check settings-hint" id="nf-clear-row" hidden>
+          <input type="checkbox" name="clear_password" id="nf-clear-password" value="1"> Remove the stored password
+        </label></div>
+    </div>
+    {% endcall %}
+    {% call modal_block('Home Assistant') %}
+    {{ switch('ha_discovery', nf.get('ha_discovery'), 'Add to Home Assistant', id='nf-ha-discovery') }}
+    <p class="settings-hint">Publishes MQTT discovery so Home Assistant creates one device per ticked entry. Choose the entries in Home Assistant settings.</p>
+    <div class="field-grid" id="nf-ha-fields">
+      <div><label class="settings-label" for="nf-ha-prefix">Discovery prefix</label>
+        <input type="text" name="ha_prefix" id="nf-ha-prefix" maxlength="64" value="{{ nf.get('ha_prefix', 'homeassistant') }}" class="input-clean settings-code"{% if 'ha_prefix' in err %} aria-invalid="true"{% endif %}></div>
+      <div><label class="settings-label" for="nf-ha-device-prefix">Device name prefix</label>
+        <input type="text" name="ha_device_prefix" id="nf-ha-device-prefix" maxlength="32" value="{{ nf.get('ha_device_prefix', 'STD') }}" class="input-clean"{% if 'ha_device_prefix' in err %} aria-invalid="true"{% endif %}></div>
+    </div>
+    {% endcall %}
+    {% set adv_open = (['client_id', 'qos', 'keepalive', 'tls_insecure'] | select('in', err) | list | length) > 0 %}
+    {% call modal_block('Advanced', advanced=True, open=adv_open) %}
+    <div class="field-grid">
+      <div><label class="settings-label" for="nf-client-id">Client id</label>
+        <input type="text" name="client_id" id="nf-client-id" maxlength="64" placeholder="std-&lt;instance id&gt;" value="{{ nf.get('client_id') or '' }}" class="input-clean settings-code"{% if 'client_id' in err %} aria-invalid="true"{% endif %}></div>
+      <div><label class="settings-label" for="nf-qos">QoS</label>
+        <select name="qos" id="nf-qos" class="input-clean"{% if 'qos' in err %} aria-invalid="true"{% endif %}>
+          <option value="1" {% if nf.get('qos', 1) == 1 %}selected{% endif %}>1 (at least once)</option>
+          <option value="0" {% if nf.get('qos', 1) == 0 %}selected{% endif %}>0 (at most once)</option>
+        </select></div>
+      <div><label class="settings-label" for="nf-keepalive">Keepalive (seconds)</label>
+        <input type="number" name="keepalive" id="nf-keepalive" min="5" max="3600" value="{{ nf.get('keepalive', 60) }}" class="input-clean"{% if 'keepalive' in err %} aria-invalid="true"{% endif %}></div>
+      <div class="field-grid-end"><label class="check"><input type="checkbox" name="tls_insecure" id="nf-tls-insecure" value="1" {% if nf.get('tls_insecure') %}checked{% endif %}> Skip certificate verification (not recommended)</label></div>
+    </div>
+    {% endcall %}
+    {% call inline_warning('warn', id='nf-cleanup-row', attrs='hidden') %}
+      <div>
+        <label class="check">
+          <input type="checkbox" name="cleanup_old_base" id="nf-cleanup-old-base" value="1" checked>
+          Remove the old topics from the broker
+        </label>
+        <p class="settings-hint" id="nf-cleanup-note"></p>
+      </div>
+    {% endcall %}
+  {% else %}
+    <span id="nf-test-result" class="std-modal-result" role="status"></span>
+    <button type="button" class="btn-secondary" data-modal-close>Cancel</button>
+    <button type="button" class="btn-secondary" id="nf-test">Send test</button>
+    <button type="submit" class="btn-primary" data-unsaved-save>Save channel</button>
+  {% endif %}
+  {% endcall %}
+</section>

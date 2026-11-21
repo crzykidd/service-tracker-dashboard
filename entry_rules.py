@@ -19,7 +19,7 @@ from models import Group, ServiceEntry
 
 logger = logging.getLogger(__name__)
 
-NAME_MAX = 100
+NAME_MAX = 128   # = service_entry.container_name and the stream item name max
 HOST_MAX = 100
 DESCRIPTION_MAX = 255
 URL_MAX = 255

@@ -1,6 +1,5 @@
 """Container check: Docker state as an automatic health check (v0.7.0, PRD 13.8)."""
 
-import io
 import os
 import re
 import sqlite3
@@ -21,6 +20,7 @@ from models import (
     ensure_url_checks,
     evaluate_container,
 )
+from tests.import_helpers import import_flow
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HEALTH_REV = "b8e4d6a2c1f9"
@@ -391,12 +391,9 @@ def test_check_now_queues_container_check(app, admin_client):
 # --- backup ------------------------------------------------------------------
 
 
-def _restore(admin_client, records):
-    payload = yaml.dump(records)
-    return admin_client.post("/settings", data={
-        "action": "restore", "restore_source": "upload", "restore_scope": "all",
-        "restore_file": (io.BytesIO(payload.encode()), "b.yaml"),
-    }, content_type="multipart/form-data")
+def _import(admin_client, records, **kw):
+    """Import a legacy (v0) list through the UI flow; replaces the old Restore form."""
+    return import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml", **kw)
 
 
 def test_backup_round_trip_keeps_container_config(app, admin_client):
@@ -409,30 +406,37 @@ def test_backup_round_trip_keeps_container_config(app, admin_client):
         assert any(c["kind"] == "container" for c in records[0]["checks"])
         db.session.delete(e)
         db.session.commit()
+        _entry("rt")                       # the notifier registered it again: a fresh Container check
     records[0]["last_updated"] = "2026-01-01 00:00:00"
-    assert _restore(admin_client, records).status_code == 302
+    assert _import(admin_client, records).status_code == 200
     with app.app_context():
         c = ServiceEntry.query.filter_by(container_name="rt").one().container_check
         assert (c.enabled, c.interval_seconds, c.check_type, c.target) == (False, 90, "docker", None)
 
 
-def test_old_backup_without_container_row_creates_it(app, admin_client):
+def test_import_without_a_container_row_leaves_the_container_check_alone(app, admin_client):
+    # Old backups carry no Container check; import never disables or removes the local one.
     with app.app_context():
         e = _entry("old")
         rec = e.to_dict()
         rec["checks"] = [c for c in rec["checks"] if c["kind"] != "container"]
+        rec["description"] = "from the backup"
         legacy = e.to_dict()
         for k in ("checks", "source"):
             legacy.pop(k)
         legacy["container_name"] = "legacy"
+        legacy["description"] = "legacy"
         db.session.delete(e)
         db.session.commit()
+        _entry("old")
+        _entry("legacy")
     rec["last_updated"] = legacy["last_updated"] = "2026-01-01 00:00:00"
-    assert _restore(admin_client, [rec, legacy]).status_code == 302
+    assert _import(admin_client, [rec, legacy]).status_code == 200
     with app.app_context():
         for name in ("old", "legacy"):
             e = ServiceEntry.query.filter_by(container_name=name).one()
             assert e.source == "notifier" and e.container_check.enabled
+            assert e.description in ("from the backup", "legacy")
 
 
 def test_manual_backup_entry_gets_no_container_check(app, admin_client):
@@ -442,7 +446,7 @@ def test_manual_backup_entry_gets_no_container_check(app, admin_client):
         db.session.delete(e)
         db.session.commit()
     records[0]["last_updated"] = "2026-01-01 00:00:00"
-    _restore(admin_client, records)
+    _import(admin_client, records)
     with app.app_context():
         assert ServiceEntry.query.filter_by(container_name="man").one().container_check is None
 

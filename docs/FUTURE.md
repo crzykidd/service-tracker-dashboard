@@ -374,38 +374,6 @@ is a security feature nobody asked for.
 
 ---
 
-## Backup contents and format
-
-**Parked:** 2026-11-17, during the network-inventory design review.
-
-### Context
-
-The nightly backup is a YAML list of entries with nested checks
-(`jobs.py` `run_scheduled_backup`). It isn't a table dump: groups
-are carried only by name, notification channels aren't included, and
-restore skips host-less entries unless `source = manual`. Tags,
-saved views, monitor profiles, assignment rules, alert policies,
-inventory sources and the inventory block list would all be missing.
-
-### Open questions
-
-- Back up everything, or only operator-set state (overrides, tags,
-  views, profiles, rules, the block list)? Observed data rebuilds
-  from the notifier and the DHCP sync.
-- A versioned top-level format (`format_version`, `entries`, `tags`,
-  `profiles`, ...) and how older backups map onto it.
-- Whether channel and source secrets belong in a backup file.
-
-### Interim
-
-A nightly SQLite snapshot via `sqlite3.Connection.backup()` (WAL-safe,
-per CLAUDE.md), stored next to the YAML backups with the same
-retention, and restored manually (stop the container, swap the file).
-It covers every table with no format work. A candidate for 0.10.0;
-see the design doc, sections 11 and 12.8.
-
----
-
 ## Notifier: log STD's API revision
 
 **Parked:** 2026-11-17, after the API revision landed on `dev` (PRD 18.1).
@@ -470,6 +438,70 @@ None of these is needed to see a dead producer or a vanished record; each adds a
 contract or a policy decision that is better made with real use of the first
 sidecar.
 
+
+---
+
+## Small gaps parked after v0.10.1
+
+**Parked:** 2026-11-20, during the post-v0.10.1 gap triage (all browser checks
+passed on 0.10.1).
+
+### Context
+
+Two known limits from notif-05 and inv-04 were judged too minor to fix now. Both
+work as designed and are recorded in `docs/decisions.md`; they are parked here so
+they don't keep coming back as open gaps.
+
+### Sketched shape
+
+- **Persist the "republish: false" purge hold.** `PublishState.held` is in memory
+  only, so a restart ends the hold and the channel republishes on connect
+  (decisions.md, 2026-11-17 notif-05). It could be stored with the published set in
+  the `notify_publish_state` setting and released by the same triggers. It only
+  matters if STD restarts between a purge and the operator's next change.
+- **Rename a stream.** `display_name` is set when the stream is created and
+  snapshots never change it (decisions.md, inv-04). A rename field in Settings →
+  Streams (and on the management API) would set it; snapshots would keep ignoring
+  the producer's value. Needs the MQTT/HA stream device to be republished with the
+  new name.
+
+### Why parked
+
+Neither has come up in real use: a restart during a purge hold is rare and the
+outcome (republish) is the unsurprising one, and current stream names come from
+the sidecar and are fine.
+
+
+---
+
+## Settings follow-ups (after 0.11.0)
+
+**Parked:** 2026-11-20, at the end of the Settings modernization (design
+`docs/design/2026-11-20-settings-modernization.md` §15).
+
+### Context
+
+The Settings page was rebuilt in the card and dialog pattern in 0.11.0. These
+follow-ups were left out on purpose: each is small, none blocks the new layout.
+
+### Sketched shape
+
+- **Toasts on the Dashboard, Tiled and Compact views** ("Entry updated", "Logged
+  in"). Today those flashes wait in the session and `_drop_stale_success_flashes`
+  drops them.
+- **One combined "save stream" route** so the Edit stream dialog has a single Save
+  instead of one per block.
+- **Edit a user's email or admin flag.** No route exists; Users only sets a password
+  or deletes.
+- **Search across all of Settings.**
+- **A per-entry Home Assistant preview** (which entities each device would get).
+- **A JS test runner** for the settings modules (`ui.js`, `nav.js`, `groups.js`,
+  `streams.js`, ...). They are checked by hand in a browser today.
+
+### Why parked
+
+The first three change behaviour or routes beyond a restyle, and the rest are
+conveniences. Renaming a stream from its card is already parked above.
 
 ---
 

@@ -5,7 +5,7 @@ import sqlite3
 import time
 from datetime import datetime
 
-import jobs
+import backups
 from extensions import db
 from models import ServiceEntry
 
@@ -42,11 +42,14 @@ def test_snapshot_has_same_tables_and_rows(app, tmp_path):
         _make("a")
         _make("b")
     app.config["backup_path"] = str(tmp_path)
-    jobs.run_scheduled_backup(app)
+    # The export runs first: a run records `backup_last_runs` (one `setting` row), and the
+    # snapshot must be taken after that row exists to match the live counts.
+    assert backups.run_export(app, "schedule")["ok"]
+    assert backups.run_snapshot(app, "schedule")["ok"]
     name = datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3")
     snap = tmp_path / name
     assert snap.is_file()
-    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_backup.yml")).is_file()
+    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_export.yml")).is_file()
     assert sqlite3.connect(snap).execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     counts = _counts(snap)
     assert counts == _live_counts(app)
@@ -58,9 +61,10 @@ def test_snapshot_failure_does_not_stop_yaml_backup(app, tmp_path, monkeypatch):
 
     def boom(*a, **k):
         raise sqlite3.OperationalError("disk full")
-    monkeypatch.setattr(jobs.sqlite3, "connect", boom)
-    jobs.run_scheduled_backup(app)
-    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_backup.yml")).is_file()
+    monkeypatch.setattr(backups.sqlite3, "connect", boom)
+    assert not backups.run_snapshot(app, "schedule")["ok"]
+    assert backups.run_export(app, "schedule")["ok"]
+    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_export.yml")).is_file()
     assert not list(tmp_path.glob("*.sqlite3"))
 
 
@@ -79,7 +83,8 @@ def test_prune_removes_only_old_backup_files(app, tmp_path):
         p = tmp_path / n
         p.write_text("x")
         os.utime(p, (old, old))
-    jobs.run_scheduled_backup(app)
+    assert backups.run_snapshot(app, "schedule")["ok"]
+    assert backups.run_export(app, "schedule")["ok"]
     for n, removed in names.items():
         assert (not (tmp_path / n).exists()) == removed, n
     assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3")).exists()

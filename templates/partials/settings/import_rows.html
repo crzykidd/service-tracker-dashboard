@@ -1,0 +1,70 @@
+{# One preview row of the import page (design 12.2): checkbox or "Import as new" switch, name, host,
+   status pill, summary or target select, and a disclosure with notes, options and the per-field table.
+   Names the apply route reads: sel-<rid>, create-<rid>, target-<rid>, field-<rid> (value = field),
+   opt-<rid> (value = option) and `fieldset` (the rid of every row that shows field boxes). #}
+{% macro import_row(v) %}
+{% set r = v.row %}
+{% set st = r.status %}
+{% set has_detail = r.notes or v.fields or r.options %}
+<div class="imp-row-wrap" data-imp-row data-status="{{ st }}" data-search="{{ v.search }}">
+  <div class="imp-row">
+    {% if st == 'not_found' and r.can_create %}
+    <input type="checkbox" name="create-{{ r.rid }}" value="1" data-group-row data-imp-new{% if v.create %} checked{% endif %}
+           aria-label="{{ 'Create user ' if r.section == 'users' else 'Import as new: ' }}{{ r.label }}">
+    {% elif v.selectable and st != 'not_found' %}
+    <input type="checkbox" name="sel-{{ r.rid }}" value="1" data-group-row data-imp-sel{% if v.sel %} checked{% endif %}
+           aria-label="Import {{ r.label }}">
+    {% else %}<span></span>{% endif %}
+    <span class="imp-name" title="{{ r.label }}">{{ r.label }}</span>
+    <span class="imp-muted imp-host">{{ v.sub }}</span>
+    <span class="imp-pill imp-pill--{{ st }}">{{ v.pill }}</span>
+    <span class="imp-ctl imp-summary imp-muted">
+      {% if st == 'ambiguous' %}
+      <select class="input-clean" name="target-{{ r.rid }}" aria-label="Which local record is {{ r.label }}?" data-imp-target>
+        <option value="">Choose...</option>
+        {% for c in r.candidates %}<option value="{{ c.id }}"{% if v.target == c.id %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        {% if r.section == 'groups' %}<option value="create">Create a new group</option>{% endif %}
+      </select>
+      {% elif st == 'not_found' %}
+        {% if r.can_create %}{{ 'Create user (no password)' if r.section == 'users' else 'Import as new' }}{% else %}Cannot be created{% endif %}
+      {% else %}{{ v.summary }}{% endif %}
+    </span>
+    {% if has_detail %}<button type="button" class="imp-disclose" aria-expanded="false" data-imp-disclose>Details</button>{% else %}<span></span>{% endif %}
+  </div>
+  {% if has_detail %}
+  <div class="imp-detail" hidden>
+    {% if r.notes %}<ul class="imp-notes">{% for n in r.notes %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+    {% if r.options %}
+    <div class="imp-notes">
+      {% for o in r.options %}
+      <label class="switch-label"><input type="checkbox" role="switch" class="switch" name="opt-{{ r.rid }}" value="{{ o }}"{% if o in v.opts %} checked{% endif %}>
+        <span>{{ 'Restore this entry (it is deleted locally)' if o == 'restore' else ('Also soft-delete the entry' if o == 'soft_delete_entry' else o) }}</span></label>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if v.fields %}
+    <input type="hidden" name="fieldset" value="{{ r.rid }}">
+    <table class="imp-fields">
+      <thead><tr><th scope="col"><span class="sr-only">Apply</span></th><th scope="col">Field</th><th scope="col">In file</th><th scope="col">Here</th><th scope="col"></th></tr></thead>
+      <tbody>
+      {% for f in v.fields %}
+        <tr class="is-{{ f.kind }}{% if not f.applicable %} is-fixed{% endif %}">
+          <td><input type="checkbox" name="field-{{ r.rid }}" value="{{ f.name }}" data-imp-field data-kind="{{ f.kind }}" data-applicable="{{ 'true' if f.applicable else 'false' }}"
+                     aria-label="Apply {{ f.name }}"{% if f.checked %} checked{% endif %}{% if f.disabled %} disabled{% endif %}></td>
+          <td>{{ f.name }}</td>
+          <td class="is-file">{{ f.file }}</td>
+          <td class="is-local">{{ f.local }}</td>
+          <td class="imp-muted" style="white-space:normal">
+            {% if not f.applicable %}{{ f.note or 'Not changed by import.' }}
+            {% elif f.kind == 'differs' %}<span class="imp-fill-hint">Switch to overwrite to apply</span>{% if f.note %} {{ f.note }}{% endif %}
+            {% elif f.note %}{{ f.note }}{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}

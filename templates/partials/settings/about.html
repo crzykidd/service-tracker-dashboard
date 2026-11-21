@@ -1,0 +1,59 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot, inline_warning, switch with context %}
+<section id="section-about" class="settings-section{% if (initial_section or settings_default_section) != 'about' %} hidden{% endif %}">
+  {{ section_header('About', 'Version, build and the update check.') }}
+  {{ flash_slot('about') }}
+
+  {% if api_token_missing %}
+  {% call inline_warning('bad') %}
+    <div><strong>API token not set.</strong> Notifier registers (<code>/api/v1/register</code>)
+    are disabled and return 503 until <code>API_TOKEN</code> (or <code>api_token</code> in
+    <code>settings.yml</code>) is set.</div>
+  {% endcall %}
+  {% endif %}
+  {% if default_secret_key or default_admin_password %}
+  {# Shown by access.js unless dismissed this session (sessionStorage). #}
+  {% call inline_warning('warn', id='credential-warning', attrs='style="display:none"') %}
+    <div>
+      <strong>Default credentials in use.</strong>
+      <ul class="list-disc list-inside">
+        {% if default_secret_key %}<li><code>FLASK_SECRET_KEY</code> is not set, so sessions are signed with a public default. Set <code>FLASK_SECRET_KEY</code> to a long random value and restart.</li>{% endif %}
+        {% if default_admin_password %}<li>The <code>admin</code> user still has the default password. Change it under Users.</li>{% endif %}
+      </ul>
+    </div>
+    <button type="button" id="credential-warning-dismiss" class="btn-ghost btn-sm underline">Dismiss</button>
+  {% endcall %}
+  {% endif %}
+
+  <div class="settings-card" id="about-version">
+    <h3 class="settings-card-heading">Version</h3>
+    <dl class="settings-dl">
+      <dt>Version</dt><dd>{{ version_info.version | default('unknown') }}</dd>
+      <dt>Channel</dt><dd>{{ version_display.channel }}</dd>
+      <dt>Commit</dt>
+      <dd>{% if version_display.sha_url %}<a href="{{ version_display.sha_url }}" target="_blank" rel="noopener noreferrer" class="underline hover:text-white"><code>{{ version_display.sha }}</code></a>
+        {%- else %}{{ version_info.commit | default('unknown') }}{% endif %}</dd>
+      <dt>Build time</dt><dd>{{ version_info.build_time | default('unknown') }}</dd>
+      {% if update_status.enabled %}
+      <dt>Latest release seen</dt>
+      <dd>{% if update_status.latest_version %}v{{ update_status.latest_version }}{% if update_status.update_available %} <a href="{{ update_status.release_url }}" target="_blank" rel="noopener noreferrer" class="settings-tag settings-tag--warn no-underline">update available</a>{% endif %}{% else %}not checked yet{% endif %}</dd>
+      <dt>Last checked</dt><dd>{{ update_status.checked_at or 'never' }}</dd>
+      {% if update_status.last_error %}<dt>Last error</dt><dd class="settings-card-error" style="margin-top:0">{{ update_status.last_error }}</dd>{% endif %}
+      {% else %}
+      <dt>Update check</dt><dd>Update check disabled</dd>
+      {% endif %}
+    </dl>
+  </div>
+
+  <div class="settings-card" id="about-update-check">
+    <h3 class="settings-card-heading">Update check</h3>
+    <form method="POST" action="{{ url_for('dashboard.save_update_check') }}" class="flex flex-wrap items-center gap-4 text-sm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ switch('update_check_enabled', update_status.enabled, 'Check GitHub for new releases', id='update-check-enabled') }}
+      <label class="flex items-center gap-2 settings-label" style="margin:0" for="update-check-hours">Every
+        <input id="update-check-hours" type="number" name="update_check_interval_hours" min="1" step="1" value="{{ update_status.interval_hours }}"
+               class="input-clean" style="width:5rem"> hours
+      </label>
+      <button type="submit" class="btn-primary btn-sm">Save</button>
+    </form>
+  </div>
+</section>

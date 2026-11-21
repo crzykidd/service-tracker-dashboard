@@ -1,0 +1,58 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-audit-log" class="settings-section{% if (initial_section or settings_default_section) != 'audit-log' %} hidden{% endif %}">
+  {% call section_header('Audit log', 'Writes made through the management API, newest first (the last ' ~ audit_limit ~ ').') %}
+    <p>
+      Every write made through the management API (the most recent {{ audit_limit }}), including rejected ones.
+      Secret values are masked. Reads are not logged. Rows are kept for {{ current_config.get('api_audit_retention_days', 90) }} days.
+    </p>
+  {% endcall %}
+  {{ flash_slot('audit-log') }}
+
+  <form method="GET" action="{{ url_for('dashboard.settings') }}" class="flex flex-wrap items-end gap-3 mb-4" id="audit-filter-form">
+    <input type="hidden" name="section" value="audit-log">
+    <div>
+      <label class="settings-label" for="audit-key-select">Key</label>
+      <select id="audit-key-select" name="audit_key" class="input-clean" onchange="this.form.submit()">
+        <option value="">All keys</option>
+        {% for o in audit_key_options %}
+        <option value="{{ o.value }}" {% if o.value == audit_filter %}selected{% endif %}>{{ o.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <noscript><button type="submit" class="btn-secondary btn-sm">Filter</button></noscript>
+  </form>
+  {% if audit_rows %}
+  <div class="settings-card overflow-x-auto">
+  <table class="settings-table" id="api-audit-table" style="min-width:760px">
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>Key</th>
+        <th>Method</th>
+        <th>Path</th>
+        <th>Object</th>
+        <th>Status</th>
+        <th>Changes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in audit_rows %}
+      <tr class="align-top">
+        <td class="whitespace-nowrap">{{ a.row.ts.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{{ a.row.key_name or '-' }}</td>
+        <td>{{ a.row.method }}</td>
+        <td class="break-all"><code>{{ a.row.path }}</code></td>
+        <td class="whitespace-nowrap">{% if a.row.object_type %}{{ a.row.object_type }}{% if a.row.object_id %} #{{ a.row.object_id }}{% endif %}{% else %}-{% endif %}</td>
+        <td class="{% if a.row.status_code >= 400 %}text-red-400{% else %}text-green-400{% endif %}">{{ a.row.status_code }}</td>
+        <td class="break-all">
+          {% for line in a.changes %}<div><code class="text-xs">{{ line }}</code></div>{% else %}-{% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="settings-empty" id="api-audit-empty">No API writes recorded{% if audit_filter %} for this key{% endif %}.</p>
+  {% endif %}
+</section>

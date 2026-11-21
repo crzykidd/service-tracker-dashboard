@@ -195,6 +195,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 - Full PRD is at `docs/PRD.md` — read this before starting any phase.
 - Project history (structural events, milestones) at `docs/HISTORY.md`.
 - Parked ideas (not built, not in the PRD) at `docs/FUTURE.md`.
+- Operator reference pages linked from the README: `docs/register-api.md`,
+  `docs/inventory-streams.md`, `docs/mqtt-home-assistant.md`.
 - Decision log (non-obvious calls, rejected alternatives) at
   `docs/decisions.md`, newest at top.
 - Adopted engineering standards and their pinned versions at `standards.md`.
@@ -208,8 +210,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.10.1** (latest tag on `main`).
-In flight: nothing scoped (std-source-technitium may now send `snapshot_interval_seconds`, API revision 3; parked ideas in `docs/FUTURE.md`).
+Current shipped release: **v0.11.0** (latest tag on `main`, once cut).
+In flight: nothing scoped.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -344,6 +346,8 @@ rule as register: STD ships a schema change before any sidecar sends it.
 - **WAL mode is enabled.** All SQLite backup operations must use
   `sqlite3.Connection.backup()` rather than `shutil.copy*`. The WAL
   sidecar can hold uncommitted writes that `shutil.copy2` silently misses.
+  The staged-restore swap (`restore_swap.py`) follows this too: it keeps the current
+  database with `Connection.backup()`, never a file copy, and a failed swap never blocks startup.
 - **`(host, container_name)` is the logical key for `services`** — every
   register call hits this column pair. It must be indexed.
 - **`widget_value` retention is enforced by a scheduled job** (introduced
@@ -412,6 +416,26 @@ notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, 
 streams.py          ← inventory streams (PRD 18): ingest value rules (`normalize_mac`), `plan()` /
                       `apply()` engine under a module lock, lifecycle, blocks, link offers; plain
                       functions raising `StreamError`, shared by the management API and the UI
+export_format.py    ← export format v1 (PRD 20.2): pydantic models (lenient on read), `build_export()`
+                      applying the field ownership table, `dump(doc, yaml|json)`; never a secret;
+                      `from_legacy()` reads the old entry list (format 0)
+importer.py         ← import engine (PRD 20.3-20.4): `parse` (v1 + legacy, record validation),
+                      pure `plan()` (matcher, per-field missing/differs), `fingerprint`, `apply()`
+                      (takes `routes_api._UPSERT_LOCK` then `streams._LOCK`, re-plans, one
+                      transaction; no secret is ever written), and the `import-staging/` store
+                      (it also keeps the preview state, `plan.digests`: the UI hashes the submitted
+                      selection with `fingerprint_from_digests`)
+restore_staging.py  ← staged database restore, app side (PRD 20.5): validate a snapshot, stage it as
+                      `<CONFIG_DIR>/restore/pending.sqlite3`; routes in `routes_restore.py`
+restore_swap.py     ← the swap at container start: STDLIB ONLY, no app import; run by
+                      `entrypoint.sh` before `alembic upgrade head`; must always exit 0
+routes_import.py    ← Settings import routes on `dashboard_bp` (upload, preview, stream mapping,
+                      apply, cancel); templates/settings_import.html +
+                      partials/settings/import_rows.html, static/js/settings/import.js; the
+                      management API's `/import/plan` and `/import/apply` live in routes_mgmt_api.py
+backups.py          ← backup settings (env > UI > settings.yml > default), snapshot/export runs,
+                      per-kind retention, file list + confined `resolve_file`; run functions record
+                      `backup_last_runs`
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API
@@ -424,12 +448,16 @@ health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) 
 health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions, update check)
+settings_sections.py ← Settings section registry (groups, slugs, labels, legacy `?section=` aliases,
+                      `resolve()`); pure data, the sidebar and the routes both read it
 version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
-templates/          ← Jinja templates
-static/             ← static assets (css/, js/, icons/)
+templates/          ← Jinja templates; templates/partials/settings/ = one partial per Settings
+                      section + _macros.html (see PRD §19)
+static/             ← static assets (css/, js/, icons/); static/js/settings/ = Settings scripts
+                      (nav, ui, per-section), static/js/flash.js = toasts and banners
 widgets/            ← per-widget plugin dirs
 alembic/            ← migrations (alembic.ini at root)
 scripts/            ← manual helper scripts (test_widget.py; not a test suite)

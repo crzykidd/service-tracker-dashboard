@@ -36,13 +36,13 @@ def test_form_post_without_token_redirects_with_flash(csrf_on, client):
 
 
 def test_json_post_without_token_returns_400(csrf_on, client):
-    resp = client.post("/api/v1/entries/1/delete", json={})
+    resp = client.post("/entries/1/delete", json={})
     assert resp.status_code == 400
     assert resp.get_json() == {"error": "CSRF token missing or invalid"}
 
 
 def test_fetch_post_without_token_returns_400(csrf_on, client):
-    resp = client.post("/api/v1/entries/1/delete", headers={"Accept": "application/json"})
+    resp = client.post("/entries/1/delete", headers={"Accept": "application/json"})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "CSRF token missing or invalid"
 
@@ -80,7 +80,7 @@ def test_header_token_accepted_on_delete(csrf_on, app):
     c.post("/login", data={"username": ADMIN_USER, "password": ADMIN_PASSWORD, "csrf_token": token})
     token = _token(c, "/settings")
     # Passes CSRF; the entry doesn't exist so the view answers 404 (not 400).
-    resp = c.post("/api/v1/entries/999/delete", headers={"X-CSRFToken": token})
+    resp = c.post("/entries/999/delete", headers={"X-CSRFToken": token})
     assert resp.status_code != 400
 
 

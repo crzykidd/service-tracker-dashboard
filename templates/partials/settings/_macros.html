@@ -1,0 +1,124 @@
+{# Settings-only macros (design 6.2). Import with context in each section partial:
+   {% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+   `flash_target` (the section slug, a modal id or 'page') comes from _render_settings. #}
+{% from "partials/_flash.html" import banner, flash_category_kind %}
+
+{# Header of a section: title, one-line subtitle, optional Add button, optional "Learn more"
+   body (use {% call section_header(...) %}...{% endcall %}). #}
+{% macro section_header(title, subtitle, add_label=None, add_attrs='') %}
+<header class="settings-section-header">
+  <div>
+    <h2 class="settings-section-title">{{ title }}</h2>
+    <p class="settings-section-subtitle">{{ subtitle }}</p>
+    {% if caller is defined %}
+    <details class="settings-learn-more">
+      <summary>&#9432; Learn more</summary>
+      {{ caller() }}
+    </details>
+    {% endif %}
+  </div>
+  {% if add_label %}<button type="button" class="btn-primary" {{ add_attrs|safe }}>+ {{ add_label }}</button>{% endif %}
+</header>
+{% endmacro %}
+
+{# Where banners (errors, warnings) for `target` land (design 7.2). Toasts never come here. #}
+{% macro flash_slot(target) %}
+{% if flash_target == target %}
+<div class="settings-flash-slot" data-flash-slot="{{ target }}">
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+    {% if flash_category_kind(category)|trim != 'toast' %}{{ banner(category, message) }}{% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# Something the operator has to act on; stays inline, never a toast. #}
+{% macro inline_warning(kind='warn', id=None, attrs='') %}
+<div class="inline-warning inline-warning--{{ kind }}"{% if id %} id="{{ id }}"{% endif %} {{ attrs|safe }}>{{ caller() }}</div>
+{% endmacro %}
+
+{% macro status_dot(kind, label) %}<span class="status-dot status-dot--{{ kind }}" aria-hidden="true"></span><span class="sr-only">{{ label }}</span>{% endmacro %}
+
+{% macro card() %}<div class="settings-card">{{ caller() }}</div>{% endmacro %}
+
+{# A list row; caller('main') fills the text column, caller('actions') the buttons. #}
+{% macro card_row(id=None, attrs='', cls='') %}
+<div class="settings-card-row{% if cls %} {{ cls }}{% endif %}"{% if id %} id="{{ id }}"{% endif %} {{ attrs|safe }}>
+  <div class="settings-card-main">{{ caller('main') }}</div>
+  <div class="settings-card-actions">{{ caller('actions') }}</div>
+</div>
+{% endmacro %}
+
+{% macro kebab(id, label) %}
+<div class="kebab-wrap">
+  <button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="{{ id }}" aria-label="More actions for {{ label }}">&#8943;</button>
+  <div class="kebab-menu" role="menu" id="{{ id }}" hidden>{{ caller() }}</div>
+</div>
+{% endmacro %}
+
+{% macro menu_item(label, attrs='', danger=False, cls='') %}<button type="button" class="kebab-item{% if danger %} kebab-item--danger{% endif %}{% if cls %} {{ cls }}{% endif %}" role="menuitem" tabindex="-1" {{ attrs|safe }}>{{ label }}</button>{% endmacro %}
+
+{% macro menu_form_item(action, label, danger=False, confirm=None) %}
+<form method="POST" action="{{ action }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="kebab-item{% if danger %} kebab-item--danger{% endif %}" role="menuitem" tabindex="-1">{{ label }}</button>
+</form>
+{% endmacro %}
+
+{% macro menu_sep() %}<div class="kebab-sep" role="separator"></div>{% endmacro %}
+
+{# Native <dialog>. caller('body') / caller('footer'). With form_attrs the whole dialog is one <form>. #}
+{% macro modal(id, title, size='md', form_attrs=None, attrs='') %}
+<dialog id="{{ id }}" class="std-modal std-modal--{{ size }}" aria-labelledby="{{ id }}-title" {{ attrs|safe }}>
+  {% if form_attrs %}<form {{ form_attrs|safe }}>{% endif %}
+  <div class="std-modal-header">
+    <h3 id="{{ id }}-title">{{ title }}</h3>
+    <button type="button" class="std-modal-close" aria-label="Close" data-modal-close>&#10005;</button>
+  </div>
+  <div class="std-modal-body">
+    {{ flash_slot(id) }}
+    {{ caller('body') }}
+  </div>
+  <div class="std-modal-footer">{{ caller('footer') }}</div>
+  {% if form_attrs %}</form>{% endif %}
+</dialog>
+{% endmacro %}
+
+{% macro modal_block(title, advanced=False, open=False) %}
+{% if advanced %}
+<details class="std-modal-advanced"{% if open %} open{% endif %}><summary>{{ title }}</summary>{{ caller() }}</details>
+{% else %}
+<fieldset class="std-modal-block"><legend>{{ title }}</legend>{{ caller() }}</fieldset>
+{% endif %}
+{% endmacro %}
+
+{% macro switch(name, checked, label, attrs='', id=None) %}
+<label class="switch-label"><input type="checkbox" role="switch" class="switch" name="{{ name }}" value="1"{% if id %} id="{{ id }}"{% endif %}{% if checked %} checked{% endif %} {{ attrs|safe }}> <span>{{ label }}</span></label>
+{% endmacro %}
+
+{# Collapsible group with a tri-state checkbox (design 6.8); the behaviour is in ui.js. #}
+{# check=False drops the tri-state checkbox (a plain collapsible group); count_text replaces "N of M". #}
+{% macro settings_group(key, label, total, checked_count, collapsed=True, check_label=None, check=True, count_text=None) %}
+<section class="settings-group" data-group-key="{{ key }}" data-collapsed="{{ 'true' if collapsed else 'false' }}">
+  <div class="settings-group-header">
+    {% if check %}<input type="checkbox" class="settings-group-check" aria-label="{{ check_label or ('Select all in ' ~ label) }}">{% endif %}
+    <button type="button" class="settings-group-toggle" aria-expanded="{{ 'false' if collapsed else 'true' }}" aria-controls="grp-{{ key }}">
+      <span class="chevron" aria-hidden="true"></span> {{ label }}
+      <span class="settings-group-count">{{ count_text if count_text is not none else (checked_count ~ ' of ' ~ total) }}</span>
+    </button>
+  </div>
+  <div id="grp-{{ key }}" class="settings-group-body"{% if collapsed %} hidden{% endif %}>{{ caller() }}</div>
+</section>
+{% endmacro %}
+
+{# Sticky bar inside a guarded form; CSS shows it only while the form is dirty. #}
+{% macro save_bar(discard='reset', label='Save changes', disabled=False) %}
+<div class="settings-savebar">
+  <span class="settings-savebar-hint" data-unsaved-hint>Unsaved changes</span>
+  {% if discard == 'reset' %}<button type="reset" class="btn-ghost">Discard</button>
+  {% else %}<a href="{{ discard }}" class="btn-ghost" data-unsaved-discard>Discard</a>{% endif %}
+  <button type="submit" class="btn-primary" data-unsaved-save{% if disabled %} disabled{% endif %}>{{ label }}</button>
+</div>
+{% endmacro %}
+
+{% macro empty_state(text, id=None) %}<p class="settings-empty"{% if id %} id="{{ id }}"{% endif %}>{{ text }}</p>{% endmacro %}

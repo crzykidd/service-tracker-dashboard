@@ -64,7 +64,30 @@ DEFAULT_VALUES = {
     "tile_show_host": "duplicates",
 }
 
+WIDGET_BACKGROUND_RELOAD_DEFAULT = DEFAULT_VALUES["widget_background_reload"]
+
 VALID_TILE_SHOW_HOST = ("duplicates", "always", "never")
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+
+
+def cast_value(expected_type, value):
+    """Cast an ENV or settings.yml value to a key's declared type (ValueError if it can't).
+
+    bool is parsed from words ("false" is False, not truthy); everything else uses the
+    type's constructor, so a quoted "5" becomes 5."""
+    if expected_type is bool:
+        if isinstance(value, bool):
+            return value
+        word = str(value).strip().lower()
+        if word in _TRUE:
+            return True
+        if word in _FALSE:
+            return False
+        raise ValueError(value)
+    return expected_type(value)
+
+
 def load_settings():
     file_config = {}
 
@@ -91,13 +114,20 @@ def load_settings():
         env_val = os.getenv(key.upper())
         if env_val is not None:
             try:
-                final_config[key] = expected_type(env_val)
+                final_config[key] = cast_value(expected_type, env_val)
                 config_from_env[key] = final_config[key]
                 logger.debug(f"  {key} = {mask_value(key, final_config[key])} (from ENV)")
             except ValueError:
                 logger.warning(f"Invalid type for {key} from ENV. Expected {expected_type.__name__}")
         elif key in file_config:
-            final_config[key] = file_config[key]
+            raw = file_config[key]
+            try:
+                final_config[key] = raw if raw is None else cast_value(expected_type, raw)
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"Invalid type for {key} in settings.yml. Expected {expected_type.__name__}; "
+                    f"keeping the raw value")
+                final_config[key] = raw
             config_from_file[key] = final_config[key]
         else:
             final_config[key] = DEFAULT_VALUES.get(key, None)

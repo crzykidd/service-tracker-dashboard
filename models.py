@@ -67,7 +67,7 @@ class ServiceEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # NULL host is allowed for manual entries (v0.7.0).
     host = db.Column(db.String(100), nullable=True)
-    container_name = db.Column(db.String(100), nullable=False)
+    container_name = db.Column(db.String(128), nullable=False)
     container_id = db.Column(db.String(100), nullable=True)
     internalurl = db.Column(db.String(255), nullable=True)
     externalurl = db.Column(db.String(255), nullable=True)
@@ -718,6 +718,11 @@ class Group(db.Model):
         .scalar_subquery()
     )
 
+# The `password_hash` of a user the import created without a password (design 7.6). It has
+# no `$` separators, so werkzeug's `check_password_hash` is always False for it.
+UNSET_PASSWORD_HASH = '!unset'
+
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
 
@@ -745,6 +750,12 @@ class User(db.Model, UserMixin):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def has_password(self):
+        """False for a user an import created without a password (the sentinel hash is
+        not a werkzeug hash, so no password ever matches it)."""
+        return self.password_hash != UNSET_PASSWORD_HASH
 
 
 def hard_delete_entry(entry):

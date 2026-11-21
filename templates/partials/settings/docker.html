@@ -1,0 +1,106 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot, status_dot, settings_group, save_bar with context %}
+<section id="section-docker" class="settings-section{% if (initial_section or settings_default_section) != 'docker' %} hidden{% endif %}">
+  {% call section_header('Docker', 'How exposure layers (Traefik, Dockflare, …) turn into internal and external URLs.') %}
+    <p>
+      Each interpreter layer (Traefik, Dockflare, etc.) emits observations about how a container is exposed.
+      Use this page to declare whether each layer means <em>internal</em> URL, <em>external</em> URL, or neither
+      on this deployment. Saving recomputes synthesized URLs for every service. Operator UI edits and explicit
+      <code class="text-xs bg-gray-700 px-1 rounded">dockernotifier.std.internalurl</code> labels are never
+      overwritten.
+    </p>
+  {% endcall %}
+  {{ flash_slot('docker') }}
+
+  {# The register endpoint is always on; it moved here from Streams (operator decision, 2026-11-20). #}
+  <div class="settings-card settings-card-list" id="docker-register">
+    <div class="settings-card-row" id="stream-row-docker">
+      {{ status_dot('ok', 'always on') }}
+      <div class="settings-card-main">
+        <div class="settings-card-title">Docker (register) <span class="settings-tag">always on</span></div>
+        <div class="settings-card-summary settings-card-summary--wrap">docker-api-notifier &middot; <code>/api/v1/register</code> &middot;
+          {{ docker_row.count }} entr{{ 'y' if docker_row.count == 1 else 'ies' }} &middot;
+          last register {% if docker_row.last_register %}{{ docker_row.last_register | time_since }}{% else %}never{% endif %}</div>
+      </div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}" id="exposure-form" data-unsaved-guard>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="settings-card">
+      <h3 class="settings-card-heading">Layer directions</h3>
+      {% if exposure_layers %}
+        <table class="settings-table">
+          <thead>
+            <tr>
+              <th class="w-1/2">Layer</th>
+              <th>Direction</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for layer in exposure_layers %}
+              {% set current = exposure_layer_directions.get(layer, 'neither') %}
+              <tr>
+                <td class="font-mono">{{ layer }}</td>
+                <td>
+                  <select name="layer:{{ layer }}" class="input-clean" style="max-width:16rem" aria-label="Direction for {{ layer }}">
+                    <option value="neither" {% if current == 'neither' %}selected{% endif %}>neither (ignore for URL synthesis)</option>
+                    <option value="internal" {% if current == 'internal' %}selected{% endif %}>internal</option>
+                    <option value="external" {% if current == 'external' %}selected{% endif %}>external</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="settings-empty">
+          No interpreter layers have been observed yet. Once the notifier emits exposure observations
+          (Traefik / Dockflare / etc.) the layers will appear here for configuration.
+        </p>
+      {% endif %}
+    </div>
+
+    {% if exposure_hosts and exposure_layers %}
+      <h3 class="settings-sub">Per-host overrides</h3>
+      <p class="settings-subtitle-note">
+        Override the global direction for a specific host. Useful when the same interpreter (e.g.
+        Traefik) means internal on a home host and external on an edge VPS.
+      </p>
+      <div class="settings-card settings-card-list" id="exposure-hosts">
+        {% for host in exposure_hosts %}
+          {% set host_over = exposure_host_overrides.get(host, {}) %}
+          {% set n_over = host_over.values()|select|list|length %}
+          {% call settings_group('host-' ~ loop.index, host, exposure_layers|length, 0, collapsed=True, check=False,
+                                 count_text=(n_over ~ ' override' ~ ('' if n_over == 1 else 's'))) %}
+            <table class="settings-table">
+              <thead>
+                <tr>
+                  <th class="w-1/2">Layer</th>
+                  <th>Override direction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for layer in exposure_layers %}
+                  {% set override_current = host_over.get(layer, '') %}
+                  <tr>
+                    <td class="font-mono">{{ layer }}</td>
+                    <td>
+                      <select name="override:{{ host }}:{{ layer }}" class="input-clean" style="max-width:16rem" aria-label="Override for {{ layer }} on {{ host }}">
+                        <option value="" {% if not override_current %}selected{% endif %}>(use global)</option>
+                        <option value="neither" {% if override_current == 'neither' %}selected{% endif %}>neither</option>
+                        <option value="internal" {% if override_current == 'internal' %}selected{% endif %}>internal</option>
+                        <option value="external" {% if override_current == 'external' %}selected{% endif %}>external</option>
+                      </select>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endcall %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {{ save_bar(label='Save & recompute URLs', disabled=not exposure_layers) }}
+  </form>
+</section>

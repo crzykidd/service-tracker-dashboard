@@ -11,6 +11,7 @@ alembic and ad-hoc scripts to grab `app` without spawning threads.
 
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse
@@ -21,6 +22,8 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, url
 from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
+import routes_import  # noqa: F401  (registers the import routes on dashboard_bp)
+import routes_restore  # noqa: F401  (registers the staged-restore routes on dashboard_bp)
 import streams
 import version_check
 from api_version import API_REVISION
@@ -112,8 +115,6 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(mgmt_bp)
-
-    app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", settings.get("STD_DOZZLE_URL", ""))
 
     logger.info("🔧 Loaded settings:")
     for k, v in settings.items():
@@ -218,6 +219,14 @@ def create_app():
         if not dt:
             return "never"
         return humanize.naturaltime(datetime.utcnow() - dt)
+
+    # A leading pictograph ("✅ ", "🗑️ ") adds nothing to a toast, which has its own icon.
+    _leading_pictograph = re.compile('^[\u2600-\u27bf\u2b00-\u2bff\U0001f000-\U0001faff]\ufe0f?\\s*')
+
+    @app.template_filter('flash_text')
+    def flash_text(message):
+        """Strip one leading pictograph (and its variation selector) plus spaces."""
+        return _leading_pictograph.sub('', str(message), count=1)
 
     @app.errorhandler(CSRFError)
     def csrf_error(error):

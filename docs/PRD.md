@@ -88,6 +88,20 @@
 | 0.78    | 2026-11-19 | v0.10.0 release prep: §16, §17 and §18 (version in the UI, MQTT and Home Assistant notifications, inventory streams and API revision 2) marked Delivered in v0.10.0. No content change. |
 | 0.79    | 2026-11-20 | Stream observability (inv-08), API revision 3 (unreleased, next after 0.10.0): new §18.9 (rejected snapshots, staleness with grace factor 2 and the expected / advertised interval, `missing` lifecycle with `inventory_missing_since` and the optional per-stream auto soft-delete and its "edited by a human" exemptions, IP-following checks instead of templated targets, MCP `server_info` re-check); §5.10 migration `c6f2a8d4e157`; §18.1 revision 3 row; §18.5 optional `snapshot_interval_seconds` and rejection recording; §18.7 `PATCH` fields; §14.3 health summary `streams` / `stale_streams` / `counts.streams_stale`; §17.3 stream topic `stale` etc. and entry `missing` / `missing_since`; §17.4 stream hub `problem` binary sensor. Register contract unchanged. |
 | 0.80    | 2026-11-20 | v0.10.1 release prep: §18.9 stream observability (API revision 3) marked Delivered in v0.10.1; §18.1 revision 3 row names 0.10.1. No content change. |
+| 0.81    | 2026-11-20 | 0.10.2 fixes (unreleased): `service_entry.container_name` widened to `String(128)` (migration `d7a3e9b2c418`, §5.10) to match the 128-character stream item name; entry name limit 128 in `/add` and the management API (register `container_name` has no length cap, unchanged); notification **Send test message** bounded to about 5 s in total (§17.2). Register and stream contracts unchanged, API revision stays 3. |
+| 0.82    | 2026-11-20 | Added §19 (v0.11.0 — Settings modernization, planned; design in `docs/design/2026-11-20-settings-modernization.md`) and delivered its phase 1 on `dev`: section registry, grouped sidebar with deep links, flash policy, shared UI kit and restyle. Former §19–§21 renumbered §20–§22 and live cross-references updated (older revision rows keep the numbers of their day). §3.1 module layout updated. No schema, wire-contract or `/api/v1` change. |
+| 0.83    | 2026-11-20 | §19 phase 2 delivered on `dev` (set-02): Settings → Notifications channel cards with ⋯ menu and Enabled switch, Add/Edit channel dialog (Send test beside Save, validation errors reopen it), Settings → Home Assistant grouped by source with search and a sticky Save bar; §17.2/§17.4 UI text updated; the "no channel publishes discovery" warning counts enabled channels only. No schema, wire-contract or `/api/v1` change. |
+| 0.84    | 2026-11-20 | §19 phase 3 delivered on `dev` (set-03): Settings → Streams as cards (status dot, ⋯ menu, read-only Docker card), an Edit stream dialog with three independent blocks (name and networks, staleness and missing entries, default checks) that reopens with the typed values on a value or `StreamError` failure (400 re-render), Preview in a wide dialog, pending and stale inline warnings with Preview / Enable / Ignore, compact Blocked and Link offers lists, an amber open-offers badge on the Streams link. §18.8 UI text updated. Routes, `streams.py`, the wire contract and `/api/v1` are unchanged. |
+| 0.85    | 2026-11-20 | §19 phase 4 delivered on `dev` (set-04), completing the Settings modernization except Backup & restore, which the separate backup project (`docs/design/2026-11-20-backup-export-import.md`) rebuilds: Groups as cards with a staging dialog inside the single form; Widgets as cards (⋯ Copy API key); Docker with a Layer directions card, collapsible per-host overrides and a sticky **Save & recompute URLs** bar, and the Docker (register) card moved there from Streams; Users as cards with Add user and Set password dialogs; API keys as cards with a Create key dialog and the key shown once in a dialog on the Settings page (`api_key_created.html` removed); About, Configuration, Deleted and detached widgets restyled. §12.5, §12.6, §14.2, §14.6, §15.3, §15.4, §16 and §18.8 UI text updated; §19 marked Delivered. No schema, wire-contract or `/api/v1` change. |
+| 0.86    | 2026-11-20 | Added §20 (v0.11.0 — Backup, export and import, planned; design in `docs/design/2026-11-20-backup-export-import.md`) and delivered its phase 1 (§20.1, bak-01) on `dev`: backup path, snapshot and export settings editable in Settings with env > UI > `settings.yml` > default precedence, two daily jobs (snapshot 00:05, export 00:10) replacing the single 00:05 job, per-kind retention and Run now, a backup file list with download and delete, last-run status with a failure warning and navigation badge, new `backups.py`. §3 job list, §3.1 module layout and §4 settings table updated. Former §20–§22 renumbered §21–§23 and live cross-references updated (older revision rows keep the numbers of their day); the §19 TOC entry now says Delivered. No schema (the existing `setting` table is used), wire-contract or `/api/v1` change. |
+| 0.87    | 2026-11-20 | §20.2 delivered on `dev` (bak-02): export format v1 (`std-export`, YAML or JSON, same document, never a secret) built by the new `export_format.py` with the §5.3 field ownership rules, the daily and manual export job now writes `<date>-std_export.yml\|json` (replacing the entry-list YAML; old `-std_backup.yml` files stay listed and age out with export retention), `GET /settings/backups/export` download with Download YAML / JSON buttons on the Exports card, and management API routes `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export` with MCP tools `backup_settings`, `list_backups`, `export_config`, `run_backup`. **`API_REVISION` 4** (§18.1) and the `backup` feature. §3.1 module layout, §14.4 route list and §20.6 updated. No schema change; register and stream-ingest wire contracts unchanged. |
+| 0.88    | 2026-11-20 | §20.3 and §20.4 describe the import engine as built on `dev` (bak-03; still Planned for operators, because nothing reaches it until bak-04): new `importer.py` (`parse` for v1 and the legacy entry list, a pure `plan()`, `fingerprint`, `apply()` under the register and stream locks, a staging store under `CONFIG_DIR/import-staging/`), `export_format.from_legacy()`, and a `User.has_password` property for users created with the `!unset` hash. §3.1 module layout and §20.6 updated. No schema, wire-contract or `/api/v1` change. |
+| 0.89    | 2026-11-20 | §20.3 delivered on `dev` (bak-04): the import UI (Settings → Backup & restore → Import card, `/settings/import/<token>` preview page with stream mapping, the fill / overwrite mode switch, grouped rows with tri-state and per-field ticks, sticky apply bar, summary with "Still to do"), users created without a password (a muted tag in Users), management API `POST /import/plan` and `POST /import/apply` and MCP `import_plan` / `import_apply`. The old Restore form, "Save backup to server" and the `action=backup\|restore` branches of `/settings` are removed (old YAML backups import through the new flow). **`API_REVISION` 4** row extended (§18.1), `import` feature added; no new revision. §3.1 module layout, §14.4 route list, §20.3, §20.4, §20.6 updated. No schema, register or stream-ingest wire-contract change. |
+| 0.90    | 2026-11-20 | §20.5 delivered on `dev` (bak-05), completing §20 (Backup, export and import; all five phases delivered, unreleased): staged database restore. `restore_staging.py` validates and stages a snapshot (⋯ → Restore… or an upload, ≤ 200 MB); `restore_swap.py`, run by `entrypoint.sh` before `alembic upgrade head`, keeps the current database as `pre-restore-<timestamp>.sqlite3` (`Connection.backup()`), swaps the file and never blocks startup; pending banner on every Settings section, last-result banner, `pre-restore-*` files listed with the snapshots and never pruned. §3 (startup sequence) and §3.1 updated. No schema, wire-contract or `/api/v1` change. |
+| 0.91    | 2026-11-21 | Docs-only, with the README revamp: §21 says the `Test` check is required (it is, in the "Require PR for Main" ruleset, with a code-scanning rule for CodeQL), no longer "pending operator action"; the §21.3 heading says inventory stream producers shipped in 0.10.0 instead of "planned". Operator reference material moved out of the README into `docs/register-api.md`, `docs/inventory-streams.md` and `docs/mqtt-home-assistant.md`. No code, schema or contract changes. |
+| 0.92    | 2026-11-21 | §13.7: the Dashboard expand row shows the shared entry facts (`partials/entry_facts.html`, the tile drawer's info rows) beside the health detail, two columns stacking below 768px. No schema, API or wire-contract change. |
+| 0.93    | 2026-11-21 | §13.7: Compact view gets an expand button per tile that opens a details dialog (facts, health detail, Edit / Delete / Dozzle) fetched from the new `GET /service/<id>/details` session route (`partials/compact_details.html`, `static/js/compact_details.js`). Tile size, grid and click-to-open unchanged. No schema, API or wire-contract change. |
+| 0.94    | 2026-11-21 | v0.11.0 released: §19 Settings modernization and §20 backup, export, import and staged restore marked delivered (API revision 4), plus the Dashboard and Compact expand views (§13.7) and the 0.10.2 fixes (MQTT test bounded to ~5 s, 128-character entry names). Table of contents headings for §16–§20 brought in line with the section headings. |
 
 ---
 
@@ -108,12 +122,14 @@
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
 15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
-16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
-17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
-18. [Next release — Inventory streams and API revision (Delivered on `dev`)](#18-next-release--inventory-streams-and-api-revision-delivered-on-dev)
-19. [Versioning, Branches, and Releases](#19-versioning-branches-and-releases)
-20. [Cross-Repo Coordination](#20-cross-repo-coordination)
-21. [Open Questions](#21-open-questions)
+16. [v0.10.0 — Version in the UI (Delivered)](#16-v0100--version-in-the-ui-delivered)
+17. [v0.10.0 — Notifications: MQTT and Home Assistant (Delivered)](#17-v0100--notifications-mqtt-and-home-assistant-delivered)
+18. [v0.10.0 — Inventory streams and API revision (Delivered)](#18-v0100--inventory-streams-and-api-revision-delivered)
+19. [v0.11.0 — Settings modernization (Delivered)](#19-v0110--settings-modernization-delivered)
+20. [v0.11.0 — Backup, export and import (Delivered)](#20-v0110--backup-export-and-import-delivered)
+21. [Versioning, Branches, and Releases](#21-versioning-branches-and-releases)
+22. [Cross-Repo Coordination](#22-cross-repo-coordination)
+23. [Open Questions](#23-open-questions)
 
 ---
 
@@ -197,7 +213,7 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               │  │  Background jobs (APScheduler)    │  │
               │  │  ├─ URL health check loop         │  │
               │  │  ├─ widget refresh loop           │  │
-              │  │  └─ nightly backup + retention    │  │
+              │  │  └─ daily snapshot + export       │  │
               │  └───────────────────────────────────┘  │
               │  ┌───────────────────────────────────┐  │
               │  │  SQLite (WAL)                     │  │
@@ -208,6 +224,11 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               │  └───────────────────────────────────┘  │
               └─────────────────────────────────────────┘
 ```
+
+**Container start sequence** (`entrypoint.sh`): (1) `python restore_swap.py` applies a
+staged database restore if one is pending (§20.5; it exits 0 whatever happens), (2)
+`alembic upgrade head` migrates the database (a restored older snapshot included), (3)
+gunicorn starts (one worker; `run_startup_tasks` runs in the worker).
 
 ### 3.1 Module layout
 
@@ -241,7 +262,7 @@ routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
                       Flask-Login user_loader
 jobs.py             ← concurrent health-check scheduler, health-result
                       compaction/purge, widget refresh loop, daily
-                      backup, widget_value retention prune,
+                      snapshot and export jobs, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
 checker.py          ← health-check probes (http/tcp/ping/dns); network only, no DB
 check_form.py       ← Add/Edit health-check form parsing + validation
@@ -249,13 +270,31 @@ health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none)
 health_history.py   ← history bars, uptime, recent failures for the detail panel
 health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
-settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
+settings_store.py   ← DB-stored runtime settings (per-interpreter directions, backup settings)
+export_format.py    ← export format v1 (PRD 20.2): pydantic models, `build_export()`, `dump()`,
+                      `from_legacy()` (format 0)
+importer.py         ← import engine (§20.3-20.4): `parse`, pure `plan()`, `fingerprint`, `apply()`,
+                      staging store
+restore_staging.py  ← staged database restore, app side (§20.5): `validate`, `stage`, `pending`,
+                      `cancel`, `last_result`; routes in `routes_restore.py`
+restore_swap.py     ← the swap at container start (§20.5): stdlib only, run by `entrypoint.sh`
+                      before `alembic upgrade head`; never fails startup
+routes_import.py    ← Settings import routes on `dashboard_bp` (§20.3): upload, preview, stream
+                      mapping, apply, cancel; templates `settings_import.html`,
+                      `partials/settings/import_rows.html`; `static/js/settings/import.js`
+backups.py          ← backup settings (env > UI > settings.yml > default), snapshot and export
+                      runs, retention, file list and confined file lookup (§20.1)
+settings_sections.py ← Settings section registry: groups, slugs, labels, legacy
+                      `?section=` aliases, `resolve()` (§19)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
                       URL provenance tracking
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
-templates/          ← Jinja templates
-static/             ← static assets (css/, js/, icons/)
+templates/          ← Jinja templates; `templates/partials/settings/` holds one
+                      partial per Settings section plus `_macros.html` (§19)
+static/             ← static assets (css/, js/, icons/); `static/js/settings/`
+                      holds the Settings scripts, `static/js/flash.js` the
+                      toasts and banners (§19)
 widgets/            ← per-widget plugin dirs
 alembic/            ← migrations (alembic.ini at root)
 scripts/            ← manual helper scripts (test_widget.py; not a test suite)
@@ -263,7 +302,8 @@ tests/              ← pytest suite (v0.6.9)
 requirements-dev.txt ← pytest + runtime deps; CI/dev only
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
-Dockerfile, entrypoint.sh, docker-compose.yml, requirements.txt
+Dockerfile, entrypoint.sh (restore swap, then migrations, then the server), docker-compose.yml,
+requirements.txt
 gunicorn.conf.py    ← production server config (workers must stay 1)
 requirements.in     ← direct deps; requirements.txt is compiled from it
 settings.example.yml, .env.example
@@ -475,7 +515,7 @@ Migrations `d8e2a6f4b915` and `e3b7c1d9a204` (§17.4). No foreign keys, no new i
 
 ### 5.10 Inventory stream schema changes
 
-Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_checks`, below), `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, below) and `c6f2a8d4e157` (stream observability, §18.9, below). Every FK column has its index in the same migration.
+Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_checks`, below), `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, below), `c6f2a8d4e157` (stream observability, §18.9, below) and `d7a3e9b2c418` (`service_entry.container_name` widened from `String(100)` to `String(128)`, so a 128-character stream item name fits; `batch_alter_table`, the `ix_service_entry_host_container_name` index survives the rebuild). Every FK column has its index in the same migration.
 
 | Change | Detail |
 |--------|--------|
@@ -1071,7 +1111,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §19 (Versioning, Branches, and Releases); this section
+release mechanics is §21 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -1093,7 +1133,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§19).
+  checks (§21).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1118,7 +1158,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§20) is not engaged and every notifier
+consumer-leads ordering rule (§22) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1227,9 +1267,10 @@ Picks up the FUTURE.md "Soft-delete for service entries" entry.
   `/dbdump` default view. Implement as one model-level helper
   (e.g. `ServiceEntry.active()`), and audit every `ServiceEntry.query`
   call site — there are ~18.
-- **Settings → Deleted** tab lists soft-deleted entries with
-  **Restore** and **Delete permanently** (the latter goes through
-  §12.6's hard-delete path).
+- **Settings → Deleted** lists soft-deleted entries as cards (name, host,
+  deleted at, days until purge) with **Restore** and a ⋯ menu with
+  **Delete permanently** (the latter goes through §12.6's hard-delete
+  path; the confirm dialog keeps its text).
 - **Purge job:** daily at 00:25 hard-deletes rows whose `deleted_at` is
   older than `deleted_retention_days` (new setting, default `30`,
   `0` = purge on the next run).
@@ -1265,9 +1306,9 @@ scheduled/manual backups deliberately include deleted rows. New routes:
 - A widget is **detached** when no service entry (active or
   soft-deleted) references it. Detached widgets are skipped by the
   widget refresh job.
-- **Settings → Deleted** gains a "Detached widgets" list: **Attach to
-  service** (picker of entries with no widget) or **Delete** (removes
-  the widget and its values).
+- **Settings → Deleted** gains a "Detached widgets" list of cards:
+  **Attach to service** (picker of entries with no widget) or, in the ⋯
+  menu, **Delete** (removes the widget and its values).
 
 As built: `Widget.detached()` (no `ServiceEntry` references it);
 `hard_delete_entry` now only deletes the entry. Routes (admin, CSRF):
@@ -1303,7 +1344,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§21).
+Resolves the Open Question on health-check timeouts (§23).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1381,8 +1422,9 @@ Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
   containment in `IMAGE_DIR`) before any write. Register skips an unsafe icon
   with a WARNING and still succeeds; Add/Edit flash a message and download
   nothing (Edit leaves the stored icon unchanged and saves the other fields).
-- **Backup restore from a server file** accepts only a bare filename ending
-  `.yaml`/`.yml` whose resolved path stays inside the backup folder.
+- **Import from a server file** (was Restore, replaced in 0.11.0) accepts only a bare
+  filename ending `.yaml`/`.yml`/`.json` whose resolved path stays inside the backup folder
+  (`backups.resolve_file`; a symlink out of it is refused).
 - **`/widget_config/<widget_name>`** accepts only directory names present
   under `widgets/`, resolved from the app root rather than `/app/widgets`.
 - **Redirects:** `view_helpers.safe_redirect_target` allows only same-site
@@ -1424,7 +1466,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§20) is not engaged. Every notifier version that works
+ordering rule (§22) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -1753,7 +1795,16 @@ backups still emit those keys, derived from the check rows. New filter
   - **Dashboard**: a new expand row under each entry.
   - **Edit page**: above "Reported by notifier".
   - **Compact** has no drawer; its badge links to the Edit page's
-    health section.
+    health section. Each tile has an expand button that opens one shared
+    `<dialog class="std-modal">` (a dialog, not a drawer, because the grid
+    flows by column). It is filled on open from
+    `GET /service/<id>/details` (login required; HTML fragment
+    `partials/compact_details.html`; 404 for an unknown or deleted entry):
+    header (icon, name, health pill, source icon), two columns
+    (`entry_facts.html` | health detail, stacking below 768px) and an
+    action row (Dozzle logs, Edit, Delete unless locked). The script is
+    `static/js/compact_details.js`; Delete closes the dialog and reuses the
+    shared delete popover; auto-refresh pauses while it is open.
 - Rendering uses plain divs and CSS (no chart library).
 
 **As built:** `health_history.py` holds the pure functions: `bars(check,
@@ -1774,6 +1825,9 @@ on the 24h/7d toggle, renders with DOM calls (no innerHTML of server text),
 and drives the tooltip and Check now (`stdPost`, then re-fetch every 2 s until every shown check has a result newer than the request's `requested_at`, up to 75 s).
 Dashboard gets a leading chevron column and an expand row (group-header
 `colspan` is now 13); an open row pauses auto-refresh like an open drawer.
+Since 0.11.0 the Dashboard expand row has two columns: the shared entry facts
+(`partials/entry_facts.html`, also the tile drawer's info rows) on the left and the
+health detail (facts hidden) on the right; the columns stack below 768px.
 The Edit page panel is a "Health history" block after the form, above
 "Reported by notifier".
 
@@ -1913,12 +1967,11 @@ token and needs no update.
   `secrets.token_urlsafe`. Because the key is high-entropy, a plain SHA-256
   is sufficient (no KDF). Lookup is by `prefix`, then the hash is compared
   with `hmac.compare_digest`.
-- **Settings → API tab** (admin only):
-  - **Create key** asks for a name and scope and shows the full key
-    **once**, with a copy button.
-  - Key list: name, prefix, scope, created, rotated (v0.9.0), last used
-    (time and IP), **Rotate** (v0.9.0) and **Revoke**.
-  - The recent audit log is shown here too (§14.6).
+- **Settings → API keys** (admin only; the Audit log is its own section, §14.6):
+  - **Create key** opens a dialog (name and scope) and shows the full key
+    **once**, in a dialog on the Settings page with a copy button (§19.6).
+  - Key cards: name, scope, prefix, active or revoked, created, rotated
+    (v0.9.0), last used (time and IP), ⋯ **Rotate** (v0.9.0) and **Revoke**.
 - **Decorator `require_api_key(scope)`:**
   - Missing or invalid key → 401 JSON. Revoked → 401. Read key on a write
     endpoint → 403.
@@ -1944,9 +1997,9 @@ also returns `version` (the STD version, same source as `/config`); see §15.7.
   (400, field-level `details`) and unhandled exceptions (500). Routing-level
   404/405 (no matching URL) are not handled by a blueprint and keep Flask's
   default response.
-- Settings → API (admin, CSRF): create shows the key on the POST response page
-  (`api_key_created.html`, `Cache-Control: no-store`), never via flash or
-  session; revoke keeps the row greyed out. (Superseded in v0.9.0, §15.3: names are unique among active keys only; originally unique including
+- Settings → API keys (admin, CSRF): create shows the key once in the response's
+  show-once dialog (`Cache-Control: no-store`; v0.8.0 used `api_key_created.html`,
+  removed in v0.11.0), never via flash or session; revoke keeps the row greyed out. (Superseded in v0.9.0, §15.3: names are unique among active keys only; originally unique including
   revoked keys.) The audit list on this tab arrives with v080-04.
 
 ### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered in v0.8.0
@@ -2028,6 +2081,13 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 | `DELETE /widgets/<id>` | write | Delete a detached widget. |
 | `GET /settings/exposure` | read | Per-interpreter direction mappings, per-host overrides, and discovered layers and hosts (`settings_store`). |
 | `PUT /settings/exposure` | write | Replace them, with the same validation as Settings → Exposure. |
+| `GET /settings/backup` | read | Backup settings (folder, snapshot and export jobs) each with its `origin` (`env`, `ui`, `file`, `default`), plus `last_runs` and `next_runs` (§20, API revision 4). |
+| `PUT /settings/backup` | write | Change them with the UI's validation; an env-pinned field is a 409; reschedules the jobs. Audited as `backup_settings`. |
+| `GET /backups` | read | Backup files, newest first: `{name, kind, size, modified, manual, legacy}`. No download route: a snapshot holds every secret. |
+| `POST /backups/run` | write | `{kind: snapshot\|export}`, synchronous; 409 when that kind is already running. Audited as `backup_run`. |
+| `GET /export` | read | The export document (§20.2), `?format=json` (default) or `yaml` (`application/yaml`). Not audited. |
+| `POST /import/plan` | write | Dry-run an import (§20.3): the plan, `default_selection` and the `fingerprint` for the `selection` sent. Writes and audits nothing. |
+| `POST /import/apply` | write | Apply the selected rows in one transaction (§20.3); 409 with a fresh plan on a stale fingerprint. Audited as `import` (counts only). |
 | `GET /config` | read | Effective `settings.yml`/env values, read-only, with **secrets masked** (`api_token`, `secret_key`, widget keys) plus the app version. These are not editable through the API (they are loaded once at startup). |
 
 Users and passwords are **not** exposed through the API (out of scope).
@@ -2095,7 +2155,7 @@ with the JSON error shape when the caller sends a Bearer header or
   failures (4xx). Reads are not logged.
 - **Retention:** new setting `api_audit_retention_days` (default 90), with a
   daily purge job.
-- **Settings → API** shows the most recent 200 rows, filterable by key.
+- **Settings → Audit log** shows the most recent 200 rows, filterable by key.
 
 **As built (v080-01):** model, retention and the hook are in. The hook is
 `routes_mgmt_api.audit_response`, registered with `mgmt_bp.after_request`; it
@@ -2108,7 +2168,7 @@ old and new values before they reach the database. Unauthenticated requests
 are only logged. `jobs.purge_api_audit` runs daily at 00:35. The Settings
 view of the log is not built yet.
 
-**As built (v080-04):** Settings → API lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
+**As built (v080-04):** Settings → Audit log lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
 
 ### 14.7 MCP server [`v080-05-mcp-server`] — Delivered in v0.8.0
 
@@ -2135,7 +2195,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§21), users and passwords through the API, and
+- Per-host notifier tokens (§23), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2284,7 +2344,7 @@ expiry, even though the HTTP status is fine.
 
 ### 15.3 API key rotation [`v090-03-api-key-rotate`] — Delivered in v0.9.0
 
-- **Rotate** on each active key in Settings → API (`POST
+- **Rotate** on each active key in Settings → API keys (`POST
   /settings/api-keys/<id>/rotate`, admin and CSRF, like revoke). It keeps the
   row (id, name, scope, `created_at`, audit history) and issues a fresh key
   from `generate_key()`, so the prefix and the secret are both new.
@@ -2293,11 +2353,12 @@ expiry, even though the HTTP status is fine.
   secret) and returns the full key. A revoked key raises `ValueError`.
 - No grace period: `verify` looks up by prefix and hash, so the old secret is
   rejected at once.
-- The new key is shown once on `api_key_created.html` (headed "Key rotated"),
+- The new key is shown once in the show-once dialog on the Settings page (headed
+  "Key rotated"; v0.9.0 used `api_key_created.html`, removed in v0.11.0),
   with `Cache-Control: no-store, no-cache`. A revoked or unknown id flashes an
   error and redirects to the API tab. The log line carries the key id only.
 - New column `api_key.rotated_at` (nullable, naive UTC); the list shows it as
-  **Rotated** ("—" when never rotated).
+  "rotated" in the key card's summary ("—" when never rotated).
 - **Name reuse.** `api_key.name` is no longer unique across all rows: the
   column constraint `uq_api_key_name` is replaced by the partial unique index
   `ux_api_key_name_active` (`name WHERE revoked_at IS NULL`), so a revoked
@@ -2325,7 +2386,8 @@ expiry, even though the HTTP status is fine.
   delete-marked group has no active entries. The name, icon and priority rules
   are `entry_rules.validate_group` / `parse_sort_priority`, shared with the
   management API. Any failure writes nothing and re-renders Settings (HTTP 400)
-  on the Groups tab with the submitted values and per-row messages.
+  on the Groups section with the submitted values and per-row messages (v0.11.0:
+  as cards, and the staging dialog opens on the first row with a message; §19.6).
 - **Applying.** One transaction: deletes (soft-deleted entries detached), renamed
   rows parked on a placeholder name so SQLite's per-statement UNIQUE check
   allows swaps, then the final values and the new row. Flash: "Saved: N updated,
@@ -2341,7 +2403,7 @@ expiry, even though the HTTP status is fine.
 - **Setting.** `tile_show_host` (`TILE_SHOW_HOST`): `duplicates` (default),
   `always`, `never`. Lower-cased and trimmed at startup in `settings_loader`;
   an unknown value logs a warning and falls back to `duplicates`. Startup-only
-  like every `settings.yml` value; it appears in Settings → Info and in
+  like every `settings.yml` value; it appears in Settings → Configuration and in
   `GET /api/v1/config` (not a secret) with no schema change.
 - **Detection.** `view_helpers.duplicate_name_ids(entries)` returns ids whose
   name (case-insensitive, trimmed) is shared by another active entry on a
@@ -2482,10 +2544,11 @@ register-contract change.
     `interval × 2^failures`, capped at 24 h;
   - the last good result (with ETag) persists in the `setting` table;
     backoff and the last error are in memory only.
-- **Settings** (DB runtime, Settings → Info): `update_check_enabled`
+- **Settings** (DB runtime, Settings → About): `update_check_enabled`
   (default on) and `update_check_interval_hours` (default 6, minimum 1).
-  Disabled means no fetch and no link. Info also shows channel, linked
-  commit, build time, latest release seen, last checked and last error.
+  Disabled means no fetch and no link. About also shows channel, linked
+  commit, build time, latest release seen, last checked and last error, in
+  a Version grid with the settings in an Update check card (v0.11.0).
 - **Management API / MCP:** `whoami` and `config` add `commit`, `channel`,
   `build_time` and `update {enabled, latest_version, update_available,
   release_url, checked_at}`; `GET/PUT /api/v1/settings/update-check`. MCP
@@ -2553,11 +2616,14 @@ No register-contract change: the notifier is not involved.
   publisher reload: a changed channel is stopped cleanly and reconnected
   with the new settings, without restarting STD.
 - Settings → Notifications tab (admin): channel list with live status
-  (connected / connecting / error with the last error / disabled), add, edit,
-  enable/disable, delete; write-only password (blank keeps it, a checkbox
-  clears it); **Send test message** publishes a non-retained JSON message to
+  (connected / connecting / error with the last error / disabled) as cards (status
+  dot, broker and base topic, Edit, an Enabled switch, a ⋯ menu with Send test,
+  Scan for orphans, Purge and Delete), add and edit in one dialog (Connection,
+  Authentication, Home Assistant, a collapsed Advanced block; a failed save reopens
+  it with the typed values), enable/disable, delete; write-only password (blank keeps it, a checkbox
+  clears it); **Send test** (in the dialog, or on a saved channel's ⋯ menu, which uses the stored password) publishes a non-retained JSON message to
   `<base>/test` using the submitted, possibly unsaved, values (a throwaway
-  client with a `-test` client id, so the live connection is not dropped).
+  client with a `-test` client id, so the live connection is not dropped). The test runs on the request thread under one budget of about 5 s in total (connect wait 4 s, the publish wait gets the remainder, at least 1 s), so a broker that does not answer ends with "No answer from host:port within 4 seconds."
 - Management API: `GET`/`POST /api/v1/notifications/channels`,
   `GET`/`PATCH`/`DELETE .../channels/{id}`, `POST .../channels/{id}/test`
   (read scope for GET, write for the rest). `secret` is write-only
@@ -2684,10 +2750,15 @@ topics are still published for an unpublished entry; only discovery is withheld.
 checkbox, **Discovery prefix** and **Device name prefix**. The entry edit page
 and the Add Entry page have **Publish to Home Assistant** (default off; a hidden
 marker keeps a form without the field from changing the stored value). Settings →
-Notifications has a **Home Assistant entries** panel: a table of active entries
-(name, host, group) with a Publish checkbox, a filter, Select all / Select none
-(visible rows) and one Save that applies every change in a single commit (one
-sync). Every check row (URL, container, service)
+Home Assistant (its own section) lists active entries grouped by source (Docker,
+Manual, then one group per stream; collapsed, tri-state group checkbox, live
+"N of M"), each with a Publish checkbox, name, host and group, a search that opens
+matching groups, Select all / Select none (visible rows) and a sticky Save bar,
+shown only while dirty, that applies every change in a single commit (one sync).
+A status line names the channels with discovery on and "N of M entries published";
+when no *enabled* channel has discovery on (a disabled one publishes nothing) it
+is an amber warning instead, and the section's nav link gets an amber dot if any
+entry is ticked. Every check row (URL, container, service)
 has **Publish to Home Assistant** (default on; stored inverted as `ha_exclude`;
 a form that lacks the toggle's hidden marker leaves the stored value alone). The
 controls are always visible and say they only matter with a Home Assistant
@@ -2810,7 +2881,7 @@ noted; 404/409/504): `POST /streams/{stream_id}/notifications/purge`,
 
 For **0.10.0** (every subsection is delivered on `dev`, unreleased), together with §16 and §17. The goal is an STD that is
 ready for the first inventory sidecar (`std-source-technitium`, a new repo,
-§20.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
+§22.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
 fully tested end to end yet, but nothing happens until an operator creates an
 `ingest` key and enables a stream, so general users never touch it. Fixes found
 while building the sidecar land in 0.10.x.
@@ -2854,7 +2925,7 @@ server supports and log it.
   It reveals no more than the response headers do.
 - `GET /api/v1/whoami` adds `api_revision`. The OpenAPI `info` adds
   `x-api-revision`. MCP `server_info` adds `std_api_revision`.
-- **Producers** (documented in §20): send `User-Agent: <producer>/<version>`;
+- **Producers** (documented in §22): send `User-Agent: <producer>/<version>`;
   log STD's version and API revision at startup and whenever the header value
   changes; when a feature they need is missing from `features`, log it clearly and
   keep retrying rather than exiting.
@@ -2867,6 +2938,7 @@ server supports and log it.
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
+| 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -2919,7 +2991,7 @@ a half-written file never carries the `.sqlite3` name; the prune matches only
 
 ### 18.4 Schema [`inv-04`] — Delivered
 
-**As built:** migration `f4c8a2e6d173`, documented in §5.10. Deviations from the list below: `inventory_stream.api_key_id` and the two `ON DELETE CASCADE` FKs are enforced by the ORM (`cascade="all, delete-orphan"`), because SQLite runs without foreign-key enforcement. `service_entry.container_name` stays `String(100)`; SQLite doesn't enforce VARCHAR length, so an item name of up to 128 characters (the contract limit) is stored whole.
+**As built:** migration `f4c8a2e6d173`, documented in §5.10. Deviations from the list below: `inventory_stream.api_key_id` and the two `ON DELETE CASCADE` FKs are enforced by the ORM (`cascade="all, delete-orphan"`), because SQLite runs without foreign-key enforcement. `service_entry.container_name` stayed `String(100)` at first (SQLite doesn't enforce VARCHAR length, so a 128-character item name was stored whole anyway); migration `d7a3e9b2c418` (§5.10) widened it to 128 to match the contract.
 
 One Alembic migration, FK indexes in the same migration. §5.10 is written when it
 ships.
@@ -3143,6 +3215,20 @@ audited.
 POST) read the form, call one function and flash the outcome (a `StreamError`
 becomes a flash, never a 500). Deviations and details:
 
+- **Settings UI (settings modernization phase 3, §19):** one card per stream (status
+  dot, producer, last snapshot, interval, counts, errors) with **Edit** and a ⋯ menu
+  (Preview, Enable, Ignore, Purge MQTT/HA, Disable…, Delete…); the read-only Docker
+  (register) card moved to the top of Settings → Docker in phase 4. Pending and stale streams are flagged inline above the
+  list (pending carries Preview / Enable / Ignore). **Edit stream** is one dialog per
+  stream with three independent forms (`update`, `monitoring`, `default-checks`, plus
+  **Apply to existing entries**); a value error or `StreamError` from those three routes
+  re-renders Settings with the dialog open and the typed values (HTTP 400) instead of
+  flash + redirect; success still flashes (a toast) and redirects. Preview opens in a
+  wide dialog (`stream-preview-modal`, opened by the server; closing drops `?preview=`
+  from the URL). Blocked and Link offers are compact lists, and the Streams link shows
+  an amber count for open offers beside the pending and stale counts. The lifecycle
+  routes below keep flash + redirect. The notes below describe the original table
+  layout where they mention rows or panels.
 - **Routes:** `POST /settings/streams/<stream_id>/{enable,ignore,disable,delete,update}`,
   `.../blocks/<id>/unblock`, `.../offers/<id>/{accept,decline}` (takes a same-site
   `next`, so the edit page's banner returns to the edit page), and
@@ -3203,8 +3289,8 @@ becomes a flash, never a 500). Deviations and details:
     **Disable…** / **Delete…** (a dialog with counts first, the three cleanup
     choices, and the customised entries listed by name), **Ignore**;
   - inline edit of the display name and the network include/exclude lists;
-  - a read-only **Docker (register)** row: the number of notifier entries and the
-    last register time;
+  - a read-only **Docker (register)** row (now in Settings → Docker): the number of
+    notifier entries and the last register time;
   - a pending stream is highlighted with "New stream waiting: enable it to import
     N items";
   - **Blocked** sub-list with **Unblock**; **Link offers** sub-list with
@@ -3317,7 +3403,364 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
 
 ---
 
-## 19. Versioning, Branches, and Releases
+## 19. v0.11.0 — Settings modernization (Delivered)
+
+The Settings page grew one tab per release and no longer looks like Add and Edit.
+0.11.0 regroups it, gives every section a link, changes how messages are shown and
+brings the page into the visual language of Add/Edit. Operator decisions and the full
+design (component specs, per-section layouts, tests, risks) are in
+[`docs/design/2026-11-20-settings-modernization.md`](design/2026-11-20-settings-modernization.md)
+(mockup alongside) and `docs/decisions.md`. No schema, wire-contract, `/api/v1`
+or API-revision change; the only route changes are where a route redirects to and a
+few validation errors that re-render instead of redirecting.
+
+### 19.1 Information architecture
+
+Thirteen sections in six labelled groups, from `settings_sections.py`:
+
+| Group | Section | Slug | Legacy `?section=` |
+|---|---|---|---|
+| General | About | `about` (default) | `info` |
+| General | Configuration | `configuration` | |
+| Dashboard | Groups | `groups` | |
+| Dashboard | Widgets | `widgets` | |
+| Sources | Docker (exposure interpreter) | `docker` | `exposure` |
+| Sources | Streams (incl. Blocked, Link offers) | `streams` | |
+| Integrations | Notifications | `notifications` | |
+| Integrations | Home Assistant | `home-assistant` | |
+| Access | Users | `users` | |
+| Access | API keys | `api-keys` | `api` |
+| Access | Audit log | `audit-log` | |
+| Data | Backup & restore | `backup` | |
+| Data | Deleted | `deleted` | |
+
+Below `md` the sidebar becomes a `<select>` with one `<optgroup>` per group. Streams
+shows pending (amber) and stale (red) counts, Deleted its count.
+
+### 19.2 Deep links
+
+The canonical URL of a section is `/settings#<slug>`. Section elements are
+`id="section-<slug>"` (no element id equals a bare slug, so a hash never scrolls).
+`?section=<slug-or-legacy>` is still accepted and is what every redirect uses, because
+the server must know the section to place an error banner in it. The server renders
+`data-initial-section` and `data-open-modal` on `#settings-root` (precedence: a
+validation re-render's `section` > `?section=` > `streams` for `?preview=` >
+`audit-log` for `?audit_key=` > the default), hides every other section itself, and
+`static/js/settings/nav.js` canonicalises the URL with `replaceState`. Every redirect
+to Settings goes through `_settings_redirect()` and carries its section.
+
+### 19.3 Flash policy
+
+The `flash()` categories keep describing the outcome; the template maps them
+(`partials/_flash.html`): `success` / `info` / `message` become a toast that fades
+after 5 s (paused on hover or focus); `danger` / `error` become a persistent,
+dismissible error banner and `warning` an amber one, placed in the section (or modal)
+where the action happened (`flash_target`). Things that ask the operator to act (pending
+or stale streams, HA discovery off, API token missing, default credentials) stay inline.
+Fetch results (test, purge, orphan scan) stay inline. A `flash_text` filter strips one
+leading pictograph in toasts. Add and Edit share the partial: banners keep
+`class="flash-alert"` first, toasts use `class="toast"`.
+
+### 19.4 Shared components
+
+`partials/settings/_macros.html` (section header with "Learn more", flash slot, inline
+warning, status dot, card and card row, ⋯ menu, modal, modal block, switch, collapsible
+group with tri-state checkbox, sticky save bar, empty state), `static/js/settings/ui.js`
+(modal opener memory and guarded close, ⋯ menu keyboard support, the shared confirm
+dialog and `data-confirm` forms, groups, the reset bridge), `static/js/flash.js`,
+`unsaved_guard.js` `reset()`, and one "Settings & shared UI" block in
+`static/css/dashboard.css` (including `btn-danger`, `btn-ghost`, `btn-sm` and the
+previously undefined `bg-dashboard-info-box`).
+
+### 19.5 Phases
+
+| Phase | Prompt | Status |
+|---|---|---|
+| 1 | `prompts/2026-11-20-set-01-foundation.md`: registry, partial split, grouped sidebar, deep links, flash policy, shared kit, restyle of every section (no new layouts) | Delivered on `dev` |
+| 2 | `prompts/2026-11-20-set-02-notifications-ha.md`: Notifications cards and channel modal; Home Assistant groups | Delivered on `dev` |
+| 3 | `prompts/2026-11-20-set-03-streams.md`: Streams cards, Edit stream modal, Preview modal | Delivered on `dev` |
+| 4 | `prompts/2026-11-20-set-04-remaining.md`: Groups, Widgets, Docker, Users, API keys (show-once modal), Audit log, Deleted, About, Configuration | Delivered on `dev` |
+
+**Backup & restore is not part of this work.** Its section keeps the phase-1 restyle only;
+the backup, export and import project rebuilds it (`docs/design/2026-11-20-backup-export-import.md`).
+
+### 19.6 As built (phase 4)
+
+- **Groups.** One card per group in priority then name order. The dialog `#group-modal`
+  lives inside `#groups-form` with unnamed inputs and no second `<form`; **Apply** writes
+  into the card's hidden `group-<id>-name|icon|priority` inputs and **Add group** into
+  `new-name|icon|priority` (one at a time; the button then reads "Edit new group"). Delete
+  toggles "Will be deleted · Undo" (only offered when the group has no active entries). A
+  400 re-render shows the submitted values and per-row messages on the cards and opens the
+  dialog on the first row with a message (`open_modal='group-modal'`, `data-group-id`). A
+  stale table (no row to edit) keeps its banner in the section. Column sorting is gone.
+- **Docker.** The always-on Docker (register) card (`id="stream-row-docker"`) moved here
+  from Streams (operator decision). Layer directions are a card, per-host overrides are
+  collapsible groups without a checkbox ("N overrides"), the form is guarded and its
+  sticky bar reads **Save & recompute URLs** (disabled with no layers). Field names
+  `layer:<L>` and `override:<host>:<L>` are unchanged.
+- **Users.** Cards (username, Admin tag, email, last login) with **Set password**
+  (`#password-modal`, `POST /settings/users/<id>/set_password`), ⋯ Delete (non-admins) and
+  **Add user** (`#user-modal`, `POST /add_user`). A duplicate username or email re-renders
+  (400) with the dialog open and username and email kept; the password is never echoed. A
+  too-short password re-renders (400) with the set-password dialog open. Flashes use
+  `danger`.
+- **API keys.** Cards (name, scope tag, prefix, active or revoked, created / rotated / last
+  used) with ⋯ Rotate and Revoke (revoked keys last, dimmed, no menu) and a **Create key**
+  dialog. A validation error re-renders (400) with the dialog open and the name kept.
+  Create and Rotate render Settings itself with `#api-key-secret-modal` holding the key
+  (`#new-api-key`, `#copy-api-key`), keeping the old response headers (`no-store`; rotate
+  also `no-cache` and `Pragma`). `nav.js` replaces the POST URL, so a reload is a plain GET
+  without the key.
+- **Deleted, About, Configuration, Widgets.** Deleted entries and detached widgets are
+  cards (Restore or Attach, ⋯ Delete). About has the Version grid and an Update check card.
+  Configuration is a table with a Source pill. Widgets are cards with ⋯ Copy API key (no
+  more password field in the page).
+- **Routes.** No new routes. `routes_dashboard.render_settings_for()` lets `routes_auth`
+  re-render Settings without an import cycle.
+
+---
+
+## 20. v0.11.0 — Backup, export and import (Delivered)
+
+Settings → Backup & restore becomes two features: **database backups** for disaster
+recovery and **export and import** of operator-set state. The full design (field
+ownership tables, matching rules, the import engine, API and UI) is
+[`docs/design/2026-11-20-backup-export-import.md`](design/2026-11-20-backup-export-import.md)
+(mockup alongside) and its operator decisions are in `docs/decisions.md`. It is built in
+five phases (`prompts/2026-11-20-bak-01` … `bak-05`); all of §20.1 to §20.5 have shipped on `dev`.
+No change to the register or stream-ingest wire contracts.
+
+**Goals (design §1).** The scenario "new machine, empty `/config`, restore what the
+operator set" works with no hand edits. Import is safe by default (fill missing settings
+only, every write previewed, nothing that differs overwritten without an opt-in), can be
+re-run (idempotent), never deletes local data, and **an export never contains a secret**.
+Old YAML backups (today's entry list) stay importable. Not in scope: a live database swap,
+syncing two running installs, scheduled import, remote targets (S3, SFTP).
+
+### 20.1 Backup jobs (Delivered in 0.11.0; bak-01)
+
+- **Two daily jobs replace the single 00:05 job.** `backup_snapshot_job` (default 00:05)
+  writes a WAL-safe copy of the database (`sqlite3.Connection.backup()` through a `.tmp`
+  file and `os.replace`), and `backup_export_job` (default 00:10) writes the export. Each
+  has its own switch, time of day (container local time), keep days and **Run now**. In
+  the export job writes the versioned export (§20.2; until bak-02 it wrote the YAML
+  entry list `<date>-std_backup.yml`).
+- **Settings are editable in the UI** (Settings → Backup & restore) and stored in the
+  `setting` table: `backup_path`, `backup_snapshot_enabled|time|keep_days`,
+  `backup_export_enabled|time|keep_days|format`, plus the observed `backup_last_runs`.
+  **Precedence is env > UI > `settings.yml` > default.** An environment variable
+  (`BACKUP_PATH`, `BACKUP_DAYS_TO_KEEP`) shows the field read-only; `settings.yml` only
+  seeds the value until the operator saves in the UI; **Reset** deletes the DB row.
+  `backup_days_to_keep` seeds both keep-days values. No new file or env keys.
+  `backups.effective_settings(app)` resolves them from the startup dict plus the DB and
+  never calls `load_settings()`.
+- **Scheduling.** The scheduler is kept in `jobs._SCHEDULER`; a settings save calls
+  `jobs.reschedule_backups(app)` (reschedule, then pause a disabled job; a disabled job is
+  registered and paused so the UI still shows its state). This relies on the single
+  gunicorn worker. `backups._RUN_LOCKS` allows one run per kind at a time.
+- **Files and retention.** Scheduled names are `YYYY-MM-DD-std_backup.sqlite3` and
+  `YYYY-MM-DD-std_export.yml` (or `.json`, per the export format setting); a manual run puts a time in the name
+  (`YYYY-MM-DD_HHMMSS-...`) so it never overwrites the day's scheduled file. Retention
+  runs at the end of each job for that kind only, by mtime and by suffix; legacy
+  `-std_backup.yml` files age out with the export retention; `backup.yml` and any other
+  file are never deleted.
+- **Path validation.** Absolute, created if missing, writable (a probe file); a folder
+  outside `CONFIG_DIR` is a warning, not an error. Changing the path does not move files.
+- **List, download, delete.** A list per kind (newest first, `manual` and `legacy` tags),
+  `GET /settings/backups/<name>/download`, `POST /settings/backups/<name>/delete`, both
+  through `backups.resolve_file` (bare filename, known suffix, real path inside the
+  folder). Snapshots are downloadable from the UI only, never through the API, because
+  they hold every secret.
+- **Failure surfacing.** Each run records `backup_last_runs[kind]` (ok or the error). A
+  failed run shows a persistent inline warning on its card and a red "!" on the Backup &
+  restore navigation link until a later run succeeds. A manual run is synchronous.
+- **Routes.** `POST /settings/backups/settings`, `/settings/backups/settings/reset`,
+  `/settings/backups/run`, plus the two file routes above; all admin + CSRF, and every
+  redirect lands on the Backup section.
+- **Manual database restore** (until the staged restore, §20.5, ships) is documented in
+  the README: stop the container, keep the current file, copy the snapshot over
+  `services.db`, delete the `-wal` and `-shm` files, start the container.
+
+### 20.2 Export format v1 (Delivered in 0.11.0; bak-02)
+
+A versioned `std-export` document, the same content as YAML (default) or JSON, holding
+**only operator-set state** (design §5), built by `export_format.build_export()` and
+serialised by `export_format.dump(doc, "yaml" | "json")`. Natural keys, never database
+ids; records are sorted (entries by kind, host, name; the rest by name or key) so two
+exports diff cleanly; datetimes are UTC ISO 8601 with `Z`; a null field is left out.
+YAML opens with a short comment listing what is not included.
+
+- **Header:** `format: std-export`, `format_version: 1`, `exported_at`, `std_version`,
+  `api_revision`, `instance_id` (informational; omitted until the install has one, and
+  an export never creates it).
+- **Top-level sections:** `settings` (exposure layers and per-host overrides,
+  update-check, the backup schedule without the folder path), `groups` (name, priority,
+  icon), `widgets` (name, URL, fields, `api_key_set`), `notification_channels` (name,
+  type, enabled, non-secret `config`, `secret_set`), `streams` (identity, `key_type`,
+  `producer`, `display_name`, informational `status`, filters, default checks, intervals,
+  `blocks`), `entries`, `users` (username, email, admin, active).
+- **Entry ownership (design §5.3).** `kind` is `docker`, `manual` or `stream`;
+  identity is `(host, container_name)` for Docker and manual entries and `(stream,
+  stream_key)` for stream entries (plus `name_source`, `linked`, `pre_link_host`).
+  Exported: lock, description, group (by name), sort priority, `ha_publish`, widget
+  reference, every check's configuration (`HealthCheck.to_config()`), **a URL only when
+  operator-owned** (source `ui_edit`, or any URL on a manual or stream entry; the source
+  is written so import can restore it), and **`image_icon` only for manual, stream and
+  locked Docker entries** (an unlocked Docker entry's icon is rewritten on every
+  register). Not exported: status, container ids, image metadata, networks and ports,
+  IP, MAC, `attributes`, missing markers, exposure observations, label-owned
+  (`explicit_label`) and `synthesized` URLs, health results, link offers, snapshots,
+  timestamps.
+- **Never a secret.** No MQTT password (`secret_set` instead), no widget API key
+  (`api_key_set`), no password hash, no API key or its hash, no `api_audit`. A channel
+  config key that looks like a secret is dropped as a second line of defence.
+  Soft-deleted entries, widgets only they used and detached widgets are not exported
+  (the database snapshot has them).
+- **Reading.** The models are lenient (`extra="allow"`); `unknown_keys()` lists unknown
+  keys by path for the import warning. `SUPPORTED_VERSIONS = (0, 1)`. Adding an optional
+  field keeps `format_version` 1; a newer version is rejected. Per-record validation and
+  the v0 reader belong to the import (bak-03).
+- **Surfaces.** The daily and Run now export job writes `<date>-std_export.yml|json`
+  (manual runs timestamped); `GET /settings/backups/export?format=yaml|json` (admin
+  session; `Content-Disposition: attachment; filename="std_export_YYYYMMDD_HHMMSS.yml"`,
+  `Cache-Control: no-store`) backs the **Download YAML** / **Download JSON** buttons on
+  the Exports card; the management API (§14.4) has `GET /export` and the backup routes;
+  the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
+  `API_REVISION` is 4 (§18.1).
+
+### 20.3 Import (Delivered in 0.11.0; bak-03 engine, bak-04 UI and API)
+
+Import matches the file's records against the database **now** and shows a dry-run
+preview; only ticked rows apply. A row is one of: matched with missing settings
+(default ticked), matched but different (applies only in the overwrite mode),
+identical, matched but deleted locally, ambiguous (the operator picks), not found
+("Import as new"), waiting (its stream is not mapped or enabled), conflict, or invalid.
+"Missing" means the local value is the value a freshly created row has. Matching is exact
+and case-sensitive, to agree with what register adoption does later. Import never creates
+streams or changes a stream's status, never modifies existing users, and creates new
+users with no usable password.
+
+As built (`importer.plan()`):
+
+- **A field the file leaves empty is not compared**, so a file without a group (the daily
+  job's old list) never reports a difference for it. Booleans (`is_static`, `ha_publish`)
+  are always compared.
+- **Checks are compared as units.** URL rows and the Container check by `kind`, service
+  checks by `(check_type, name)`; a check is *missing* when the local one still has its
+  fresh configuration, *differs* otherwise. A service check with no local match is
+  missing (added); one that matches with another config is *differs*; several local checks
+  sharing a `(type, name)` are never touched. Local checks the file lacks are left alone.
+- **Docker group and sort priority** count as fresh when they equal the notifier's own
+  reported value; under `register_field_ownership = notifier_wins` they are left out with
+  a note. A URL is fresh when empty or `synthesized`; it is written as `ui_edit`.
+- **Import as new** creates a manual entry (a Docker or stream record included), never
+  sets the lock, and is a *Conflict* when `(host, name)` is already taken, also by another
+  record of the same file. A stream record becomes a manual entry with its pre-link host,
+  and the stream's link-offer matching pairs it later. An open link offer for a stream
+  record's key matches the offered manual entry; import never answers it.
+- **Stream mapping** is automatic by equal id and key type, can be set per stream (same
+  key type only, each local stream once) or skipped. Stream settings and blocks apply to a
+  mapped stream whatever its status; its entries wait until it is enabled.
+- **Channels:** the three topic namespace keys are never written to an existing channel;
+  a new channel with `secret_set` is created disabled and without a secret.
+- **Settings:** exposure layers (global and per host), the update check and the backup
+  schedule, not the backup folder and not a value pinned by an environment variable.
+- **Legacy files** (a list, format version 0) are converted by `export_format.from_legacy()`:
+  widget API keys are ignored with a warning, a row with `deleted_at` is shown unticked,
+  and a stream row is matched by MAC across `mac` streams.
+
+**UI (bak-04).** Settings → Backup & restore → Import takes an upload (`.yml`, `.yaml`,
+`.json`, up to 10 MB, checked per route) or a file of the backup folder (confined by
+`backups.resolve_file`, exports only; the ⋯ menu of an export also has **Import…**). A file
+that cannot be read shows a banner in the Backup section. Otherwise the parsed upload is
+staged and the operator lands on `GET /settings/import/<token>` (the Settings shell with
+Backup & restore current; another user's or an expired token redirects with "This import
+expired. Upload the file again."): a stepper, the file header and warnings, the stream mapping
+(one select per file stream, same key type only, `POST .../map` re-plans), the mode switch
+(*Fill missing only*, the default, or *Also overwrite differences*), a toolbar (search,
+status chips, Select all / none) and the rows grouped Docker, Manual, one per stream, Groups,
+Notification channels, Streams & blocks, Users, Settings, each with a tri-state group
+checkbox. A row has a checkbox (or the "Import as new" / "Create user (no password)" switch),
+a status pill, and a disclosure with the notes, the row options (restore, soft-delete the
+entry) and the per-field table (missing ticked; differing fields unticked and disabled in
+fill mode; never-applied fields shown without a box). Identical rows collapse into "N
+identical". The sticky apply bar shows live counts and **Cancel** (deletes the staged file) and
+**Apply import** (a confirm in overwrite mode). `POST .../apply` reads `sel-<rid>`,
+`create-<rid>`, `target-<rid>`, `field-<rid>` and `opt-<rid>` (multi-valued; the value is the
+field or option, plus a `fieldset` marker per row that shows field boxes), `mode` and
+`fingerprint`, hashes the submitted selection against the plan digests kept beside the staged
+file (§20.4) and calls `importer.apply`. A stale result re-renders the preview (409) with the
+banner and the operator's ticks kept; an apply error re-renders it (400) with nothing changed;
+success discards the staged file and renders the summary (counts, skipped by reason, "Still
+to do") with a toast. Without JavaScript the form still posts what is ticked.
+
+**API (bak-04).** `POST /api/v1/import/plan` and `/import/apply` (write scope, stateless, one
+JSON body of at most 10 MB plus 64 KB: `document` object or `document_text` string, `stream_map`,
+`selection`, and for apply `mode` and `fingerprint`; unknown keys are a 400). `plan` returns
+the plan, the `default_selection` (what the UI pre-ticks) and a `fingerprint` for the
+`selection` it was sent (or the default). `apply` is audited as `import` with the result counts
+only; a stale fingerprint answers 409 with a fresh `plan`; a parse error or an apply error is a
+400. `plan` writes nothing and is not audited. MCP: `import_plan`, `import_apply` (the tool
+text says to plan first and show the operator).
+
+### 20.4 Import engine and plan handoff (Delivered in 0.11.0; bak-03, UI bak-04)
+
+`importer.plan()` and `apply()` mirror `streams.plan()` / `apply()`. The plan is never
+kept as an object: the UI stages the parsed upload as a JSON file in
+`CONFIG_DIR/import-staging/` (60 minute TTL, bound to the user, pruned by the daily
+backup jobs) and `apply()` **re-plans under the register and stream locks** (in that
+order, the same as the management API's unlink route) and compares a sha256 fingerprint of
+the selected rows with the one shown; a difference raises `ImportStale` and writes
+nothing (the UI asks for a re-review; the API answers 409). Each plan row carries a digest
+(`plan.digests`), so the fingerprint of whatever the operator ticked is
+`fingerprint_from_digests(digests, selection, stream_map)`; `plan.fingerprint` is the one
+for the default selection. Observed data is not in a digest. One transaction: any error
+rolls it back (`ImportApplyError`). The legacy entry-list YAML is read as format version 0.
+A 5,000-entry apply takes about 2 seconds, including the re-plan, under the locks.
+
+### 20.5 Staged database restore (Delivered in 0.11.0; bak-05)
+
+Pick a snapshot (⋯ → **Restore…** in the snapshot list; `pre-restore-*` files are listed
+there too) or upload a `.sqlite3` (≤ 200 MB, streamed to `<CONFIG_DIR>/restore/`), and
+`restore_staging.validate()` checks it through a read-only, immutable `sqlite3`
+connection: `PRAGMA integrity_check` is `ok`, the `alembic_version`, `service_entry` and
+`setting` tables exist, and the revision is known to this code (an ancestor of `head` or
+`head`; anything else is "made by a newer STD"). The confirmation shows the revision, the
+entry count, the latest change and whether the `instance_id` is this install's. On
+confirm the file is **staged** (`Connection.backup()` into `restore/pending.sqlite3`,
+`pending.json` with `source_name`, `sha256`, `revision`, `staged_at`, `staged_by`,
+`keep_dir`). Nothing is swapped live. A banner on every Settings section offers
+**Cancel restore** until the next start.
+
+At start `entrypoint.sh` runs `python restore_swap.py` **before** `alembic upgrade head`.
+The script is stdlib only (no app import): with no `pending.json` it exits at once;
+otherwise it re-checks the sha256 and integrity, keeps the current database through
+`Connection.backup()` as `<keep_dir>/pre-restore-YYYYMMDD-HHMMSS.sqlite3` (WAL-safe; a
+current database that cannot be read is kept as its raw file instead), moves the old
+files aside, `os.replace`s the staged file into `services.db`, and writes
+`restore/last.json`. On any failure it puts the current database back, renames the staged
+files to `failed-<ts>.*`, records the error and **exits 0**, so a failed restore never
+stops STD from starting. The migrations then bring an older snapshot up to date. Backup &
+restore shows the result (ok or error) until dismissed (`settings_store` key
+`restore_last_seen`). Routes (admin, CSRF): `POST /settings/restore/stage`, `/confirm`,
+`/cancel`, `/dismiss`. `python app.py` outside the entrypoint does not swap. The restored
+database brings its own users, API keys, channels and `instance_id`. No management API
+route (a whole-database swap through an API key is too sharp).
+
+### 20.6 Phases (design §16)
+
+| Phase | Prompt | Scope | Status |
+|---|---|---|---|
+| 1 | `bak-01-scheduled-backups` | Backup settings, two jobs, manual run, list, path validation, last-run status (§20.1) | Delivered (unreleased) |
+| 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP (§20.2) | Delivered (unreleased) |
+| 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Delivered (unreleased) |
+| 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Delivered (unreleased) |
+| 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Delivered (unreleased) |
+
+---
+
+## 21. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -3327,9 +3770,9 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
   `ruff.toml`), `Config validation` (YAML/JSON parse), `Migration check`
   (`alembic upgrade head` on an empty DB, exactly one head),
   `Compose validation` (`docker compose config --quiet`), and `Test`
-  (pytest, `tests/`; added in v0.6.9 — pending operator action to mark it
-  required in branch protection). `CI` triggers on push to `dev`/`main`
-  only.
+  (pytest, `tests/`; added in v0.6.9, required). Protection is a repository
+  ruleset ("Require PR for Main") with a code-scanning rule for CodeQL. `CI`
+  triggers on push to `dev`/`main` only.
 - Registry retention: `.github/workflows/retention.yml` prunes GHCR
   versions weekly and after each publish — keeps the 30 most recent
   `sha-*` and 15 most recent semver versions, never deletes `latest`,
@@ -3356,12 +3799,12 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
 
 ---
 
-## 20. Cross-Repo Coordination
+## 22. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 20.1 Contract ownership
+### 21.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -3374,7 +3817,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 20.2 Release history
+### 21.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -3399,12 +3842,12 @@ not lead.
 
 ---
 
-### 20.3 Inventory stream producers (planned, §18)
+### 21.3 Inventory stream producers (§18; delivered in 0.10.0)
 
 From 0.10.0 STD also owns the **ingest contract** (§18.5), and inventory
 sidecars are its producers. The first is
 [std-source-technitium](https://github.com/crzykidd/std-source-technitium)
-(new repo; Technitium DHCP static reservations), with its own version line,
+(its own repo; Technitium DHCP static reservations), with its own version line,
 image and release cadence. The same rules apply as for the notifier:
 
 - **STD leads, producers follow.** The ingest schema uses `extra="forbid"`, so a
@@ -3419,7 +3862,7 @@ image and release cadence. The same rules apply as for the notifier:
 
 ---
 
-## 21. Open Questions
+## 23. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)

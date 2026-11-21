@@ -1,0 +1,269 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot, inline_warning, kebab, switch, save_bar with context %}
+{% set bs = backup_settings %}
+{% set bf = backup_form['values'] if backup_form else {} %}
+{% set be = backup_form['errors'] if backup_form else {} %}
+{% set _origin_text = {'ui': 'set in the UI', 'file': 'from settings.yml', 'default': 'default'} %}
+
+{# One file row: name, tags, size, modified, Download and a ⋯ menu. Delete is a button for a
+   form kept outside the settings form (forms cannot nest), see the hidden forms below. #}
+{% macro file_rows(files, label) %}
+  {% for f in files %}
+  {% set idx = loop.index %}
+  <div class="backup-file-row">
+    <span class="backup-file-name">{{ f.name }}{% if f.manual %} <span class="settings-tag settings-tag--manual">manual</span>{% endif %}{% if f.legacy %} <span class="settings-tag settings-tag--legacy">legacy</span>{% endif %}{% if f.pre_restore %} <span class="settings-tag settings-tag--legacy">pre-restore</span>{% endif %}</span>
+    <span class="backup-file-size">{{ f.size_text }}</span>
+    <span class="backup-file-when">{{ f.modified.strftime('%Y-%m-%d %H:%M') }}</span>
+    <span class="settings-card-actions">
+      <a class="btn-secondary btn-sm" href="{{ url_for('dashboard.download_backup_file', name=f.name) }}">Download</a>
+      {% call kebab('backup-menu-' ~ f.kind ~ '-' ~ idx, f.name) %}
+        {% if f.kind == 'export' %}<button type="submit" form="backup-imp-{{ idx }}" class="kebab-item" role="menuitem" tabindex="-1">Import&hellip;</button>{% endif %}
+        {% if f.kind == 'snapshot' %}<button type="submit" form="backup-rst-{{ idx }}" class="kebab-item" role="menuitem" tabindex="-1">Restore&hellip;</button>{% endif %}
+        <button type="submit" form="backup-del-{{ f.kind }}-{{ idx }}" class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button>
+      {% endcall %}
+    </span>
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro origin_label(key) %}
+  {% set e = bs.path if key == 'path' else (bs.snapshot[key[9:]] if key.startswith('snapshot_') else bs.export[key[7:]]) %}
+  {% if e.env_name %}Set by environment (<code>{{ e.env_name }}</code>){% else %}{{ _origin_text[e.origin] }}{% endif %}
+{% endmacro %}
+
+{% macro reset_button(key, e) %}
+  {% if e.origin == 'ui' %}<button type="submit" form="backup-reset-{{ key }}" class="btn-ghost btn-sm" title="Delete the saved value and use {{ 'the settings.yml value' if e.fallback_origin == 'file' else 'the default' }} ({{ e.fallback }})">Reset</button>{% endif %}
+{% endmacro %}
+
+{% macro last_run(kind, label) %}
+  {% set lr = backup_last_runs.get(kind) %}
+  {% if lr and lr.ok is sameas false %}
+    {% call inline_warning('warn', attrs='data-backup-failed="' ~ kind ~ '"') %}<span>Last {{ label }} failed {{ lr.at|replace('T', ' ') }}: {{ lr.error }}. It runs again at the next scheduled time, or use Run now.</span>{% endcall %}
+  {% endif %}
+{% endmacro %}
+
+{% macro schedule_row(kind, label) %}
+  {% set e = bs[kind] %}
+  {% set lr = backup_last_runs.get(kind) %}
+  <div class="backup-sched">
+    <label class="switch-label"><input type="checkbox" role="switch" class="switch" name="{{ kind }}_enabled" value="1"
+        {% if bf.get(kind ~ '_enabled', e.enabled.value) %}checked{% endif %}> <span>Daily {{ label }}</span></label>
+    <div>
+      <label class="settings-label" for="bk-{{ kind }}-time">Time</label>
+      <input id="bk-{{ kind }}-time" type="time" class="input-clean" name="{{ kind }}_time" required
+             value="{{ bf.get(kind ~ '_time', e.time.value) }}">
+      {% if be.get(kind ~ '_time') %}<div class="backup-field-error">{{ be.get(kind ~ '_time') }}</div>{% endif %}
+    </div>
+    <div>
+      <label class="settings-label" for="bk-{{ kind }}-keep">Keep days <span class="backup-origin">{{ origin_label(kind ~ '_keep_days') }}</span></label>
+      <div class="backup-inline">
+        <input id="bk-{{ kind }}-keep" type="number" min="1" max="365" class="input-clean" name="{{ kind }}_keep_days"
+               value="{{ bf.get(kind ~ '_keep_days', e.keep_days.value) }}"{% if e.keep_days.env_name %} readonly title="Set by environment ({{ e.keep_days.env_name }})"{% endif %}>
+        {{ reset_button(kind ~ '_keep_days', e.keep_days) }}
+      </div>
+      {% if be.get(kind ~ '_keep_days') %}<div class="backup-field-error">{{ be.get(kind ~ '_keep_days') }}</div>{% endif %}
+    </div>
+    {% if kind == 'export' %}
+    <div>
+      <label class="settings-label" for="bk-export-format">Format</label>
+      <select id="bk-export-format" class="input-clean" name="export_format" style="max-width:9rem">
+        {% set cur = bf.get('export_format', e.format.value) %}
+        <option value="yaml"{% if cur == 'yaml' %} selected{% endif %}>YAML</option>
+        <option value="json"{% if cur == 'json' %} selected{% endif %}>JSON</option>
+      </select>
+    </div>
+    {% endif %}
+    <div class="backup-sched-meta">
+      {% if backup_next_runs.get(kind) %}Next run <strong>{{ backup_next_runs[kind] }}</strong> (container time){% else %}<strong>Disabled</strong>, no run scheduled{% endif %}<br>
+      {% if lr and lr.ok %}Last run <strong>{{ lr.at|replace('T', ' ') }}</strong>{% if lr.trigger == 'manual' %} (manual){% endif %}: <span class="backup-ok">ok</span>, {{ lr.size_text or '' }}
+      {% elif lr %}Last run <strong>{{ lr.at|replace('T', ' ') }}</strong>: <span class="backup-bad">failed</span>
+      {% else %}No run yet{% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+<section id="section-backup" class="settings-section{% if (initial_section or settings_default_section) != 'backup' %} hidden{% endif %}">
+  {% call section_header('Backup & restore', 'Daily database snapshots, exports of your settings, and import.') %}
+    <p>A <strong>snapshot</strong> is a full copy of the database (WAL-safe), secrets and history included: use it for
+      disaster recovery. An <strong>export</strong> is a file of your entries. Both run once a day at the time you set and
+      can be run now. Each keeps its files for the number of days you set; other files in the folder are never deleted.</p>
+  {% endcall %}
+  {{ flash_slot('backup') }}
+
+  <form id="backup-settings-form" method="POST" action="{{ url_for('dashboard.save_backup_settings') }}" class="backup-stack" data-unsaved-guard{% if backup_form %} data-unsaved-start-dirty{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- Location -->
+    <div class="settings-card">
+      <h3 class="settings-card-heading">Location</h3>
+      <p class="settings-subtitle-note">One folder for snapshots and exports.</p>
+      <label class="settings-label" for="bk-path">Backup folder <span class="backup-origin">{{ origin_label('path') }}</span></label>
+      <div class="backup-inline">
+        <input id="bk-path" class="input-clean settings-code" style="max-width:28rem" name="path" required
+               value="{{ bf.get('path', bs.path.value) }}"{% if bs.path.env_name %} readonly title="Set by environment ({{ bs.path.env_name }})"{% endif %}>
+        {{ reset_button('path', bs.path) }}
+      </div>
+      {% if be.get('path') %}<div class="backup-field-error">{{ be.get('path') }}</div>{% endif %}
+      {% if backup_outside_config %}
+      {% call inline_warning('warn') %}<span>This folder is outside /config. Make sure it is a mounted volume, or backups are lost when the container is recreated.</span>{% endcall %}
+      {% endif %}
+      {% if backup_list_error %}{% call inline_warning('warn', id='backup-list-error') %}<span>{{ backup_list_error }}</span>{% endcall %}{% endif %}
+    </div>
+
+    <!-- Database snapshots -->
+    <div class="settings-card" id="backup-snapshots">
+      <div class="backup-card-head">
+        <div>
+          <h3 class="settings-card-heading">Database snapshots</h3>
+          <p class="settings-subtitle-note">Full copy of the database. Snapshots contain every secret (password hashes, API key hashes, the MQTT password).</p>
+        </div>
+        <button type="submit" form="backup-run-snapshot" class="btn-secondary btn-sm">Run now</button>
+      </div>
+      {{ last_run('snapshot', 'snapshot') }}
+      {{ schedule_row('snapshot', 'snapshot') }}
+      <div class="backup-files">
+        {% if backup_files.snapshots %}{{ file_rows(backup_files.snapshots, 'snapshot') }}{% else %}<p class="settings-empty">No snapshots yet.</p>{% endif %}
+      </div>
+    </div>
+
+    <!-- Exports -->
+    <div class="settings-card" id="backup-exports">
+      <div class="backup-card-head">
+        <div>
+          <h3 class="settings-card-heading">Exports</h3>
+          <p class="settings-subtitle-note">The settings you chose (groups, URLs you set, checks, stream filters and blocks, notification channels, users, ...) as one YAML or JSON file. It never contains passwords or keys, and leaves out anything STD rebuilds on its own. The format setting applies to the daily and Run now files.</p>
+        </div>
+        <span class="settings-card-actions">
+          <a class="btn-secondary btn-sm" id="export-download-yaml" href="{{ url_for('dashboard.download_export', format='yaml') }}">Download YAML</a>
+          <a class="btn-secondary btn-sm" id="export-download-json" href="{{ url_for('dashboard.download_export', format='json') }}">Download JSON</a>
+          <button type="submit" form="backup-run-export" class="btn-secondary btn-sm">Run now</button>
+        </span>
+      </div>
+      {{ last_run('export', 'export') }}
+      {{ schedule_row('export', 'export') }}
+      <div class="backup-files">
+        {% if backup_files.exports %}{{ file_rows(backup_files.exports, 'export') }}{% else %}<p class="settings-empty">No exports yet.</p>{% endif %}
+      </div>
+    </div>
+
+    {{ save_bar(label='Save') }}
+  </form>
+
+  {# Forms the buttons above point at with form="...": they cannot nest in the settings form. #}
+  {% for kind in ('snapshot', 'export') %}
+  <form id="backup-run-{{ kind }}" method="POST" action="{{ url_for('dashboard.run_backup_now') }}" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="kind" value="{{ kind }}">
+  </form>
+  {% endfor %}
+  {% for key in ('path', 'snapshot_keep_days', 'export_keep_days') %}
+  <form id="backup-reset-{{ key }}" method="POST" action="{{ url_for('dashboard.reset_backup_setting') }}" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="key" value="{{ key }}">
+  </form>
+  {% endfor %}
+  {% for group in (backup_files.snapshots, backup_files.exports) %}
+  {% for f in group %}
+  <form id="backup-del-{{ f.kind }}-{{ loop.index }}" method="POST" action="{{ url_for('dashboard.delete_backup_file', name=f.name) }}" hidden
+        data-confirm="Delete {{ f.name }}? This cannot be undone." data-confirm-label="Delete" data-confirm-title="Delete backup file" data-confirm-danger>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+  {% endfor %}
+  {% endfor %}
+
+  <!-- Import (design 12.1 card 4): a file, or one from the backup folder -->
+  <div class="settings-card" id="backup-import">
+    <h3 class="settings-card-heading">Import</h3>
+    <p class="settings-subtitle-note">Bring settings back from an export (YAML or JSON) or from an old YAML backup. You see exactly what would change before anything is written.</p>
+    <form method="POST" action="{{ url_for('dashboard.import_upload') }}" enctype="multipart/form-data" id="import-upload-form" class="backup-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="imp-dropzone">
+        <label class="settings-label" for="import-file">Upload a file (.yml, .yaml or .json, up to 10 MB)</label>
+        <input id="import-file" name="import_file" type="file" accept=".yml,.yaml,.json">
+      </div>
+      <div>
+        <label class="settings-label" for="import-server-file">Or pick an export from the backup folder</label>
+        <select id="import-server-file" name="server_file" class="input-clean" style="max-width:28rem">
+          <option value="">(none)</option>
+          {% for f in backup_files.exports %}<option value="{{ f.name }}">{{ f.name }}{% if f.legacy %} (legacy){% endif %}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="settings-card-actions">
+        <button type="submit" class="btn-primary">Preview import</button>
+        <span class="settings-subtitle-note">Nothing changes until you review and apply.</span>
+      </div>
+    </form>
+  </div>
+
+  <!-- Restore database (design 12.1 card 5): staged, applied at the next container start -->
+  <div class="settings-card" id="backup-restore">
+    <h3 class="settings-card-heading">Restore database</h3>
+    <p class="settings-subtitle-note">Pick a snapshot above (&#8943; &rarr; Restore&hellip;) or upload one. It is checked now and swapped in on the next container restart; there is no live swap. The current database is kept as <code>pre-restore-&lt;timestamp&gt;.sqlite3</code> in the backup folder.</p>
+
+    {% if restore_result and not restore_result.seen %}
+    {% if restore_result.ok %}
+    {% call inline_warning('ok', id='restore-result', attrs='data-restore-result="ok"') %}
+      <span>Restored from <code>{{ restore_result.source_name }}</code> at {{ restore_result.at|replace('T', ' ') }}.{% if restore_result.kept_as %} The previous database was kept as <code>{{ restore_result.kept_as }}</code>.{% endif %}</span>
+      <form method="POST" action="{{ url_for('dashboard.restore_dismiss') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-secondary btn-sm">Dismiss</button></form>
+    {% endcall %}
+    {% else %}
+    {% call inline_warning('bad', id='restore-result', attrs='data-restore-result="error"') %}
+      <span>The restore of <code>{{ restore_result.source_name }}</code> failed at {{ restore_result.at|replace('T', ' ') }}: {{ restore_result.error }}. The current database was kept and STD started normally.</span>
+      <form method="POST" action="{{ url_for('dashboard.restore_dismiss') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-secondary btn-sm">Dismiss</button></form>
+    {% endcall %}
+    {% endif %}
+    {% endif %}
+
+    {% if restore_pending %}
+    {% call inline_warning('warn', id='restore-pending') %}
+      <span><code>{{ restore_pending.source_name }}</code> (revision {{ restore_pending.revision }}{% if restore_pending.entries is not none %}, {{ restore_pending.entries }} entries{% endif %}) is staged and will be applied on the next container restart.</span>
+      <form method="POST" action="{{ url_for('dashboard.restore_cancel') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-secondary btn-sm">Cancel restore</button></form>
+    {% endcall %}
+    {% endif %}
+
+    {% if restore_confirm %}
+    {% set rc = restore_confirm %}
+    <div class="settings-card" id="restore-confirm" style="margin-top:.75rem">
+      <h4 class="settings-card-heading">Found in {{ rc.source_name }}</h4>
+      <ul class="settings-subtitle-note">
+        <li>Schema revision <code>{{ rc.info.revision }}</code> (an older revision is migrated forward on start)</li>
+        <li>{{ rc.info.entries }} entr{{ 'y' if rc.info.entries == 1 else 'ies' }}{% if rc.info.latest_update %}, latest change {{ rc.info.latest_update }}{% endif %}</li>
+        <li>Install id {% if rc.info.instance_id %}<code>{{ rc.info.instance_id[:8] }}</code>, {{ 'the same install as this one' if rc.info.same_install else 'a different install' }}{% else %}not recorded{% endif %}</li>
+      </ul>
+      <form method="POST" action="{{ url_for('dashboard.restore_confirm') }}" class="settings-card-actions"
+            data-confirm="Restore {{ rc.source_name }}? Everything since the snapshot is lost, including API keys created since. The current database is kept as pre-restore-&lt;timestamp&gt;.sqlite3. It is applied on the next container restart."
+            data-confirm-label="Stage restore" data-confirm-title="Restore database" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if rc.token %}<input type="hidden" name="token" value="{{ rc.token }}"><input type="hidden" name="source_name" value="{{ rc.source_name }}">{% else %}<input type="hidden" name="server_file" value="{{ rc.server_file }}">{% endif %}
+        <button type="submit" class="btn-danger">Stage restore</button>
+        <a class="btn-ghost" href="{{ url_for('dashboard.settings', section='backup') }}">Cancel</a>
+      </form>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('dashboard.restore_stage') }}" enctype="multipart/form-data" id="restore-upload-form" class="backup-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="imp-dropzone">
+        <label class="settings-label" for="restore-file">Upload a snapshot (.sqlite3, up to 200 MB)</label>
+        <input id="restore-file" name="snapshot_file" type="file" accept=".sqlite3,.db">
+      </div>
+      <div class="settings-card-actions">
+        <button type="submit" class="btn-secondary">Check snapshot</button>
+        <span class="settings-subtitle-note">Nothing is staged until you confirm.</span>
+      </div>
+    </form>
+  </div>
+
+  {% for f in backup_files.snapshots %}
+  <form id="backup-rst-{{ loop.index }}" method="POST" action="{{ url_for('dashboard.restore_stage') }}" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="server_file" value="{{ f.name }}">
+  </form>
+  {% endfor %}
+
+  {% for f in backup_files.exports %}
+  <form id="backup-imp-{{ loop.index }}" method="POST" action="{{ url_for('dashboard.import_upload') }}" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="server_file" value="{{ f.name }}">
+  </form>
+  {% endfor %}
+</section>

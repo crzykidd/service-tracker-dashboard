@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings Mockup</title>
+<!--
+  Settings modernization mockup (0.11.0), docs/design/2026-11-20-settings-modernization.md.
+  Static and self-contained: inline CSS mirroring static/css/dashboard.css tokens, fake data,
+  a little JS only to toggle states. Not loaded by the app.
+-->
+<style>
+  :root {
+    --color-bg-base: #111827;
+    --color-bg-surface: #1f2937;
+    --color-bg-raised: #374151;
+    --color-border: #374151;
+    --color-border-focus: #3b82f6;
+    --color-border-input: #4b5563;
+    --color-text-primary: #f9fafb;
+    --color-text-secondary: #e5e7eb;
+    --color-text-muted: #9ca3af;
+    --color-status-ok: #22c55e;
+    --color-status-warn: #f59e0b;
+    --color-status-bad: #ef4444;
+    --color-status-muted: #6b7280;
+    --color-status-blue: #60a5fa;
+    --color-accent: #3b82f6;
+    --color-accent-dim: rgba(59, 130, 246, 0.3);
+    --radius-input: 0.5rem;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--color-bg-base); color: var(--color-text-secondary);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--color-status-blue); }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8125rem; }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* app header + tabs (as base.html) */
+  .app-title { font-size: 1.25rem; font-weight: 600; color: #fff; margin-bottom: 1rem; }
+  .app-title small { font-size: .75rem; color: var(--color-text-muted); font-weight: 400; margin-left: .5rem; }
+  .tabs { display: flex; gap: 1rem; border-bottom: 1px solid var(--color-border); margin-bottom: 1rem; }
+  .tabs a { padding: .5rem .75rem; color: var(--color-text-muted); text-decoration: none; border-radius: 4px 4px 0 0; }
+  .tabs a.active { color: #fff; background: var(--color-bg-surface); }
+
+  /* mockup controls */
+  .mock-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: 0 0 1rem;
+    padding: .5rem .75rem; border: 1px dashed #4b5563; border-radius: .5rem; color: var(--color-text-muted); font-size: .75rem; }
+  .mock-bar strong { color: #fbbf24; }
+
+  /* layout */
+  .settings-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+  .settings-nav { width: 15rem; flex: none; position: sticky; top: 1rem; background: var(--color-bg-surface);
+    border: 1px solid var(--color-border); border-radius: .5rem; padding: 1rem .75rem; }
+  .settings-nav h2 { margin: 0 0 .75rem .5rem; font-size: 1rem; color: #fff; }
+  .settings-nav-label { margin: 1rem .5rem .25rem; font-size: .6875rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--color-text-muted); font-weight: 600; }
+  .settings-nav-label:first-of-type { margin-top: 0; }
+  .settings-nav-link { display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    padding: .375rem .5rem; border-radius: .375rem; color: var(--color-text-secondary); text-decoration: none; }
+  .settings-nav-link:hover { background: var(--color-bg-raised); }
+  .settings-nav-link[aria-current="page"] { background: var(--color-bg-raised); color: #fff; box-shadow: inset 2px 0 0 var(--color-accent); }
+  .settings-nav-badges { display: inline-flex; gap: .25rem; }
+  .settings-nav-badge { min-width: 1.25rem; height: 1.25rem; padding: 0 .3rem; border-radius: 999px; font-size: .6875rem;
+    font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .settings-nav-badge--warn { background: #fbbf24; color: #111827; }
+  .settings-nav-badge--bad { background: #dc2626; color: #fff; }
+  .settings-nav-badge--muted { background: var(--color-bg-raised); color: var(--color-text-secondary); }
+  .settings-nav-select { display: none; }
+  .settings-main { flex: 1; min-width: 0; }
+
+  /* section header */
+  .settings-section[hidden] { display: none; }
+  .settings-section-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; margin-bottom: 1rem; }
+  .settings-section-title { margin: 0; font-size: 1.5rem; font-weight: 600; color: #fff; }
+  .settings-section-subtitle { margin: .125rem 0 0; color: var(--color-text-muted); }
+  .settings-learn-more { margin-top: .375rem; color: var(--color-text-muted); font-size: .8125rem; max-width: 46rem; }
+  .settings-learn-more summary { cursor: pointer; color: var(--color-status-blue); width: max-content; }
+  .settings-learn-more p { margin: .5rem 0 0; }
+  .settings-sub { font-size: .8125rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: .03em;
+    border-bottom: 1px solid var(--color-border); padding-bottom: 4px; margin: 1.75rem 0 .75rem; }
+
+  /* buttons + inputs */
+  .btn { display: inline-flex; align-items: center; gap: .375rem; border: 0; border-radius: .5rem; padding: .5rem 1rem;
+    font: inherit; font-weight: 500; cursor: pointer; color: #fff; white-space: nowrap; }
+  .btn-sm { padding: .25rem .75rem; font-size: .75rem; }
+  .btn-primary { background: var(--color-accent); } .btn-primary:hover { background: #3182ce; }
+  .btn-secondary { background: #4a5568; } .btn-secondary:hover { background: #2d3748; }
+  .btn-danger { background: #dc2626; } .btn-danger:hover { background: #b91c1c; }
+  .btn-ghost { background: transparent; color: var(--color-text-muted); } .btn-ghost:hover { color: #fff; }
+  .btn:focus-visible, .kebab:focus-visible, .kebab-item:focus-visible, .settings-group-toggle:focus-visible,
+  .settings-nav-link:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+  .input-clean { background: var(--color-bg-surface); color: var(--color-text-secondary); border: 1px solid var(--color-border-input);
+    padding: .5rem .75rem; border-radius: var(--radius-input); font: inherit; width: 100%; }
+  .input-clean:focus { border-color: var(--color-border-focus); box-shadow: 0 0 0 2px var(--color-accent-dim); outline: none; }
+  .input-clean[aria-invalid="true"] { border-color: var(--color-status-bad); }
+  .settings-label { display: block; font-size: .8125rem; color: var(--color-text-secondary); margin-bottom: .25rem; }
+  .edit-helper { font-size: .75rem; color: var(--color-text-muted); font-style: italic; margin-top: 3px; }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1rem; }
+  .field-grid .span2 { grid-column: span 2; }
+  .check { display: flex; align-items: center; gap: .5rem; }
+
+  /* switch */
+  .switch { appearance: none; width: 2.25rem; height: 1.25rem; border-radius: 999px; background: var(--color-bg-raised);
+    border: 1px solid var(--color-border-input); position: relative; cursor: pointer; flex: none; margin: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: .875rem; height: .875rem; border-radius: 50%;
+    background: #d1d5db; transition: transform .15s ease; }
+  .switch:checked { background: var(--color-accent); border-color: var(--color-accent); }
+  .switch:checked::after { transform: translateX(1rem); background: #fff; }
+  .switch-label { display: inline-flex; align-items: center; gap: .5rem; font-size: .8125rem; color: var(--color-text-muted); }
+
+  /* cards */
+  .settings-card { background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: .5rem; }
+  .settings-card-list > .settings-card-row + .settings-card-row { border-top: 1px solid var(--color-border); }
+  .settings-card-row { display: flex; align-items: flex-start; gap: .75rem; padding: .875rem 1rem; }
+  .settings-card-main { flex: 1; min-width: 0; }
+  .settings-card-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; color: #fff; font-weight: 600; }
+  .settings-card-summary { color: var(--color-text-muted); margin-top: .125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .settings-card-error { color: #fca5a5; font-size: .8125rem; margin-top: .25rem; }
+  .settings-card-actions { display: flex; align-items: center; gap: .625rem; flex: none; }
+  .tag { font-size: .6875rem; font-weight: 600; padding: .05rem .4rem; border-radius: 3px; background: var(--color-bg-raised); color: var(--color-text-secondary); }
+  .tag--ha { background: rgba(96,165,250,.15); color: #93c5fd; }
+  .state-word { font-size: .75rem; font-weight: 500; }
+
+  /* status dot */
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; margin-top: .45rem; }
+  .status-dot--ok { background: var(--color-status-ok); }
+  .status-dot--warn { background: var(--color-status-warn); }
+  .status-dot--bad { background: var(--color-status-bad); box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
+  .status-dot--off { background: var(--color-status-muted); }
+  [data-state="connected"].state-word { color: #4ade80; }
+  [data-state="error"].state-word { color: #f87171; }
+
+  /* kebab menu */
+  .kebab-wrap { position: relative; }
+  .kebab { width: 2rem; height: 2rem; border-radius: .5rem; border: 1px solid var(--color-border-input); background: transparent;
+    color: var(--color-text-secondary); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+  .kebab:hover, .kebab[aria-expanded="true"] { background: var(--color-bg-raised); }
+  .kebab-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 15rem; padding: .25rem;
+    background: #0f172a; border: 1px solid var(--color-border-input); border-radius: .5rem; box-shadow: 0 10px 25px rgba(0,0,0,.45); }
+  .kebab-menu[hidden] { display: none; }
+  .kebab-item { display: block; width: 100%; text-align: left; padding: .45rem .75rem; border: 0; border-radius: .375rem;
+    background: transparent; color: var(--color-text-secondary); font: inherit; cursor: pointer; }
+  .kebab-item:hover, .kebab-item:focus { background: var(--color-bg-raised); color: #fff; outline: none; }
+  .kebab-item--danger { color: #fca5a5; }
+  .kebab-sep { height: 1px; background: var(--color-border); margin: .25rem 0; }
+
+  /* banners, inline warnings, toast */
+  .flash-alert { display: flex; gap: .75rem; align-items: flex-start; justify-content: space-between; padding: .625rem .875rem;
+    border-radius: .5rem; margin-bottom: 1rem; border: 1px solid; }
+  .flash-alert--danger { background: rgba(127,29,29,.45); border-color: #b91c1c; color: #fee2e2; }
+  .flash-alert--warning { background: rgba(120,53,15,.45); border-color: #d97706; color: #fef3c7; }
+  .flash-alert button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; }
+  .inline-warning { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between;
+    padding: .625rem .875rem; border-radius: .5rem; margin-bottom: 1rem; border: 1px solid; }
+  .inline-warning--warn { background: rgba(120,53,15,.35); border-color: #d97706; color: #fde68a; }
+  .toast-region { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 60; }
+  .toast { display: flex; align-items: center; gap: .625rem; min-width: 18rem; max-width: 26rem; padding: .625rem .875rem;
+    background: #0f172a; border: 1px solid var(--color-border-input); border-left: 3px solid var(--color-status-ok);
+    border-radius: .5rem; box-shadow: 0 10px 25px rgba(0,0,0,.45); color: var(--color-text-secondary);
+    animation: toast-in .2s ease-out; }
+  .toast .ok { color: var(--color-status-ok); font-weight: 700; }
+  .toast button { margin-left: auto; background: none; border: 0; color: var(--color-text-muted); cursor: pointer; font-size: 1rem; }
+  .toast.leaving { opacity: 0; transform: translateY(6px); transition: all .25s ease; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } .toast.leaving { transition: none; } }
+
+  /* modal */
+  dialog.std-modal { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--color-border-input);
+    border-radius: .75rem; background: var(--color-bg-surface); color: var(--color-text-secondary); box-shadow: 0 25px 50px rgba(0,0,0,.6); }
+  dialog.std-modal[open] { display: flex; flex-direction: column; }
+  dialog.std-modal::backdrop { background: rgba(0,0,0,.6); }
+  .std-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--color-border); }
+  .std-modal-header h3 { margin: 0; font-size: 1.0625rem; color: #fff; }
+  .std-modal-header button { background: none; border: 0; color: var(--color-text-muted); font-size: 1.25rem; cursor: pointer; }
+  .std-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
+  .std-modal-footer { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .875rem 1.25rem; border-top: 1px solid var(--color-border); }
+  .std-modal-footer .result { margin-right: auto; font-size: .8125rem; }
+  .std-modal-block { border: 0; padding: 0; margin: 0 0 1.25rem; }
+  .std-modal-block legend { padding: 0; margin-bottom: .625rem; font-size: .75rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--color-text-muted); }
+  details.std-modal-advanced { border: 1px solid var(--color-border); border-radius: .5rem; padding: .625rem .875rem; margin-bottom: 1rem; }
+  details.std-modal-advanced summary { cursor: pointer; font-size: .75rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--color-text-muted); }
+  details.std-modal-advanced[open] summary { margin-bottom: .75rem; }
+
+  /* HA groups */
+  .ha-status { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; color: var(--color-text-muted); margin-bottom: 1rem; }
+  .ha-status strong { color: #fff; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-bottom: .75rem; }
+  .toolbar .input-clean { max-width: 22rem; }
+  .linkish { background: none; border: 0; padding: 0; color: var(--color-status-blue); cursor: pointer; font: inherit; }
+  .settings-group + .settings-group { border-top: 1px solid var(--color-border); }
+  .settings-group-header { display: flex; align-items: center; gap: .75rem; padding: .625rem 1rem; }
+  .settings-group-header input { width: 1rem; height: 1rem; accent-color: var(--color-accent); }
+  .settings-group-toggle { flex: 1; display: flex; align-items: center; gap: .5rem; background: none; border: 0; padding: 0;
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+  .chevron { display: inline-block; width: .75rem; color: var(--color-text-muted); transition: transform .15s ease; }
+  .settings-group-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+  .settings-group-count { color: var(--color-text-muted); font-weight: 400; }
+  .settings-group-body { padding: 0 1rem .5rem 2.75rem; }
+  .settings-group-body[hidden] { display: none; }
+  .ha-row { display: grid; grid-template-columns: 1.25rem minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1fr); gap: .75rem;
+    align-items: center; padding: .3rem 0; border-top: 1px solid rgba(55,65,81,.6); }
+  .ha-row input { width: 1rem; height: 1rem; accent-color: var(--color-accent); }
+  .ha-row .muted { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ha-row .pill { justify-self: start; font-size: .6875rem; padding: .05rem .45rem; border-radius: 999px; background: var(--color-bg-raised); color: var(--color-text-muted); }
+  .ha-row[data-changed] .name::after { content: " • changed"; color: #fbbf24; font-size: .75rem; }
+
+  /* sticky save bar */
+  .settings-savebar { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: .75rem; justify-content: flex-end;
+    margin-top: 1rem; padding: .75rem 1rem; background: rgba(17,24,39,.96); border: 1px solid #b45309;
+    border-radius: .5rem; box-shadow: 0 -8px 20px rgba(0,0,0,.35); }
+  .settings-savebar .hint { margin-right: auto; color: #fde68a; }
+  form[data-unsaved-dirty="false"] .settings-savebar { display: none; }
+
+  .placeholder { padding: 2rem; text-align: center; color: var(--color-text-muted); border: 1px dashed var(--color-border-input); border-radius: .5rem; }
+
+  /* mobile */
+  @media (max-width: 767px) {
+    .settings-layout { flex-direction: column; gap: 1rem; }
+    .settings-nav { display: none; }
+    .settings-nav-select { display: block; }
+    .settings-card-row { flex-wrap: wrap; }
+    .settings-card-actions { width: 100%; justify-content: flex-end; }
+    .field-grid { grid-template-columns: 1fr; }
+    .field-grid .span2 { grid-column: auto; }
+    .ha-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
+    .ha-row .host { display: none; }
+    .toast-region { left: .5rem; right: .5rem; bottom: .5rem; }
+    .toast { max-width: none; min-width: 0; }
+    .std-modal-footer .btn { flex: 1; justify-content: center; }
+    .std-modal-footer .result { flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="app-title">Service Tracker Dashboard <small>v0.11.0</small></div>
+  <nav class="tabs" aria-label="Tabs">
+    <a href="#">Dashboard</a><a href="#">Tiled</a><a href="#">Compact</a><a href="#">Add</a><a href="#" class="active">Settings</a>
+  </nav>
+
+  <div class="mock-bar" role="note">
+    <strong>Mockup</strong> fake data, no server.
+    <button class="btn btn-secondary btn-sm" type="button" id="mock-open-modal">Open "Edit channel" modal</button>
+    <button class="btn btn-secondary btn-sm" type="button" id="mock-toast">Replay toast</button>
+    <button class="btn btn-secondary btn-sm" type="button" id="mock-banner">Show error banner</button>
+    <span>Sidebar links switch sections via <code>#hash</code>; narrow the window for the mobile select.</span>
+  </div>
+
+  <div class="settings-layout">
+    <!-- Grouped sidebar (built from settings_sections.SECTIONS) -->
+    <nav class="settings-nav" aria-label="Settings">
+      <h2>Settings</h2>
+      <h3 class="settings-nav-label">General</h3>
+      <a class="settings-nav-link" href="#about" data-section="about">About</a>
+      <a class="settings-nav-link" href="#configuration" data-section="configuration">Configuration</a>
+      <h3 class="settings-nav-label">Dashboard</h3>
+      <a class="settings-nav-link" href="#groups" data-section="groups">Groups</a>
+      <a class="settings-nav-link" href="#widgets" data-section="widgets">Widgets</a>
+      <h3 class="settings-nav-label">Sources</h3>
+      <a class="settings-nav-link" href="#docker" data-section="docker">Docker</a>
+      <a class="settings-nav-link" href="#streams" data-section="streams">Streams
+        <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--warn" title="1 pending">1</span><span class="settings-nav-badge settings-nav-badge--bad" title="1 stale">1</span></span></a>
+      <h3 class="settings-nav-label">Integrations</h3>
+      <a class="settings-nav-link" href="#notifications" data-section="notifications">Notifications</a>
+      <a class="settings-nav-link" href="#home-assistant" data-section="home-assistant">Home Assistant</a>
+      <h3 class="settings-nav-label">Access</h3>
+      <a class="settings-nav-link" href="#users" data-section="users">Users</a>
+      <a class="settings-nav-link" href="#api-keys" data-section="api-keys">API keys</a>
+      <a class="settings-nav-link" href="#audit-log" data-section="audit-log">Audit log</a>
+      <h3 class="settings-nav-label">Data</h3>
+      <a class="settings-nav-link" href="#backup" data-section="backup">Backup &amp; restore</a>
+      <a class="settings-nav-link" href="#deleted" data-section="deleted">Deleted
+        <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--muted">3</span></span></a>
+    </nav>
+
+    <div class="settings-main">
+      <!-- Mobile: the sidebar becomes a select with optgroups -->
+      <select class="input-clean settings-nav-select" aria-label="Settings section" id="nav-select">
+        <optgroup label="General"><option value="about">About</option><option value="configuration">Configuration</option></optgroup>
+        <optgroup label="Dashboard"><option value="groups">Groups</option><option value="widgets">Widgets</option></optgroup>
+        <optgroup label="Sources"><option value="docker">Docker</option><option value="streams">Streams (1 new, 1 stale)</option></optgroup>
+        <optgroup label="Integrations"><option value="notifications">Notifications</option><option value="home-assistant">Home Assistant</option></optgroup>
+        <optgroup label="Access"><option value="users">Users</option><option value="api-keys">API keys</option><option value="audit-log">Audit log</option></optgroup>
+        <optgroup label="Data"><option value="backup">Backup &amp; restore</option><option value="deleted">Deleted (3)</option></optgroup>
+      </select>
+
+      <!-- ===== Notifications ===== -->
+      <section id="section-notifications" class="settings-section">
+        <header class="settings-section-header">
+          <div>
+            <h2 class="settings-section-title">Notifications</h2>
+            <p class="settings-section-subtitle">Brokers STD publishes entry state to.</p>
+            <details class="settings-learn-more">
+              <summary>ⓘ Learn more</summary>
+              <p>STD announces <code>&lt;base&gt;/status</code> (<code>online</code>, retained, with an <code>offline</code> last will)
+                and one retained topic per entry. Use <strong>Send test</strong> in the channel dialog to check broker settings before saving.</p>
+            </details>
+          </div>
+          <button class="btn btn-primary" type="button" id="add-channel">+ Add channel</button>
+        </header>
+
+        <!-- error banner: an error flash lands in the section where it happened -->
+        <div class="flash-alert flash-alert--danger" role="alert" id="section-error">
+          <span>Could not reach mqtt-lab (10.0.0.9:8883): connection refused. Nothing was purged.</span>
+          <button type="button" aria-label="Dismiss" data-dismiss>×</button>
+        </div>
+
+        <div class="settings-card settings-card-list" id="notification-list">
+          <!-- connected channel, menu open -->
+          <div class="settings-card-row" data-channel-id="1">
+            <span class="status-dot status-dot--ok" aria-hidden="true"></span>
+            <div class="settings-card-main">
+              <div class="settings-card-title">mqtt-main <span class="tag">MQTT</span><span class="tag tag--ha">HA</span>
+                <span class="state-word notification-state" data-state="connected">connected</span></div>
+              <div class="settings-card-summary mono">mqtt.lan:1883 · std/…</div>
+            </div>
+            <div class="settings-card-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-edit="1">Edit</button>
+              <label class="switch-label"><input type="checkbox" role="switch" class="switch" checked aria-label="Enabled: mqtt-main"> <span>Enabled</span></label>
+              <div class="kebab-wrap">
+                <button class="kebab" type="button" aria-haspopup="menu" aria-expanded="true" aria-controls="menu-1" aria-label="More actions for mqtt-main">⋯</button>
+                <div class="kebab-menu" role="menu" id="menu-1">
+                  <button class="kebab-item" role="menuitem" tabindex="-1" type="button">Send test</button>
+                  <button class="kebab-item" role="menuitem" tabindex="-1" type="button">Scan for orphans</button>
+                  <button class="kebab-item" role="menuitem" tabindex="-1" type="button">Purge MQTT and Home Assistant</button>
+                  <div class="kebab-sep" role="separator"></div>
+                  <button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1" type="button">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- channel in error -->
+          <div class="settings-card-row" data-channel-id="2">
+            <span class="status-dot status-dot--bad" aria-hidden="true"></span>
+            <div class="settings-card-main">
+              <div class="settings-card-title">mqtt-lab <span class="tag">MQTT</span>
+                <span class="state-word notification-state" data-state="error">error</span></div>
+              <div class="settings-card-summary mono">10.0.0.9:8883 TLS · lab/std/…</div>
+              <div class="settings-card-error notification-error">Last error: Connection refused (10.0.0.9:8883), retrying in 30 s</div>
+            </div>
+            <div class="settings-card-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-edit="2">Edit</button>
+              <label class="switch-label"><input type="checkbox" role="switch" class="switch" checked aria-label="Enabled: mqtt-lab"> <span>Enabled</span></label>
+              <div class="kebab-wrap">
+                <button class="kebab" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-2" aria-label="More actions for mqtt-lab">⋯</button>
+                <div class="kebab-menu" role="menu" id="menu-2" hidden>
+                  <button class="kebab-item" role="menuitem" tabindex="-1" type="button">Send test</button>
+                  <button class="kebab-item" role="menuitem" tabindex="-1" type="button">Scan for orphans</button>
+                  <button class="kebab-item" role="menuitem" tabindex="-1" type="button">Purge MQTT and Home Assistant</button>
+                  <div class="kebab-sep" role="separator"></div>
+                  <button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1" type="button">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Home Assistant ===== -->
+      <section id="section-home-assistant" class="settings-section" hidden>
+        <header class="settings-section-header">
+          <div>
+            <h2 class="settings-section-title">Home Assistant</h2>
+            <p class="settings-section-subtitle">Choose which entries get a device in Home Assistant.</p>
+            <details class="settings-learn-more">
+              <summary>ⓘ Learn more</summary>
+              <p>Discovery creates one device per ticked entry (a roll-up state sensor plus a problem sensor per check) under an STD hub
+                device. New checks appear automatically; opt a check out on the entry's edit page. Nothing is published by default.</p>
+            </details>
+          </div>
+        </header>
+
+        <div class="ha-status">
+          <span>Discovery: <strong>mqtt-main</strong> (<code>homeassistant/</code>, devices "STD …")</span>
+          <span><strong id="ha-published">14 of 20</strong> entries published</span>
+        </div>
+        <!-- Shown instead of the status line when no enabled channel has discovery on: -->
+        <div class="inline-warning inline-warning--warn" id="ha-off-example">
+          <span><em>(state example)</em> No channel publishes discovery, so nothing reaches Home Assistant.
+            Turn on <strong>Add to Home Assistant</strong> on a channel in <a href="#notifications">Notifications →</a></span>
+        </div>
+
+        <form id="ha-entries-form" data-unsaved-dirty="true" onsubmit="return false">
+          <div class="toolbar">
+            <input type="search" class="input-clean" id="ha-filter" placeholder="Search by name, host or group" aria-label="Search entries">
+            <button type="button" class="linkish" id="ha-select-all">Select all</button>
+            <button type="button" class="linkish" id="ha-select-none">Select none</button>
+          </div>
+
+          <div class="settings-card" id="ha-groups">
+            <!-- Docker: expanded, partial -->
+            <section class="settings-group" data-group="docker">
+              <div class="settings-group-header">
+                <input type="checkbox" class="settings-group-check" aria-label="Publish all Docker entries">
+                <button type="button" class="settings-group-toggle" aria-expanded="true" aria-controls="grp-docker">
+                  <span class="chevron" aria-hidden="true">▸</span> Docker <span class="settings-group-count">— <span data-count>3 of 6</span></span></button>
+              </div>
+              <div class="settings-group-body" id="grp-docker">
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish grafana"><span class="name">grafana</span><span class="muted host">em-dock01</span><span class="pill">Monitoring</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish home-assistant"><span class="name">home-assistant</span><span class="muted host">em-dockha01</span><span class="pill">Home</span></div>
+                <div class="ha-row" data-ha-row data-changed><input type="checkbox" checked aria-label="Publish mosquitto"><span class="name">mosquitto</span><span class="muted host">em-dock01</span><span class="pill">Home</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" aria-label="Publish paperless"><span class="name">paperless</span><span class="muted host">em-dock02</span><span class="pill">Docs</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" aria-label="Publish portainer"><span class="name">portainer</span><span class="muted host">em-dock01</span><span class="pill">Infra</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" aria-label="Publish traefik"><span class="name">traefik</span><span class="muted host">em-edge01</span><span class="pill">Infra</span></div>
+              </div>
+            </section>
+            <!-- Manual: collapsed, none -->
+            <section class="settings-group" data-group="manual">
+              <div class="settings-group-header">
+                <input type="checkbox" class="settings-group-check" aria-label="Publish all Manual entries">
+                <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="grp-manual">
+                  <span class="chevron" aria-hidden="true">▸</span> Manual <span class="settings-group-count">— <span data-count>1 of 4</span></span></button>
+              </div>
+              <div class="settings-group-body" id="grp-manual" hidden>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish em-pve01"><span class="name">em-pve01</span><span class="muted host">—</span><span class="pill">Infra</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" aria-label="Publish udm-pro"><span class="name">udm-pro</span><span class="muted host">—</span><span class="pill">Network</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" aria-label="Publish nas"><span class="name">nas</span><span class="muted host">—</span><span class="pill">Storage</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" aria-label="Publish printer"><span class="name">printer</span><span class="muted host">—</span><span class="pill">Home</span></div>
+              </div>
+            </section>
+            <!-- DHCP stream: collapsed, all -->
+            <section class="settings-group" data-group="stream:dhcp">
+              <div class="settings-group-header">
+                <input type="checkbox" class="settings-group-check" aria-label="Publish all DHCP entries">
+                <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="grp-dhcp">
+                  <span class="chevron" aria-hidden="true">▸</span> DHCP <span class="settings-group-count">— <span data-count>10 of 10</span></span></button>
+              </div>
+              <div class="settings-group-body" id="grp-dhcp" hidden>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish shelly-pump"><span class="name">shelly-pump</span><span class="muted host">10.0.40.21</span><span class="pill">IoT</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish shelly-garage"><span class="name">shelly-garage</span><span class="muted host">10.0.40.22</span><span class="pill">IoT</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish esp-boiler"><span class="name">esp-boiler</span><span class="muted host">10.0.40.30</span><span class="pill">IoT</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish esp-attic"><span class="name">esp-attic</span><span class="muted host">10.0.40.31</span><span class="pill">IoT</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish bulb-kitchen"><span class="name">bulb-kitchen</span><span class="muted host">10.0.40.41</span><span class="pill">Lights</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish bulb-hall"><span class="name">bulb-hall</span><span class="muted host">10.0.40.42</span><span class="pill">Lights</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish cam-door"><span class="name">cam-door</span><span class="muted host">10.0.40.50</span><span class="pill">Cameras</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish cam-yard"><span class="name">cam-yard</span><span class="muted host">10.0.40.51</span><span class="pill">Cameras</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish ap-upstairs"><span class="name">ap-upstairs</span><span class="muted host">10.0.10.5</span><span class="pill">Network</span></div>
+                <div class="ha-row" data-ha-row><input type="checkbox" checked aria-label="Publish ap-downstairs"><span class="name">ap-downstairs</span><span class="muted host">10.0.10.6</span><span class="pill">Network</span></div>
+              </div>
+            </section>
+          </div>
+
+          <div class="settings-savebar" role="region" aria-label="Unsaved changes">
+            <span class="hint">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" id="ha-discard">Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- other sections are not mocked -->
+      <section id="section-other" class="settings-section" hidden>
+        <header class="settings-section-header"><div><h2 class="settings-section-title" id="other-title">Section</h2>
+          <p class="settings-section-subtitle">Not part of this mockup. Same header, card list and modal pattern (design doc §9).</p></div></header>
+        <div class="placeholder">Only Notifications and Home Assistant are mocked.</div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit channel modal: Advanced collapsed, Send test beside Save -->
+<dialog class="std-modal" id="channel-modal" aria-labelledby="nf-title">
+  <form method="dialog" id="notification-form" onsubmit="return false">
+    <div class="std-modal-header">
+      <h3 id="nf-title">Edit MQTT channel</h3>
+      <button type="button" aria-label="Close" data-close>×</button>
+    </div>
+    <div class="std-modal-body">
+      <fieldset class="std-modal-block">
+        <legend>Connection</legend>
+        <div class="field-grid">
+          <div><label class="settings-label" for="nf-name">Name</label><input class="input-clean" id="nf-name" value="mqtt-main"></div>
+          <div style="align-self:end"><label class="switch-label"><input type="checkbox" role="switch" class="switch" checked> Enabled</label></div>
+          <div><label class="settings-label" for="nf-host">Host</label><input class="input-clean" id="nf-host" value="mqtt.lan"></div>
+          <div><label class="settings-label" for="nf-port">Port</label><input class="input-clean" id="nf-port" type="number" placeholder="1883 (8883 with TLS)" value="1883"></div>
+          <div><label class="check"><input type="checkbox"> Use TLS</label></div>
+          <div></div>
+          <div class="span2"><label class="settings-label" for="nf-base-topic">Base topic</label><input class="input-clean mono" id="nf-base-topic" value="std"></div>
+        </div>
+      </fieldset>
+      <fieldset class="std-modal-block">
+        <legend>Authentication</legend>
+        <div class="field-grid">
+          <div><label class="settings-label" for="nf-username">Username</label><input class="input-clean" id="nf-username" value="std"></div>
+          <div><label class="settings-label" for="nf-password">Password <span class="edit-helper" style="font-style:normal">(set; leave blank to keep)</span></label>
+            <input class="input-clean" id="nf-password" type="password" autocomplete="new-password">
+            <label class="check edit-helper" style="font-style:normal"><input type="checkbox"> Remove the stored password</label></div>
+        </div>
+      </fieldset>
+      <fieldset class="std-modal-block">
+        <legend>Home Assistant</legend>
+        <label class="switch-label" style="margin-bottom:.625rem"><input type="checkbox" role="switch" class="switch" checked> Add to Home Assistant</label>
+        <div class="field-grid">
+          <div><label class="settings-label" for="nf-ha-prefix">Discovery prefix</label><input class="input-clean mono" id="nf-ha-prefix" value="homeassistant"></div>
+          <div><label class="settings-label" for="nf-ha-device-prefix">Device name prefix</label><input class="input-clean" id="nf-ha-device-prefix" value="STD"></div>
+        </div>
+      </fieldset>
+      <details class="std-modal-advanced">
+        <summary>Advanced</summary>
+        <div class="field-grid">
+          <div><label class="settings-label" for="nf-client-id">Client id</label><input class="input-clean mono" id="nf-client-id" placeholder="std-<instance id>"></div>
+          <div><label class="settings-label" for="nf-qos">QoS</label><select class="input-clean" id="nf-qos"><option>1 (at least once)</option><option>0 (at most once)</option></select></div>
+          <div><label class="settings-label" for="nf-keepalive">Keepalive (seconds)</label><input class="input-clean" id="nf-keepalive" type="number" value="60"></div>
+          <div style="align-self:end"><label class="check"><input type="checkbox"> Skip certificate verification (not recommended)</label></div>
+        </div>
+      </details>
+      <!-- Cleanup prompt: shown while the base topic differs from the stored one -->
+      <div class="inline-warning inline-warning--warn" id="nf-cleanup-row" hidden>
+        <label class="check"><input type="checkbox" checked> Remove the old topics from the broker</label>
+        <span class="edit-helper" style="font-style:normal;color:#fde68a">Clears every retained topic under 'std/' and this install's discovery configs, then switches.</span>
+      </div>
+    </div>
+    <div class="std-modal-footer">
+      <span class="result" id="nf-test-result" role="status"></span>
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+      <button type="button" class="btn btn-secondary" id="nf-test">Send test</button>
+      <button type="submit" class="btn btn-primary">Save channel</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Toast region (success flashes) -->
+<div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  // --- sections via hash (nav.js) ---
+  var mocked = { notifications: 1, 'home-assistant': 1 };
+  function show(slug) {
+    if (!slug) slug = 'notifications';
+    $$('.settings-section').forEach(function (s) { s.hidden = true; });
+    var sec = mocked[slug] ? $('#section-' + slug) : $('#section-other');
+    sec.hidden = false;
+    if (!mocked[slug]) {
+      var link = $('.settings-nav-link[data-section="' + slug + '"]');
+      $('#other-title').textContent = link ? link.firstChild.textContent.trim() : slug;
+    }
+    $$('.settings-nav-link').forEach(function (a) {
+      if (a.dataset.section === slug) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    $('#nav-select').value = slug;
+  }
+  window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+  $('#nav-select').addEventListener('change', function (e) { location.hash = e.target.value; });
+  show(location.hash.slice(1));
+
+  // --- kebab menus (ui.js) ---
+  function closeMenus(except) {
+    $$('.kebab[aria-expanded="true"]').forEach(function (b) {
+      if (b === except) return;
+      b.setAttribute('aria-expanded', 'false'); document.getElementById(b.getAttribute('aria-controls')).hidden = true;
+    });
+  }
+  $$('.kebab').forEach(function (btn) {
+    var menu = document.getElementById(btn.getAttribute('aria-controls'));
+    var items = function () { return $$('[role=menuitem]', menu); };
+    function open(focusLast) {
+      closeMenus(btn); menu.hidden = false; btn.setAttribute('aria-expanded', 'true');
+      var it = items(); (focusLast ? it[it.length - 1] : it[0]).focus();
+    }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (btn.getAttribute('aria-expanded') === 'true') { closeMenus(); } else { open(false); }
+    });
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); open(false); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); open(true); }
+    });
+    menu.addEventListener('keydown', function (e) {
+      var it = items(), i = it.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); it[(i + 1) % it.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); it[(i - 1 + it.length) % it.length].focus(); }
+      else if (e.key === 'Home') { e.preventDefault(); it[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); it[it.length - 1].focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeMenus(); btn.focus(); }
+      else if (e.key === 'Tab') { closeMenus(); }
+    });
+    menu.addEventListener('click', function (e) {
+      if (e.target.closest('[role=menuitem]')) { closeMenus(); toast('Action: ' + e.target.textContent.trim() + ' (mockup)'); }
+    });
+  });
+  document.addEventListener('click', function (e) { if (!e.target.closest('.kebab-wrap')) closeMenus(); });
+
+  // --- modal (ui.js): native dialog, focus returns to opener ---
+  var modal = $('#channel-modal'), opener = null;
+  function openModal(title, from) {
+    opener = from || document.activeElement;
+    $('#nf-title').textContent = title;
+    $('#nf-test-result').textContent = '';
+    modal.showModal();
+    $('#nf-name').focus();
+  }
+  modal.addEventListener('close', function () { if (opener) opener.focus(); });
+  $$('[data-close]', modal).forEach(function (b) { b.addEventListener('click', function () { modal.close(); }); });
+  $('#add-channel').addEventListener('click', function (e) { openModal('Add MQTT channel', e.currentTarget); });
+  $$('[data-edit]').forEach(function (b) { b.addEventListener('click', function (e) { openModal('Edit MQTT channel', e.currentTarget); }); });
+  $('#mock-open-modal').addEventListener('click', function (e) { location.hash = 'notifications'; openModal('Edit MQTT channel', e.currentTarget); });
+  $('#nf-base-topic').addEventListener('input', function (e) { $('#nf-cleanup-row').hidden = e.target.value.trim() === 'std'; });
+  $('#nf-test').addEventListener('click', function () {
+    var out = $('#nf-test-result'); out.style.color = '#9ca3af'; out.textContent = 'Sending...';
+    setTimeout(function () { out.style.color = '#4ade80'; out.textContent = 'Success: published to std/test on mqtt.lan:1883.'; }, 700);
+  });
+  $('#notification-form').addEventListener('submit', function () { modal.close(); toast("Notification channel '" + $('#nf-name').value + "' saved."); });
+
+  // --- toast (flash.js) ---
+  function toast(text) {
+    var t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = '<span class="ok" aria-hidden="true">✓</span><span></span><button type="button" aria-label="Dismiss">×</button>';
+    t.children[1].textContent = text;
+    var timer, gone = function () { t.classList.add('leaving'); setTimeout(function () { t.remove(); }, 260); };
+    var arm = function () { timer = setTimeout(gone, 5000); };
+    t.addEventListener('mouseenter', function () { clearTimeout(timer); });
+    t.addEventListener('mouseleave', arm);
+    t.querySelector('button').addEventListener('click', gone);
+    $('#toast-region').appendChild(t); arm();
+  }
+  $('#mock-toast').addEventListener('click', function () { toast('Home Assistant entries saved (3 changed).'); });
+  toast("Notification channel 'mqtt-main' saved.");
+
+  // --- error banner ---
+  document.addEventListener('click', function (e) { var d = e.target.closest('[data-dismiss]'); if (d) d.parentElement.hidden = true; });
+  $('#mock-banner').addEventListener('click', function () { location.hash = 'notifications'; $('#section-error').hidden = false; });
+
+  // --- HA groups: disclosure, tri-state, search, save bar ---
+  var form = $('#ha-entries-form');
+  var snapshot = $$('.ha-row input', form).map(function (b) { return b.checked; });
+  snapshot[2] = false;  // the mockup starts with one unsaved change (mosquitto ticked)
+  var searching = false, savedExpand = {};
+  function rowsOf(g, visibleOnly) {
+    return $$('[data-ha-row]', g).filter(function (r) { return !visibleOnly || !r.hidden; });
+  }
+  function refresh() {
+    var total = 0, on = 0;
+    $$('.settings-group', form).forEach(function (g) {
+      var all = rowsOf(g), scope = rowsOf(g, searching);
+      var n = all.filter(function (r) { return r.querySelector('input').checked; }).length;
+      var ns = scope.filter(function (r) { return r.querySelector('input').checked; }).length;
+      var box = $('.settings-group-check', g);
+      box.checked = scope.length > 0 && ns === scope.length;
+      box.indeterminate = ns > 0 && ns < scope.length;
+      $('[data-count]', g).textContent = n + ' of ' + all.length;
+      total += all.length; on += n;
+    });
+    $('#ha-published').textContent = on + ' of ' + total;
+    var boxes = $$('.ha-row input', form);
+    var dirty = boxes.some(function (b, i) { return b.checked !== snapshot[i]; });
+    boxes.forEach(function (b, i) { b.closest('.ha-row').toggleAttribute('data-changed', b.checked !== snapshot[i]); });
+    form.setAttribute('data-unsaved-dirty', dirty ? 'true' : 'false');
+  }
+  function setExpanded(g, open) {
+    $('.settings-group-toggle', g).setAttribute('aria-expanded', open ? 'true' : 'false');
+    $('.settings-group-body', g).hidden = !open;
+  }
+  $$('.settings-group', form).forEach(function (g) {
+    $('.settings-group-toggle', g).addEventListener('click', function (e) {
+      setExpanded(g, e.currentTarget.getAttribute('aria-expanded') !== 'true');
+    });
+    $('.settings-group-check', g).addEventListener('change', function (e) {
+      var scope = rowsOf(g, searching);
+      var allOn = scope.every(function (r) { return r.querySelector('input').checked; });
+      scope.forEach(function (r) { r.querySelector('input').checked = !allOn; });
+      e.target.checked = !allOn;
+      refresh();
+    });
+  });
+  form.addEventListener('change', function (e) { if (e.target.closest('.ha-row')) refresh(); });
+  $('#ha-filter').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    if (q && !searching) { $$('.settings-group', form).forEach(function (g) { savedExpand[g.dataset.group] = $('.settings-group-toggle', g).getAttribute('aria-expanded') === 'true'; }); }
+    searching = !!q;
+    $$('.settings-group', form).forEach(function (g) {
+      var label = $('.settings-group-toggle', g).textContent.toLowerCase();
+      var hits = 0;
+      rowsOf(g).forEach(function (r) {
+        var match = !q || label.indexOf(q) !== -1 || r.textContent.toLowerCase().indexOf(q) !== -1;
+        r.hidden = !match; if (match) hits++;
+      });
+      g.hidden = !!q && hits === 0;
+      setExpanded(g, q ? hits > 0 : !!savedExpand[g.dataset.group]);
+    });
+    refresh();
+  });
+  var setAll = function (on) { $$('.ha-row', form).forEach(function (r) { if (!r.hidden) r.querySelector('input').checked = on; }); refresh(); };
+  $('#ha-select-all').addEventListener('click', function () { setAll(true); });
+  $('#ha-select-none').addEventListener('click', function () { setAll(false); });
+  $('#ha-discard').addEventListener('click', function () {
+    $$('.ha-row input', form).forEach(function (b, i) { b.checked = snapshot[i]; }); refresh();
+  });
+  form.addEventListener('submit', function () {
+    snapshot = $$('.ha-row input', form).map(function (b) { return b.checked; }); refresh();
+    toast('Home Assistant entries saved (1 changed).');
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>
