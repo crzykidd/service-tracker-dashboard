@@ -201,6 +201,10 @@ class EntryPatch(_Request):
     sort_priority: int | None = None
     locked: bool | None = None
     ha_publish: bool | None = None       # true publishes the entry's Home Assistant device
+    # Image update check (Docker entries only, revision 5): auto | tags | digest | off
+    image_update_policy: str | None = None
+    image_update_scope: str | None = None    # any | minor | patch; null = the global default
+    image_tag_pattern: str | None = None     # regex (full match) for the tag model; null/"" clears it
 
 
 class CheckPatch(_Request):
@@ -231,7 +235,8 @@ NOTIFIER_OWNED_FIELDS = frozenset({
     "image_name", "image_tag", "image_icon", "networks", "exposed_ports",
     "published_ports", "exposures", "internalurl_source", "externalurl_source",
     "notifier", "notifier_reported_group_name", "notifier_reported_sort_priority",
-    "health", "checks", "widget", "group_id", "stale", "deleted_at",
+    "health", "checks", "widget", "group_id", "stale", "deleted_at", "image_update",
+    "image_info", "image_running_digest",
 })
 
 
@@ -256,6 +261,19 @@ class WidgetPut(_Request):
     url: str
     fields: list[str]
     widget_api_key: str | None = None
+
+
+class ImageUpdateSettingsPut(_Request):
+    """Omitted fields keep their value; at least one is required."""
+
+    enabled: bool | None = None
+    scope: str | None = None            # any | minor | patch: the default scope of the tag model
+
+
+class ImageUpdateRunRequest(_Request):
+    """The body is optional: without `entry_id` every image is checked."""
+
+    entry_id: int | None = None
 
 
 class UpdateCheckSettingsPut(_Request):
@@ -547,6 +565,7 @@ class NotifierOut(TypedDict):
     image_name: str | None
     image_tag: str | None
     image_ref: str | None            # canonical reference, observed (revision 5; null until the next register)
+    image_info: Any                  # {id, created, version, revision, source} from the notifier (revision 5; null until it sends one)
     reported_group_name: str | None
     reported_sort_priority: int | None
     networks: Any
@@ -577,6 +596,24 @@ class InventoryOut(TypedDict):
     linked: bool                     # was a manual entry linked to the stream; cleanup unlinks it, never deletes it
 
 
+class ImageUpdateOut(TypedDict):
+    state: str | None                # update | current | unknown | error | pinned | off (off also while the check is switched off)
+    latest: str | None               # the newer tag, or `sha256:<12 hex>` of the newer digest
+    kind: str | None                 # major | minor | patch | build | digest
+    since: str | None                # when the state became `update` (UTC, Z)
+    checked_at: str | None           # last successful check of the reference (UTC, Z)
+    error: str | None                # why the last check of the reference failed
+    reason: str | None               # why the state is unknown / error / pinned
+    model: str | None                # tags | digest
+    rebuilt: bool                    # the running tag was re-pushed upstream (a muted note, not an update)
+    policy: str                      # auto | tags | digest | off
+    scope: str | None                # any | minor | patch; null = the global default
+    tag_pattern: str | None
+    running_digest: str | None
+    ref: str | None                  # the canonical image reference
+    provider: str | None             # which update provider produced the state
+
+
 class EntryOut(TypedDict):
     id: int
     name: str
@@ -598,6 +635,7 @@ class EntryOut(TypedDict):
     last_updated: str | None
     deleted_at: str | None
     inventory: InventoryOut | None   # set for source "stream" (additive; older STDs omit it)
+    image_update: ImageUpdateOut | None  # Docker entries only (revision 5); null for manual and stream entries
     health: EntryHealthOut
     checks: list[CheckOut]
 
@@ -849,6 +887,42 @@ class ImportStaleOut(TypedDict):
     error: str
     details: None
     plan: ImportPlanOut
+
+
+class ImageUpdateSettingsOut(TypedDict):
+    enabled: bool                    # default false
+    enabled_origin: str              # env (STD_IMAGE_UPDATE_ENABLED, read-only here) | ui | default
+    scope: str                       # any | minor | patch
+    interval_hours: int              # always 24: fixed, there is no setting
+    last_run: dict[str, Any] | None  # {at, trigger, refs, checked, updates, errors, skipped, duration_seconds}
+    next_run: str | None             # the daily job's next run (UTC, Z); null while the check is off
+
+
+class ImageReferenceEntryOut(TypedDict):
+    id: int
+    name: str
+    host: str | None
+    state: str | None
+    latest: str | None
+    kind: str | None
+    since: str | None
+    policy: str
+
+
+class ImageReferenceOut(TypedDict):
+    ref: str
+    registry: str | None
+    repository: str | None
+    tag: str | None
+    remote_digest: str | None
+    remote_digest_changed_at: str | None
+    checked_at: str | None
+    error: str | None
+    error_at: str | None
+    failures: int
+    next_check_at: str | None        # the reference is in backoff until then
+    tags_total: int | None           # tags the registry listed (tag model)
+    entries: list[ImageReferenceEntryOut]
 
 
 class UpdateCheckSettingsOut(TypedDict):

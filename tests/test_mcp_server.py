@@ -35,6 +35,7 @@ READ_TOOLS = {
     "list_notification_channels", "get_notification_channel", "list_notification_previous_bases",
     "list_streams", "get_stream", "preview_stream", "list_stream_blocks", "list_stream_offers",
     "list_stream_unmatched_items", "backup_settings", "list_backups", "export_config",
+    "list_image_updates",
 }
 WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
@@ -45,6 +46,7 @@ WRITE_TOOLS = {
     "clear_notification_orphans", "update_stream", "enable_stream", "disable_stream", "ignore_stream", "delete_stream",
     "unblock_stream_key", "answer_link_offer", "link_entry_to_stream_item",
     "apply_stream_default_checks", "unlink_entry", "run_backup", "import_plan", "import_apply",
+    "run_image_update_check",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -61,6 +63,9 @@ CALLS = {
     "get_config": ({}, "GET", "/api/v1/config", {}, None),
     "backup_settings": ({}, "GET", "/api/v1/settings/backup", {}, None),
     "list_backups": ({}, "GET", "/api/v1/backups", {}, None),
+    "list_image_updates": ({"state": "update"}, "GET", "/api/v1/image-updates",
+                           {"state": "update", "limit": "200", "offset": "0"}, None),
+    "run_image_update_check": ({"entry_id": 7}, "POST", "/api/v1/image-updates/run", {}, {"entry_id": 7}),
     "export_config": ({}, "GET", "/api/v1/export", {"format": "json"}, None),
     "run_backup": ({"kind": "export"}, "POST", "/api/v1/backups/run", {}, {"kind": "export"}),
     "import_plan": ({"document_text": "a: 1"}, "POST", "/api/v1/import/plan", {}, {"document_text": "a: 1"}),

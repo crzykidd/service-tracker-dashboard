@@ -21,6 +21,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Image update check: STD can tell you when a container's image has a newer version
+  (off by default; no screen yet, this release adds the engine and the API).** Once a day
+  STD asks the image registries (Docker Hub, GHCR, quay.io, lscr.io and any other
+  standard registry, anonymously over HTTPS) whether a newer image exists than the one
+  each Docker entry runs. It sends the names of the images you run to those registries,
+  so it is **off until you turn it on**: set `STD_IMAGE_UPDATE_ENABLED=true`, or
+  `PUT /api/v1/settings/image-updates` with `{"enabled": true}`. A page in Settings and
+  badges on the dashboards follow in a later release; for now read the result in each
+  entry's `image_update` block, in `GET /api/v1/image-updates`, or through the MCP
+  server (`list_image_updates`, `run_image_update_check`).
+  - **Pinned versions** (`1.4.2`, `v2.3`, `16.4-alpine`, `4.0.14.2939-ls263`) are compared
+    by tag and reported as a `major`, `minor`, `patch` or `build` update; a newer tag of
+    another flavour (`-bookworm` for `-alpine`) or a pre-release is not offered. The
+    default scope is any newer version; limit it to the same major or the same
+    major.minor, globally or per entry.
+  - **Moving tags** (`latest`, `stable`, `16`) are compared by digest. That needs the
+    notifier to report the running image (the new optional `image_info` register field,
+    sent by docker-api-notifier 0.5.0 and later); until then those entries show
+    "unknown" with the reason. Pinned-by-digest images are shown as pinned.
+  - Per entry: a policy (`auto`, `tags`, `digest`, `off`), a scope and an optional tag
+    pattern (a regular expression that must match the whole tag), through
+    `PATCH /api/v1/entries/{id}`, export and import.
+  - **Gentle on registries:** one request per distinct image however many containers
+    share it, `HEAD` for manifests (Docker Hub does not count that as a pull), at most
+    four at a time and two per registry, a pause when a registry answers "too many
+    requests", and a longer wait after a failure (1, 2, 4, up to 7 days). The check
+    cannot run more than once a day by itself; **Check now**
+    (`POST /api/v1/image-updates/run`) is throttled to once an hour, or once per 15
+    minutes for one image. STD never pulls or recreates a container, and an available
+    update does not change an entry's health.
+  - Management API revision 5 (additive): the `image_info` register field, the
+    `image_update` block in entry responses, the three settings on
+    `PATCH /api/v1/entries/{id}`, `GET /api/v1/image-updates`,
+    `GET`/`PUT /api/v1/settings/image-updates`, `POST /api/v1/image-updates/run`, and the
+    features `image_updates` and `image_info` in `GET /api/v1/meta`.
 - **The Docker image in an entry's details links to its repository page (closes #6).**
   On the Dashboard, Tiled and Compact details, the image (`registry/owner/name:tag`) is
   a link, derived from the image the notifier reports: Docker Hub (official and user

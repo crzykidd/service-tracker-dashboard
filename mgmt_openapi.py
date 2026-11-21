@@ -21,6 +21,7 @@ from pydantic import TypeAdapter
 import mgmt_schemas as S
 from api_version import API_REVISION
 from export_format import ExportDoc
+from image_tags import STATES as IMAGE_UPDATE_STATES
 from models import VALID_SOURCES
 from view_helpers import VALID_STATUS_FILTERS
 
@@ -108,7 +109,10 @@ OPERATIONS: tuple = (
     Op("PATCH", "/entries/{id}", "write", "Edit an entry", S.EntryDetailOut, request=S.EntryPatch,
        errors=(404, 409), description=_PATCH_NOTE + " Notifier-owned fields are rejected by name; "
        "`name` and `host` can be changed on manual entries only. `ha_publish` true publishes the "
-       "entry's device to Home Assistant discovery (default false)."),
+       "entry's device to Home Assistant discovery (default false). Docker entries also take "
+       "`image_update_policy` (`auto`, `tags`, `digest`, `off`), `image_update_scope` (`any`, `minor`, "
+       "`patch`; null = the global default) and `image_tag_pattern` (a full-match regex for the tag "
+       "model; null clears it)."),
     Op("DELETE", "/entries/{id}", "write", "Delete an entry (soft) or remove it for good",
        S.EntryOut | S.PermanentDeleteOut,
        params=(Param("permanent", _BOOL, "Permanently remove an entry that is already deleted."),
@@ -193,6 +197,30 @@ OPERATIONS: tuple = (
        S.UpdateCheckSettingsOut, request=S.UpdateCheckSettingsPut,
        description="`enabled` (default on) and `interval_hours` (default 6, minimum 1). Omitted "
                    "fields keep their value. When disabled STD makes no request to GitHub."),
+    Op("GET", "/settings/image-updates", "read", "Image update check settings", S.ImageUpdateSettingsOut,
+       description="Whether STD checks the image registries for newer images (default off; the "
+                   "environment variable `STD_IMAGE_UPDATE_ENABLED` wins, `enabled_origin` says which), the "
+                   "default scope of the tag model, and the read-only `interval_hours` (always 24), "
+                   "`last_run` and `next_run`."),
+    Op("PUT", "/settings/image-updates", "write", "Change the image update check settings",
+       S.ImageUpdateSettingsOut, request=S.ImageUpdateSettingsPut, errors=(409,),
+       description="`enabled` (default false) and `scope` (`any`, `minor` or `patch`). Omitted fields keep "
+                   "their value. Turning the check on schedules its first run a few minutes later, unless one "
+                   "ran in the last 24 hours. While it is off STD makes no request to any registry. 409 when "
+                   "`enabled` is pinned by the environment variable and the request asks for another value."),
+    Op("GET", "/image-updates", "read", "Image references and their update state", S.Page[S.ImageReferenceOut],
+       params=_PAGE + (Param("state", {"type": "string", "enum": list(IMAGE_UPDATE_STATES)},
+                             "Only references with an entry in this state."),),
+       description="One item per image reference that an active Docker entry runs, with the entries using it. "
+                   "While the check is switched off every entry shows `off`; the stored results come back "
+                   "when it is turned on."),
+    Op("POST", "/image-updates/run", "write", "Check for newer images now", S.RunRequestedOut,
+       request=S.ImageUpdateRunRequest, status=202, errors=(404, 409, 429),
+       description="Asks for a run and returns at once (the check runs in the background). The body is "
+                   "optional: without `entry_id` every image is checked (once per hour), with it that "
+                   "entry's image (once per 15 minutes per image; backoff is ignored). 429 when throttled, "
+                   "with `Retry-After` and `details.retry_after_seconds`; 409 when the check is off or the "
+                   "entry has no image to check."),
     Op("GET", "/settings/backup", "read", "Backup settings", S.BackupSettingsOut,
        description="The folder and the two daily jobs (`snapshot`, `export`), each value with its `origin`: "
                    "`env` (pinned by an environment variable, read-only), `ui` (saved in Settings), `file` "
@@ -428,6 +456,7 @@ _ERROR_TEXT = {
     404: "No such object.",
     409: "The request conflicts with the current state.",
     413: "The request body is larger than the limit (2 MiB for a snapshot).",
+    429: "Throttled: try again after the `Retry-After` seconds.",
     504: "The background worker did not finish in time; the operation may still complete.",
 }
 

@@ -55,6 +55,7 @@ SCRIPT_URL = "https://raw.githubusercontent.com/crzykidd/service-tracker-dashboa
 ENTRY_PATCH_FIELDS = {
     "name", "host", "description", "group", "internalurl", "externalurl",
     "icon", "image_repo_url", "sort_priority", "locked", "ha_publish",
+    "image_update_policy", "image_update_scope", "image_tag_pattern",
 }
 CHECK_PATCH_FIELDS = {
     "enabled", "name", "check_type", "target", "mode", "interval_seconds",
@@ -437,6 +438,15 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("GET", f"/streams/{stream_id}/unmatched", params=dict(limit=limit, offset=offset))
 
     @read_tool
+    def list_image_updates(state: str | None = None, limit: int = 200, offset: int = 0) -> dict:
+        """List the image references the Docker entries run and whether a newer image exists (the image update check), with the entries using each. Entries also carry an `image_update` block (list_entries, get_entry).
+
+        state: update | current | unknown | error | pinned | off (only references with an entry in that state). `update` is what needs attention; `unknown` says why in `reason` (for example an older notifier that does not report the running digest); `off` is also what every entry shows while the check is switched off (it is off by default; STD_IMAGE_UPDATE_ENABLED or Settings turns it on).
+        Returns {items, total, limit, offset}; each item has ref, remote_digest, checked_at, error, next_check_at and entries [{id, name, host, state, latest, kind, since, policy}].
+        """
+        return client.request("GET", "/image-updates", params=dict(state=state, limit=limit, offset=offset))
+
+    @read_tool
     def backup_settings() -> dict:
         """The backup settings: the folder and the two daily jobs (snapshot, export), each value with its origin (env | ui | file | default; env means pinned by an environment variable and read-only), plus last_runs and next_runs by kind."""
         return client.request("GET", "/settings/backup")
@@ -524,6 +534,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         """Edit an entry. `fields` names only what changes; a field left out is untouched and a field set to null clears it.
 
         Allowed: name, host (manual entries only), description, group (group name; null ungroups), internalurl, externalurl, icon, image_repo_url (http(s) override for the image repository link; null clears it), sort_priority, locked, ha_publish (true publishes the entry's device to Home Assistant, default false; only matters when a notification channel has Add to Home Assistant on).
+        Docker entries also take the image update settings: image_update_policy (auto | tags | digest | off), image_update_scope (any | minor | patch; null = the global default) and image_tag_pattern (a full-match regex for the tag model; null clears it).
         Docker-owned fields of notifier entries are rejected. A URL you edit here is protected from being overwritten by the notifier.
         Example fields: {"description": "Media server", "group": "Media", "externalurl": null}
         """
@@ -591,6 +602,12 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
     def delete_check(check_id: int) -> dict:
         """Delete a service check. Only service checks can be deleted; disable the URL and container checks instead (update_check)."""
         return client.request("DELETE", f"/checks/{check_id}")
+
+    @write_tool
+    def run_image_update_check(entry_id: int | None = None) -> dict:
+        """Ask STD to check the image registries for newer images now. Without entry_id every image is checked (at most once per hour); with it only that entry's image (at most once per 15 minutes per image). Returns {ok, queued, requested_at} at once: the check runs in the background, so read the result a little later with list_image_updates or get_entry. A 429 means it was throttled (see Retry-After); a 409 means the check is switched off or the entry has no image to check."""
+        return client.request("POST", "/image-updates/run",
+                              json=None if entry_id is None else {"entry_id": entry_id})
 
     @write_tool
     def run_checks(entry_id: int) -> dict:

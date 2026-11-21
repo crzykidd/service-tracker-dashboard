@@ -5,6 +5,76 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Image update check engine (img-02)
+
+- **Where the columns live.** Observed (`image_running_digest`, `image_info`), operator
+  (`image_update_policy`, `image_tag_pattern`, `image_update_scope`) and computed
+  (`image_update_*`) columns are on `service_entry`, per design 6.2; `image_reference`
+  holds only the remote facts per canonical reference (design 6.1). The two are joined
+  by `image_ref = ref` with a read-only ORM relationship that carries no database FK.
+  `image_reference.ref` is `String(512)` (matches `service_entry.image_ref`; the design said 400).
+  The ORM attribute for the `registry` column is `registry_name` (`registry` is reserved
+  on a declarative class).
+- **Extra computed column `image_update_detail` (JSON: reason, model, rebuilt).** Not in
+  the design's list. Without it "unknown, with a reason" and the muted "rebuilt" note could
+  only be derived per read by re-running the model for every entry in every list; stored,
+  the serializer and the UI read one column. Same transaction as the state, so they
+  cannot disagree.
+- **Switched off means shown as `off`, stored results kept.** `effective_state()` overlays
+  `off` while the check is disabled; the stored columns are not rewritten, so turning it
+  back on shows the last answers at once. The register recompute and local recomputes
+  therefore run whether or not the check is on (no network). `img-03` must apply the same
+  overlay to the `?updates=1` filter (the stored `image_update_state` is not enough on
+  its own) and to badges.
+- **Retention skips while the check is off.** `last_wanted_at` is only refreshed by a run,
+  so pruning at 30 days while the check is off would delete the stored results the design
+  promises to keep. Pruning resumes after it is turned on.
+- **Candidates are stored with a per-pattern pool.** The design stores up to 50 newer tags
+  of the running skeleton, but a per-entry pattern *replaces* the skeleton rule, so its
+  candidates may lie outside that set. The run therefore also stores up to 50 per distinct
+  pattern in use (`candidates.patterns[<regex>]`). A scope change recomputes locally. A
+  pattern that has no stored pool yet (just saved) shows `unknown` "applies at the next
+  check" until a run; a live "matches" preview for an unsaved pattern is not possible from
+  stored data alone.
+- **Nested-quantifier rule.** A repeat that can run more than once (`+`, `*`, `{n,}`,
+  `{n,m}` with m > 1) containing a repeat of variable length is rejected, found by walking
+  `re._parser`'s tree (a regex heuristic is the fallback where that module is missing).
+  `(\d{2})+` and `(-alpine)?` pass; `(\d+\.)+` does not. Tags over 128 characters are
+  never evaluated, which bounds the cost of anything that slips through.
+- **A failed HEAD does not fail a tag-model reference.** For the tag model the HEAD only
+  feeds the muted "rebuilt" note, so a 404 or timeout there leaves the tag result intact;
+  for the digest model it is the whole check and fails the reference.
+- **What a run requests.** Digest model with no running digest, pinned references and
+  policy `off` make no request (their state is `unknown`/`pinned`/`off` without one). A
+  tag-model reference is HEAD-ed too only when some entry on it reports a running digest.
+- **Backoff slack.** A reference is skipped when `next_check_at` is more than one hour in
+  the future. With the job's 30-minute jitter a 1-day backoff would otherwise skip the next
+  daily run (24 h later minus jitter) and make it 2 days. So "skipped for 1, 2, 4 days"
+  means the retries happen 1, 2, 4 days after the failure.
+- **Manual and nudge runs are one-shot jobs** (`DateTrigger`, id `image_update_run_job`),
+  not `modify_job(next_run_time=now)` as the design sketched: the daily interval job keeps
+  its own cadence. Pending requests (everything / never-checked / specific references) live
+  in memory behind `_STATE_LOCK` and are drained by whichever run starts next, so a request
+  that arrives during a run is served by a follow-up run. Throttle clocks are in memory
+  too: a restart clears them (politeness limit, not a security control).
+- **`image_update_last_run` is saved for full and nudge runs**, not for single-reference
+  Check now, so an entry check never moves the "24 h after the last run" start.
+- **Digest `latest` is stored as `sha256:<12 hex>`**; `img-04` builds `<tag>@<7 hex>` from it.
+- **`image_info.source`** is length-limited by the schema but only an http(s) value is
+  stored (a git@ URL is dropped, not a 400: a weird OCI label must not fail a register).
+  `id`, `created`, `version`, `revision` are length-limited only; only `repo_digests` items
+  have a strict pattern (the design). `repo_digests` is reduced to the running digest and
+  not stored.
+- **Register 400s no longer carry validator `ctx`.** A `field_validator` error puts the
+  raised `ValueError` in `errors()[i]["ctx"]`, which is not JSON; the handler now calls
+  `errors(include_context=False)`. (The first validator on the register schema exposed it.)
+- **Check now with the check off is a 409**, not a quiet no-op; a throttled one is a 429
+  with `Retry-After` and `details.retry_after_seconds`.
+- **PRD section is new §24**, appended, so §21 to §23 and their many cross-references keep
+  their numbers.
+
+---
+
 ## 2026-11-21 — Image reference parser (img-01)
 
 - **Legacy columns map from the parse like this:** `image_name` = last path component,

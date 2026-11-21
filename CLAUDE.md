@@ -457,6 +457,14 @@ image_ref.py        ← pure stdlib image reference parser (`parse()`); the one 
                       feeds `resolve_image_metadata`, `image_repo.py` and `service_entry.image_ref`
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
                       lscr.io; None for anything else) + the `image_repo_url` override rule
+registry_client.py  ← OCI distribution v2 client for the image update check (PRD 24): anonymous Bearer
+                      flow, HEAD manifests with the four Accept types, tag lists, 429 pause; no DB;
+                      errors are short fixed messages, never raw exception text
+image_tags.py       ← pure tag model, digest model and `evaluate()` (the state of one entry)
+image_update.py     ← the update provider seam (`PROVIDERS`; `registry` is the built-in one), settings
+                      (OFF by default, env `STD_IMAGE_UPDATE_ENABLED`), the run engine (`_RUN_LOCK`,
+                      dedupe, backoff), Check now throttles, register-time recompute, retention;
+                      registry I/O never inside a DB transaction or `routes_api._UPSERT_LOCK`
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates; templates/partials/settings/ = one partial per Settings
                       section + _macros.html (see PRD §19)

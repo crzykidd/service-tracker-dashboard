@@ -56,7 +56,15 @@ name/version`; STD logs each distinct one once per restart.
     {"layer": "dockflare", "hostname": "nginx.example.com",
      "tls": true, "path_prefix": null,
      "auth": "cloudflare_access:authenticate", "details": null}
-  ]
+  ],
+  "image_info": {
+    "id": "sha256:1f2e...",
+    "repo_digests": ["ghcr.io/user/nginx@sha256:9a8b...c0de"],
+    "created": "2026-11-01T08:00:00Z",
+    "version": "1.27.2",
+    "revision": "4d5e6f7",
+    "source": "https://github.com/nginx/nginx"
+  }
 }
 ```
 
@@ -70,7 +78,7 @@ Everything else is optional, and STD applies defaults for any field that is miss
 
 `/api/v1/register` is **strict**: unknown keys are rejected with a `400` and the list
 of offending keys in the response body. Nested structures (`networks`,
-`published_ports`, `exposure_observations`) are validated too, and malformed entries
+`published_ports`, `exposure_observations`, `image_info`) are validated too, and malformed entries
 are rejected at the schema boundary.
 
 ## Matching, adoption and locks
@@ -152,6 +160,35 @@ The Edit page shows the source next to each URL.
 - `exposure_observations: [ ... ]`: wholesale replacement. The old rows are dropped,
   the new ones stored, and the synthesizer recomputes the URLs (respecting provenance).
 
+### The running image (`image_info`, API revision 5)
+
+`image_info` tells STD which image the container was created from, so the optional
+[image update check](../README.md#image-update-check) can compare it with the registry.
+It is observation only: STD stores it, never lets anyone edit it, and does not export it.
+Every field is optional and the object is strict (unknown keys are a `400`):
+
+| Field | Meaning |
+|---|---|
+| `id` | the local image id, `sha256:<hex>` (at most 100 characters) |
+| `repo_digests` | Docker's raw `RepoDigests`: up to 20 items, each `<repo>@sha256:<64 hex>`. A malformed item is a `400`. STD picks the item whose repository matches the entry's image (so `nginx` matches `docker.io/library/nginx`); none matching means "local build, no registry digest". |
+| `created` | the image's `Created` time (at most 64 characters) |
+| `version`, `revision` | the OCI labels `org.opencontainers.image.version` / `.revision` (at most 128 characters) |
+| `source` | the OCI label `org.opencontainers.image.source` (at most 512 characters); only an `http(s)` value is kept |
+
+Resolve the digests from the image the container was **created from** (its image id), not
+from the tag's current image: after a `docker compose pull` without a recreate the tag
+already points at the new image while the container still runs the old one.
+
+- `image_info` **absent** or **null**: "no update". The stored values are kept. This is
+  what older notifiers send.
+- `image_info: {...}`: the stored values are **replaced** (a field you leave out is
+  cleared).
+- `image_name` changed and no `image_info`: the stored digest values are **cleared**, so
+  a digest of the old image is never compared with the new image's tag.
+
+A producer should send the field only when `GET /api/v1/meta` lists `image_info` in
+`features`: STD rejects an unknown key.
+
 ### Badges and headless entries
 
 Each tile (Tiled) and row (Dashboard) shows up to three exposure badges, one brand logo
@@ -186,6 +223,9 @@ The full label list belongs to the notifier; see its README.
 | 0.5.0 | 0.3.0 | `/api/v1/register` with canonical keys |
 | 0.6.0+ | 0.3.0+ | `/api/register` removed |
 | 0.6.0+ | 0.4.0+ | network, port and exposure capture |
+| 0.12.0+ | 0.5.0+ | `image_info` (the running image), for the digest model of the image update check |
 
-A newer STD always accepts an older notifier: the capture fields stay empty and a
-missing `exposure_observations` keeps the existing rows.
+A newer STD always accepts an older notifier: the capture fields stay empty, a
+missing `exposure_observations` keeps the existing rows, and a missing `image_info`
+keeps the stored image facts (moving tags such as `latest` then show "unknown" until the
+notifier reports the running image; pinned versions work without it).

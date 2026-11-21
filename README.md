@@ -147,6 +147,7 @@ services:
       - FLASK_SECRET_KEY=change-me-long-random   # signs session cookies
       - TZ=Europe/London                         # local time for the daily jobs
       # - STD_DOZZLE_URL=http://dozzle.lan:8080
+      # - STD_IMAGE_UPDATE_ENABLED=true          # daily check for newer images (off by default)
     volumes:
       - ./config:/config
     restart: unless-stopped
@@ -242,6 +243,7 @@ masked.
 | `TZ` | `UTC` | The container's time zone. Daily job times (backups at 00:05 and 00:10, the cleanup jobs) are container local time. |
 | `FLASK_DEBUG` | `0` | `1` runs the Werkzeug development server with auto-reload instead of gunicorn. Development only. |
 | `STD_CONFIG_DIR` | `/config` | Moves the settings file, database, logs, icons and backups. Used by the test suite; leave it unset in production. |
+| `STD_IMAGE_UPDATE_ENABLED` | unset (off) | `true` or `false` turns the daily [image update check](#image-update-check) on or off and wins over the value saved through the API. While it is set, the API refuses to change the switch. |
 
 The MCP server has its own variables (`STD_URL`, `STD_API_KEY`, `STD_VERIFY_TLS`,
 `STD_TIMEOUT`); see [Managing STD with Claude](#managing-std-with-claude-mcp).
@@ -254,6 +256,7 @@ The MCP server has its own variables (`STD_URL`, `STD_API_KEY`, `STD_VERIFY_TLS`
 | Snapshot: on/off, time, keep days | same | on, 00:05, `backup_days_to_keep` |
 | Export: on/off, time, keep days, format (YAML or JSON) | same | on, 00:10, `backup_days_to_keep`, YAML |
 | Update check: on/off, interval in hours (min 1) | Settings → About, `PUT /api/v1/settings/update-check` | on, 6 |
+| Image update check: on/off, default scope | `PUT /api/v1/settings/image-updates` (a Settings page follows) | off, `any` |
 | Layer directions and per-host overrides | Settings → Docker, `PUT /api/v1/settings/exposure` | `neither` |
 | Stream name, network filters, default checks, expected interval, missing-entry expiry | Settings → Streams, `PATCH /api/v1/streams/<id>` | per stream |
 | Notification channels, Home Assistant picks | Settings → Notifications, Settings → Home Assistant | none |
@@ -339,6 +342,34 @@ labels:
 
 The full payload, the validation rules, URL provenance and exposure semantics are in
 [docs/register-api.md](docs/register-api.md).
+
+#### Image update check
+
+STD can check the image registries once a day and tell you when a newer image exists
+than the one a container runs. **It is off by default**: it sends the names of the
+images you run to their registries (Docker Hub, GHCR, quay.io, lscr.io and any other
+registry that speaks the standard v2 API), anonymously over HTTPS. Turn it on with
+`STD_IMAGE_UPDATE_ENABLED=true` or `PUT /api/v1/settings/image-updates`
+(`{"enabled": true}`); there is no Settings page for it yet.
+
+- **Pinned versions** (`1.4.2`, `v2.3`, `16.4-alpine`) are compared by tag: STD lists
+  the registry's tags and finds a higher one of the same shape, reported as a `major`,
+  `minor`, `patch` or `build` change. The default scope is `any`; `minor` and `patch`
+  limit it to the same major or the same major.minor.
+- **Moving tags** (`latest`, `stable`, `16`) are compared by digest, which needs a
+  notifier that reports the running image (docker-api-notifier 0.5.0 or later). Until
+  then they show `unknown` with the reason.
+- **Per entry**, a Docker entry has a policy (`auto`, `tags`, `digest`, `off`), a scope
+  and an optional tag pattern (a regex that must match the whole tag), set with
+  `PATCH /api/v1/entries/{id}`.
+- **Load:** one request per distinct image, `HEAD` for manifests (which Docker Hub does
+  not count as a pull), a few requests at a time, backoff after a failure and a pause
+  when a registry answers 429. **Check now** (`POST /api/v1/image-updates/run`) is
+  throttled to once an hour, or once per 15 minutes for one image.
+- STD never pulls or recreates a container, and an available update does not change an
+  entry's health.
+
+Results are in the entries' `image_update` block and in `GET /api/v1/image-updates`.
 
 ### Inventory streams
 
@@ -581,6 +612,10 @@ curl -s -H "Authorization: Bearer $KEY" "$STD/api/v1/whoami"
 | PUT | `/api/v1/settings/exposure` | write | Replace exposure direction settings |
 | GET | `/api/v1/settings/update-check` | read | Update check settings |
 | PUT | `/api/v1/settings/update-check` | write | Change the update check settings |
+| GET | `/api/v1/settings/image-updates` | read | Image update check settings |
+| PUT | `/api/v1/settings/image-updates` | write | Change the image update check settings |
+| GET | `/api/v1/image-updates` | read | Image references and their update state |
+| POST | `/api/v1/image-updates/run` | write | Check for newer images now |
 | GET | `/api/v1/settings/backup` | read | Backup settings, with each value's origin |
 | PUT | `/api/v1/settings/backup` | write | Change the backup settings |
 | GET | `/api/v1/backups` | read | List backup files |

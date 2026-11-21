@@ -39,6 +39,12 @@ Keys currently in use:
 - `backup_last_runs`       dict: {"snapshot": {...}, "export": {...}}, each {at, ok, file,
                            size, error, trigger}. Observed; written by the backup runs.
 
+- `image_update_enabled`   bool, default off: the image update check (image_update.py). The
+                           env var STD_IMAGE_UPDATE_ENABLED wins over it.
+- `image_update_scope`     "any" | "minor" | "patch": the default scope of the tag model.
+- `image_update_last_run`  dict: {at, trigger, refs, checked, updates, errors, skipped,
+                           duration_seconds}; observed, written by the check run.
+
 - `exposure_layers_per_host`  dict[str, dict[str, str]]
                               e.g. {"docker-edge": {"traefik": "external"}}
                               Per-host override for `exposure_layers`.
@@ -76,6 +82,9 @@ KEY_BACKUP_EXPORT_KEEP_DAYS = "backup_export_keep_days"
 KEY_BACKUP_EXPORT_FORMAT = "backup_export_format"
 KEY_BACKUP_LAST_RUNS = "backup_last_runs"
 KEY_RESTORE_LAST_SEEN = "restore_last_seen"
+KEY_IMAGE_UPDATE_ENABLED = "image_update_enabled"
+KEY_IMAGE_UPDATE_SCOPE = "image_update_scope"
+KEY_IMAGE_UPDATE_LAST_RUN = "image_update_last_run"
 
 DEFAULT_UPDATE_CHECK_ENABLED = True
 DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
@@ -289,3 +298,13 @@ def get_restore_last_seen():
 def set_restore_last_seen(at) -> None:
     """Mark a restore result seen. Caller commits."""
     _set_value(KEY_RESTORE_LAST_SEEN, at)
+
+
+def get_image_update_value(key: str):
+    """An image update setting (`KEY_IMAGE_UPDATE_*`), or None when there is no row."""
+    return _get_value(key, None)
+
+
+def set_image_update_value(key: str, value) -> None:
+    """Store one image update setting. Caller validates and commits."""
+    _set_value(key, value)

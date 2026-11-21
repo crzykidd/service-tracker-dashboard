@@ -22,9 +22,14 @@ API_REVISION_HISTORY = (
     (5, "next after 0.11.0",
      "entries: optional image_repo_url (override for the image repository link) on create and "
      "patch; image_repo_url and image_repo_link in the entry responses; notifier.image_ref (the "
-     "canonical image reference, read-only) in the entry detail"),
+     "canonical image reference, read-only) in the entry detail; image update check: optional "
+     "image_info on register (the notifier's running-image facts, absent keeps the stored values), "
+     "image_update in the entry responses and image_update_policy / image_update_scope / "
+     "image_tag_pattern on PATCH /entries/{id}, GET /image-updates, GET and PUT "
+     "/settings/image-updates, POST /image-updates/run, features image_updates and image_info"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later
 # prompt (inv-04) of the same release.
-FEATURES = ("register", "management", "notifications", "streams", "backup", "import")
+FEATURES = ("register", "management", "notifications", "streams", "backup", "import",
+            "image_updates", "image_info")
