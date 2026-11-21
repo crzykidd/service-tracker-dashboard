@@ -5,6 +5,19 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Compact view details open in a dialog, loaded on demand
+
+The Compact grid flows by column (10 rows), so an inline drawer would reshuffle every
+tile after it; the expand button opens one shared `<dialog>` instead. Its body comes from
+`GET /service/<id>/details` (session login, HTML fragment) when it opens, so the page
+doesn't render facts for every tile. It is a browser route, not `/api/v1`, so no
+`API_REVISION` bump. Delete closes the dialog first and anchors the shared delete popover
+on the tile's chevron, because the popover would otherwise sit under the modal. The
+delete URL comes from `url_for`, so the route move to `/entries/<id>/delete` (same day)
+can't break it.
+
+---
+
 ## 2026-11-21 — Dashboard expand row reuses the tile drawer's facts
 
 The Dashboard expand row showed only the health detail, while the tile drawer showed host,

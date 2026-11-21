@@ -1591,6 +1591,28 @@ def entry_health_detail(id):
     return jsonify(health_history.entry_payload(entry, range_name))
 
 
+@dashboard_bp.route('/service/<int:id>/details')
+@login_required
+def entry_details(id):
+    """HTML fragment for the Compact view's details dialog (PRD 13.7): header,
+    the shared entry facts beside the health panel, and the action row.
+    Fetched when the dialog opens; 404 for an unknown or deleted entry."""
+    entry = (
+        ServiceEntry.active()
+        .options(selectinload(ServiceEntry.checks))
+        .filter(ServiceEntry.id == id)
+        .first_or_404()
+    )
+    widget_values, widget_fields = _load_widget_values()
+    return render_template(
+        'partials/compact_details.html',
+        entry=entry,
+        widget_values=widget_values,
+        widget_fields=widget_fields,
+        STD_DOZZLE_URL=current_app.config.get('std_dozzle_url'),
+    )
+
+
 @dashboard_bp.route('/health/strips')
 @login_required
 def health_strips():

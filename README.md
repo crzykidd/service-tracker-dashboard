@@ -108,6 +108,8 @@ One block per release, newest first. The [CHANGELOG](CHANGELOG.md) is the full r
   keeping the current database.
 - **Settings regrouped** into six groups with a link per section (`/settings#streams`),
   cards and dialogs throughout. API revision 4.
+- **Compact details:** an expand button on each Compact tile opens a dialog with the
+  entry's details, health history, and Edit and Delete.
 - **Dashboard expanded row** shows the same details as the tile drawer, beside the
   health history.
 
@@ -456,7 +458,7 @@ their Edit page.
 |---|---|
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
-| `/compact_dash` | **Compact**: dense rows with a source icon each. |
+| `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:

@@ -100,6 +100,7 @@
 | 0.90    | 2026-11-20 | §20.5 delivered on `dev` (bak-05), completing §20 (Backup, export and import; all five phases delivered, unreleased): staged database restore. `restore_staging.py` validates and stages a snapshot (⋯ → Restore… or an upload, ≤ 200 MB); `restore_swap.py`, run by `entrypoint.sh` before `alembic upgrade head`, keeps the current database as `pre-restore-<timestamp>.sqlite3` (`Connection.backup()`), swaps the file and never blocks startup; pending banner on every Settings section, last-result banner, `pre-restore-*` files listed with the snapshots and never pruned. §3 (startup sequence) and §3.1 updated. No schema, wire-contract or `/api/v1` change. |
 | 0.91    | 2026-11-21 | Docs-only, with the README revamp: §21 says the `Test` check is required (it is, in the "Require PR for Main" ruleset, with a code-scanning rule for CodeQL), no longer "pending operator action"; the §21.3 heading says inventory stream producers shipped in 0.10.0 instead of "planned". Operator reference material moved out of the README into `docs/register-api.md`, `docs/inventory-streams.md` and `docs/mqtt-home-assistant.md`. No code, schema or contract changes. |
 | 0.92    | 2026-11-21 | §13.7: the Dashboard expand row shows the shared entry facts (`partials/entry_facts.html`, the tile drawer's info rows) beside the health detail, two columns stacking below 768px. No schema, API or wire-contract change. |
+| 0.93    | 2026-11-21 | §13.7: Compact view gets an expand button per tile that opens a details dialog (facts, health detail, Edit / Delete / Dozzle) fetched from the new `GET /service/<id>/details` session route (`partials/compact_details.html`, `static/js/compact_details.js`). Tile size, grid and click-to-open unchanged. No schema, API or wire-contract change. |
 
 ---
 
@@ -1793,7 +1794,16 @@ backups still emit those keys, derived from the check rows. New filter
   - **Dashboard**: a new expand row under each entry.
   - **Edit page**: above "Reported by notifier".
   - **Compact** has no drawer; its badge links to the Edit page's
-    health section.
+    health section. Each tile has an expand button that opens one shared
+    `<dialog class="std-modal">` (a dialog, not a drawer, because the grid
+    flows by column). It is filled on open from
+    `GET /service/<id>/details` (login required; HTML fragment
+    `partials/compact_details.html`; 404 for an unknown or deleted entry):
+    header (icon, name, health pill, source icon), two columns
+    (`entry_facts.html` | health detail, stacking below 768px) and an
+    action row (Dozzle logs, Edit, Delete unless locked). The script is
+    `static/js/compact_details.js`; Delete closes the dialog and reuses the
+    shared delete popover; auto-refresh pauses while it is open.
 - Rendering uses plain divs and CSS (no chart library).
 
 **As built:** `health_history.py` holds the pure functions: `bars(check,

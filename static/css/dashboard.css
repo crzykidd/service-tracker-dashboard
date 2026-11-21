@@ -596,6 +596,24 @@
   text-overflow: ellipsis;
 }
 
+/* Compact expand button (opens the details dialog) */
+.compact-tile .compact-expand-btn {
+  background: none; border: 0; padding: 2px; border-radius: 4px; line-height: 1;
+  color: var(--color-text-muted); cursor: pointer; font-size: 16px;
+}
+.compact-tile .compact-expand-btn:hover { color: #fff; }
+.compact-tile .compact-expand-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+/* Compact details dialog: header, two columns, action row */
+.compact-details-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.compact-details-title { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.compact-details-title h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-details-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 24px; }
+@media (min-width: 768px) {
+  dialog.compact-details { width: min(64rem, calc(100vw - 2rem)); }
+  .compact-details-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
 /* ── Filter bar mobile collapse ──────────────────────────── */
 .fb-toggle {
   display: inline-flex;

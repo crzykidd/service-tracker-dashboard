@@ -1,0 +1,43 @@
+{# Compact view details dialog content (PRD 13.7), fetched from GET /service/<id>/details.
+   Header, two columns (shared facts | health detail) and the action row, as in the
+   tile drawer. Context: `entry`, `widget_values`, `widget_fields`, `STD_DOZZLE_URL`. #}
+{% set _dozzle_id = entry.container_id %}
+<div class="std-modal-header">
+  <div class="compact-details-title">
+    {% if entry.image_icon %}
+      <img src="{{ url_for('dashboard.serve_image', filename=entry.image_icon) }}" alt="" width="28" height="28">
+    {% else %}
+      <span class="text-xl" aria-hidden="true">📦</span>
+    {% endif %}
+    <h3 id="compact-details-title" title="{{ entry.container_name }}">{{ entry.container_name }}</h3>
+    {% with variant='pill' %}{% include "partials/health_badge.html" %}{% endwith %}
+    {% include "partials/source_icon.html" %}
+  </div>
+  <button type="button" class="std-modal-close" aria-label="Close" data-modal-close>&#10005;</button>
+</div>
+<div class="std-modal-body">
+  <div class="compact-details-cols expand-two-col">
+    <div class="expand-facts">{% include "partials/entry_facts.html" %}</div>
+    <div class="expand-health">{% with hide_facts=true, autoload=true %}{% include "partials/health_detail.html" %}{% endwith %}</div>
+  </div>
+</div>
+<div class="std-modal-footer compact-details-actions">
+  {% if STD_DOZZLE_URL and _dozzle_id %}
+  <a href="{{ STD_DOZZLE_URL }}/container/{{ _dozzle_id[:12] }}" target="_blank" rel="noopener" class="drawer-btn drawer-btn-tools mr-auto">
+    <i class="ti ti-terminal-2" aria-hidden="true"></i> Dozzle logs
+  </a>
+  {% endif %}
+  <a href="{{ url_for('dashboard.edit_entry', id=entry.id) }}"
+     class="drawer-btn drawer-btn-edit" data-compact-edit>
+    <i class="ti ti-edit" aria-hidden="true"></i> Edit
+  </a>
+  {% if not entry.is_static %}
+  <button type="button" class="drawer-btn drawer-btn-delete" data-compact-delete
+          data-delete-url="{{ url_for('dashboard.delete_entry_json', id=entry.id) }}"
+          data-entry-id="{{ entry.id }}"
+          data-container-name="{{ entry.container_name }}"
+          data-stream="{{ 1 if entry.is_stream else 0 }}">
+    <i class="ti ti-trash" aria-hidden="true"></i> Delete
+  </button>
+  {% endif %}
+</div>

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Compact view: an expand button opens an entry's details.** Each tile has a small
+  chevron button (it does not open the tile's URL). It opens a dialog with the same
+  details as the Dashboard and Tiled views: the entry facts beside the health history
+  and Check now, and Edit, Delete and Dozzle logs buttons. Escape or the close button
+  dismisses it, and auto-refresh pauses while it is open. The tile size, grid and
+  click-to-open are unchanged.
+
 - **Restore the database from a snapshot in Settings → Backup & restore.** Pick a
   snapshot in the list (⋯ → **Restore…**) or upload a `.sqlite3` file. STD checks it
   first (not damaged, an STD database, made by this or an older STD) and shows what it
