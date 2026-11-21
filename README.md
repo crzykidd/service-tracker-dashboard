@@ -94,84 +94,27 @@ Reference pages: [register API](docs/register-api.md) ·
 
 ## What's New
 
-One block per release, newest first. The [CHANGELOG](CHANGELOG.md) is the full record.
+The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
 <!-- release-prep: replace the 0.11.0 heading below with "### v0.11.0 (<date>)" and point
      its link at the new CHANGELOG anchor (for example #0110--2026-11-22). -->
 ### v0.11.0 (unreleased, on `dev`)
 
-- **Backups you can configure:** a database snapshot and a settings export, each with
-  its own time, keep days and Run now, in Settings → Backup & restore.
-- **Export and import:** a secret-free YAML or JSON export; import it (or an old YAML
-  backup) with stream mapping and a preview, filling only missing values by default.
-- **Staged restore:** pick a snapshot, and STD swaps it in on the next container start,
-  keeping the current database.
-- **Settings regrouped** into six groups with a link per section (`/settings#streams`),
-  cards and dialogs throughout. API revision 4.
-- **Compact details:** an expand button on each Compact tile opens a dialog with the
-  entry's details, health history, and Edit and Delete.
-- **Dashboard expanded row** shows the same details as the tile drawer, beside the
-  health history.
+- **Backup, export and import:** scheduled database snapshots and settings exports, and
+  an import that previews what it will fill in before you apply it.
+- **Staged restore** of a database snapshot on the next container start.
+- **Redesigned Settings** with grouped sections, cards and dialogs.
+- **More detail everywhere:** the Dashboard row and Compact tiles expand to the full entry
+  details and health history.
 
 [Full entry](CHANGELOG.md#unreleased)
 
 ### v0.10.1 (2026-11-20)
 
-- **Stale streams** are flagged in Settings, the health summary, MQTT and Home Assistant.
-- **Missing since** badge on entries that dropped out of a snapshot; optional expiry.
-- **Checks follow a changed IP** reported by a stream. API revision 3.
+- **Stale stream and missing-device warnings** across Settings, MQTT and Home Assistant.
+- **Health checks follow a device's new IP** when a stream reports it.
 
 [Full entry](CHANGELOG.md#0101--2026-11-20)
-
-### v0.10.0 (2026-11-19)
-
-- **MQTT notifications** with retained entry, check and summary state.
-- **Home Assistant discovery** for the entries you pick, with purge tools.
-- **Inventory streams:** sidecars push device lists; pending review, filters, link offers.
-- **Version in the header** with an update check. API revision 2.
-
-[Full entry](CHANGELOG.md#0100--2026-11-19)
-
-### v0.9.0 (2026-11-16)
-
-- **DNS checks** against a chosen server, and **certificate expiry** on HTTPS checks.
-- **Clearer health:** failing checks are never softened by a running container.
-- **Tiled view redesign** and **API key rotation**.
-
-[Full entry](CHANGELOG.md#090--2026-11-16)
-
-### v0.8.0 (2026-11-15)
-
-- **Management API** under `/api/v1` with read and write API keys and an OpenAPI spec.
-- **Write audit log** in Settings → Audit log.
-- **MCP server** so Claude can manage STD.
-
-[Full entry](CHANGELOG.md#080--2026-11-15)
-
-### v0.7.1 (2026-11-15)
-
-- **Clickable Total / Passing / Failing counts** in the filter bar.
-- **Show uptime:** a 24-hour uptime strip on every entry.
-
-[Full entry](CHANGELOG.md#071--2026-11-15)
-
-### v0.7.0 (2026-11-15)
-
-- **Manual entries are first-class** and adopted when a matching container registers.
-- **Health checks:** URL, container, HTTP, TCP, ping and DNS, with a week of history.
-- **One health badge per entry**, Status and Source filters, a health detail panel.
-
-[Full entry](CHANGELOG.md#070--2026-11-15)
-
-### v0.6.9 (2026-11-15)
-
-- **Recoverable deletes** (Settings → Deleted) and a **stale indicator** on every view.
-- **Security hardening:** CSRF, register returns 503 until `API_TOKEN` is set.
-- **gunicorn** with one worker and pinned dependencies.
-
-[Full entry](CHANGELOG.md#069--2026-11-15)
-
-Older releases, including the 0.6.7 move to GHCR, are in the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -185,8 +128,8 @@ Older releases, including the 0.6.7 move to GHCR, are in the [CHANGELOG](CHANGEL
 |---|---|
 | [![Compact view grouped by group](docs/screenshots/std_compact.png)](docs/screenshots/std_compact.png) | [![Settings, Home Assistant section: entries grouped by source](docs/screenshots/std_settings_home_assistant.png)](docs/screenshots/std_settings_home_assistant.png) |
 
-More screenshots (every view, the tile drawer, the Add page and the Settings sections)
-are in the [screenshot gallery](docs/screenshots.md).
+More screenshots (every view, the phone layout, the Add page, the import preview and the
+Settings sections) are in the [screenshot gallery](docs/screenshots.md).
 
 ---
 

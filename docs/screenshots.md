@@ -44,6 +44,14 @@ Small tiles in columns, one per group; a click opens the entry's URL.
 
 [![Compact view](screenshots/std_compact.png)](screenshots/std_compact.png)
 
+### Phone
+
+The Tiled view on a phone, and a tile's drawer opened.
+
+| Tiled on a phone | Drawer open |
+|---|---|
+| [![Tiled view on a phone](screenshots/std_mobile.png)](screenshots/std_mobile.png) | [![Tile drawer open on a phone](screenshots/std_mobile_expanded.png)](screenshots/std_mobile_expanded.png) |
+
 ## Adding entries
 
 ### Add entry
@@ -74,6 +82,13 @@ and link offers.
 Pick which entries get a Home Assistant device, grouped by source, with search.
 
 [![Settings, Home Assistant section](screenshots/std_settings_home_assistant.png)](screenshots/std_settings_home_assistant.png)
+
+### Import preview
+
+Importing an export: map its streams to yours, then preview what would be filled in
+(here a full match, 47 Docker entries identical) before applying.
+
+[![Settings, import preview](screenshots/std_settings_import.png)](screenshots/std_settings_import.png)
 
 ### Audit log
 
