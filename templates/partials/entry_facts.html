@@ -106,14 +106,14 @@
                                           </div>
                                         {% endif %}
                                         {% if entry.exposed_ports %}
-                                          {% set _extras = [] %}
+                                          {% set ex_ns = namespace(items=[]) %}
                                           {% for ep in entry.exposed_ports %}
                                             {% if ep not in ns.pub_set %}
-                                              {% set _extras = _extras + [ep] %}
+                                              {% set ex_ns.items = ex_ns.items + [ep] %}
                                             {% endif %}
                                           {% endfor %}
-                                          {% if _extras %}
-                                            <div class="text-xs font-mono text-gray-400 mt-0.5">{{ _extras | join(', ') }} (exposed)</div>
+                                          {% if ex_ns.items %}
+                                            <div class="text-xs font-mono text-gray-400 mt-0.5">{{ ex_ns.items | join(', ') }} (exposed)</div>
                                           {% endif %}
                                         {% endif %}
                                     {% else %}

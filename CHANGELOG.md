@@ -169,6 +169,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Exposed-only ports show in an entry's details.** A container that exposes ports
+  without publishing them showed an empty Ports row in the tile drawer; it now lists
+  them as "(exposed)".
 - **Values in `settings.yml` are converted to each setting's type**, the same way
   environment values are, so a quoted number such as `health_check_timeout: "5"` works.
   A value that cannot be converted logs a warning.

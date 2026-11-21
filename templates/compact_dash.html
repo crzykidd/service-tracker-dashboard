@@ -39,8 +39,7 @@
           <button type="button" class="compact-expand-btn" data-compact-expand="{{ item.entry.id }}"
                   aria-haspopup="dialog"
                   aria-label="Show details for {{ item.entry.container_name }}"
-                  title="Show details"
-                  onclick="event.stopPropagation()">
+                  title="Show details">
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           {% with entry=item.entry %}{% include "partials/source_icon.html" %}{% endwith %}

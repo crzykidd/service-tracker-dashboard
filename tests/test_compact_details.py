@@ -30,6 +30,11 @@ def test_compact_page_has_one_expand_button_per_entry(app, admin_client):
     for i in ids:
         assert f'data-compact-expand="{i}"' in html
     assert html.count("data-compact-expand=") == 2
+    # The click must bubble to compact_details.js's document listener; the tile's own
+    # onclick already ignores .compact-expand-btn, so the button must not stop it.
+    import re
+    for btn in re.findall(r'<button[^>]*data-compact-expand=[^>]*>', html):
+        assert "stopPropagation" not in btn
     assert 'id="compact-details"' in html and "compact_details.js" in html
     assert 'aria-label="Show details for a"' in html
 

@@ -49,3 +49,19 @@ def test_tile_drawer_still_has_facts(app, admin_client):
     drawer = html[html.index('class="tile-drawer"'):]
     for text in EXPECTED:
         assert text in drawer, text
+
+
+def test_exposed_only_ports_are_listed(app, admin_client):
+    """Exposed ports with no published mapping show as "(exposed)", not a blank Ports row
+    (a Jinja loop-scope bug dropped them before)."""
+    now = datetime.now()
+    with app.app_context():
+        e = ServiceEntry(
+            host="exp-host", container_name="exp-svc", source="notifier",
+            last_updated=now, last_api_update=now,
+            published_ports=[], exposed_ports=["8080/tcp", "9000/udp"])
+        db.session.add(e)
+        db.session.commit()
+    for path in ("/", "/tiled_dash"):
+        html = admin_client.get(path).get_data(as_text=True)
+        assert "8080/tcp, 9000/udp (exposed)" in html, path
