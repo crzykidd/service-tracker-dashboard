@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backup Import Mockup</title>
+<!--
+  Backup, export and import mockup (0.11.0), docs/design/2026-11-20-backup-export-import.md.
+  Static and self-contained. The inline CSS is copied from
+  2026-11-20-settings-modernization-mockup.html, plus a block of additions at the end.
+  Fake data; a little JS only to switch views and toggle states. Not loaded by the app.
+-->
+<style>
+  :root {
+    --color-bg-base: #111827;
+    --color-bg-surface: #1f2937;
+    --color-bg-raised: #374151;
+    --color-border: #374151;
+    --color-border-focus: #3b82f6;
+    --color-border-input: #4b5563;
+    --color-text-primary: #f9fafb;
+    --color-text-secondary: #e5e7eb;
+    --color-text-muted: #9ca3af;
+    --color-status-ok: #22c55e;
+    --color-status-warn: #f59e0b;
+    --color-status-bad: #ef4444;
+    --color-status-muted: #6b7280;
+    --color-status-blue: #60a5fa;
+    --color-accent: #3b82f6;
+    --color-accent-dim: rgba(59, 130, 246, 0.3);
+    --radius-input: 0.5rem;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--color-bg-base); color: var(--color-text-secondary);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--color-status-blue); }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8125rem; }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* app header + tabs (as base.html) */
+  .app-title { font-size: 1.25rem; font-weight: 600; color: #fff; margin-bottom: 1rem; }
+  .app-title small { font-size: .75rem; color: var(--color-text-muted); font-weight: 400; margin-left: .5rem; }
+  .tabs { display: flex; gap: 1rem; border-bottom: 1px solid var(--color-border); margin-bottom: 1rem; }
+  .tabs a { padding: .5rem .75rem; color: var(--color-text-muted); text-decoration: none; border-radius: 4px 4px 0 0; }
+  .tabs a.active { color: #fff; background: var(--color-bg-surface); }
+
+  /* mockup controls */
+  .mock-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: 0 0 1rem;
+    padding: .5rem .75rem; border: 1px dashed #4b5563; border-radius: .5rem; color: var(--color-text-muted); font-size: .75rem; }
+  .mock-bar strong { color: #fbbf24; }
+
+  /* layout */
+  .settings-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+  .settings-nav { width: 15rem; flex: none; position: sticky; top: 1rem; background: var(--color-bg-surface);
+    border: 1px solid var(--color-border); border-radius: .5rem; padding: 1rem .75rem; }
+  .settings-nav h2 { margin: 0 0 .75rem .5rem; font-size: 1rem; color: #fff; }
+  .settings-nav-label { margin: 1rem .5rem .25rem; font-size: .6875rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--color-text-muted); font-weight: 600; }
+  .settings-nav-label:first-of-type { margin-top: 0; }
+  .settings-nav-link { display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    padding: .375rem .5rem; border-radius: .375rem; color: var(--color-text-secondary); text-decoration: none; }
+  .settings-nav-link:hover { background: var(--color-bg-raised); }
+  .settings-nav-link[aria-current="page"] { background: var(--color-bg-raised); color: #fff; box-shadow: inset 2px 0 0 var(--color-accent); }
+  .settings-nav-badges { display: inline-flex; gap: .25rem; }
+  .settings-nav-badge { min-width: 1.25rem; height: 1.25rem; padding: 0 .3rem; border-radius: 999px; font-size: .6875rem;
+    font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .settings-nav-badge--warn { background: #fbbf24; color: #111827; }
+  .settings-nav-badge--bad { background: #dc2626; color: #fff; }
+  .settings-nav-badge--muted { background: var(--color-bg-raised); color: var(--color-text-secondary); }
+  .settings-nav-select { display: none; }
+  .settings-main { flex: 1; min-width: 0; }
+
+  /* section header */
+  .settings-section[hidden] { display: none; }
+  .settings-section-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; margin-bottom: 1rem; }
+  .settings-section-title { margin: 0; font-size: 1.5rem; font-weight: 600; color: #fff; }
+  .settings-section-subtitle { margin: .125rem 0 0; color: var(--color-text-muted); }
+  .settings-learn-more { margin-top: .375rem; color: var(--color-text-muted); font-size: .8125rem; max-width: 46rem; }
+  .settings-learn-more summary { cursor: pointer; color: var(--color-status-blue); width: max-content; }
+  .settings-learn-more p { margin: .5rem 0 0; }
+  .settings-sub { font-size: .8125rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: .03em;
+    border-bottom: 1px solid var(--color-border); padding-bottom: 4px; margin: 1.75rem 0 .75rem; }
+
+  /* buttons + inputs */
+  .btn { display: inline-flex; align-items: center; gap: .375rem; border: 0; border-radius: .5rem; padding: .5rem 1rem;
+    font: inherit; font-weight: 500; cursor: pointer; color: #fff; white-space: nowrap; }
+  .btn-sm { padding: .25rem .75rem; font-size: .75rem; }
+  .btn-primary { background: var(--color-accent); } .btn-primary:hover { background: #3182ce; }
+  .btn-secondary { background: #4a5568; } .btn-secondary:hover { background: #2d3748; }
+  .btn-danger { background: #dc2626; } .btn-danger:hover { background: #b91c1c; }
+  .btn-ghost { background: transparent; color: var(--color-text-muted); } .btn-ghost:hover { color: #fff; }
+  .btn:focus-visible, .kebab:focus-visible, .kebab-item:focus-visible, .settings-group-toggle:focus-visible,
+  .settings-nav-link:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+  .input-clean { background: var(--color-bg-surface); color: var(--color-text-secondary); border: 1px solid var(--color-border-input);
+    padding: .5rem .75rem; border-radius: var(--radius-input); font: inherit; width: 100%; }
+  .input-clean:focus { border-color: var(--color-border-focus); box-shadow: 0 0 0 2px var(--color-accent-dim); outline: none; }
+  .input-clean[aria-invalid="true"] { border-color: var(--color-status-bad); }
+  .settings-label { display: block; font-size: .8125rem; color: var(--color-text-secondary); margin-bottom: .25rem; }
+  .edit-helper { font-size: .75rem; color: var(--color-text-muted); font-style: italic; margin-top: 3px; }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1rem; }
+  .field-grid .span2 { grid-column: span 2; }
+  .check { display: flex; align-items: center; gap: .5rem; }
+
+  /* switch */
+  .switch { appearance: none; width: 2.25rem; height: 1.25rem; border-radius: 999px; background: var(--color-bg-raised);
+    border: 1px solid var(--color-border-input); position: relative; cursor: pointer; flex: none; margin: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: .875rem; height: .875rem; border-radius: 50%;
+    background: #d1d5db; transition: transform .15s ease; }
+  .switch:checked { background: var(--color-accent); border-color: var(--color-accent); }
+  .switch:checked::after { transform: translateX(1rem); background: #fff; }
+  .switch-label { display: inline-flex; align-items: center; gap: .5rem; font-size: .8125rem; color: var(--color-text-muted); }
+
+  /* cards */
+  .settings-card { background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: .5rem; }
+  .settings-card-list > .settings-card-row + .settings-card-row { border-top: 1px solid var(--color-border); }
+  .settings-card-row { display: flex; align-items: flex-start; gap: .75rem; padding: .875rem 1rem; }
+  .settings-card-main { flex: 1; min-width: 0; }
+  .settings-card-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; color: #fff; font-weight: 600; }
+  .settings-card-summary { color: var(--color-text-muted); margin-top: .125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .settings-card-error { color: #fca5a5; font-size: .8125rem; margin-top: .25rem; }
+  .settings-card-actions { display: flex; align-items: center; gap: .625rem; flex: none; }
+  .tag { font-size: .6875rem; font-weight: 600; padding: .05rem .4rem; border-radius: 3px; background: var(--color-bg-raised); color: var(--color-text-secondary); }
+  .tag--ha { background: rgba(96,165,250,.15); color: #93c5fd; }
+  .state-word { font-size: .75rem; font-weight: 500; }
+
+  /* status dot */
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; margin-top: .45rem; }
+  .status-dot--ok { background: var(--color-status-ok); }
+  .status-dot--warn { background: var(--color-status-warn); }
+  .status-dot--bad { background: var(--color-status-bad); box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
+  .status-dot--off { background: var(--color-status-muted); }
+  [data-state="connected"].state-word { color: #4ade80; }
+  [data-state="error"].state-word { color: #f87171; }
+
+  /* kebab menu */
+  .kebab-wrap { position: relative; }
+  .kebab { width: 2rem; height: 2rem; border-radius: .5rem; border: 1px solid var(--color-border-input); background: transparent;
+    color: var(--color-text-secondary); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+  .kebab:hover, .kebab[aria-expanded="true"] { background: var(--color-bg-raised); }
+  .kebab-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 15rem; padding: .25rem;
+    background: #0f172a; border: 1px solid var(--color-border-input); border-radius: .5rem; box-shadow: 0 10px 25px rgba(0,0,0,.45); }
+  .kebab-menu[hidden] { display: none; }
+  .kebab-item { display: block; width: 100%; text-align: left; padding: .45rem .75rem; border: 0; border-radius: .375rem;
+    background: transparent; color: var(--color-text-secondary); font: inherit; cursor: pointer; }
+  .kebab-item:hover, .kebab-item:focus { background: var(--color-bg-raised); color: #fff; outline: none; }
+  .kebab-item--danger { color: #fca5a5; }
+  .kebab-sep { height: 1px; background: var(--color-border); margin: .25rem 0; }
+
+  /* banners, inline warnings, toast */
+  .flash-alert { display: flex; gap: .75rem; align-items: flex-start; justify-content: space-between; padding: .625rem .875rem;
+    border-radius: .5rem; margin-bottom: 1rem; border: 1px solid; }
+  .flash-alert--danger { background: rgba(127,29,29,.45); border-color: #b91c1c; color: #fee2e2; }
+  .flash-alert--warning { background: rgba(120,53,15,.45); border-color: #d97706; color: #fef3c7; }
+  .flash-alert button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; }
+  .inline-warning { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between;
+    padding: .625rem .875rem; border-radius: .5rem; margin-bottom: 1rem; border: 1px solid; }
+  .inline-warning--warn { background: rgba(120,53,15,.35); border-color: #d97706; color: #fde68a; }
+  .toast-region { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 60; }
+  .toast { display: flex; align-items: center; gap: .625rem; min-width: 18rem; max-width: 26rem; padding: .625rem .875rem;
+    background: #0f172a; border: 1px solid var(--color-border-input); border-left: 3px solid var(--color-status-ok);
+    border-radius: .5rem; box-shadow: 0 10px 25px rgba(0,0,0,.45); color: var(--color-text-secondary);
+    animation: toast-in .2s ease-out; }
+  .toast .ok { color: var(--color-status-ok); font-weight: 700; }
+  .toast button { margin-left: auto; background: none; border: 0; color: var(--color-text-muted); cursor: pointer; font-size: 1rem; }
+  .toast.leaving { opacity: 0; transform: translateY(6px); transition: all .25s ease; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } .toast.leaving { transition: none; } }
+
+  /* modal */
+  dialog.std-modal { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--color-border-input);
+    border-radius: .75rem; background: var(--color-bg-surface); color: var(--color-text-secondary); box-shadow: 0 25px 50px rgba(0,0,0,.6); }
+  dialog.std-modal[open] { display: flex; flex-direction: column; }
+  dialog.std-modal::backdrop { background: rgba(0,0,0,.6); }
+  .std-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--color-border); }
+  .std-modal-header h3 { margin: 0; font-size: 1.0625rem; color: #fff; }
+  .std-modal-header button { background: none; border: 0; color: var(--color-text-muted); font-size: 1.25rem; cursor: pointer; }
+  .std-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
+  .std-modal-footer { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .875rem 1.25rem; border-top: 1px solid var(--color-border); }
+  .std-modal-footer .result { margin-right: auto; font-size: .8125rem; }
+  .std-modal-block { border: 0; padding: 0; margin: 0 0 1.25rem; }
+  .std-modal-block legend { padding: 0; margin-bottom: .625rem; font-size: .75rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--color-text-muted); }
+  details.std-modal-advanced { border: 1px solid var(--color-border); border-radius: .5rem; padding: .625rem .875rem; margin-bottom: 1rem; }
+  details.std-modal-advanced summary { cursor: pointer; font-size: .75rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--color-text-muted); }
+  details.std-modal-advanced[open] summary { margin-bottom: .75rem; }
+
+  /* HA groups */
+  .ha-status { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; color: var(--color-text-muted); margin-bottom: 1rem; }
+  .ha-status strong { color: #fff; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-bottom: .75rem; }
+  .toolbar .input-clean { max-width: 22rem; }
+  .linkish { background: none; border: 0; padding: 0; color: var(--color-status-blue); cursor: pointer; font: inherit; }
+  .settings-group + .settings-group { border-top: 1px solid var(--color-border); }
+  .settings-group-header { display: flex; align-items: center; gap: .75rem; padding: .625rem 1rem; }
+  .settings-group-header input { width: 1rem; height: 1rem; accent-color: var(--color-accent); }
+  .settings-group-toggle { flex: 1; display: flex; align-items: center; gap: .5rem; background: none; border: 0; padding: 0;
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+  .chevron { display: inline-block; width: .75rem; color: var(--color-text-muted); transition: transform .15s ease; }
+  .settings-group-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+  .settings-group-count { color: var(--color-text-muted); font-weight: 400; }
+  .settings-group-body { padding: 0 1rem .5rem 2.75rem; }
+  .settings-group-body[hidden] { display: none; }
+  .ha-row { display: grid; grid-template-columns: 1.25rem minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1fr); gap: .75rem;
+    align-items: center; padding: .3rem 0; border-top: 1px solid rgba(55,65,81,.6); }
+  .ha-row input { width: 1rem; height: 1rem; accent-color: var(--color-accent); }
+  .ha-row .muted { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ha-row .pill { justify-self: start; font-size: .6875rem; padding: .05rem .45rem; border-radius: 999px; background: var(--color-bg-raised); color: var(--color-text-muted); }
+  .ha-row[data-changed] .name::after { content: " • changed"; color: #fbbf24; font-size: .75rem; }
+
+  /* sticky save bar */
+  .settings-savebar { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: .75rem; justify-content: flex-end;
+    margin-top: 1rem; padding: .75rem 1rem; background: rgba(17,24,39,.96); border: 1px solid #b45309;
+    border-radius: .5rem; box-shadow: 0 -8px 20px rgba(0,0,0,.35); }
+  .settings-savebar .hint { margin-right: auto; color: #fde68a; }
+  form[data-unsaved-dirty="false"] .settings-savebar { display: none; }
+
+  .placeholder { padding: 2rem; text-align: center; color: var(--color-text-muted); border: 1px dashed var(--color-border-input); border-radius: .5rem; }
+
+  /* mobile */
+  @media (max-width: 767px) {
+    .settings-layout { flex-direction: column; gap: 1rem; }
+    .settings-nav { display: none; }
+    .settings-nav-select { display: block; }
+    .settings-card-row { flex-wrap: wrap; }
+    .settings-card-actions { width: 100%; justify-content: flex-end; }
+    .field-grid { grid-template-columns: 1fr; }
+    .field-grid .span2 { grid-column: auto; }
+    .ha-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
+    .ha-row .host { display: none; }
+    .toast-region { left: .5rem; right: .5rem; bottom: .5rem; }
+    .toast { max-width: none; min-width: 0; }
+    .std-modal-footer .btn { flex: 1; justify-content: center; }
+    .std-modal-footer .result { flex-basis: 100%; }
+  }
+
+  /* ===== backup / export / import additions (this mockup only) ===== */
+  .stack { display: flex; flex-direction: column; gap: 1rem; }
+  .card-pad { padding: 1rem; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem;
+    padding: .875rem 1rem; border-bottom: 1px solid var(--color-border); }
+  .card-head h3 { margin: 0; font-size: 1rem; color: #fff; }
+  .card-head .sub { color: var(--color-text-muted); font-size: .8125rem; margin-top: .125rem; }
+  .sched { display: grid; grid-template-columns: auto 8rem 7rem 1fr; gap: .75rem 1rem; align-items: end; padding: 1rem; }
+  .sched .meta { color: var(--color-text-muted); font-size: .8125rem; align-self: center; }
+  .sched .meta strong { color: var(--color-text-secondary); font-weight: 500; }
+  .origin { font-size: .6875rem; color: var(--color-text-muted); margin-left: .375rem; font-weight: 400; }
+  .input-clean[readonly] { opacity: .65; cursor: not-allowed; }
+  .file-row { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 9.5rem auto; gap: .75rem; align-items: center;
+    padding: .45rem 1rem; border-top: 1px solid rgba(55,65,81,.6); }
+  .file-row .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); }
+  .file-row .muted { color: var(--color-text-muted); font-size: .8125rem; }
+  .file-row .acts { display: flex; gap: .5rem; align-items: center; }
+  .tag--manual { background: rgba(96,165,250,.15); color: #93c5fd; }
+  .tag--legacy { background: rgba(245,158,11,.15); color: #fcd34d; }
+  .note { color: var(--color-text-muted); font-size: .8125rem; }
+  .dropzone { border: 1px dashed var(--color-border-input); border-radius: .5rem; padding: 1.25rem; text-align: center; color: var(--color-text-muted); }
+  .row-flex { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+  .optional { font-size: .6875rem; font-weight: 600; padding: .05rem .4rem; border-radius: 3px; background: rgba(167,139,250,.15); color: #c4b5fd; }
+
+  /* import page */
+  .stepper { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; margin: 0 0 1rem; font-size: .8125rem; }
+  .stepper li { padding: .25rem .625rem; border-radius: 999px; color: var(--color-text-muted); background: var(--color-bg-surface); border: 1px solid var(--color-border); }
+  .stepper li[aria-current="step"] { color: #fff; border-color: var(--color-accent); background: rgba(59,130,246,.15); }
+  .stepper li.done { color: #86efac; }
+  .file-meta { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; color: var(--color-text-muted); margin-bottom: 1rem; }
+  .file-meta strong { color: #fff; font-weight: 500; }
+  .map-row { display: grid; grid-template-columns: 10rem 1.5rem minmax(0, 16rem) 1fr; gap: .75rem; align-items: center; padding: .625rem 1rem; }
+  .map-row + .map-row { border-top: 1px solid var(--color-border); }
+  .map-row .arrow { color: var(--color-text-muted); text-align: center; }
+  .segmented { display: inline-flex; border: 1px solid var(--color-border-input); border-radius: .5rem; overflow: hidden; }
+  .segmented label { padding: .4rem .875rem; cursor: pointer; color: var(--color-text-muted); font-size: .8125rem; }
+  .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+  .segmented input:checked + span { color: #fff; }
+  .segmented label.on { background: var(--color-bg-raised); color: #fff; }
+  .segmented input:focus-visible + span { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: .375rem; }
+  .chip { font: inherit; font-size: .75rem; padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--color-border-input);
+    background: transparent; color: var(--color-text-muted); cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--color-bg-raised); color: #fff; }
+  .imp-row { display: grid; grid-template-columns: 1.25rem minmax(0, 1.6fr) minmax(0, 1fr) auto minmax(0, 1.3fr) auto; gap: .75rem;
+    align-items: center; padding: .45rem 0; border-top: 1px solid rgba(55,65,81,.6); }
+  .imp-row input[type=checkbox] { width: 1rem; height: 1rem; accent-color: var(--color-accent); }
+  .imp-row .name { color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .imp-row .muted { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; }
+  .imp-row select.input-clean { padding: .25rem .5rem; font-size: .8125rem; }
+  .pill-st { justify-self: start; font-size: .6875rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; white-space: nowrap; }
+  .st-missing { background: rgba(59,130,246,.18); color: #93c5fd; }
+  .st-differs { background: rgba(245,158,11,.18); color: #fcd34d; }
+  .st-identical { background: rgba(34,197,94,.15); color: #86efac; }
+  .st-ambiguous { background: rgba(167,139,250,.18); color: #c4b5fd; }
+  .st-notfound { background: var(--color-bg-raised); color: var(--color-text-secondary); }
+  .st-waiting { background: rgba(107,114,128,.25); color: #d1d5db; }
+  .st-conflict { background: rgba(239,68,68,.18); color: #fca5a5; }
+  .disc { background: none; border: 0; color: var(--color-status-blue); cursor: pointer; font: inherit; font-size: .8125rem; padding: 0; }
+  .diff { grid-column: 2 / -1; margin: .25rem 0 .5rem; }
+  .diff[hidden] { display: none; }
+  table.settings-table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+  table.settings-table th { text-align: left; font-weight: 600; color: var(--color-text-muted); padding: .375rem .5rem; border-bottom: 1px solid var(--color-border); }
+  table.settings-table td { padding: .375rem .5rem; border-bottom: 1px solid rgba(55,65,81,.6); vertical-align: top; }
+  table.settings-table td.file { color: #86efac; }
+  table.settings-table td.local { color: var(--color-text-muted); }
+  table.settings-table tr.is-differs td.file { color: #fcd34d; }
+  body[data-mode="fill"] tr.is-differs { opacity: .5; }
+  body[data-mode="fill"] tr.is-differs input { pointer-events: none; }
+  .fill-hint { font-size: .75rem; color: var(--color-text-muted); font-style: italic; }
+  body[data-mode="overwrite"] .fill-hint { display: none; }
+  .ident-line { padding: .45rem 0; border-top: 1px solid rgba(55,65,81,.6); color: var(--color-text-muted); font-size: .8125rem; }
+  .applybar { position: sticky; bottom: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
+    justify-content: flex-end; margin-top: 1rem; padding: .75rem 1rem; background: rgba(17,24,39,.96);
+    border: 1px solid var(--color-accent); border-radius: .5rem; box-shadow: 0 -8px 20px rgba(0,0,0,.35); }
+  .applybar .hint { margin-right: auto; color: var(--color-text-secondary); }
+  .applybar .hint strong { color: #fff; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; padding: 1rem; }
+  .stat { background: var(--color-bg-base); border: 1px solid var(--color-border); border-radius: .5rem; padding: .625rem .75rem; }
+  .stat .n { font-size: 1.375rem; font-weight: 600; color: #fff; }
+  .stat .l { color: var(--color-text-muted); font-size: .75rem; }
+  .todo { margin: 0; padding: 0 1rem 1rem 2.25rem; }
+  .todo li { margin: .25rem 0; }
+  @media (max-width: 767px) {
+    .sched { grid-template-columns: 1fr 1fr; }
+    .sched .meta { grid-column: span 2; }
+    .file-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .file-row .size, .file-row .when { display: none; }
+    .map-row { grid-template-columns: 1fr; }
+    .map-row .arrow { display: none; }
+    .imp-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
+    .imp-row .host, .imp-row .summary { display: none; }
+    .imp-row .ctl { grid-column: 2 / -1; }
+  }
+</style>
+</head>
+<body data-mode="fill">
+<div class="wrap">
+  <div class="app-title">Service Tracker Dashboard <small>v0.11.0</small></div>
+  <nav class="tabs" aria-label="Tabs">
+    <a href="#">Dashboard</a><a href="#">Tiled</a><a href="#">Compact</a><a href="#">Add</a><a href="#" class="active">Settings</a>
+  </nav>
+
+  <div class="mock-bar" role="note">
+    <strong>Mockup</strong> fake data, no server.
+    <a class="btn btn-secondary btn-sm" href="#backup">Backup &amp; restore</a>
+    <a class="btn btn-secondary btn-sm" href="#import">Import preview</a>
+    <a class="btn btn-secondary btn-sm" href="#summary">Import summary</a>
+    <span>Design: <code>docs/design/2026-11-20-backup-export-import.md</code></span>
+  </div>
+
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Settings">
+      <h2>Settings</h2>
+      <h3 class="settings-nav-label">General</h3>
+      <a class="settings-nav-link" href="#">About</a>
+      <a class="settings-nav-link" href="#">Configuration</a>
+      <h3 class="settings-nav-label">Dashboard</h3>
+      <a class="settings-nav-link" href="#">Groups</a>
+      <a class="settings-nav-link" href="#">Widgets</a>
+      <h3 class="settings-nav-label">Sources</h3>
+      <a class="settings-nav-link" href="#">Docker</a>
+      <a class="settings-nav-link" href="#">Streams
+        <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--warn" title="1 pending">1</span></span></a>
+      <h3 class="settings-nav-label">Integrations</h3>
+      <a class="settings-nav-link" href="#">Notifications</a>
+      <a class="settings-nav-link" href="#">Home Assistant</a>
+      <h3 class="settings-nav-label">Access</h3>
+      <a class="settings-nav-link" href="#">Users</a>
+      <a class="settings-nav-link" href="#">API keys</a>
+      <a class="settings-nav-link" href="#">Audit log</a>
+      <h3 class="settings-nav-label">Data</h3>
+      <a class="settings-nav-link" href="#backup" aria-current="page">Backup &amp; restore
+        <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--bad" title="Last export failed">!</span></span></a>
+      <a class="settings-nav-link" href="#">Deleted</a>
+    </nav>
+
+    <div class="settings-main">
+
+      <!-- ===================== Backup & restore ===================== -->
+      <section id="section-backup" class="settings-section">
+        <header class="settings-section-header">
+          <div>
+            <h2 class="settings-section-title">Backup &amp; restore</h2>
+            <p class="settings-section-subtitle">Daily database snapshots, exports of your settings, and import.</p>
+            <details class="settings-learn-more">
+              <summary>ⓘ Learn more</summary>
+              <p>A <strong>snapshot</strong> is a full copy of the database, secrets and history included. Use it for disaster
+                recovery. An <strong>export</strong> holds only what you set (groups, URLs you typed, checks, Home Assistant picks,
+                stream filters and blocks, channels, users) and <strong>no secrets</strong>. Import it on a new install after the
+                notifier and sidecars have posted.</p>
+              <p>After an import, set these again: ingest keys for sidecars, the notifier <code>api_token</code>, the MQTT
+                password, user passwords, widget API keys and management API keys.</p>
+            </details>
+          </div>
+        </header>
+
+        <form class="stack" data-unsaved-guard data-unsaved-dirty="true" onsubmit="return false">
+          <!-- Location -->
+          <div class="settings-card">
+            <div class="card-head"><div><h3>Location</h3><div class="sub">One folder for snapshots and exports.</div></div></div>
+            <div class="card-pad">
+              <label class="settings-label" for="bk-path">Backup folder <span class="origin">set in the UI · settings.yml had /config/backups</span></label>
+              <div class="row-flex">
+                <input id="bk-path" class="input-clean mono" style="max-width:28rem" value="/mnt/nas/std-backups">
+                <button type="button" class="btn btn-ghost btn-sm">Reset</button>
+              </div>
+              <div class="inline-warning inline-warning--warn" style="margin:.75rem 0 0">
+                <span>This folder is outside /config. Make sure it is a mounted volume, or backups are lost when the container is recreated.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Database snapshots -->
+          <div class="settings-card">
+            <div class="card-head">
+              <div><h3>Database snapshots</h3><div class="sub">Full copy of the database (WAL-safe). Contains every secret.</div></div>
+              <button type="button" class="btn btn-secondary btn-sm" data-toast="Snapshot saved: 2026-11-20_142233-std_backup.sqlite3, 2.1 MB">Run now</button>
+            </div>
+            <div class="sched">
+              <label class="switch-label"><input type="checkbox" role="switch" class="switch" checked> Daily snapshot</label>
+              <div><label class="settings-label" for="sn-time">Time</label><input id="sn-time" type="time" class="input-clean" value="00:05"></div>
+              <div><label class="settings-label" for="sn-keep">Keep days <span class="origin">env</span></label>
+                <input id="sn-keep" type="number" class="input-clean" value="14" readonly title="Set by environment (BACKUP_DAYS_TO_KEEP)"></div>
+              <div class="meta">Set by environment (<code>BACKUP_DAYS_TO_KEEP</code>) · Next run <strong>2026-11-21 00:05</strong> (container time)<br>
+                Last run <strong>today 00:05</strong>: <span style="color:#4ade80">ok</span>, 2.1 MB</div>
+            </div>
+            <div>
+              <div class="file-row"><span class="mono">2026-11-20_142233-std_backup.sqlite3 <span class="tag tag--manual">manual</span></span><span class="muted size">2.1 MB</span><span class="muted when">today 14:22</span>
+                <span class="acts"><button type="button" class="btn btn-secondary btn-sm">Download</button>
+                  <span class="kebab-wrap"><button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="m-s1" aria-label="More actions for snapshot">⋯</button>
+                  <div class="kebab-menu" id="m-s1" role="menu" hidden><button class="kebab-item" role="menuitem" tabindex="-1">Restore… <span class="optional">phase 5</span></button><div class="kebab-sep" role="separator"></div><button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button></div></span></span></div>
+              <div class="file-row"><span class="mono">2026-11-20-std_backup.sqlite3</span><span class="muted size">2.1 MB</span><span class="muted when">today 00:05</span>
+                <span class="acts"><button type="button" class="btn btn-secondary btn-sm">Download</button><span class="kebab-wrap"><button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="m-s2" aria-label="More actions for snapshot">⋯</button>
+                  <div class="kebab-menu" id="m-s2" role="menu" hidden><button class="kebab-item" role="menuitem" tabindex="-1">Restore…</button><div class="kebab-sep" role="separator"></div><button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button></div></span></span></div>
+              <div class="file-row"><span class="mono">2026-11-19-std_backup.sqlite3</span><span class="muted size">2.0 MB</span><span class="muted when">yesterday 00:05</span>
+                <span class="acts"><button type="button" class="btn btn-secondary btn-sm">Download</button><span class="kebab-wrap"><button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="m-s3" aria-label="More actions for snapshot">⋯</button>
+                  <div class="kebab-menu" id="m-s3" role="menu" hidden><button class="kebab-item" role="menuitem" tabindex="-1">Restore…</button><div class="kebab-sep" role="separator"></div><button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button></div></span></span></div>
+              <div class="file-row"><span class="note">+ 11 older snapshots</span><span></span><span></span><span></span></div>
+            </div>
+          </div>
+
+          <!-- Exports -->
+          <div class="settings-card">
+            <div class="card-head">
+              <div><h3>Exports</h3><div class="sub">Your settings as YAML or JSON. No secrets, no observed data.</div></div>
+              <div class="row-flex">
+                <button type="button" class="btn btn-secondary btn-sm" data-toast="Export saved: 2026-11-20_142301-std_export.yml, 84 KB">Run now</button>
+                <button type="button" class="btn btn-primary btn-sm">Download YAML</button>
+                <button type="button" class="btn btn-secondary btn-sm">JSON</button>
+              </div>
+            </div>
+            <div class="inline-warning inline-warning--warn" style="margin:1rem 1rem 0">
+              <span>Last export failed 2026-11-20 00:10: [Errno 28] No space left on device. It runs again tomorrow at 00:10, or use Run now.</span>
+            </div>
+            <div class="sched">
+              <label class="switch-label"><input type="checkbox" role="switch" class="switch" checked> Daily export</label>
+              <div><label class="settings-label" for="ex-time">Time</label><input id="ex-time" type="time" class="input-clean" value="00:10"></div>
+              <div><label class="settings-label" for="ex-keep">Keep days</label><input id="ex-keep" type="number" class="input-clean" value="30"></div>
+              <div><label class="settings-label" for="ex-fmt">Format</label><select id="ex-fmt" class="input-clean" style="max-width:9rem"><option>YAML</option><option>JSON</option></select></div>
+            </div>
+            <div>
+              <div class="file-row"><span class="mono">2026-11-19-std_export.yml</span><span class="muted size">83 KB</span><span class="muted when">yesterday 00:10</span>
+                <span class="acts"><button type="button" class="btn btn-secondary btn-sm">Download</button><span class="kebab-wrap"><button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="m-e1" aria-label="More actions for export">⋯</button>
+                  <div class="kebab-menu" id="m-e1" role="menu" hidden><button class="kebab-item" role="menuitem" tabindex="-1">Import…</button><div class="kebab-sep" role="separator"></div><button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button></div></span></span></div>
+              <div class="file-row"><span class="mono">2026-11-18-std_backup.yml <span class="tag tag--legacy">legacy</span></span><span class="muted size">212 KB</span><span class="muted when">2026-11-18 00:05</span>
+                <span class="acts"><button type="button" class="btn btn-secondary btn-sm">Download</button><span class="kebab-wrap"><button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="m-e2" aria-label="More actions for legacy file">⋯</button>
+                  <div class="kebab-menu" id="m-e2" role="menu" hidden><button class="kebab-item" role="menuitem" tabindex="-1">Import…</button><div class="kebab-sep" role="separator"></div><button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button></div></span></span></div>
+              <div class="file-row"><span class="mono">backup.yml <span class="tag tag--legacy">legacy</span></span><span class="muted size">208 KB</span><span class="muted when">2026-10-02 18:41</span>
+                <span class="acts"><button type="button" class="btn btn-secondary btn-sm">Download</button><span class="kebab-wrap"><button type="button" class="kebab" aria-haspopup="menu" aria-expanded="false" aria-controls="m-e3" aria-label="More actions for legacy file">⋯</button>
+                  <div class="kebab-menu" id="m-e3" role="menu" hidden><button class="kebab-item" role="menuitem" tabindex="-1">Import…</button><div class="kebab-sep" role="separator"></div><button class="kebab-item kebab-item--danger" role="menuitem" tabindex="-1">Delete</button></div></span></span></div>
+            </div>
+          </div>
+
+          <div class="settings-savebar" role="region" aria-label="Unsaved changes">
+            <span class="hint">Unsaved changes: export keep days 7 → 30</span>
+            <button type="button" class="btn btn-ghost">Discard</button>
+            <button type="submit" class="btn btn-primary" data-toast="Backup settings saved. Schedules updated.">Save</button>
+          </div>
+        </form>
+
+        <!-- Import -->
+        <div class="settings-card" style="margin-top:1rem">
+          <div class="card-head"><div><h3>Import</h3><div class="sub">Nothing changes until you review and apply.</div></div></div>
+          <div class="card-pad stack">
+            <div class="dropzone">Drop an export (<code>.yml</code>, <code>.yaml</code>, <code>.json</code>) or an old YAML backup here, or <button type="button" class="linkish">choose a file</button></div>
+            <div class="row-flex">
+              <label class="settings-label" for="imp-server" style="margin:0">or a server export</label>
+              <select id="imp-server" class="input-clean" style="max-width:20rem"><option>2026-11-19-std_export.yml</option><option>2026-11-18-std_backup.yml (legacy)</option></select>
+              <a class="btn btn-primary" href="#import">Preview import</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restore (phase 5) -->
+        <div class="settings-card" style="margin-top:1rem">
+          <div class="card-head"><div><h3>Restore database <span class="optional">phase 5, optional</span></h3>
+            <div class="sub">Pick a snapshot above (⋯ → Restore…) or upload one. It is swapped in on the next container restart.</div></div>
+            <button type="button" class="btn btn-secondary btn-sm">Upload snapshot…</button></div>
+          <div class="card-pad">
+            <div class="inline-warning inline-warning--warn" style="margin:0">
+              <span>A restore of <code>2026-11-19-std_backup.sqlite3</code> (revision e3b7c1d9a204, 61 entries) is staged and will be applied on the next restart. The current database is kept as <code>pre-restore-&lt;timestamp&gt;.sqlite3</code>.</span>
+              <button type="button" class="btn btn-secondary btn-sm">Cancel restore</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== Import preview ===================== -->
+      <section id="section-import" class="settings-section" hidden>
+        <header class="settings-section-header">
+          <div>
+            <h2 class="settings-section-title">Import</h2>
+            <p class="settings-section-subtitle">Review what this file would change. Nothing is written until you apply.</p>
+          </div>
+          <a class="btn btn-ghost" href="#backup">← Backup &amp; restore</a>
+        </header>
+
+        <ol class="stepper" aria-label="Import steps">
+          <li class="done">1 Upload ✓</li><li class="done">2 Map streams ✓</li><li aria-current="step">3 Preview</li><li>4 Apply</li><li>5 Summary</li>
+        </ol>
+
+        <div class="file-meta">
+          <span>File <strong>2026-11-19-std_export.yml</strong></span>
+          <span>Exported <strong>2026-11-19 00:10 UTC</strong></span>
+          <span>STD <strong>0.11.0</strong> · format 1</span>
+          <span>From <strong>another install</strong> (1a2b3c4d)</span>
+        </div>
+
+        <div class="inline-warning inline-warning--warn">
+          <span>Ignored fields this STD does not know: <code>entries[].tags</code> (4×).</span>
+        </div>
+
+        <!-- stream mapping -->
+        <h3 class="settings-sub">Map streams</h3>
+        <div class="settings-card">
+          <div class="map-row">
+            <span><strong style="color:#fff">dhcp</strong> <span class="note">mac · std-source-technitium</span></span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <select class="input-clean" aria-label="Local stream for dhcp"><option selected>dhcp (DHCP) · enabled</option><option>Skip this stream</option></select>
+            <span class="note">Matched by id. 42 items in the file, 40 matched here.</span>
+          </div>
+          <div class="map-row">
+            <span><strong style="color:#fff">lan-arp</strong> <span class="note">mac · arp-sidecar</span></span>
+            <span class="arrow" aria-hidden="true">→</span>
+            <select class="input-clean" aria-label="Local stream for lan-arp"><option selected>Not present here</option><option>Skip this stream</option></select>
+            <span class="note" style="color:#fde68a">Not present yet. Re-run the import after the sidecar posts. Its 9 entries and 2 blocks are waiting.</span>
+          </div>
+        </div>
+
+        <!-- mode + toolbar -->
+        <h3 class="settings-sub">Preview</h3>
+        <div class="toolbar">
+          <div class="segmented" role="radiogroup" aria-label="Import mode">
+            <label class="on"><input type="radio" name="mode" value="fill" checked><span>Fill missing only</span></label>
+            <label><input type="radio" name="mode" value="overwrite"><span>Also overwrite differences</span></label>
+          </div>
+          <input type="search" class="input-clean" placeholder="Search by name, host or key" aria-label="Search records" style="max-width:16rem">
+          <div class="chips" role="group" aria-label="Filter by status">
+            <button type="button" class="chip" aria-pressed="false">Missing 31</button>
+            <button type="button" class="chip" aria-pressed="false">Differs 3</button>
+            <button type="button" class="chip" aria-pressed="false">Ambiguous 1</button>
+            <button type="button" class="chip" aria-pressed="false">Not found 4</button>
+            <button type="button" class="chip" aria-pressed="false">Waiting 11</button>
+          </div>
+          <button type="button" class="linkish" id="sel-all">Select all</button>
+          <button type="button" class="linkish" id="sel-none">Select none</button>
+        </div>
+
+        <form id="import-form" onsubmit="return false">
+        <div class="settings-card" id="imp-groups">
+
+          <!-- Docker: expanded -->
+          <section class="settings-group" data-group="docker">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all Docker records">
+              <button type="button" class="settings-group-toggle" aria-expanded="true" aria-controls="g-docker">
+                <span class="chevron" aria-hidden="true">▸</span> Docker <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-docker">
+              <div class="imp-row" data-row>
+                <input type="checkbox" checked aria-label="Apply grafana">
+                <span class="name">grafana</span><span class="muted host">em-dock01</span>
+                <span class="pill-st st-missing">Missing settings</span>
+                <span class="muted summary">4 missing: group, external URL, check, Home Assistant</span>
+                <button type="button" class="disc ctl" aria-expanded="false" aria-controls="d-grafana">Details</button>
+                <div class="diff" id="d-grafana" hidden>
+                  <table class="settings-table"><thead><tr><th scope="col"></th><th scope="col">Field</th><th scope="col">In file</th><th scope="col">Here</th></tr></thead><tbody>
+                    <tr><td><input type="checkbox" checked aria-label="Apply group"></td><td>Group</td><td class="file">Monitoring</td><td class="local">— (fresh)</td></tr>
+                    <tr><td><input type="checkbox" checked aria-label="Apply external URL"></td><td>External URL</td><td class="file">https://grafana.example (UI edit)</td><td class="local">https://grafana.em-dock01 (synthesized)</td></tr>
+                    <tr><td><input type="checkbox" checked aria-label="Apply check"></td><td>Check: External URL</td><td class="file">enabled, verify TLS</td><td class="local">disabled (fresh)</td></tr>
+                    <tr><td><input type="checkbox" checked aria-label="Apply Home Assistant"></td><td>Home Assistant</td><td class="file">published</td><td class="local">not published</td></tr>
+                  </tbody></table>
+                </div>
+              </div>
+
+              <div class="imp-row" data-row>
+                <input type="checkbox" aria-label="Apply paperless">
+                <span class="name">paperless</span><span class="muted host">em-dock02</span>
+                <span class="pill-st st-differs">Differs</span>
+                <span class="muted summary">2 differ</span>
+                <button type="button" class="disc ctl" aria-expanded="true" aria-controls="d-paperless">Hide</button>
+                <div class="diff" id="d-paperless">
+                  <table class="settings-table"><thead><tr><th scope="col"></th><th scope="col">Field</th><th scope="col">In file</th><th scope="col">Here</th></tr></thead><tbody>
+                    <tr class="is-differs"><td><input type="checkbox" aria-label="Overwrite internal URL"></td><td>Internal URL</td><td class="file">http://paperless.lan:8000 (UI edit)</td><td class="local">http://10.0.0.12:8000 (label)</td></tr>
+                    <tr class="is-differs"><td><input type="checkbox" aria-label="Overwrite description"></td><td>Description</td><td class="file">Scanned mail</td><td class="local">Documents</td></tr>
+                  </tbody></table>
+                  <div class="fill-hint">Switch to "Also overwrite differences" to apply these.</div>
+                </div>
+              </div>
+
+              <div class="imp-row" data-row>
+                <input type="checkbox" aria-label="Apply portainer" disabled>
+                <span class="name">portainer</span><span class="muted host">em-dock01</span>
+                <span class="pill-st st-ambiguous">Ambiguous</span>
+                <span class="muted summary">2 entries here with this host and name</span>
+                <select class="input-clean ctl" aria-label="Target for portainer" data-pick><option value="">Pick the target…</option><option>#14 portainer (Infra, added 2026-03-02)</option><option>#88 portainer (no group, added 2026-11-19)</option><option>Skip</option></select>
+              </div>
+
+              <div class="imp-row" data-row>
+                <input type="checkbox" aria-label="Apply old-wiki">
+                <span class="name">old-wiki</span><span class="muted host">em-dock02</span>
+                <span class="pill-st st-notfound">Not found</span>
+                <span class="muted summary">Becomes a manual entry. The notifier adopts it when the container registers.</span>
+                <label class="switch-label ctl"><input type="checkbox" role="switch" class="switch" data-create> Import as new</label>
+              </div>
+
+              <div class="imp-row" data-row>
+                <input type="checkbox" aria-label="Apply jellyfin">
+                <span class="name">jellyfin</span><span class="muted host">em-dock02</span>
+                <span class="pill-st st-missing">Deleted here</span>
+                <span class="muted summary">Soft-deleted here. Ticking restores it, then fills 2 settings.</span>
+                <span></span>
+              </div>
+
+              <div class="ident-line">▸ 12 identical (nothing to do)</div>
+            </div>
+          </section>
+
+          <!-- Manual: collapsed -->
+          <section class="settings-group" data-group="manual">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all Manual records">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-manual">
+                <span class="chevron" aria-hidden="true">▸</span> Manual <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-manual" hidden>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply em-pve01"><span class="name">em-pve01</span><span class="muted host">—</span><span class="pill-st st-missing">Missing settings</span><span class="muted summary">2 missing</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply nas"><span class="name">nas</span><span class="muted host">—</span><span class="pill-st st-notfound">Not found</span><span class="muted summary">Becomes a manual entry.</span><label class="switch-label ctl"><input type="checkbox" role="switch" class="switch" data-create> Import as new</label></div>
+            </div>
+          </section>
+
+          <!-- DHCP stream: collapsed -->
+          <section class="settings-group" data-group="stream:dhcp">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all DHCP records">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-dhcp">
+                <span class="chevron" aria-hidden="true">▸</span> DHCP <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-dhcp" hidden>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply boiler"><span class="name">boiler</span><span class="muted host">aa:bb:cc:00:11:33</span><span class="pill-st st-missing">Missing settings</span><span class="muted summary">rename esp-1133 → boiler, group IoT, HA</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply shelly-pump"><span class="name">shelly-pump</span><span class="muted host">aa:bb:cc:00:11:40</span><span class="pill-st st-missing">Missing settings</span><span class="muted summary">group IoT, HA</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply cam-door"><span class="name">cam-door</span><span class="muted host">aa:bb:cc:00:11:50</span><span class="pill-st st-missing">Missing settings</span><span class="muted summary">matched to a link offer: accept it in Streams</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply garage-door"><span class="name">garage-door</span><span class="muted host">aa:bb:cc:00:11:61</span><span class="pill-st st-notfound">Not found</span><span class="muted summary">Not in the latest snapshot. Becomes a manual entry; a link offer pairs it when it appears.</span><label class="switch-label ctl"><input type="checkbox" role="switch" class="switch" data-create> Import as new</label></div>
+              <div class="ident-line">▸ 36 identical</div>
+            </div>
+          </section>
+
+          <!-- Streams & blocks -->
+          <section class="settings-group" data-group="streams">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all stream settings and blocks">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-streams">
+                <span class="chevron" aria-hidden="true">▸</span> Streams &amp; blocks <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-streams" hidden>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply dhcp settings"><span class="name">dhcp: settings</span><span class="muted host">enabled</span><span class="pill-st st-missing">Missing settings</span><span class="muted summary">exclude guest, missing expiry 14 days</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply block old-printer"><span class="name">block old-printer</span><span class="muted host">aa:bb:cc:00:11:22</span><span class="pill-st st-missing">Missing</span><span class="muted summary">An entry exists for this key here.</span><label class="switch-label ctl"><input type="checkbox" role="switch" class="switch"> Also soft-delete it</label></div>
+            </div>
+          </section>
+
+          <!-- Groups / channels / users / settings: collapsed -->
+          <section class="settings-group" data-group="groups">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all groups">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-groups">
+                <span class="chevron" aria-hidden="true">▸</span> Groups <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-groups" hidden>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply Monitoring"><span class="name">Monitoring</span><span class="muted host">priority 20</span><span class="pill-st st-missing">Missing</span><span class="muted summary">created</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply media"><span class="name">media</span><span class="muted host"></span><span class="pill-st st-ambiguous">Ambiguous</span><span class="muted summary">"Media" exists here</span>
+                <select class="input-clean ctl" aria-label="Target for media" data-pick><option value="">Choose…</option><option>Use "Media"</option><option>Create "media"</option></select></div>
+            </div>
+          </section>
+
+          <section class="settings-group" data-group="channels">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all channels">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-channels">
+                <span class="chevron" aria-hidden="true">▸</span> Notification channels <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-channels" hidden>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply home-broker"><span class="name">home-broker</span><span class="muted host">mqtt.lan:1883</span><span class="pill-st st-notfound">Not found</span><span class="muted summary">Created disabled: set its password, then enable.</span><label class="switch-label ctl"><input type="checkbox" role="switch" class="switch" data-create> Import as new</label></div>
+            </div>
+          </section>
+
+          <section class="settings-group" data-group="users">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all users">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-users">
+                <span class="chevron" aria-hidden="true">▸</span> Users <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-users" hidden>
+              <p class="note" style="margin:.25rem 0 .5rem">Created users cannot sign in until an admin sets a password in Users.</p>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply alice"><span class="name">alice</span><span class="muted host">alice@example.com</span><span class="pill-st st-notfound">Not found</span><span class="muted summary">user, active</span><label class="switch-label ctl"><input type="checkbox" role="switch" class="switch" data-create> Create user (no password)</label></div>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply admin" disabled><span class="name">admin</span><span class="muted host">admin@localhost</span><span class="pill-st st-identical">Exists</span><span class="muted summary">Existing users are never changed by import.</span><span></span></div>
+            </div>
+          </section>
+
+          <section class="settings-group" data-group="settings">
+            <div class="settings-group-header">
+              <input type="checkbox" class="settings-group-check" aria-label="Select all settings">
+              <button type="button" class="settings-group-toggle" aria-expanded="false" aria-controls="g-settings">
+                <span class="chevron" aria-hidden="true">▸</span> Settings <span class="settings-group-count">— <span data-count></span></span></button>
+            </div>
+            <div class="settings-group-body" id="g-settings" hidden>
+              <div class="imp-row" data-row><input type="checkbox" checked aria-label="Apply traefik direction"><span class="name">Exposure: traefik</span><span class="muted host">internal</span><span class="pill-st st-missing">Missing</span><span class="muted summary">not set here</span><span></span></div>
+              <div class="imp-row" data-row><input type="checkbox" aria-label="Apply update check interval"><span class="name">Update check interval</span><span class="muted host">24 h</span><span class="pill-st st-differs">Differs</span><span class="muted summary">here: 12 h</span><span></span></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="applybar" role="region" aria-label="Apply import">
+          <span class="hint"><strong data-sel>0</strong> records · <strong data-fields>0</strong> fields · <strong data-new>0</strong> new · <span data-mode-label>fill missing only</span></span>
+          <a class="btn btn-ghost" href="#backup">Cancel</a>
+          <a class="btn btn-primary" href="#summary" id="apply-btn">Apply import</a>
+        </div>
+        </form>
+      </section>
+
+      <!-- ===================== Summary ===================== -->
+      <section id="section-summary" class="settings-section" hidden>
+        <header class="settings-section-header">
+          <div>
+            <h2 class="settings-section-title">Import applied</h2>
+            <p class="settings-section-subtitle">2026-11-19-std_export.yml · fill missing only · one transaction</p>
+          </div>
+          <div class="row-flex"><a class="btn btn-secondary" href="#import">Run the import again</a><a class="btn btn-primary" href="#backup">Back to Backup &amp; restore</a></div>
+        </header>
+        <ol class="stepper" aria-label="Import steps">
+          <li class="done">1 Upload ✓</li><li class="done">2 Map streams ✓</li><li class="done">3 Preview ✓</li><li class="done">4 Apply ✓</li><li aria-current="step">5 Summary</li>
+        </ol>
+        <div class="settings-card">
+          <div class="summary-grid">
+            <div class="stat"><div class="n">27</div><div class="l">records updated</div></div>
+            <div class="stat"><div class="n">64</div><div class="l">fields filled</div></div>
+            <div class="stat"><div class="n">0</div><div class="l">values overwritten</div></div>
+            <div class="stat"><div class="n">2</div><div class="l">entries created (manual)</div></div>
+            <div class="stat"><div class="n">1</div><div class="l">entry restored</div></div>
+            <div class="stat"><div class="n">3</div><div class="l">groups · 1 channel · 1 user · 1 block</div></div>
+            <div class="stat"><div class="n">16</div><div class="l">skipped (11 waiting, 4 unticked, 1 ambiguous)</div></div>
+          </div>
+          <h3 class="settings-sub" style="margin:0 1rem .5rem">Still to do</h3>
+          <ul class="todo">
+            <li>Set a password for <strong>alice</strong> (Users). She cannot sign in until then.</li>
+            <li>Set the password of channel <strong>home-broker</strong>, then enable it (Notifications).</li>
+            <li>Add the API key of widget <strong>sonarr</strong> (Edit entry → widget).</li>
+            <li>Stream <strong>lan-arp</strong> is not here yet: give its sidecar a new ingest key, then run this import again.</li>
+            <li>1 link offer to answer in Streams (<strong>cam-door</strong>).</li>
+            <li><strong>old-wiki</strong> waits for its container to register. Run the import again afterwards to apply its lock.</li>
+          </ul>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+<div class="toast-region" id="toast-region" aria-live="polite" role="status"></div>
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  // --- views via hash ---
+  var views = { backup: 1, import: 1, summary: 1 };
+  function show(slug) {
+    if (!views[slug]) slug = 'backup';
+    $$('.settings-section').forEach(function (s) { s.hidden = s.id !== 'section-' + slug; });
+    window.scrollTo(0, 0);
+    if (slug === 'summary') toast('Import applied: 27 records updated, 2 entries created.');
+  }
+  window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+  show(location.hash.slice(1));
+
+  // --- toast ---
+  function toast(text) {
+    var t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = '<span class="ok" aria-hidden="true">✓</span><span></span><button type="button" aria-label="Dismiss">×</button>';
+    t.children[1].textContent = text;
+    var timer, gone = function () { t.classList.add('leaving'); setTimeout(function () { t.parentNode && t.parentNode.removeChild(t); }, 260); };
+    var arm = function () { timer = setTimeout(gone, 5000); };
+    t.addEventListener('mouseenter', function () { clearTimeout(timer); });
+    t.addEventListener('mouseleave', arm);
+    t.querySelector('button').addEventListener('click', gone);
+    $('#toast-region').appendChild(t); arm();
+  }
+  $$('[data-toast]').forEach(function (b) { b.addEventListener('click', function () { toast(b.dataset.toast); }); });
+
+  // --- kebab menus ---
+  function closeMenus(except) {
+    $$('.kebab[aria-expanded="true"]').forEach(function (b) {
+      if (b === except) return;
+      b.setAttribute('aria-expanded', 'false'); document.getElementById(b.getAttribute('aria-controls')).hidden = true;
+    });
+  }
+  $$('.kebab').forEach(function (btn) {
+    var menu = document.getElementById(btn.getAttribute('aria-controls'));
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (btn.getAttribute('aria-expanded') === 'true') { closeMenus(); return; }
+      closeMenus(btn); menu.hidden = false; btn.setAttribute('aria-expanded', 'true');
+      $('[role=menuitem]', menu).focus();
+    });
+    menu.addEventListener('keydown', function (e) {
+      var it = $$('[role=menuitem]', menu), i = it.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); it[(i + 1) % it.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); it[(i - 1 + it.length) % it.length].focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeMenus(); btn.focus(); }
+    });
+    menu.addEventListener('click', function (e) {
+      var item = e.target.closest('[role=menuitem]');
+      if (!item) return;
+      closeMenus();
+      if (/Import/.test(item.textContent)) { location.hash = 'import'; } else { toast(item.textContent.trim() + ' (mockup)'); }
+    });
+  });
+  document.addEventListener('click', function (e) { if (!e.target.closest('.kebab-wrap')) closeMenus(); });
+
+  // --- import preview: disclosure, groups, tri-state, mode, counts ---
+  $$('.disc').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var d = document.getElementById(b.getAttribute('aria-controls'));
+      d.hidden = !d.hidden; b.setAttribute('aria-expanded', String(!d.hidden)); b.textContent = d.hidden ? 'Details' : 'Hide';
+    });
+  });
+  $$('.settings-group-toggle').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var body = document.getElementById(b.getAttribute('aria-controls'));
+      body.hidden = !body.hidden; b.setAttribute('aria-expanded', String(!body.hidden));
+    });
+  });
+  function rowBox(row) { return row.querySelector(':scope > input[type=checkbox]'); }
+  function selectable(group) { return $$('[data-row]', group).map(rowBox).filter(function (c) { return !c.disabled; }); }
+  function refresh() {
+    var sel = 0, fields = 0, created = 0;
+    $$('.settings-group', $('#imp-groups')).forEach(function (g) {
+      var boxes = selectable(g), on = boxes.filter(function (c) { return c.checked; }).length;
+      var gc = $('.settings-group-check', g);
+      gc.checked = boxes.length > 0 && on === boxes.length; gc.indeterminate = on > 0 && on < boxes.length;
+      $('[data-count]', g).textContent = on + ' of ' + $$('[data-row]', g).length + ' selected';
+    });
+    $$('[data-row]').forEach(function (row) {
+      var c = rowBox(row);
+      if (!c.checked) return;
+      sel++;
+      var diffs = $$('.diff input[type=checkbox]', row).filter(function (f) {
+        return f.checked && (document.body.dataset.mode === 'overwrite' || !f.closest('tr.is-differs'));
+      }).length;
+      fields += diffs || 2;
+      var cr = $('[data-create]', row);
+      if (cr && cr.checked) created++;
+    });
+    $('[data-sel]').textContent = sel; $('[data-fields]').textContent = fields; $('[data-new]').textContent = created;
+    $('[data-mode-label]').textContent = document.body.dataset.mode === 'fill' ? 'fill missing only' : 'also overwrite differences';
+  }
+  $$('.settings-group-check').forEach(function (gc) {
+    gc.addEventListener('change', function () {
+      var g = gc.closest('.settings-group'), boxes = selectable(g);
+      var all = boxes.every(function (c) { return c.checked; });
+      boxes.forEach(function (c) { c.checked = !all; var cr = $('[data-create]', c.parentElement); if (cr) cr.checked = !all; });
+      refresh();
+    });
+  });
+  $('#imp-groups').addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.matches('[data-create]')) { rowBox(t.closest('[data-row]')).checked = t.checked; }
+    if (t.matches('[data-row] > input[type=checkbox]')) { var cr = $('[data-create]', t.parentElement); if (cr) cr.checked = t.checked; }
+    if (t.matches('[data-pick]')) { var c = rowBox(t.closest('[data-row]')); c.disabled = !t.value || t.value === 'Skip'; c.checked = !c.disabled; }
+    refresh();
+  });
+  $$('input[name=mode]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      document.body.dataset.mode = r.value;
+      $$('.segmented label').forEach(function (l) { l.classList.toggle('on', l.contains(r)); });
+      refresh();
+    });
+  });
+  $('#sel-all').addEventListener('click', function () { $$('.settings-group').forEach(function (g) { selectable(g).forEach(function (c) { c.checked = true; }); }); refresh(); });
+  $('#sel-none').addEventListener('click', function () { $$('.settings-group').forEach(function (g) { selectable(g).forEach(function (c) { c.checked = false; }); }); refresh(); });
+  $$('.chip').forEach(function (c) { c.addEventListener('click', function () { c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true')); }); });
+  $('#apply-btn').addEventListener('click', function (e) {
+    if (document.body.dataset.mode === 'overwrite' && !window.confirm('Overwrite the values that differ? (mockup)')) e.preventDefault();
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>

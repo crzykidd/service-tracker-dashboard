@@ -5,6 +5,71 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Backup, export and import design (0.11.0)
+
+Design in `docs/design/2026-11-20-backup-export-import.md` (mockup alongside), built by
+`prompts/2026-11-20-bak-01` … `bak-05`.
+
+- **Operator decisions:** two daily jobs (DB snapshot + export), each with its own
+  keep-days (default 7) and a manual run; backup path chosen in the UI; the export
+  replaces the old daily YAML; no secrets in exports, ever; users exported without
+  passwords; import defaults to "fill missing only"; staged restore at next start is in
+  scope (bak-05); no "adopt install id" on import (HA devices are recreated after a
+  move); scheduled export defaults to YAML; default times 00:05 / 00:10.
+- **Backup section is out of settings phase 4** (`set-04`): bak-01 rebuilds it.
+- **Precedence for backup settings: env > UI (DB) > `settings.yml` > default.** Env is
+  shown read-only. `settings.yml` only seeds, so a UI save is never silently ignored.
+  Reset deletes the DB row. `backup_days_to_keep` seeds both keep-days values. No new
+  file or env keys.
+- **Two scheduler jobs with their own cron triggers, rescheduled in process.** A disabled
+  job is paused, not removed. This relies on the single gunicorn worker. The scheduler is
+  kept in `jobs._SCHEDULER`.
+- **Manual runs are synchronous** and get a timestamped name (`YYYY-MM-DD_HHMMSS-…`),
+  so they never overwrite the scheduled file of the day. Retention is per kind, by mtime,
+  by suffix only. Legacy `-std_backup.yml` files age out with export retention.
+  `backup.yml` and `pre-restore-*` are never auto-deleted.
+- **A path outside `CONFIG_DIR` is a warning, not an error.**
+- **Snapshots are downloadable from the UI only, never through the API**, because they
+  hold every secret.
+- **The export leaves out soft-deleted entries and detached widgets.** The snapshot covers
+  the trash.
+- **URLs are exported only when operator-owned** (`ui_edit`, or any URL on a manual or
+  stream entry), and imported as `ui_edit`. `image_icon` is exported only where register
+  does not rewrite it (manual, stream, locked Docker).
+- **"Missing" means the local value is the fresh-row value.** For Docker group and sort
+  priority, a value equal to `notifier_reported_*` also counts as fresh. Under
+  `notifier_wins` those two fields are not importable.
+- **Unknown fields in a supported format version warn; a newer `format_version` is
+  rejected.** Adding an optional field keeps version 1.
+- **Plan handoff: re-plan on apply under `_UPSERT_LOCK` → `streams._LOCK`, and compare a
+  sha256 fingerprint of the selected rows.** The UI stages the parsed file in
+  `CONFIG_DIR/import-staging/<token>.json` (60 min TTL, bound to the user). The API is
+  stateless.
+- **Import never creates streams and never changes a stream's status.** Stream settings
+  and blocks apply to a mapped stream even while it is pending, so filters and blocks can
+  land before Enable.
+- **Import never modifies existing users**, in either mode. New users get the
+  `"!unset"` hash: no password works, nothing is generated or shown, and an admin sets one
+  in Users.
+- **Channel namespace keys (`base_topic`, `ha_prefix`, `ha_device_prefix`) are never
+  changed on an existing channel by import.** New channels with `secret_set` are created
+  disabled.
+- **Import as new never sets `is_static`.** A locked manual entry is not adopted by
+  register, so the lock is applied by a re-run after adoption.
+- **Import never answers link offers.** A stream record whose key has an open offer is
+  matched to the offered manual entry, with a note.
+- **Legacy v0 files: `widget_api_key` is ignored with a warning; `source: stream`
+  records are matched by MAC across `mac` streams.**
+- **The import preview is its own Settings page, not a modal** (it can hold thousands of
+  rows).
+- **One `API_REVISION` bump (to 4) for the whole 0.11.0 backup/export/import set.**
+  bak-02 bumps it, bak-04 extends the row. The plan route needs `write`.
+- **Staged restore swaps in `entrypoint.sh` before `alembic upgrade head`, using
+  stdlib-only `restore_swap.py`.** The current DB is kept via `Connection.backup()`. A
+  failure never blocks startup.
+
+---
+
 ## 2026-11-20 — Settings modernization, set-02 (notifications and Home Assistant)
 
 Calls made while building phase 2 (`prompts/2026-11-20-set-02-notifications-ha.md`).

@@ -109,10 +109,12 @@ from something other than phases 1–3 (those partials, `routes_dashboard.py`,
 8. **Audit log** (§9.11): header + Learn more, the filter `select.input-clean` (GET,
    `section=audit-log`, `<option value="alpha" selected>` formatting unchanged), and
    `table.settings-table#api-audit-table` / `#api-audit-empty`, with escaping as today.
-9. **Backup & restore** (§9.12): Backup and Restore cards (radio cards for the source,
-   `backup.js`), every error redirecting to `backup`. "Could not list server backup
-   files" becomes the inline warning `backup_list_error` (a template variable set in
-   `_render_settings`), not a flash.
+9. **Backup & restore — OUT OF SCOPE for this phase.** The operator decided (2026-11-20)
+   to redesign backup, export and import as a separate project
+   (`docs/design/2026-11-20-backup-export-import.md`, prompts `bak-01` … `bak-04`), which
+   rebuilds this section. Leave `templates/partials/settings/backup.html` exactly as
+   phase 1 left it; don't create `backup.js`, and don't touch the backup/restore routes
+   or their tests. Ignore every other mention of Backup in this prompt.
 10. **Deleted** (§9.13): cards with Restore + ⋯ Delete permanently (`data-confirm`,
     today's text); a Detached widgets sub-list with the Attach select + button and ⋯
     Delete (today's text). Keep the retention wording.
