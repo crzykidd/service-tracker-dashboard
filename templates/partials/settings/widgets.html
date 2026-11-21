@@ -1,0 +1,49 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-widgets" class="settings-section{% if (initial_section or settings_default_section) != 'widgets' %} hidden{% endif %}">
+  {{ section_header('Widgets', "Widgets attached to entries. Configure them on an entry's edit page.") }}
+  {{ flash_slot('widgets') }}
+  {% if widgets %}
+    <div class="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+      {% for widget in widgets %}
+        <div class="settings-card" style="margin-bottom:0">
+          <h3 class="settings-card-heading">{{ widget.widget_name }}</h3>
+
+          <p class="text-sm text-gray-400 mb-1">
+            <strong class="text-gray-300">API URL:</strong><br>
+            <code class="break-all">{{ widget.widget_url }}</code>
+          </p>
+
+          <div class="text-sm text-gray-400 mb-1">
+            <strong class="text-gray-300">API Key:</strong>
+            <div class="flex items-center gap-2 mt-1">
+              <input type="password" readonly class="input-clean truncate" value="{{ widget.widget_api_key }}" id="apikey-{{ widget.id }}" aria-label="API key for {{ widget.widget_name }}">
+              <button type="button" class="btn-secondary btn-sm" onclick="copyToClipboard('apikey-{{ widget.id }}')">Copy</button>
+            </div>
+          </div>
+
+          <p class="text-sm text-gray-400 mb-1">
+            <strong class="text-gray-300">Fields:</strong>
+            <code>{{ widget.widget_fields | join(', ') }}</code>
+          </p>
+
+          <p class="text-sm text-gray-400 mb-1">
+            <strong class="text-gray-300">Last Update:</strong>
+            {% set last_value = widget.widget_values|sort(attribute='last_updated')|last %}
+            {{ last_value.last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_value else '—' }}
+          </p>
+
+          <p class="text-sm text-gray-400">
+            <strong class="text-gray-300">Connected Container:</strong><br>
+            {% if widget.services and widget.services[0] %}
+              {{ widget.services[0].container_name }} ({{ widget.services[0].host or "no host" }})
+            {% else %}
+              —
+            {% endif %}
+          </p>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="settings-empty">No widgets found in the database.</p>
+  {% endif %}
+</section>

@@ -424,12 +424,16 @@ health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none) 
 health_history.py   ← bars/uptime/recent failures over health_result for the detail panel (/service/<id>/health)
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions, update check)
+settings_sections.py ← Settings section registry (groups, slugs, labels, legacy `?section=` aliases,
+                      `resolve()`); pure data, the sidebar and the routes both read it
 version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
-templates/          ← Jinja templates
-static/             ← static assets (css/, js/, icons/)
+templates/          ← Jinja templates; templates/partials/settings/ = one partial per Settings
+                      section + _macros.html (see PRD §19)
+static/             ← static assets (css/, js/, icons/); static/js/settings/ = Settings scripts
+                      (nav, ui, per-section), static/js/flash.js = toasts and banners
 widgets/            ← per-widget plugin dirs
 alembic/            ← migrations (alembic.ini at root)
 scripts/            ← manual helper scripts (test_widget.py; not a test suite)

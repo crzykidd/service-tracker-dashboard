@@ -1,13 +1,23 @@
-{# Flashed messages, shared by Settings, Add and Edit. Category picks the colour. #}
+{# Flashed messages for Add and Edit (Settings has its own placement, see
+   partials/settings/_macros.html). Errors and warnings stay in place as a banner;
+   successes show as a toast. Banners keep `flash-alert` as their first class. #}
+{% from "partials/_flash.html" import banner, toast, flash_category_kind %}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
-    <div id="flash-container" class="space-y-2 mb-4" role="status">
-      {% for category, message in messages %}
-        <div class="flash-alert flex items-center justify-between gap-3 text-sm px-4 py-2 rounded shadow text-white {% if category == 'danger' %}bg-red-700{% elif category == 'warning' %}bg-amber-600{% else %}bg-green-600{% endif %}">
-          <span>{{ message }}</span>
-          <button type="button" class="text-white hover:text-gray-300" aria-label="Dismiss" onclick="this.parentElement.remove()">×</button>
-        </div>
-      {% endfor %}
+    {% set banners = [] %}
+    {% set toasts = [] %}
+    {% for category, message in messages %}
+      {% if flash_category_kind(category)|trim == 'toast' %}{% set _ = toasts.append((category, message)) %}{% else %}{% set _ = banners.append((category, message)) %}{% endif %}
+    {% endfor %}
+    {% if banners %}
+    <div id="flash-container" class="mb-4">
+      {% for category, message in banners %}{{ banner(category, message) }}{% endfor %}
     </div>
+    {% endif %}
+    {% if toasts %}
+    <div id="toast-region" class="toast-region" role="status" aria-live="polite">
+      {% for category, message in toasts %}{{ toast(category, message) }}{% endfor %}
+    </div>
+    {% endif %}
   {% endif %}
 {% endwith %}

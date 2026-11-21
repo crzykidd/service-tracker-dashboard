@@ -1,0 +1,90 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-backup" class="settings-section{% if (initial_section or settings_default_section) != 'backup' %} hidden{% endif %}">
+  {{ section_header('Backup & restore', 'YAML export of every entry, and restore from one.') }}
+  {{ flash_slot('backup') }}
+
+  <!-- Backup Subsection -->
+  <div class="settings-card">
+    <h3 class="settings-card-heading">Backup Service Data</h3>
+    <p class="settings-subtitle-note">Manage YAML backups of all your service entries.</p>
+    <form action="{{ url_for('dashboard.settings') }}" method="POST" class="flex flex-wrap gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="backup">
+      <button type="submit" name="backup_operation" value="download_all" class="btn-primary">
+        Download Full Backup (YAML)
+      </button>
+      <button type="submit" name="backup_operation" value="save_on_server" class="btn-secondary">
+        Save Full Backup to Server
+      </button>
+    </form>
+  </div>
+
+  <!-- Restore Subsection -->
+  <div class="settings-card">
+    <h3 class="settings-card-heading">Restore Service Data</h3>
+    <p class="settings-subtitle-note">Restore service entries from a YAML backup file.</p>
+    <form action="{{ url_for('dashboard.settings') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="restore">
+
+      <!-- Restore Source Choice -->
+      <div class="space-y-2">
+        <span class="settings-label">Restore Source:</span>
+        <div class="flex items-center">
+          <input id="restore_from_server_select" name="restore_source" type="radio" value="server" checked
+                class="h-4 w-4" data-restore-source>
+          <label for="restore_from_server_select" class="ml-2 text-sm text-gray-300">Select from server backups</label>
+        </div>
+        <div class="flex items-center">
+          <input id="restore_from_upload" name="restore_source" type="radio" value="upload"
+                class="h-4 w-4" data-restore-source>
+          <label for="restore_from_upload" class="ml-2 text-sm text-gray-300">Upload a custom YAML file</label>
+        </div>
+      </div>
+
+      <!-- Server File Selector -->
+      <div id="server-file-selector-section">
+        <label for="server_backup_filename" class="settings-label">Available server backups:</label>
+        <select id="server_backup_filename" name="server_backup_filename" class="input-clean" style="max-width:24rem">
+          {% if server_backup_files %}
+            {% for filename in server_backup_files %}
+              <option value="{{ filename }}">{{ filename }}</option>
+            {% endfor %}
+          {% else %}
+            <option disabled>No backup files found on server</option>
+          {% endif %}
+        </select>
+      </div>
+
+      <!-- File Upload -->
+      <div id="file-upload-section" class="hidden">
+        <label for="restore_file_input" class="settings-label">Upload YAML file:</label>
+        <div class="mt-1 flex justify-center items-center px-6 pt-5 pb-6 border-2 border-dashed border-gray-500 rounded-lg">
+          <div class="text-center space-y-1">
+            <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <label for="restore_file_input" class="cursor-pointer text-blue-400 hover:text-blue-300">
+              <span>Upload a file</span>
+              <input id="restore_file_input" name="restore_file" type="file" class="sr-only" accept=".yaml,.yml">
+            </label>
+            <p class="text-xs text-gray-500" id="file-name-display">YAML up to 10MB</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Restore Scope -->
+      <div>
+        <label for="restore_scope" class="settings-label">Restore Scope:</label>
+        <select id="restore_scope" name="restore_scope" class="input-clean" style="max-width:24rem">
+          <option value="all" selected>All Entries</option>
+          <option value="static">Static Entries Only</option>
+        </select>
+      </div>
+
+      <!-- Submit -->
+      <button type="submit" class="btn-primary">Restore Data</button>
+    </form>
+  </div>
+</section>

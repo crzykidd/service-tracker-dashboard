@@ -1,0 +1,27 @@
+{# Flash presentation, shared by Settings and the Add/Edit pages (design 7).
+   The category decides how a message is shown; the flash() calls only describe the outcome:
+     success | info | message -> toast (fades by itself)
+     danger  | error          -> error banner (stays until dismissed)
+     warning                  -> warning banner (stays until dismissed) #}
+
+{% macro flash_category_kind(category) -%}
+{%- if category in ('success', 'info', 'message') -%}toast
+{%- elif category == 'warning' -%}warning
+{%- else -%}error
+{%- endif -%}
+{%- endmacro %}
+
+{% macro toast(category, message) %}
+<div class="toast toast--{{ category }}" role="status" data-toast>
+  <span class="toast-icon" aria-hidden="true">&#10003;</span>
+  <span class="toast-text">{{ message|flash_text }}</span>
+  <button type="button" class="toast-close" aria-label="Dismiss" data-toast-close>&times;</button>
+</div>
+{% endmacro %}
+
+{% macro banner(category, message, dismissible=True) %}
+<div class="flash-alert flash-alert--{{ 'warning' if category == 'warning' else 'danger' }}" role="alert" data-flash-banner>
+  <span>{{ message }}</span>
+  {% if dismissible %}<button type="button" aria-label="Dismiss" data-flash-dismiss>&times;</button>{% endif %}
+</div>
+{% endmacro %}

@@ -1,0 +1,78 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-api-keys" class="settings-section{% if (initial_section or settings_default_section) != 'api-keys' %} hidden{% endif %}">
+  {% call section_header('API keys', 'Keys for the management API, sidecars and agents.') %}
+    <p>
+      Admin keys for the management API (<code>Authorization: Bearer &lt;key&gt;</code>).
+      They are separate from the notifier's <code>api_token</code>, which only registers services.
+      A <strong>read</strong> key can read; a <strong>write</strong> key can read and change;
+      an <strong>ingest</strong> key can only send inventory snapshots (for sidecars, see the Streams section).
+    </p>
+  {% endcall %}
+  {{ flash_slot('api-keys') }}
+
+  <form method="POST" action="{{ url_for('dashboard.create_api_key') }}" class="settings-card flex flex-wrap items-end gap-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <label class="settings-label" for="new-key-name">Name</label>
+      <input id="new-key-name" type="text" name="name" maxlength="64" required class="input-clean">
+    </div>
+    <div>
+      <label class="settings-label" for="new-key-scope">Scope</label>
+      <select id="new-key-scope" name="scope" class="input-clean">
+        <option value="read">read</option>
+        <option value="write">write</option>
+        <option value="ingest">Ingest (sidecars)</option>
+      </select>
+      <span class="edit-helper block max-w-xs">Ingest keys can only send inventory snapshots to <code>/api/v1/streams</code>; use one per sidecar.</span>
+    </div>
+    <button type="submit" class="btn-primary">Create key</button>
+  </form>
+
+  {% if api_key_rows %}
+  <div class="settings-card overflow-x-auto">
+  <table class="settings-table" id="api-key-table">
+    <thead>
+      <tr>
+        <th class="px-4 py-2">Name</th>
+        <th class="px-4 py-2">Prefix</th>
+        <th class="px-4 py-2">Scope</th>
+        <th class="px-4 py-2">Created</th>
+        <th class="px-4 py-2">Rotated</th>
+        <th class="px-4 py-2">Last used</th>
+        <th class="px-4 py-2">Status</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in api_key_rows %}
+      <tr class="{% if k.revoked_at %}opacity-50{% endif %}">
+        <td class="px-4 py-2">{{ k.name }}</td>
+        <td class="px-4 py-2"><code>{{ k.prefix }}</code></td>
+        <td class="px-4 py-2">{{ k.scope }}</td>
+        <td class="px-4 py-2">{{ k.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+        <td class="px-4 py-2">{% if k.rotated_at %}{{ k.rotated_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}—{% endif %}</td>
+        <td class="px-4 py-2">{% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if k.last_used_ip %} from {{ k.last_used_ip }}{% endif %}{% else %}never{% endif %}</td>
+        <td class="px-4 py-2">{% if k.revoked_at %}revoked {{ k.revoked_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}active{% endif %}</td>
+        <td class="px-4 py-2">
+          {% if not k.revoked_at %}
+          <div class="flex gap-2">
+          <form method="POST" action="{{ url_for('dashboard.rotate_api_key', id=k.id) }}" data-confirm="Rotate '{{ k.name }}'? The current key stops working immediately; you'll get a new one to copy.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-secondary btn-sm">Rotate</button>
+          </form>
+          <form method="POST" action="{{ url_for('dashboard.revoke_api_key', id=k.id) }}" data-confirm="Revoke key {{ k.name }}? Anything using it stops working.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-danger btn-sm">Revoke</button>
+          </form>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="settings-empty">No API keys yet.</p>
+  {% endif %}
+</section>

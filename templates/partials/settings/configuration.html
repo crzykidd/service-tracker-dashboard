@@ -1,0 +1,47 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-configuration" class="settings-section{% if (initial_section or settings_default_section) != 'configuration' %} hidden{% endif %}">
+  {% call section_header('Configuration', 'Read-only. Set in settings.yml or environment variables, then restart.') %}
+    <p>Environment variables win over <code>settings.yml</code>, which wins over the built-in default. The Source column shows where each value came from.</p>
+  {% endcall %}
+  {{ flash_slot('configuration') }}
+
+  <div class="settings-card">
+    <h3 class="settings-card-heading">Current Configuration</h3>
+    <div class="overflow-x-auto">
+    <table class="settings-table">
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Value</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, value in current_config.items() %}
+        <tr>
+          <td>{{ key }}</td>
+          <td>
+            <code>
+              {% if key == 'api_token' %}
+                ••••••••••
+              {% else %}
+                {{ value }}
+              {% endif %}
+            </code>
+          </td>
+          <td>
+            {% if key in config_from_env %}
+              <span class="text-green-400">ENV</span>
+            {% elif key in config_from_file %}
+              <span class="text-yellow-400">YAML</span>
+            {% else %}
+              <span class="text-red-400">Default</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>

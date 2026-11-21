@@ -3,7 +3,7 @@
 > **Not fully tested yet.** This MCP server and the management API it wraps are
 > new in v0.8.0. They pass the automated test suite but have not been fully tested
 > against real instances. Start with a **read** key, check the audit log in
-> Settings → API after any writes, and keep a recent backup before letting an
+> Settings → Audit log after any writes, and keep a recent backup before letting an
 > agent make changes.
 
 A small [MCP](https://modelcontextprotocol.io) server that lets Claude Code (or
@@ -74,7 +74,7 @@ may not see your shell `PATH`: if it cannot start `uv`, put the absolute path
 
 ## Create a key
 
-In STD, open **Settings → API** and create a key. Use **write** if Claude should
+In STD, open **Settings → API keys** and create a key. Use **write** if Claude should
 be able to change things, **read** to let it look only. A read key exposes only
 the read tools; the server checks the key with `GET /api/v1/whoami` when it
 starts. Revoke the key from the same page at any time. **Rotate** on the same
@@ -96,7 +96,7 @@ The key ends up in your Claude configuration, so keep that file private.
 | Variable         | Meaning                                              | Default |
 | ---------------- | ---------------------------------------------------- | ------- |
 | `STD_URL`        | Base URL of your STD, for example `http://std.lan:8815` | required |
-| `STD_API_KEY`    | The API key from Settings → API                      | required |
+| `STD_API_KEY`    | The API key from Settings → API keys                     | required |
 | `STD_VERIFY_TLS` | `false` to accept a self-signed certificate          | `true`  |
 | `STD_TIMEOUT`    | Request timeout in seconds                           | `15`    |
 
@@ -133,7 +133,7 @@ keep the API's message and details, for example `HTTP 409 (conflicts with the
 current state): ...`.
 
 Every change made through a write key is recorded in STD's audit log
-(Settings → API) under the key's name.
+(Settings → Audit log) under the key's name.
 
 ## Versions
 

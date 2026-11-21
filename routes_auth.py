@@ -111,18 +111,18 @@ def set_user_password(user_id):
     new_password = request.form.get("new_password", "").strip()
     if not new_password or len(new_password) < 6:
         flash("Password must be at least 6 characters", "error")
-        return redirect(url_for("dashboard.settings"))
+        return redirect(url_for("dashboard.settings", section="users"))
 
     user = User.query.get(user_id)
     if not user:
         flash("User not found", "error")
-        return redirect(url_for("dashboard.settings"))
+        return redirect(url_for("dashboard.settings", section="users"))
 
     user.set_password(new_password)
     db.session.commit()
     refresh_default_password_flag(current_app._get_current_object())
     flash(f"Password updated for {user.username}", "success")
-    return redirect(url_for("dashboard.settings"))
+    return redirect(url_for("dashboard.settings", section="users"))
 
 
 @auth_bp.route("/add_user", methods=["POST"])

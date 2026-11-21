@@ -200,7 +200,8 @@ def test_per_row_priority_wipe_is_gone(app, admin_client):
 def test_form_wraps_every_input_in_one_form(app, admin_client):
     _groups(app, ("A", None, 5))
     html = admin_client.get("/settings?section=groups").get_data(as_text=True)
-    section = html[html.index('id="section-groups"'):html.index('id="section-users"')]
+    start = html.index('id="section-groups"')
+    section = html[start:html.index("<section", start + 1)]
     assert section.count("<form") == 1
     form = section[section.index("<form"):section.index("</form>")]
     for needle in ("group-", "new-name", "csrf_token"):

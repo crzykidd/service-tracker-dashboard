@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-set-01-foundation
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: Settings regrouped into 13 deep-linkable sections with the shared UI kit, flash policy and restyle; 1348 + 36 tests, ruff clean; manual browser checklist pending.
 ---
 
 # Task: Settings modernization phase 1: structure, deep links, shared components, flash policy, restyle

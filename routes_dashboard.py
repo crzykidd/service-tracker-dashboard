@@ -50,6 +50,7 @@ import health_history
 import jobs
 import mgmt_serializers
 import notify
+import settings_sections
 import settings_store
 import streams
 import synthesizer
@@ -461,7 +462,7 @@ def settings():
                 if backup_operation == 'save_on_server':
                     # If the goal was just to save on the server, we're done.
                     flash(f"✅ Backup saved to server: {BACKUP_PATH}", "success")
-                    return redirect(url_for('dashboard.settings', section='backup'))
+                    return _settings_redirect('backup')
 
                 elif backup_operation == 'download_all':
                     # If the goal is to download, send the file that was just written.
@@ -474,12 +475,12 @@ def settings():
                     )
                 else:
                     flash("Unknown backup operation.", "danger")
-                    return redirect(url_for('dashboard.settings', section='backup'))
+                    return _settings_redirect('backup')
 
             except Exception as e:
                 logger.exception("❌ Backup operation failed")
                 flash(f"Backup operation failed: {str(e)}", "danger")
-                return redirect(url_for('dashboard.settings'))
+                return _settings_redirect('backup')
 
         elif action == 'restore':
             restore_source = request.form.get('restore_source')
@@ -497,7 +498,7 @@ def settings():
                         source_description = f"uploaded file '{file.filename}'"
                     else:
                         flash("No file uploaded for restore.", "warning")
-                        return redirect(url_for('dashboard.settings'))
+                        return _settings_redirect('backup')
 
                 elif restore_source == 'server':
                     selected_filename = request.form.get('server_backup_filename')
@@ -513,7 +514,7 @@ def settings():
                             or not file_path.startswith(backup_root + os.sep)
                         ):
                             flash("Invalid server filename selected.", "danger")
-                            return redirect(url_for('dashboard.settings'))
+                            return _settings_redirect('backup')
 
                         if os.path.exists(file_path) and os.path.isfile(file_path):
                             with open(file_path, 'r') as f:
@@ -521,18 +522,18 @@ def settings():
                             source_description = f"server file '{selected_filename}'"
                         else:
                             flash(f"Selected server backup file '{selected_filename}' not found or is invalid.", "danger")
-                            return redirect(url_for('dashboard.settings'))
+                            return _settings_redirect('backup')
                     else:
                         flash("No server backup file selected.", "warning")
-                        return redirect(url_for('dashboard.settings'))
+                        return _settings_redirect('backup')
                 else:
                     flash("Invalid restore source selected.", "danger")
-                    return redirect(url_for('dashboard.settings'))
+                    return _settings_redirect('backup')
 
                 if records is None:
                     if not flash_is_present(request): # Avoid double flashing if already flashed above
                          flash("Could not load records for restore.", "danger")
-                    return redirect(url_for('dashboard.settings'))
+                    return _settings_redirect('backup')
 
                 restored_count = 0
                 skipped_count = 0
@@ -680,14 +681,42 @@ def settings():
                 logger.exception("❌ Restore failed")
                 flash(f"Restore failed: {str(e)}", "danger")
 
-            return redirect(url_for('dashboard.settings', section='backup'))
+            return _settings_redirect('backup')
 
     return _render_settings()
 
 
-def _render_settings(group_form=None, status=200, notification_form=None):
-    """Render the Settings page. `group_form` (a failed Groups save) is shown in
-    place of the stored groups, with its per-row errors, on the Groups tab."""
+def _settings_redirect(section, **params):
+    """Redirect to a Settings section (`?section=<slug>`). Every redirect to Settings
+    goes through here so the page lands on, and places its flashes in, that section."""
+    return redirect(url_for('dashboard.settings', section=section, **params))
+
+
+def _initial_section(section=None):
+    """Which Settings section the server says to open (design 5.2): an explicit
+    `section` (a validation re-render) > `?section=` (slug or legacy alias) >
+    `streams` when `?preview=` is present > `audit-log` when `?audit_key=` is present > ''."""
+    explicit = settings_sections.resolve(section)
+    if explicit:
+        return explicit
+    from_query = settings_sections.resolve(request.args.get('section'))
+    if from_query:
+        return from_query
+    if request.args.get('preview'):
+        return 'streams'
+    if request.args.get('audit_key'):
+        return 'audit-log'
+    return ''
+
+
+def _render_settings(*, section=None, open_modal=None, forms=None, status=200, **extra):
+    """Render the Settings page. `forms['group']` (a failed Groups save) is shown in
+    place of the stored groups, with its per-row errors, on the Groups section;
+    `forms['notification']` keeps a failed channel save's typed values. `section` and
+    `open_modal` say where a validation re-render lands (design 5.2)."""
+    forms = forms or {}
+    group_form = forms.get('group')
+    notification_form = forms.get('notification')
     BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
     image_dir = current_app.config['IMAGE_DIR']
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -756,6 +785,7 @@ def _render_settings(group_form=None, status=200, notification_form=None):
                                       'label': f'{kname} (revoked)' if revoked_at else kname})
 
     stream_ctx = _streams_context(request.args.get('preview'))
+    initial_section = _initial_section(section)
     notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
                                  NotificationChannel.query.order_by(NotificationChannel.id).all()]
     return render_template(
@@ -772,7 +802,13 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          groups=groups,
          group_form=group_form,
          group_rows=group_rows,
-         force_section='groups' if group_form else ('notifications' if notification_form else ('streams' if stream_ctx['preview'] else '')),
+         initial_section=initial_section,
+         open_modal=open_modal or '',
+         flash_target=open_modal or initial_section or 'page',
+         settings_groups=settings_sections.GROUPS,
+         settings_sections=settings_sections.SECTIONS,
+         settings_default_section=settings_sections.DEFAULT,
+         settings_aliases=settings_sections.ALIASES,
          **stream_ctx,
          users=users,
          deleted_rows=_deleted_entry_rows(),
@@ -797,6 +833,7 @@ def _render_settings(group_form=None, status=200, notification_form=None):
          exposure_layer_directions=exposure_layer_directions,
          exposure_hosts=exposure_hosts,
          exposure_host_overrides=exposure_host_overrides,
+         **extra,
     ), status
 
 
@@ -873,10 +910,11 @@ def save_notification_channel():
         for e in errors:
             flash(f"Notification channel: {e['field']} {e['message']}", "danger")
         form = {'id': raw_id, 'name': name, 'enabled': enabled, **config}
-        return _render_settings(notification_form=form, status=409 if cleanup_failed else 400)
+        return _render_settings(section='notifications', forms={'notification': form},
+                                status=409 if cleanup_failed else 400)
     logger.info(f"Notification channel '{channel.name}' saved by {current_user.username}.")
     flash(f"✅ Notification channel '{channel.name}' saved.", "success")
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    return _settings_redirect('notifications')
 
 
 @dashboard_bp.route('/settings/notifications/ha-entries', methods=['POST'])
@@ -899,7 +937,7 @@ def save_ha_entries():
     db.session.commit()
     logger.info(f"Home Assistant entries saved by {current_user.username} ({changed} changed).")
     flash(f"✅ Home Assistant entries saved ({changed} changed).", "success")
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    return _settings_redirect('home-assistant')
 
 
 def _wants_json():
@@ -915,11 +953,11 @@ def _channel_action_result(call, success):
         if _wants_json():
             return jsonify({'ok': False, 'message': exc.message}), exc.status
         flash(exc.message, 'danger')
-        return redirect(url_for('dashboard.settings', section='notifications'))
+        return _settings_redirect('notifications')
     flash(message, 'success')
     if _wants_json():
         return jsonify({'ok': True, 'message': message})
-    return redirect(url_for('dashboard.settings', section='notifications'))
+    return _settings_redirect('notifications')
 
 
 @dashboard_bp.route('/settings/notifications/<int:id>/toggle', methods=['POST'])
@@ -1060,7 +1098,7 @@ def save_exposure_settings():
         f"✅ Exposure settings saved. Recomputed URLs for {touched} service(s).",
         "success",
     )
-    return redirect(url_for('dashboard.settings', section='exposure'))
+    return _settings_redirect('docker')
 
 
 @dashboard_bp.route('/settings/update-check', methods=['POST'])
@@ -1076,12 +1114,12 @@ def save_update_check():
             raise ValueError
     except ValueError:
         flash("Update check interval must be a whole number of hours, 1 or more.", "danger")
-        return redirect(url_for('dashboard.settings', section='info'))
+        return _settings_redirect('about')
     settings_store.save_update_check_settings(enabled, hours)
     db.session.commit()
     version_check.reset()  # re-read the cache/interval; the next page load may refetch
     flash("✅ Update check settings saved.", "success")
-    return redirect(url_for('dashboard.settings', section='info'))
+    return _settings_redirect('about')
 
 
 def _parse_group_form(form, groups):
@@ -1168,7 +1206,7 @@ def save_groups():
     if errors:
         group_form = {'rows': rows, 'new': new_row, 'errors': errors}
         flash("Nothing was saved. Fix the marked rows and save again.", "danger")
-        return _render_settings(group_form=group_form, status=400)
+        return _render_settings(section='groups', forms={'group': group_form}, status=400)
 
     updated = added = deleted = 0
     try:
@@ -1206,11 +1244,11 @@ def save_groups():
         db.session.rollback()
         logger.exception("Saving groups failed")
         flash("Saving groups failed; nothing was changed.", "danger")
-        return redirect(url_for('dashboard.settings', section='groups'))
+        return _settings_redirect('groups')
 
     parts = [f'{n} {label}' for n, label in ((updated, 'updated'), (added, 'added'), (deleted, 'deleted')) if n]
     flash(f"✅ Saved: {', '.join(parts)}." if parts else "No changes.", "success")
-    return redirect(url_for('dashboard.settings', section='groups'))
+    return _settings_redirect('groups')
 
 
 @dashboard_bp.route('/images/<path:filename>')
@@ -1781,7 +1819,7 @@ def create_api_key():
         error = "Choose a scope: read, write or ingest."
     if error:
         flash(error, "danger")
-        return redirect(url_for('dashboard.settings', section='api'))
+        return _settings_redirect('api-keys')
     key, full_key = api_keys.create_key(name, scope, created_by=current_user.id)
     logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
     response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
@@ -1800,7 +1838,7 @@ def rotate_api_key(id):
     key = db.session.get(ApiKey, id)
     if key is None or key.revoked_at is not None:
         flash("That API key doesn't exist or is revoked, so it can't be rotated.", "danger")
-        return redirect(url_for('dashboard.settings', section='api'))
+        return _settings_redirect('api-keys')
     full_key = api_keys.rotate_key(key)
     logger.info(f"Rotated API key id={key.id} by {current_user.username}.")
     response = make_response(render_template('api_key_created.html', key=key, full_key=full_key,
@@ -1818,7 +1856,7 @@ def revoke_api_key(id):
     api_keys.revoke_key(key)
     logger.info(f"Revoked API key '{key.name}' ({key.prefix}) by {current_user.username}.")
     flash(f"Revoked API key '{key.name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='api'))
+    return _settings_redirect('api-keys')
 
 
 @dashboard_bp.route('/settings/deleted/<int:id>/restore', methods=['POST'])
@@ -1841,7 +1879,7 @@ def restore_deleted_entry(id):
         db.session.commit()
         logger.info(f"Restored soft-deleted entry '{entry.container_name}' on '{entry.host or 'no host'}'.")
         flash(f"✅ Restored '{entry.container_name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')
 
 
 @dashboard_bp.route('/settings/deleted/<int:id>/delete', methods=['POST'])
@@ -1854,7 +1892,7 @@ def purge_deleted_entry(id):
     db.session.commit()
     logger.info(f"Permanently deleted entry '{name}'.")
     flash(f"🗑️ Permanently deleted '{name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')
 
 
 # --- Settings -> Streams (PRD 18.8) ------------------------------------------------
@@ -1905,7 +1943,7 @@ def _streams_context(preview_slug=None):
 
 
 def _streams_redirect():
-    return redirect(url_for('dashboard.settings', section='streams'))
+    return _settings_redirect('streams')
 
 
 def _stream_or_404(slug):
@@ -2247,7 +2285,7 @@ def attach_detached_widget(id):
         db.session.commit()
         logger.info(f"Attached widget {widget.id} ('{widget.widget_name}') to '{entry.container_name}'.")
         flash(f"✅ Attached widget '{widget.widget_name}' to '{entry.container_name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')
 
 
 @dashboard_bp.route('/settings/widgets/<int:id>/delete', methods=['POST'])
@@ -2261,4 +2299,4 @@ def delete_detached_widget(id):
     db.session.commit()
     logger.info(f"Deleted detached widget {id} ('{name}').")
     flash(f"🗑️ Deleted detached widget '{name}'.", "success")
-    return redirect(url_for('dashboard.settings', section='deleted'))
+    return _settings_redirect('deleted')

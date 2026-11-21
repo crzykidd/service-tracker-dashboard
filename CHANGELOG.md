@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Settings is regrouped and every section has its own link.** The sidebar now
+  has six labelled groups: General (About, Configuration), Dashboard (Groups,
+  Widgets), Sources (Docker, Streams), Integrations (Notifications, Home
+  Assistant), Access (Users, API keys, Audit log) and Data (Backup & restore,
+  Deleted). Each section opens from a link such as `/settings#streams`, a reload
+  stays on it, and a save returns to it. On a phone the sidebar is a menu. Old
+  `?section=info`, `exposure` and `api` links still work. **Info** is now **About**
+  plus **Configuration**, **Exposure** is now **Docker**, and the Home Assistant
+  entries and the Audit log are their own sections.
+- **Messages are quieter.** A success shows as a short message in the corner that
+  fades by itself. An error stays as a red banner in the section where it happened
+  until you dismiss it, and the confirm prompts (delete a user, revoke or rotate a
+  key, purge) use the app's own dialog instead of the browser's.
+- **Settings looks like Add and Edit.** Buttons, fields, cards and tables share one
+  style, every section has a one-line description with the long explanation behind
+  "Learn more", and the panels on the Edit page now have the same card background.
+
 ### Fixed
+
+- **Setting a user's password** no longer sends you back to Info and no longer shows
+  a too-short password or an unknown user as a green success bar; the message
+  appears in Users as an error.
+- **Restore errors** (no file chosen, a bad or missing server file) return to
+  Backup & restore instead of Info.
 
 - **Send test message no longer hangs on a silent broker.** Against a broker that
   does not answer, the Settings → Notifications test button used to block for about

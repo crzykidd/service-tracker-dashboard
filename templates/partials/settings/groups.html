@@ -1,0 +1,75 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-groups" class="settings-section{% if (initial_section or settings_default_section) != 'groups' %} hidden{% endif %}">
+  {{ section_header('Groups', 'Categories entries are grouped by on the dashboard.') }}
+  {{ flash_slot('groups') }}
+  {% set new_row = group_form.new if group_form and group_form.new else {} %}
+  {% set group_errors = group_form.errors if group_form else {} %}
+  <form method="POST" action="{{ url_for('dashboard.save_groups') }}" id="groups-form"
+        data-unsaved-guard {% if group_form %}data-unsaved-start-dirty{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% macro save_bar() %}
+    <div class="flex items-center gap-3 my-3">
+      <button type="submit" data-unsaved-save class="btn-primary">Save changes</button>
+      <a href="{{ url_for('dashboard.settings', section='groups') }}" data-unsaved-discard class="btn-ghost">Discard</a>
+      <span data-unsaved-hint class="hidden text-yellow-400 text-sm">Unsaved changes</span>
+    </div>
+    {% endmacro %}
+    {{ save_bar() }}
+    <div class="settings-card overflow-x-auto">
+      <table id="group-table" class="sortable settings-table">
+        <thead>
+          <tr>
+            <th class="cursor-pointer" onclick="sortTable(0)">Group ID</th>
+            <th class="cursor-pointer" onclick="sortTable(1)">Group Name</th>
+            <th class="cursor-pointer" onclick="sortTable(2)">Group Icon</th>
+            <th class="cursor-pointer" onclick="sortTable(3)">Priority</th>
+            <th class="cursor-pointer" onclick="sortTable(4)">Services</th>
+            <th class="text-center">Controls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group_rows %}
+          {% set errs = group_errors.get(row.id, []) %}
+          <tr class="{% if row.delete %}opacity-50 line-through{% endif %}" data-group-row="{{ row.id }}">
+            <td>{{ row.id }}</td>
+            <td>
+              <input type="text" name="group-{{ row.id }}-name" value="{{ row.name }}" class="input-clean{% if errs %} border-red-500{% endif %}"{% if errs %} aria-invalid="true"{% endif %} aria-label="Group {{ row.id }} name">
+              {% for e in errs %}<p class="text-red-400 text-xs mt-1 no-underline">{{ e }}</p>{% endfor %}
+            </td>
+            <td>
+              <input type="text" name="group-{{ row.id }}-icon" value="{{ row.icon }}" class="input-clean" aria-label="Group {{ row.id }} icon">
+            </td>
+            <td>
+              <input type="number" name="group-{{ row.id }}-priority" value="{{ row.priority }}" class="input-clean" aria-label="Group {{ row.id }} priority">
+            </td>
+            <td class="text-center">{{ row.services_count }}</td>
+            <td class="text-right">
+              <input type="hidden" name="group-{{ row.id }}-delete" value="{{ '1' if row.delete else '0' }}">
+              {% if row.services_count == 0 or row.delete %}
+              <button type="button" data-group-delete-toggle
+                      class="btn-danger btn-sm">{{ 'Undo' if row.delete else 'Delete' }}</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          <tr data-no-sort>
+            <td class="text-gray-500 italic">new</td>
+            <td>
+              <input type="text" name="new-name" value="{{ new_row.name or '' }}" placeholder="New group name" class="input-clean{% if group_errors.get('new') %} border-red-500{% endif %}"{% if group_errors.get('new') %} aria-invalid="true"{% endif %} aria-label="New group name">
+              {% for e in group_errors.get('new', []) %}<p class="text-red-400 text-xs mt-1">{{ e }}</p>{% endfor %}
+            </td>
+            <td>
+              <input type="text" name="new-icon" value="{{ new_row.icon or '' }}" placeholder="Optional icon" class="input-clean" aria-label="New group icon">
+            </td>
+            <td>
+              <input type="number" name="new-priority" value="{{ new_row.priority or '' }}" placeholder="Optional priority" class="input-clean" aria-label="New group priority">
+            </td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {{ save_bar() }}
+  </form>
+</section>

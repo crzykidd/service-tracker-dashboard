@@ -79,7 +79,7 @@ change is needed.
 
 - **Version in the header:** the running version next to the page title, with
   a What's New link and an **Update available** link when GitHub has a newer
-  release (the check can be turned off in Settings → Info).
+  release (the check can be turned off in Settings → About).
 - **MQTT notifications:** Settings → Notifications adds MQTT channels that
   publish retained entry, check and summary state, with a test message button.
   Deleting, disabling or re-basing a channel can clean its broker, and **Scan
@@ -122,7 +122,7 @@ columns, API key rotation); no notifier change is needed.
 - **Tiled view redesign:** names use the full tile width, the host shows under
   the name when the name isn't unique (`tile_show_host`), and all icons sit in
   one row along the bottom. Exposure icons show once per proxy.
-- **API keys:** rotate a key from Settings → API; a revoked key's name can be
+- **API keys:** rotate a key from Settings → API keys; a revoked key's name can be
   reused.
 - **Settings → Groups:** one Save for the whole table, with a warning before
   leaving unsaved changes. Fixes the per-row Save clearing a group's priority.
@@ -137,7 +137,7 @@ change is needed. **Not fully tested yet:** the API and MCP server pass the
 automated suite but haven't been fully tested against real instances, so start
 with a read key and keep a recent backup.
 
-- **Admin API keys** in Settings → API: named, **read** or **write**, shown
+- **Admin API keys** in Settings → API keys: named, **read** or **write**, shown
   once, revocable, with last-used time and IP. They are separate from the
   notifier's `api_token`, which stays register-only.
 - **REST API under `/api/v1`** for everything the UI does: entries (list with
@@ -146,7 +146,7 @@ with a read key and keep a recent backup.
   `/health/summary` of everything failing, groups, widgets (keys never
   returned), exposure settings and a read-only, secret-masked config view.
 - **OpenAPI spec** at `/api/v1/openapi.json` and a **write audit log** in
-  Settings → API (every change, by key, secrets masked).
+  Settings → Audit log (every change, by key, secrets masked).
 - **MCP server** (`mcp/`, runs on your machine, not in the image) so Claude
   Code or Claude Desktop can manage STD as tools.
 - **Fixed:** leaving the group blank on the Add page no longer creates a group
@@ -235,7 +235,7 @@ are frozen on v0.6.7; switch to `ghcr.io/crzykidd/service-tracker-dashboard`
 (see [Moving from Docker Hub](#moving-from-docker-hub)).
 
 - `:dev` and `:latest` images now show the real version number in
-  Settings -> Service Info, and the What's New popup works on them.
+  Settings → About, and the What's New popup works on them.
 - Fixed: the Add page no longer returns a server error when Sort Priority
   isn't a number, and the group dropdown stays populated when the form
   re-displays after a validation error.
@@ -329,12 +329,12 @@ appears.
 
 The check runs inside STD (your browser never calls GitHub), only when someone
 loads a page, at most once per interval, and never delays a page. It sends no
-credentials or personal data. Change it in **Settings → Info** (or
+credentials or personal data. Change it in **Settings → About** (or
 `PUT /api/v1/settings/update-check`):
 
 | Setting | Default | What it does |
 |---|---|---|
-| `update_check_enabled` | on | Off means STD makes no request to GitHub and shows no update link (Settings → Info says "Update check disabled"). |
+| `update_check_enabled` | on | Off means STD makes no request to GitHub and shows no update link (Settings → About says "Update check disabled"). |
 | `update_check_interval_hours` | `6` | Hours between checks (minimum 1). After an error STD keeps the last known result and backs off up to 24 hours. |
 
 ### Settings reference
@@ -565,7 +565,7 @@ new `service_exposure` table and runs a synthesizer that may
 populate `internalurl` / `externalurl` automatically.
 
 Operators tell STD what each layer means at `/settings` →
-**Exposure** tab. Each discovered layer (only layers that have been
+**Docker**. Each discovered layer (only layers that have been
 observed appear) gets a direction dropdown:
 
 - **internal** — synthesized hostname populates `internalurl`.
@@ -632,7 +632,7 @@ state. Combine with the `?show_urlless=false` view-control filter
 > **Not fully tested yet.** The management API and the MCP server are new in
 > v0.8.0. They pass the automated test suite but have not been fully tested
 > against real instances. Start with a **read** key, check the audit log in
-> Settings → API after any writes, and keep a recent backup before letting an
+> Settings → Audit log after any writes, and keep a recent backup before letting an
 > agent make changes.
 
 Everything you can do in the web UI can also be done over JSON, so a script or
@@ -662,7 +662,7 @@ producer a `User-Agent: name/version`.
 
 ### Create a key and send it
 
-1. Open **Settings → API**, enter a name and pick a scope, and press
+1. Open **Settings → API keys**, enter a name and pick a scope, and press
    **Create key**.
    - **read** can read everything (entries, checks, health, groups, widgets,
      settings, the masked config).
@@ -802,7 +802,7 @@ document.
 
 **In the UI (Settings → Streams).**
 
-1. Settings → **API**: create a key with the scope **Ingest (sidecars)** and
+1. Settings → **API keys**: create a key with the scope **Ingest (sidecars)** and
    give it to the sidecar.
 2. The sidecar's first snapshot creates the stream as **pending**. The tab
    shows "New stream waiting: enable it to import N items" and nothing appears
@@ -957,7 +957,7 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/jso
 - **Audit log.** Every write (POST, PATCH, PUT, DELETE, including rejected
   ones) is recorded with the key name, method, path, object, status and the
   changed fields as `{field: [old, new]}`. Secrets such as a widget API key
-  are shown as `***`. **Settings → API → Audit log** lists the most recent 200
+  are shown as `***`. **Settings → Audit log** lists the most recent 200
   rows and can filter by key. Rows are kept for `api_audit_retention_days`
   (default 90).
 
@@ -966,13 +966,13 @@ curl -s -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/jso
 > **Not fully tested yet.** The management API and the MCP server are new in
 > v0.8.0. They pass the automated test suite but have not been fully tested
 > against real instances. Start with a **read** key, check the audit log in
-> Settings → API after any writes, and keep a recent backup before letting an
+> Settings → Audit log after any writes, and keep a recent backup before letting an
 > agent make changes.
 
 You can let Claude (or any agent that can make HTTP calls) look after your
 dashboard: ask it what is broken, add a new service, or tidy the groups.
 
-1. In **Settings → API**, create a key named for the agent (for example
+1. In **Settings → API keys**, create a key named for the agent (for example
    `claude`). Use **write** if it should make changes and **read** if it should
    only look. Revoke it from the same page whenever you like.
 2. Give Claude the base URL of your STD (for example `http://std.lan:8815`)
@@ -987,7 +987,7 @@ dashboard: ask it what is broken, add a new service, or tidy the groups.
      the groups."
    - "Attach a Sonarr widget to the Sonarr entry using this API key."
    - "What did the `claude` key change today?" (it is in the audit log, which
-     you can also read in Settings → API)
+     you can also read in Settings → Audit log)
 
 ### Claude Code: the MCP server
 
@@ -1105,7 +1105,7 @@ What gets created:
 
 Entries are **opt-in**: nothing is published until you tick **Publish to Home
 Assistant** on an entry (Add or edit page), or pick several in **Settings →
-Notifications → Home Assistant entries**, a table of your entries with a
+Home Assistant**, a table of your entries with a
 filter box, **Select all** / **Select none** (they act on the rows the filter
 shows) and one **Save** that applies every change at once. Within a published
 entry its checks appear automatically; untick **Publish to Home Assistant** on
@@ -1377,7 +1377,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/service/<id>/health` | Health detail JSON (`?range=24h\|7d`, login). |
 | `/health/strips?ids=1,2,3` | 24h uptime strips for up to 500 entries (JSON, login). |
 | `/service/<id>/checks/run` | Check now (POST, login). |
-| `/settings`          | Settings + backup/restore UI (incl. Exposure, Notifications and Streams tabs; `?section=streams&preview=<stream_id>` shows a stream preview). |
+| `/settings`          | Settings: thirteen sections in six groups (About, Configuration, Groups, Widgets, Docker, Streams, Notifications, Home Assistant, Users, API keys, Audit log, Backup & restore, Deleted). Each has a link, `/settings#streams`; `?section=<name>` (and the old `info`, `exposure`, `api`) still works, and `?section=streams&preview=<stream_id>` shows a stream preview. |
 | `/settings/streams/<stream_id>/...` | Streams tab: `enable`, `ignore`, `disable`, `delete`, `update`, `default-checks`, `default-checks/apply`, `blocks/<id>/unblock`, `offers/<id>/accept\|decline` (admin POST). |
 | `/edit/<id>/stream-link` | Link a manual entry to a stream item (admin POST). |
 | `/settings/notifications/...` | Notifications tab: `save`, `<id>/toggle`, `<id>/delete`, `test` (admin POST), `status` (admin GET). |
@@ -1489,7 +1489,7 @@ v0.6.7 was its last release — see
 - Semver-tagged images (`:0.6.0`, `:0`) published from GitHub Releases.
 - The version number lives in the `VERSION` file at the repo root. The
   Docker build writes it into the image, so `:dev` and `:latest` images
-  report the real version in Settings -> Service Info.
+  report the real version in Settings → About.
 
 Branch protection: PRs into `main` must pass the image build check, CodeQL,
 and the CI checks (Lint, Config validation, Migration check, Compose

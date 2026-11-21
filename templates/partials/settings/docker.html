@@ -1,0 +1,93 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-docker" class="settings-section{% if (initial_section or settings_default_section) != 'docker' %} hidden{% endif %}">
+  {% call section_header('Docker', 'How exposure layers (Traefik, Dockflare, …) turn into internal and external URLs.') %}
+    <p>
+      Each interpreter layer (Traefik, Dockflare, etc.) emits observations about how a container is exposed.
+      Use this page to declare whether each layer means <em>internal</em> URL, <em>external</em> URL, or neither
+      on this deployment. Saving recomputes synthesized URLs for every service. Operator UI edits and explicit
+      <code class="text-xs bg-gray-700 px-1 rounded">dockernotifier.std.internalurl</code> labels are never
+      overwritten.
+    </p>
+  {% endcall %}
+  {{ flash_slot('docker') }}
+
+  <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="settings-card">
+      <h3 class="settings-card-heading">Layer directions (global)</h3>
+      {% if exposure_layers %}
+        <table class="settings-table">
+          <thead>
+            <tr>
+              <th class="w-1/2">Layer</th>
+              <th>Direction</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for layer in exposure_layers %}
+              {% set current = exposure_layer_directions.get(layer, 'neither') %}
+              <tr>
+                <td class="font-mono">{{ layer }}</td>
+                <td>
+                  <select name="layer:{{ layer }}" class="input-clean" style="max-width:16rem" aria-label="Direction for {{ layer }}">
+                    <option value="neither" {% if current == 'neither' %}selected{% endif %}>neither (ignore for URL synthesis)</option>
+                    <option value="internal" {% if current == 'internal' %}selected{% endif %}>internal</option>
+                    <option value="external" {% if current == 'external' %}selected{% endif %}>external</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="text-sm text-gray-400 italic">
+          No interpreter layers have been observed yet. Once the notifier emits exposure observations
+          (Traefik / Dockflare / etc.) the layers will appear here for configuration.
+        </p>
+      {% endif %}
+    </div>
+
+    {% if exposure_hosts %}
+      <div class="settings-card">
+        <h3 class="settings-card-heading">Per-host overrides</h3>
+        <p class="settings-subtitle-note">
+          Override the global direction for a specific host. Useful when the same interpreter (e.g.
+          Traefik) means internal on a home host and external on an edge VPS.
+        </p>
+        {% for host in exposure_hosts %}
+          <div class="mb-4">
+            <div class="text-sm text-white font-semibold mb-2 font-mono">{{ host }}</div>
+            <table class="settings-table">
+              <thead>
+                <tr>
+                  <th class="w-1/2">Layer</th>
+                  <th>Override direction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for layer in exposure_layers %}
+                  {% set override_current = exposure_host_overrides.get(host, {}).get(layer, '') %}
+                  <tr>
+                    <td class="font-mono">{{ layer }}</td>
+                    <td>
+                      <select name="override:{{ host }}:{{ layer }}" class="input-clean" style="max-width:16rem" aria-label="Override for {{ layer }} on {{ host }}">
+                        <option value="" {% if not override_current %}selected{% endif %}>(use global)</option>
+                        <option value="neither" {% if override_current == 'neither' %}selected{% endif %}>neither</option>
+                        <option value="internal" {% if override_current == 'internal' %}selected{% endif %}>internal</option>
+                        <option value="external" {% if override_current == 'external' %}selected{% endif %}>external</option>
+                      </select>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <button type="submit" class="btn-primary" {% if not exposure_layers %}disabled{% endif %}>
+      Save &amp; Recompute URLs
+    </button>
+  </form>
+</section>

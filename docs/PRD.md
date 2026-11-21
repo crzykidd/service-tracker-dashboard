@@ -89,6 +89,7 @@
 | 0.79    | 2026-11-20 | Stream observability (inv-08), API revision 3 (unreleased, next after 0.10.0): new §18.9 (rejected snapshots, staleness with grace factor 2 and the expected / advertised interval, `missing` lifecycle with `inventory_missing_since` and the optional per-stream auto soft-delete and its "edited by a human" exemptions, IP-following checks instead of templated targets, MCP `server_info` re-check); §5.10 migration `c6f2a8d4e157`; §18.1 revision 3 row; §18.5 optional `snapshot_interval_seconds` and rejection recording; §18.7 `PATCH` fields; §14.3 health summary `streams` / `stale_streams` / `counts.streams_stale`; §17.3 stream topic `stale` etc. and entry `missing` / `missing_since`; §17.4 stream hub `problem` binary sensor. Register contract unchanged. |
 | 0.80    | 2026-11-20 | v0.10.1 release prep: §18.9 stream observability (API revision 3) marked Delivered in v0.10.1; §18.1 revision 3 row names 0.10.1. No content change. |
 | 0.81    | 2026-11-20 | 0.10.2 fixes (unreleased): `service_entry.container_name` widened to `String(128)` (migration `d7a3e9b2c418`, §5.10) to match the 128-character stream item name; entry name limit 128 in `/add` and the management API (register `container_name` has no length cap, unchanged); notification **Send test message** bounded to about 5 s in total (§17.2). Register and stream contracts unchanged, API revision stays 3. |
+| 0.82    | 2026-11-20 | Added §19 (v0.11.0 — Settings modernization, planned; design in `docs/design/2026-11-20-settings-modernization.md`) and delivered its phase 1 on `dev`: section registry, grouped sidebar with deep links, flash policy, shared UI kit and restyle. Former §19–§21 renumbered §20–§22 and live cross-references updated (older revision rows keep the numbers of their day). §3.1 module layout updated. No schema, wire-contract or `/api/v1` change. |
 
 ---
 
@@ -112,9 +113,10 @@
 16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
 17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
 18. [Next release — Inventory streams and API revision (Delivered on `dev`)](#18-next-release--inventory-streams-and-api-revision-delivered-on-dev)
-19. [Versioning, Branches, and Releases](#19-versioning-branches-and-releases)
-20. [Cross-Repo Coordination](#20-cross-repo-coordination)
-21. [Open Questions](#21-open-questions)
+19. [v0.11.0 — Settings modernization (Planned)](#19-v0110--settings-modernization-planned)
+20. [Versioning, Branches, and Releases](#20-versioning-branches-and-releases)
+21. [Cross-Repo Coordination](#21-cross-repo-coordination)
+22. [Open Questions](#22-open-questions)
 
 ---
 
@@ -251,12 +253,17 @@ health_history.py   ← history bars, uptime, recent failures for the detail pan
 health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
+settings_sections.py ← Settings section registry: groups, slugs, labels, legacy
+                      `?section=` aliases, `resolve()` (§19)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
                       URL provenance tracking
 image_utils.py      ← icon fetch + cache
 view_helpers.py     ← grouping/sorting for dashboard views
-templates/          ← Jinja templates
-static/             ← static assets (css/, js/, icons/)
+templates/          ← Jinja templates; `templates/partials/settings/` holds one
+                      partial per Settings section plus `_macros.html` (§19)
+static/             ← static assets (css/, js/, icons/); `static/js/settings/`
+                      holds the Settings scripts, `static/js/flash.js` the
+                      toasts and banners (§19)
 widgets/            ← per-widget plugin dirs
 alembic/            ← migrations (alembic.ini at root)
 scripts/            ← manual helper scripts (test_widget.py; not a test suite)
@@ -1072,7 +1079,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §19 (Versioning, Branches, and Releases); this section
+release mechanics is §20 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -1094,7 +1101,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§19).
+  checks (§20).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1119,7 +1126,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§20) is not engaged and every notifier
+consumer-leads ordering rule (§21) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1304,7 +1311,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§21).
+Resolves the Open Question on health-check timeouts (§22).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1425,7 +1432,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§20) is not engaged. Every notifier version that works
+ordering rule (§21) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -2136,7 +2143,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§21), users and passwords through the API, and
+- Per-host notifier tokens (§22), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2811,7 +2818,7 @@ noted; 404/409/504): `POST /streams/{stream_id}/notifications/purge`,
 
 For **0.10.0** (every subsection is delivered on `dev`, unreleased), together with §16 and §17. The goal is an STD that is
 ready for the first inventory sidecar (`std-source-technitium`, a new repo,
-§20.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
+§21.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
 fully tested end to end yet, but nothing happens until an operator creates an
 `ingest` key and enables a stream, so general users never touch it. Fixes found
 while building the sidecar land in 0.10.x.
@@ -2855,7 +2862,7 @@ server supports and log it.
   It reveals no more than the response headers do.
 - `GET /api/v1/whoami` adds `api_revision`. The OpenAPI `info` adds
   `x-api-revision`. MCP `server_info` adds `std_api_revision`.
-- **Producers** (documented in §20): send `User-Agent: <producer>/<version>`;
+- **Producers** (documented in §21): send `User-Agent: <producer>/<version>`;
   log STD's version and API revision at startup and whenever the header value
   changes; when a feature they need is missing from `features`, log it clearly and
   keep retrying rather than exiting.
@@ -3318,7 +3325,87 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
 
 ---
 
-## 19. Versioning, Branches, and Releases
+## 19. v0.11.0 — Settings modernization (Planned)
+
+The Settings page grew one tab per release and no longer looks like Add and Edit.
+0.11.0 regroups it, gives every section a link, changes how messages are shown and
+brings the page into the visual language of Add/Edit. Operator decisions and the full
+design (component specs, per-section layouts, tests, risks) are in
+[`docs/design/2026-11-20-settings-modernization.md`](design/2026-11-20-settings-modernization.md)
+(mockup alongside) and `docs/decisions.md`. No schema, wire-contract, `/api/v1`
+or API-revision change; the only route changes are where a route redirects to and a
+few validation errors that re-render instead of redirecting.
+
+### 19.1 Information architecture
+
+Thirteen sections in six labelled groups, from `settings_sections.py`:
+
+| Group | Section | Slug | Legacy `?section=` |
+|---|---|---|---|
+| General | About | `about` (default) | `info` |
+| General | Configuration | `configuration` | |
+| Dashboard | Groups | `groups` | |
+| Dashboard | Widgets | `widgets` | |
+| Sources | Docker (exposure interpreter) | `docker` | `exposure` |
+| Sources | Streams (incl. Blocked, Link offers) | `streams` | |
+| Integrations | Notifications | `notifications` | |
+| Integrations | Home Assistant | `home-assistant` | |
+| Access | Users | `users` | |
+| Access | API keys | `api-keys` | `api` |
+| Access | Audit log | `audit-log` | |
+| Data | Backup & restore | `backup` | |
+| Data | Deleted | `deleted` | |
+
+Below `md` the sidebar becomes a `<select>` with one `<optgroup>` per group. Streams
+shows pending (amber) and stale (red) counts, Deleted its count.
+
+### 19.2 Deep links
+
+The canonical URL of a section is `/settings#<slug>`. Section elements are
+`id="section-<slug>"` (no element id equals a bare slug, so a hash never scrolls).
+`?section=<slug-or-legacy>` is still accepted and is what every redirect uses, because
+the server must know the section to place an error banner in it. The server renders
+`data-initial-section` and `data-open-modal` on `#settings-root` (precedence: a
+validation re-render's `section` > `?section=` > `streams` for `?preview=` >
+`audit-log` for `?audit_key=` > the default), hides every other section itself, and
+`static/js/settings/nav.js` canonicalises the URL with `replaceState`. Every redirect
+to Settings goes through `_settings_redirect()` and carries its section.
+
+### 19.3 Flash policy
+
+The `flash()` categories keep describing the outcome; the template maps them
+(`partials/_flash.html`): `success` / `info` / `message` become a toast that fades
+after 5 s (paused on hover or focus); `danger` / `error` become a persistent,
+dismissible error banner and `warning` an amber one, placed in the section (or modal)
+where the action happened (`flash_target`). Things that ask the operator to act (pending
+or stale streams, HA discovery off, API token missing, default credentials) stay inline.
+Fetch results (test, purge, orphan scan) stay inline. A `flash_text` filter strips one
+leading pictograph in toasts. Add and Edit share the partial: banners keep
+`class="flash-alert"` first, toasts use `class="toast"`.
+
+### 19.4 Shared components
+
+`partials/settings/_macros.html` (section header with "Learn more", flash slot, inline
+warning, status dot, card and card row, ⋯ menu, modal, modal block, switch, collapsible
+group with tri-state checkbox, sticky save bar, empty state), `static/js/settings/ui.js`
+(modal opener memory and guarded close, ⋯ menu keyboard support, the shared confirm
+dialog and `data-confirm` forms, groups, the reset bridge), `static/js/flash.js`,
+`unsaved_guard.js` `reset()`, and one "Settings & shared UI" block in
+`static/css/dashboard.css` (including `btn-danger`, `btn-ghost`, `btn-sm` and the
+previously undefined `bg-dashboard-info-box`).
+
+### 19.5 Phases
+
+| Phase | Prompt | Status |
+|---|---|---|
+| 1 | `prompts/2026-11-20-set-01-foundation.md`: registry, partial split, grouped sidebar, deep links, flash policy, shared kit, restyle of every section (no new layouts) | Delivered on `dev` |
+| 2 | `prompts/2026-11-20-set-02-notifications-ha.md`: Notifications cards and channel modal; Home Assistant groups | Planned |
+| 3 | `prompts/2026-11-20-set-03-streams.md`: Streams cards, Edit stream modal, Preview modal | Planned |
+| 4 | `prompts/2026-11-20-set-04-remaining.md`: Groups, Users, API keys (show-once modal), Docker, Audit log, Backup, Deleted | Planned |
+
+---
+
+## 20. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -3357,12 +3444,12 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
 
 ---
 
-## 20. Cross-Repo Coordination
+## 21. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 20.1 Contract ownership
+### 21.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -3375,7 +3462,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 20.2 Release history
+### 21.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -3400,7 +3487,7 @@ not lead.
 
 ---
 
-### 20.3 Inventory stream producers (planned, §18)
+### 21.3 Inventory stream producers (planned, §18)
 
 From 0.10.0 STD also owns the **ingest contract** (§18.5), and inventory
 sidecars are its producers. The first is
@@ -3420,7 +3507,7 @@ image and release cadence. The same rules apply as for the notifier:
 
 ---
 
-## 21. Open Questions
+## 22. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)

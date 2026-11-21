@@ -1,0 +1,106 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-deleted" class="settings-section{% if (initial_section or settings_default_section) != 'deleted' %} hidden{% endif %}">
+  {% call section_header('Deleted', 'Deleted entries and detached widgets, kept for a while before they are removed.') %}
+    <p>
+      Deleted services are kept for
+      {% if deleted_retention_days == 0 %}
+        no time (<code>deleted_retention_days</code> is 0): they are removed at the next nightly purge (00:25).
+      {% else %}
+        {{ deleted_retention_days }} day{{ '' if deleted_retention_days == 1 else 's' }} (<code>deleted_retention_days</code>), then removed permanently by a nightly job (00:25).
+      {% endif %}
+      Restoring brings back the entry with its group, priority, and widget intact.
+    </p>
+  {% endcall %}
+  {{ flash_slot('deleted') }}
+
+  {% if deleted_rows %}
+    <div class="settings-card overflow-x-auto">
+      <table class="settings-table">
+        <thead>
+          <tr>
+            <th class="px-4 py-2">Name</th>
+            <th class="px-4 py-2">Host</th>
+            <th class="px-4 py-2">Deleted at</th>
+            <th class="px-4 py-2">Days until purge</th>
+            <th class="px-4 py-2 text-center">Controls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in deleted_rows %}
+          <tr>
+            <td class="px-4 py-2">{{ row.entry.container_name }}</td>
+            <td class="px-4 py-2">{{ row.entry.host or "" }}</td>
+            <td class="px-4 py-2">{{ row.entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="px-4 py-2">{{ row.days_left }}</td>
+            <td class="px-4 py-2 text-right">
+              <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                <form method="POST" action="{{ url_for('dashboard.restore_deleted_entry', id=row.entry.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn-secondary btn-sm">Restore</button>
+                </form>
+                <form method="POST" action="{{ url_for('dashboard.purge_deleted_entry', id=row.entry.id) }}"
+                      data-confirm="Permanently delete this entry? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn-danger btn-sm">Delete permanently</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="settings-empty">No deleted entries.</p>
+  {% endif %}
+
+  <h3 class="settings-sub">Detached widgets</h3>
+  <p class="settings-subtitle-note">
+    When a service is permanently deleted its widget settings and history are kept here.
+    Detached widgets are not refreshed. Attach one to a service that has no widget, or delete it.
+  </p>
+  {% if detached_widgets %}
+    <div class="settings-card overflow-x-auto">
+      <table class="settings-table">
+        <thead>
+          <tr>
+            <th class="px-4 py-2">Widget</th>
+            <th class="px-4 py-2">URL</th>
+            <th class="px-4 py-2">Last value</th>
+            <th class="px-4 py-2 text-center">Controls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in detached_widgets %}
+          <tr>
+            <td class="px-4 py-2">{{ row.widget.widget_name }}</td>
+            <td class="px-4 py-2">{{ row.widget.widget_url or '' }}</td>
+            <td class="px-4 py-2">{{ row.last_value.strftime('%Y-%m-%d %H:%M') if row.last_value else 'never' }}</td>
+            <td class="px-4 py-2 text-right">
+              <div class="flex gap-2 items-center justify-end whitespace-nowrap">
+                <form method="POST" action="{{ url_for('dashboard.attach_detached_widget', id=row.widget.id) }}" class="flex gap-2 items-center">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <select name="entry_id" required class="input-clean" style="width:14rem" aria-label="Attach {{ row.widget.widget_name }} to a service">
+                    <option value="">Attach to service...</option>
+                    {% for e in attachable_entries %}
+                    <option value="{{ e.id }}">{{ e.container_name }} ({{ e.host or "no host" }})</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn-secondary btn-sm">Attach</button>
+                </form>
+                <form method="POST" action="{{ url_for('dashboard.delete_detached_widget', id=row.widget.id) }}"
+                      data-confirm="Delete this widget and its stored values? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn-danger btn-sm">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="settings-empty">No detached widgets.</p>
+  {% endif %}
+</section>

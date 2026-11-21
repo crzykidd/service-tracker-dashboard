@@ -5,6 +5,42 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Settings modernization, set-01 (foundation)
+
+Calls made while building phase 1 (`prompts/2026-11-20-set-01-foundation.md`).
+
+- **`flash_slot` reads the messages itself.** The macro calls `get_flashed_messages`
+  (Flask caches the list for the request), so the shell and every section read the
+  same list without passing it around, and "the template reads the messages once"
+  holds. Toasts render in the shell's `#toast-region`, banners in the slot whose
+  target equals `flash_target`.
+- **Button shape is scoped to `.settings-root`.** `btn-primary` / `btn-secondary`
+  stayed colour-only for Add/Edit (which add Tailwind padding classes); `btn-danger`
+  and `btn-ghost` are global colours, and the padding, radius and font size for all
+  four live under `.settings-root`, so the Add/Edit pages are untouched.
+- **Focus return is a `showModal` wrapper.** `ui.js` wraps `HTMLDialogElement.prototype.showModal`
+  to remember the opener, so the existing channel and stream scripts (which call
+  `showModal()` directly and move unchanged until phases 2 and 3) get focus return
+  without edits. Menu items close their menu in a capture-phase click, so the
+  remembered opener is the visible ⋯ trigger.
+- **Stream dialog ✕ uses `data-modal-close`.** The existing script binds
+  `.stream-dialog-cancel` with `querySelector` (first match only), so the header ✕
+  must not carry that class or the footer Cancel would lose its handler.
+- **`set_user_password` keeps category `error`** in phase 1. The template already maps
+  `error` to a danger banner; phase 4 changes the calls to `danger`.
+- **Pending-stream warning keeps its raw text.** The test matches `to import\n    10
+  items` whitespace-exactly, so it is a plain `inline-warning` div, not the macro
+  (whose call block would re-indent it).
+- **`.settings-tag` instead of `.tag`**, and the sidebar title/label classes carry
+  the `settings-` prefix, to keep generic names free in the shared stylesheet.
+- **`api_key_created.html` stays** (only its back link changed): the show-once modal
+  and the file's removal are phase 4.
+- **PRD numbering.** Old §19–§21 became §20–§22; older revision-history rows keep the
+  numbers of their day, live references in the PRD body and the network-inventory
+  design doc were updated. Prompts 02–04 mean the new §19.
+
+---
+
 ## 2026-11-20 — Settings modernization design (0.11.0)
 
 Design in `docs/design/2026-11-20-settings-modernization.md` (mockup alongside),

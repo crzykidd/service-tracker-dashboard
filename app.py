@@ -11,6 +11,7 @@ alembic and ad-hoc scripts to grab `app` without spawning threads.
 
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse
@@ -218,6 +219,14 @@ def create_app():
         if not dt:
             return "never"
         return humanize.naturaltime(datetime.utcnow() - dt)
+
+    # A leading pictograph ("✅ ", "🗑️ ") adds nothing to a toast, which has its own icon.
+    _leading_pictograph = re.compile('^[\u2600-\u27bf\u2b00-\u2bff\U0001f000-\U0001faff]\ufe0f?\\s*')
+
+    @app.template_filter('flash_text')
+    def flash_text(message):
+        """Strip one leading pictograph (and its variation selector) plus spaces."""
+        return _leading_pictograph.sub('', str(message), count=1)
 
     @app.errorhandler(CSRFError)
     def csrf_error(error):

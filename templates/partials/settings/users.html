@@ -1,0 +1,72 @@
+{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+<section id="section-users" class="settings-section{% if (initial_section or settings_default_section) != 'users' %} hidden{% endif %}">
+  {{ section_header('Users', 'People who can sign in. Admins can open Settings.') }}
+  {{ flash_slot('users') }}
+
+  {% if users %}
+  <div class="settings-card overflow-x-auto">
+    <table class="settings-table">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Admin</th>
+          <th>Last Login</th>
+          <th class="text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>{{ user.username }}</td>
+          <td>{{ user.email }}</td>
+          <td>{{ 'Yes' if user.is_admin else 'No' }}</td>
+          <td>{{ user.last_login_at.strftime('%Y-%m-%d %H:%M:%S') if user.last_login_at else 'Never' }}</td>
+          <td class="text-right">
+            <div class="flex flex-wrap gap-2 items-center justify-end">
+              <form method="POST" action="{{ url_for('auth.set_user_password', user_id=user.id) }}" class="flex gap-2 items-center">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="password" name="new_password" placeholder="New Password" class="input-clean" style="width:10rem" aria-label="New password for {{ user.username }}" required />
+                <button type="submit" class="btn-secondary btn-sm">Set Password</button>
+              </form>
+              {% if not user.is_admin %}
+              <form method="POST" action="{{ url_for('auth.delete_user') }}" data-confirm="Are you sure you want to delete this user?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="user_id" value="{{ user.id }}">
+                <button type="submit" class="btn-danger btn-sm">Delete</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="settings-empty">No users found.</p>
+  {% endif %}
+
+  <h3 class="settings-sub">Add New User</h3>
+  <form method="POST" action="{{ url_for('auth.add_user') }}" class="settings-card space-y-4" style="max-width:32rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="add_user">
+    <div>
+      <label class="settings-label" for="new-user-username">Username</label>
+      <input id="new-user-username" name="username" class="input-clean" required>
+    </div>
+    <div>
+      <label class="settings-label" for="new-user-email">Email</label>
+      <input id="new-user-email" name="email" type="email" class="input-clean" required>
+    </div>
+    <div>
+      <label class="settings-label" for="new-user-password">Password</label>
+      <input id="new-user-password" name="password" type="password" class="input-clean" required>
+    </div>
+    <div class="flex items-center gap-2">
+      <input id="new-user-admin" name="is_admin" type="checkbox" class="form-checkbox">
+      <label class="text-sm text-gray-300" for="new-user-admin">Make Admin</label>
+    </div>
+    <button type="submit" class="btn-primary">Create User</button>
+  </form>
+</section>
