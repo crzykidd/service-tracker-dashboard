@@ -9,7 +9,7 @@
     {% for user in users %}
     {% call(part) card_row(attrs='data-user-id="' ~ user.id ~ '"') %}
       {% if part == 'main' %}
-        <div class="settings-card-title">{{ user.username }}{% if user.is_admin %} <span class="settings-tag">Admin</span>{% endif %}</div>
+        <div class="settings-card-title">{{ user.username }}{% if user.is_admin %} <span class="settings-tag">Admin</span>{% endif %}{% if not user.has_password %} <span class="settings-tag settings-tag--muted" data-no-password>No password set, cannot sign in</span>{% endif %}</div>
         <div class="settings-card-summary">{{ user.email }} &middot;
           {% if user.last_login_at %}Last login {{ user.last_login_at.strftime('%Y-%m-%d %H:%M:%S') }}{% else %}Never logged in{% endif %}</div>
       {% else %}

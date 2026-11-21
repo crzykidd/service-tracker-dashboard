@@ -428,25 +428,28 @@ def test_add_page_has_the_field_for_url_and_service_rows(admin_client):
     assert 'id="internal_url"' in page and 'id="external_url"' in page
 
 
-def test_to_config_round_trips_through_restore(app):
-    from routes_dashboard import _restore_checks
+def test_to_config_round_trips_through_import(app, admin_client):
+    import yaml
 
+    from tests.import_helpers import import_flow
     with app.app_context():
         e, c = _entry_with_check(last_cert_expires_at=datetime(2027, 1, 1))
         cfg = c.to_config()
         assert cfg["cert_min_days"] == 7 and "last_cert_expires_at" not in cfg
-        target = ServiceEntry(host=None, container_name="restored", source="manual", last_updated=datetime.now())
-        db.session.add(target)
-        db.session.flush()
-        _restore_checks(target, {"checks": [json.loads(json.dumps(cfg))]})
-        db.session.commit()
-        (r,) = target.service_checks
+    base = {"host": None, "source": "manual", "last_updated": "2026-01-01 00:00:00"}
+    old = {k: v for k, v in cfg.items() if k != "cert_min_days"}
+    records = [{**base, "container_name": "restored", "checks": [json.loads(json.dumps(cfg))]},
+               {**base, "container_name": "restored-old", "checks": [old]},
+               {**base, "container_name": "restored-bad", "checks": [{**cfg, "cert_min_days": 999}]}]
+    import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml")
+    with app.app_context():
+        (r,) = ServiceEntry.query.filter_by(container_name="restored").one().service_checks
         assert r.to_config() == cfg and r.last_cert_expires_at is None
-        old = {k: v for k, v in cfg.items() if k != "cert_min_days"}
-        _restore_checks(target, {"checks": [old]})
-        assert target.service_checks[0].cert_min_days is None
-        _restore_checks(target, {"checks": [{**cfg, "cert_min_days": 999}]})
-        assert target.service_checks[0].cert_min_days is None
+        # An older backup without the key imports it as NULL.
+        (r,) = ServiceEntry.query.filter_by(container_name="restored-old").one().service_checks
+        assert r.cert_min_days is None
+        # An out-of-range value makes that record invalid; it is never created.
+        assert ServiceEntry.query.filter_by(container_name="restored-bad").count() == 0
 
 
 # --- detail payload ----------------------------------------------------------------------

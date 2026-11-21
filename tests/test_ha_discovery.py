@@ -582,7 +582,10 @@ def test_host_change_republishes_the_device(app, factory):
     assert _cfg(client, node, "sensor", f"entry_{eid}_state")["device"]["name"] == "STD web (new)"
 
 
-def test_backup_round_trips_ha_flags(app):
+def test_backup_round_trips_ha_flags(app, admin_client):
+    import yaml
+
+    from tests.import_helpers import import_flow
     with app.app_context():
         eid, cid = _entry("bk", publish=True)
         db.session.get(HealthCheck, cid).ha_exclude = True
@@ -590,11 +593,9 @@ def test_backup_round_trips_ha_flags(app):
         data = db.session.get(ServiceEntry, eid).to_dict()
         assert data["ha_publish"] is True
         assert [c["ha_exclude"] for c in data["checks"] if c["kind"] == "internal_url"] == [True]
-        from routes_dashboard import _restore_checks
-        entry = ServiceEntry(host=None, container_name="restored", source="manual", ha_publish=data["ha_publish"],
-                             last_updated=datetime.now())
-        db.session.add(entry)
-        db.session.flush()
-        _restore_checks(entry, data)
-        db.session.commit()
+    record = {**data, "container_name": "restored", "host": None, "source": "manual",
+              "last_updated": "2026-01-01 00:00:00"}
+    import_flow(admin_client, yaml.dump([record]).encode(), name="b.yaml")
+    with app.app_context():
+        entry = ServiceEntry.query.filter_by(container_name="restored").one()
         assert entry.ha_publish is True and entry.url_check("internal").ha_exclude is True

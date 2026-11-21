@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-bak-04-import-ui
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: Import UI (card, preview page with stream mapping, mode switch, tri-state groups, apply bar, summary), routes_import.py, users without passwords tag, old restore removed with its tests ported to the import flow, API import/plan + import/apply (revision 4 row extended, feature import), MCP import_plan/import_apply, docs. Decisions in docs/decisions.md (bak-04).
 ---
 
 # Task: Backup phase 4: import UI (upload → mapping → preview → apply → summary), API + MCP

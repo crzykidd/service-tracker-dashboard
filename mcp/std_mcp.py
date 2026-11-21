@@ -132,16 +132,19 @@ _STATUS_TEXT = {
 
 def _format_error(resp: httpx.Response) -> str:
     """`HTTP 409 (conflicts ...): <error>` plus the API's `details`, kept verbatim."""
-    msg, details = resp.text[:500], None
+    msg, details, stale_plan = resp.text[:500], None, False
     try:
         body = resp.json()
         if isinstance(body, dict) and "error" in body:
             msg, details = str(body["error"]), body.get("details")
+            stale_plan = isinstance(body.get("plan"), dict)
     except ValueError:
         pass
     text = f"HTTP {resp.status_code} ({_STATUS_TEXT.get(resp.status_code, 'error')}): {msg}"
     if details:
         text += f"\ndetails: {details!r}"
+    if stale_plan:
+        text += "\nNothing was written. Call import_plan again, show the operator the new plan, then apply."
     return text
 
 
@@ -461,6 +464,33 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         if kind not in ("snapshot", "export"):
             raise ToolError("kind must be 'snapshot' or 'export'.")
         return client.request("POST", "/backups/run", json={"kind": kind})
+
+    @write_tool
+    def import_plan(document_text: str, stream_map: dict | None = None, selection: dict | None = None) -> dict:
+        """Dry-run an import and return the plan. Nothing is written. ALWAYS call this first and show the operator the plan before import_apply.
+
+        document_text: the export as text (YAML or JSON), or an old YAML backup.
+        stream_map: {file stream id: local stream id, or null to skip}. A stream left out is matched by id.
+        selection: {row id: {"apply": true, "fields": [..] or null, "target_id": id or null, "create": bool, "options": ["restore"]}}, the rows you intend to apply. Leave it out to get the default (pre-ticked) selection.
+        Returns {header, stream_mapping, rows, counts, warnings, stream_map, default_selection, fingerprint}. Every row has a status: missing (settings to fill; ticked by default), differs (only applied in overwrite mode), identical, deleted (restore needs the `restore` option), ambiguous (choose target_id), not_found (create: true imports it as new), waiting, conflict, invalid. The fingerprint is for `selection` (or default_selection): pass the same selection, stream_map and fingerprint to import_apply.
+        """
+        body = _drop_none(document_text=document_text, stream_map=stream_map, selection=selection)
+        return client.request("POST", "/import/plan", json=body)
+
+    @write_tool
+    def import_apply(document_text: str, stream_map: dict | None, selection: dict, mode: str, fingerprint: str) -> dict:
+        """Apply the selected rows of an import in one transaction, or nothing. Call import_plan first and show the operator the plan: this writes to STD.
+
+        mode: `fill` (only fields that are missing) or `overwrite` (also the differing fields named in `fields`).
+        fingerprint: the one import_plan returned for exactly this selection and stream_map. If a selected row changed since, nothing is written and the call fails: plan again.
+        Never deletes anything and never writes a secret. Users are created without a password and channels disabled; the result's `still_to_do` lists what the operator must set up again (user passwords, the MQTT password, widget API keys, ingest keys, the notifier api_token).
+        Returns {mode, counts, skipped, still_to_do, notes, applied}.
+        """
+        if mode not in ("fill", "overwrite"):
+            raise ToolError("mode must be 'fill' or 'overwrite'.")
+        body = _drop_none(document_text=document_text, stream_map=stream_map)
+        body.update(selection=selection, mode=mode, fingerprint=fingerprint)
+        return client.request("POST", "/import/apply", json=body)
 
     @write_tool
     def create_manual_entry(name: str, host: str | None = None, description: str | None = None,

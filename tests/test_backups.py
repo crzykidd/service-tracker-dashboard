@@ -461,7 +461,7 @@ def test_page_lists_files_with_confirm_delete_and_no_nested_forms(app, folder, a
     assert "2026-01-01-std_backup.sqlite3" in section and "legacy" in section
     assert re.search(r'<form[^>]*data-confirm="Delete 2026-01-01-std_backup\.sqlite3\?', section)
     assert "Snapshots contain every secret" in section
-    assert "Import (legacy)" in section
+    assert 'id="backup-import"' in section and "Import (legacy)" not in section
     settings_form = section[section.index('id="backup-settings-form"'):section.index("</form>", section.index('id="backup-settings-form"'))]
     assert "<form" not in settings_form[5:]
 

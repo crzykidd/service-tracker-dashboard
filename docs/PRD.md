@@ -96,6 +96,7 @@
 | 0.86    | 2026-11-20 | Added §20 (v0.11.0 — Backup, export and import, planned; design in `docs/design/2026-11-20-backup-export-import.md`) and delivered its phase 1 (§20.1, bak-01) on `dev`: backup path, snapshot and export settings editable in Settings with env > UI > `settings.yml` > default precedence, two daily jobs (snapshot 00:05, export 00:10) replacing the single 00:05 job, per-kind retention and Run now, a backup file list with download and delete, last-run status with a failure warning and navigation badge, new `backups.py`. §3 job list, §3.1 module layout and §4 settings table updated. Former §20–§22 renumbered §21–§23 and live cross-references updated (older revision rows keep the numbers of their day); the §19 TOC entry now says Delivered. No schema (the existing `setting` table is used), wire-contract or `/api/v1` change. |
 | 0.87    | 2026-11-20 | §20.2 delivered on `dev` (bak-02): export format v1 (`std-export`, YAML or JSON, same document, never a secret) built by the new `export_format.py` with the §5.3 field ownership rules, the daily and manual export job now writes `<date>-std_export.yml\|json` (replacing the entry-list YAML; old `-std_backup.yml` files stay listed and age out with export retention), `GET /settings/backups/export` download with Download YAML / JSON buttons on the Exports card, and management API routes `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export` with MCP tools `backup_settings`, `list_backups`, `export_config`, `run_backup`. **`API_REVISION` 4** (§18.1) and the `backup` feature. §3.1 module layout, §14.4 route list and §20.6 updated. No schema change; register and stream-ingest wire contracts unchanged. |
 | 0.88    | 2026-11-20 | §20.3 and §20.4 describe the import engine as built on `dev` (bak-03; still Planned for operators, because nothing reaches it until bak-04): new `importer.py` (`parse` for v1 and the legacy entry list, a pure `plan()`, `fingerprint`, `apply()` under the register and stream locks, a staging store under `CONFIG_DIR/import-staging/`), `export_format.from_legacy()`, and a `User.has_password` property for users created with the `!unset` hash. §3.1 module layout and §20.6 updated. No schema, wire-contract or `/api/v1` change. |
+| 0.89    | 2026-11-20 | §20.3 delivered on `dev` (bak-04): the import UI (Settings → Backup & restore → Import card, `/settings/import/<token>` preview page with stream mapping, the fill / overwrite mode switch, grouped rows with tri-state and per-field ticks, sticky apply bar, summary with "Still to do"), users created without a password (a muted tag in Users), management API `POST /import/plan` and `POST /import/apply` and MCP `import_plan` / `import_apply`. The old Restore form, "Save backup to server" and the `action=backup\|restore` branches of `/settings` are removed (old YAML backups import through the new flow). **`API_REVISION` 4** row extended (§18.1), `import` feature added; no new revision. §3.1 module layout, §14.4 route list, §20.3, §20.4, §20.6 updated. No schema, register or stream-ingest wire-contract change. |
 
 ---
 
@@ -263,7 +264,10 @@ settings_store.py   ← DB-stored runtime settings (per-interpreter directions, 
 export_format.py    ← export format v1 (PRD 20.2): pydantic models, `build_export()`, `dump()`,
                       `from_legacy()` (format 0)
 importer.py         ← import engine (§20.3-20.4): `parse`, pure `plan()`, `fingerprint`, `apply()`,
-                      staging store; no routes or UI until bak-04
+                      staging store
+routes_import.py    ← Settings import routes on `dashboard_bp` (§20.3): upload, preview, stream
+                      mapping, apply, cancel; templates `settings_import.html`,
+                      `partials/settings/import_rows.html`; `static/js/settings/import.js`
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot and export
                       runs, retention, file list and confined file lookup (§20.1)
 settings_sections.py ← Settings section registry: groups, slugs, labels, legacy
@@ -1403,8 +1407,9 @@ Closes 13 open CodeQL alerts on `main`: 11 `py/path-injection` and 2
   containment in `IMAGE_DIR`) before any write. Register skips an unsafe icon
   with a WARNING and still succeeds; Add/Edit flash a message and download
   nothing (Edit leaves the stored icon unchanged and saves the other fields).
-- **Backup restore from a server file** accepts only a bare filename ending
-  `.yaml`/`.yml` whose resolved path stays inside the backup folder.
+- **Import from a server file** (was Restore, replaced in 0.11.0) accepts only a bare
+  filename ending `.yaml`/`.yml`/`.json` whose resolved path stays inside the backup folder
+  (`backups.resolve_file`; a symlink out of it is refused).
 - **`/widget_config/<widget_name>`** accepts only directory names present
   under `widgets/`, resolved from the app root rather than `/app/widgets`.
 - **Redirects:** `view_helpers.safe_redirect_target` allows only same-site
@@ -2054,6 +2059,8 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 | `GET /backups` | read | Backup files, newest first: `{name, kind, size, modified, manual, legacy}`. No download route: a snapshot holds every secret. |
 | `POST /backups/run` | write | `{kind: snapshot\|export}`, synchronous; 409 when that kind is already running. Audited as `backup_run`. |
 | `GET /export` | read | The export document (§20.2), `?format=json` (default) or `yaml` (`application/yaml`). Not audited. |
+| `POST /import/plan` | write | Dry-run an import (§20.3): the plan, `default_selection` and the `fingerprint` for the `selection` sent. Writes and audits nothing. |
+| `POST /import/apply` | write | Apply the selected rows in one transaction (§20.3); 409 with a fresh plan on a stale fingerprint. Audited as `import` (counts only). |
 | `GET /config` | read | Effective `settings.yml`/env values, read-only, with **secrets masked** (`api_token`, `secret_key`, widget keys) plus the app version. These are not editable through the API (they are loaded once at startup). |
 
 Users and passwords are **not** exposed through the API (out of scope).
@@ -2904,7 +2911,7 @@ server supports and log it.
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
-| 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`; feature `backup`. bak-04 extends this row with the import routes (one bump for the whole 0.11.0 set) |
+| 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3494,7 +3501,7 @@ recovery and **export and import** of operator-set state. The full design (field
 ownership tables, matching rules, the import engine, API and UI) is
 [`docs/design/2026-11-20-backup-export-import.md`](design/2026-11-20-backup-export-import.md)
 (mockup alongside) and its operator decisions are in `docs/decisions.md`. It is built in
-five phases (`prompts/2026-11-20-bak-01` … `bak-05`); §20.1 and §20.2 have shipped on `dev`.
+five phases (`prompts/2026-11-20-bak-01` … `bak-05`); §20.1 to §20.4 have shipped on `dev`.
 No change to the register or stream-ingest wire contracts.
 
 **Goals (design §1).** The scenario "new machine, empty `/config`, restore what the
@@ -3595,7 +3602,7 @@ YAML opens with a short comment listing what is not included.
   the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
   `API_REVISION` is 4 (§18.1).
 
-### 20.3 Import (Engine built, unreleased; UI and API in bak-04)
+### 20.3 Import (Delivered, unreleased; bak-03 engine, bak-04 UI and API)
 
 Import matches the file's records against the database **now** and shows a dry-run
 preview; only ticked rows apply. A row is one of: matched with missing settings
@@ -3636,7 +3643,41 @@ As built (`importer.plan()`):
   widget API keys are ignored with a warning, a row with `deleted_at` is shown unticked,
   and a stream row is matched by MAC across `mac` streams.
 
-### 20.4 Import engine and plan handoff (Engine built, unreleased; bak-03)
+**UI (bak-04).** Settings → Backup & restore → Import takes an upload (`.yml`, `.yaml`,
+`.json`, up to 10 MB, checked per route) or a file of the backup folder (confined by
+`backups.resolve_file`, exports only; the ⋯ menu of an export also has **Import…**). A file
+that cannot be read shows a banner in the Backup section. Otherwise the parsed upload is
+staged and the operator lands on `GET /settings/import/<token>` (the Settings shell with
+Backup & restore current; another user's or an expired token redirects with "This import
+expired. Upload the file again."): a stepper, the file header and warnings, the stream mapping
+(one select per file stream, same key type only, `POST .../map` re-plans), the mode switch
+(*Fill missing only*, the default, or *Also overwrite differences*), a toolbar (search,
+status chips, Select all / none) and the rows grouped Docker, Manual, one per stream, Groups,
+Notification channels, Streams & blocks, Users, Settings, each with a tri-state group
+checkbox. A row has a checkbox (or the "Import as new" / "Create user (no password)" switch),
+a status pill, and a disclosure with the notes, the row options (restore, soft-delete the
+entry) and the per-field table (missing ticked; differing fields unticked and disabled in
+fill mode; never-applied fields shown without a box). Identical rows collapse into "N
+identical". The sticky apply bar shows live counts and **Cancel** (deletes the staged file) and
+**Apply import** (a confirm in overwrite mode). `POST .../apply` reads `sel-<rid>`,
+`create-<rid>`, `target-<rid>`, `field-<rid>` and `opt-<rid>` (multi-valued; the value is the
+field or option, plus a `fieldset` marker per row that shows field boxes), `mode` and
+`fingerprint`, hashes the submitted selection against the plan digests kept beside the staged
+file (§20.4) and calls `importer.apply`. A stale result re-renders the preview (409) with the
+banner and the operator's ticks kept; an apply error re-renders it (400) with nothing changed;
+success discards the staged file and renders the summary (counts, skipped by reason, "Still
+to do") with a toast. Without JavaScript the form still posts what is ticked.
+
+**API (bak-04).** `POST /api/v1/import/plan` and `/import/apply` (write scope, stateless, one
+JSON body of at most 10 MB plus 64 KB: `document` object or `document_text` string, `stream_map`,
+`selection`, and for apply `mode` and `fingerprint`; unknown keys are a 400). `plan` returns
+the plan, the `default_selection` (what the UI pre-ticks) and a `fingerprint` for the
+`selection` it was sent (or the default). `apply` is audited as `import` with the result counts
+only; a stale fingerprint answers 409 with a fresh `plan`; a parse error or an apply error is a
+400. `plan` writes nothing and is not audited. MCP: `import_plan`, `import_apply` (the tool
+text says to plan first and show the operator).
+
+### 20.4 Import engine and plan handoff (Delivered, unreleased; bak-03, UI bak-04)
 
 `importer.plan()` and `apply()` mirror `streams.plan()` / `apply()`. The plan is never
 kept as an object: the UI stages the parsed upload as a JSON file in
@@ -3667,7 +3708,7 @@ stops STD from starting if anything fails. No management API for it.
 | 1 | `bak-01-scheduled-backups` | Backup settings, two jobs, manual run, list, path validation, last-run status (§20.1) | Delivered (unreleased) |
 | 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP (§20.2) | Delivered (unreleased) |
 | 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Delivered (unreleased) |
-| 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Planned |
+| 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Delivered (unreleased) |
 | 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Planned |
 
 ---

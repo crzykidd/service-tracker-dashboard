@@ -1929,6 +1929,40 @@ def load(token, user_id, now=None):
         return None
 
 
+def load_state(token, user_id):
+    """The preview state kept beside a staged upload: `{"stream_map": {...}, "digests": {...},
+    "plan_fp": str}`. The digests are those of the plan the operator last saw, so the apply route
+    can hash the submitted selection against them (`fingerprint_from_digests`). `{}` for an
+    unknown token or one that is not this user's."""
+    if load(token, user_id) is None:
+        return {}
+    try:
+        with open(_staging_path(token), encoding="utf-8") as f:
+            return dict(json.load(f).get("state") or {})
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(token, user_id, state):
+    """Replace the preview state of a staged upload (see `load_state`). A no-op for an unknown
+    or foreign token."""
+    path = _staging_path(token)
+    if load(token, user_id) is None:
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+        payload["state"] = state
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        os.replace(tmp, path)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def discard(token):
     path = _staging_path(token)
     if path is not None:

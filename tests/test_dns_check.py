@@ -428,25 +428,25 @@ def test_due_jobs_carry_the_dns_fields(app):
 # --- backup / restore -------------------------------------------------------------------------
 
 
-def test_to_config_round_trips_through_restore(app):
-    from routes_dashboard import _restore_checks
+def test_to_config_round_trips_through_import(app, admin_client):
+    import yaml
 
+    from tests.import_helpers import import_flow
     with app.app_context():
         e, c = _dns_entry()
         cfg = c.to_config()
         assert cfg["dns_name"] == "em-pve01.crzynet.me" and cfg["dns_expected_answer"] == "10.100.17.10"
-        target = ServiceEntry(host=None, container_name="restored", source="manual", last_updated=datetime.now())
-        db.session.add(target)
-        db.session.flush()
-        _restore_checks(target, {"checks": [json.loads(json.dumps(cfg))]})
-        db.session.commit()
-        (r,) = target.service_checks
+    base = {"host": None, "source": "manual", "last_updated": "2026-01-01 00:00:00"}
+    # An older backup without the dns keys imports them as NULL.
+    old = {k: v for k, v in cfg.items() if not k.startswith("dns_")}
+    old["check_type"], old["target"] = "tcp", "10.0.0.5:53"
+    records = [{**base, "container_name": "restored", "checks": [json.loads(json.dumps(cfg))]},
+               {**base, "container_name": "restored-old", "checks": [old]}]
+    import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml")
+    with app.app_context():
+        (r,) = ServiceEntry.query.filter_by(container_name="restored").one().service_checks
         assert r.to_config() == cfg
-        # An older backup without the dns keys restores them as NULL.
-        old = {k: v for k, v in cfg.items() if not k.startswith("dns_")}
-        old["check_type"] = "tcp"
-        _restore_checks(target, {"checks": [old]})
-        (r,) = target.service_checks
+        (r,) = ServiceEntry.query.filter_by(container_name="restored-old").one().service_checks
         assert r.dns_name is None and r.dns_expected_rcode is None
 
 

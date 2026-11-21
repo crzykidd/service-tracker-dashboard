@@ -18,9 +18,9 @@ API_REVISION_HISTORY = (
     (3, "0.10.1",
      "stream observability: optional snapshot_interval_seconds on the snapshot PUT; stream staleness, "
      "rejections, expected interval and missing expiry; health summary streams; inventory.missing_since"),
-    (4, "0.11.0", "backup settings, backup list and run, export"),
+    (4, "0.11.0", "backup settings, backup list and run, export, import plan and apply"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later
 # prompt (inv-04) of the same release.
-FEATURES = ("register", "management", "notifications", "streams", "backup")
+FEATURES = ("register", "management", "notifications", "streams", "backup", "import")

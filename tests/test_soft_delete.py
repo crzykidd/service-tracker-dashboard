@@ -252,31 +252,35 @@ def test_group_count_and_delete_ignore_deleted_entries(app, admin_client):
         assert Group.query.get(gid) is None
 
 
-def test_backup_round_trips_deleted_at(app, admin_client):
+def test_old_backup_with_deleted_at_imports_active_only_when_ticked(app, admin_client):
+    # The old Restore round-tripped deleted_at. Import never recreates a trashed entry on its own:
+    # a record the old backup carried as deleted is off by default, and ticking it makes it active.
+    import io
+
+    from tests.import_helpers import Page, import_flow, token_of
     stamp = datetime(2026, 1, 2, 3, 4, 5)
     with app.app_context():
         _make("svc1", deleted_at=stamp)
         _make("svc2")
-    resp = admin_client.post("/settings", data={"action": "backup",
-                                                "backup_operation": "download_all"})
-    assert resp.status_code == 200
-    records = yaml.safe_load(resp.get_data(as_text=True))
-    by_name = {r["container_name"]: r for r in records}
-    assert by_name["svc1"]["deleted_at"] == "2026-01-02 03:04:05"
-    assert by_name["svc2"]["deleted_at"] is None
-
-    with app.app_context():
+        records = [e.to_dict() for e in ServiceEntry.query.order_by(ServiceEntry.container_name)]
+        assert records[0]["deleted_at"] == "2026-01-02 03:04:05" and records[1]["deleted_at"] is None
         ServiceEntry.query.delete()
         db.session.commit()
-    # v0.6.8-style record for svc2: no deleted_at key at all.
-    del by_name["svc2"]["deleted_at"]
-    payload = yaml.dump([by_name["svc1"], by_name["svc2"]])
-    import io
-    resp = admin_client.post("/settings", data={
-        "action": "restore", "restore_source": "upload", "restore_scope": "all",
-        "restore_file": (io.BytesIO(payload.encode()), "b.yaml"),
-    }, content_type="multipart/form-data")
-    assert resp.status_code == 302
+    payload = yaml.dump(records).encode()
+    resp = admin_client.post("/settings/import", data={"import_file": (io.BytesIO(payload), "b.yaml")},
+                             content_type="multipart/form-data")
+    page = Page(admin_client.get(f"/settings/import/{token_of(resp)}").get_data(as_text=True))
+    assert "Deleted in the file" in page.html
+    import_flow(admin_client, payload, name="b.yaml")
+    with app.app_context():
+        assert {e.container_name: e.deleted_at for e in ServiceEntry.query.all()} == {"svc1": None, "svc2": None}
+    # A local entry that is in the trash: the record restores it only with the option ticked.
+    with app.app_context():
+        ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at = stamp
+        db.session.commit()
+    import_flow(admin_client, payload, name="b.yaml")
     with app.app_context():
         assert ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at == stamp
-        assert ServiceEntry.query.filter_by(container_name="svc2").one().deleted_at is None
+    import_flow(admin_client, payload, name="b.yaml", restore=True)
+    with app.app_context():
+        assert ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at is None

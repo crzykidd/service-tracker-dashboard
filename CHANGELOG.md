@@ -29,7 +29,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that one was set, so you know what to enter again on a new install. Things STD
   rebuilds on its own (container status, IPs, health history) and soft-deleted entries
   are left out. YAML is the default; the daily export uses the format you pick in
-  Settings. Importing an export is not built yet.
+  Settings.
+- **Import an export, or an old YAML backup, with a preview first.** Settings →
+  Backup & restore → Import takes an upload (`.yml`, `.yaml`, `.json`, up to 10 MB)
+  or a file from the backup folder (also **Import…** in the ⋯ menu of an export).
+  You get a preview page and nothing changes until you apply. Streams in the file
+  are mapped to your local streams (same id by default; change or skip one). Every
+  record is matched against your database as it is now, by host and name or by
+  stream and key, and shown in groups (Docker, Manual, one per stream, Groups,
+  Notification channels, Streams & blocks, Users, Settings) as *missing settings*,
+  *differs*, *identical*, *deleted locally*, *ambiguous*, *not found*, *waiting*,
+  *conflict* or *invalid*. Open a row to see each field, in the file and here. The
+  default mode **fills only what is missing** and never overwrites a value you set;
+  **Also overwrite differences** lets you tick the differing fields you want, and asks
+  before it applies. A record that is *not found* can be **imported as new** (a
+  manual entry the notifier adopts when the container registers). Apply is one
+  transaction, and if something you ticked changed since the preview (a register, a
+  snapshot) nothing is written and you review again with your ticks kept. The summary
+  lists what changed and what to set up again. Import never deletes anything, never
+  writes a password or key, and can be run again once the notifier and sidecars have
+  reported in. Users are imported **without a password** and show "No password set,
+  cannot sign in" until you set one in Users.
+- **Import in the management API and MCP** (API revision 4): `POST
+  /api/v1/import/plan` (a dry run that returns every row, its status and fields,
+  and a fingerprint) and `POST /api/v1/import/apply` (applies the rows you selected,
+  or answers 409 with a fresh plan when they changed), and the MCP tools
+  `import_plan` and `import_apply`, which tell the agent to plan and show you the
+  result first.
 - **Management API routes and MCP tools for backups and export** (API revision 4):
   `GET`/`PUT /api/v1/settings/backup`, `GET /api/v1/backups`, `POST /api/v1/backups/run`
   (Run now, snapshot or export) and `GET /api/v1/export` (`?format=json` or `yaml`),
@@ -134,6 +160,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Column sorting on the groups table.** Groups are listed as cards in priority
   order (then by name), so there is nothing left to sort.
+- **The old Restore form and "Save backup to server" are gone.** Use export and
+  import instead. An old YAML backup (`*-std_backup.yml`, `backup.yml`, or one from
+  Download Full Backup) imports through the new flow, which shows what it would
+  change first and never overwrites a value you set unless you opt in. The new
+  import does not carry observed data (container status, IPs) or widget API keys, and
+  never removes a check. The daily job no longer writes the old list, but older files
+  in the folder stay listed and importable.
 
 ## [0.10.1] — 2026-11-20
 

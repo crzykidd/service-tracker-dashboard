@@ -5,6 +5,90 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Backup, export and import, bak-04 (import UI, API, MCP)
+
+Calls made while building phase 4 (`prompts/2026-11-20-bak-04-import-ui.md`), with the
+operator asleep. Operator answers honoured: no "adopt install id" row (design Q1 is no;
+`instance_id` is shown only as "from another install"), no secret is ever read or written,
+the default mode is fill missing only, and users are created without a password.
+
+- **The preview state lives beside the staged upload.** `importer.save_state` /
+  `load_state` keep `stream_map` (the operator's explicit mapping), `digests`, `plan_fp`
+  (the fingerprint of the default selection) and `eff_map` (the effective stream map) in the
+  staging JSON. Each render of the preview re-plans and replaces them. On apply the route
+  hashes the submitted selection against the stored digests with
+  `fingerprint_from_digests` (bak-03's note) and passes that to `importer.apply`, which
+  re-plans under the locks and raises `ImportStale` if a selected row changed. A hidden
+  `fingerprint` field (the page's `plan_fp`) must equal the stored one, so a form from an
+  older tab (another tab re-planned after a mapping change) is refused as out of date (409)
+  instead of being applied against digests it never showed.
+- **Form field names.** `sel-<rid>`, `create-<rid>`, `target-<rid>` as in design 12.2, but
+  the per-field and option ticks are multi-valued fields `field-<rid>` and `opt-<rid>`
+  whose values are the field / option names, not `field-<rid>-<field>`. A rid and a field
+  name can both contain `-`, `:` and `/`, so splitting a combined name is ambiguous; the
+  multi-valued form needs no parsing. A `fieldset` hidden marker (one per row that renders
+  field boxes) says "send exactly the ticked fields", so unticking every field does not
+  fall back to "every actionable field".
+- **A changed stream mapping redirects to the preview** instead of
+  re-rendering the POST, so a reload does not resubmit it. The mapping select submits on
+  change with JS and has an **Update mapping** button without it.
+- **Import routes sit in `routes_import.py` on `dashboard_bp`** (endpoint names stay
+  `dashboard.*`). `routes_dashboard.py` is already very large, and the new module imports
+  `_settings_redirect` from it, so it is imported once from `app.py`.
+- **The import page is its own template with the Settings sidebar markup**, not a section
+  of `settings.html`: the sidebar links go back to `/settings?section=<slug>` (Backup &
+  restore is `aria-current`), `nav.js` is not loaded. It reuses `ui.js` (groups, confirm,
+  toasts).
+- **`ui.js` group counting.** A group counts only checkboxes marked `data-group-row` when
+  its body has any, otherwise every checkbox as before. The import rows hold per-field boxes
+  and option switches that must not count as records.
+- **`/settings` is GET only now.** The `action=backup|restore` POST branches, the
+  `server_backup_files` listing, `static/js/settings/backup.js` (the restore-source toggle),
+  `_restore_checks` and `_parse_backup_datetime` are removed; an old form POST is a 405 and
+  restores nothing. Their tests became import-flow tests (`tests/import_helpers.py` drives
+  upload, preview and apply the way a browser does), with the intent kept where the new
+  rules allow it:
+  - *restore skips live stream entries / never overwrites a stream entry* -> a matched
+    stream entry only gets operator settings filled; its observed facts (IP) stay;
+  - *static scope* -> an imported record is never created locked and the summary says to
+    re-run after the container registers; a ticked row locks an existing entry;
+  - *confinement* -> `backups.resolve_file(name, suffixes=(.yml, .yaml, .json))` (snapshots
+    and path tricks refused, a symlink out of the folder refused);
+  - *restore replaced service checks wholesale* -> import never removes a check
+    (`test_import_never_removes_a_local_service_check`);
+  - *deleted_at round trip, observed status strings, source `notifier`* -> not carried any
+    more (import creates an active manual entry, the trash is restored only with the option,
+    observed columns are never imported, a Docker record created as new is manual until the
+    container registers). A check that fails validation makes the whole record Invalid.
+- **"Import as new" is the switch itself.** A not-found row has a `create-<rid>` switch
+  (that is its row box) rather than a row checkbox plus a switch, so a group's tri-state
+  and Select all tick the creates too, and "N new" counts them.
+- **Ticking a field or choosing an ambiguous target ticks its row** (JS only), because a
+  field the operator wants is a row they want.
+- **API plan takes an optional `selection`, and returns `default_selection`.** The
+  fingerprint is a hash of the *selected* rows, so a plan with no selection can only carry
+  the one for the default selection, and an agent that picks other rows would have no way
+  to get a matching fingerprint without hashing digests it never sees. `POST /import/plan`
+  therefore accepts `selection` (additive, optional) and answers with the fingerprint for
+  it; apply must send the same `selection`, `stream_map` and `fingerprint`. The per-row
+  digests are not in the response. Still one revision-4 row (text extended, `import` added
+  to `FEATURES`).
+- **`import/plan` is not audited, `import/apply` is.** The management hook audits every
+  authenticated write, so the plan route is exempted by endpoint name (like the snapshot
+  PUT); apply records `object_type = "import"` with the result counts only, also for 400
+  and 409 answers (those have no counts).
+- **API status codes.** A file that cannot be read, a bad stream mapping, a bad choice and
+  an apply that rolled back are 400 (`ImportApplyError` text in `error`); a stale
+  fingerprint is 409 with a fresh `plan`; a body over 10 MB + 64 KB is 413.
+- **MCP.** `import_plan` is a *write* tool (the route needs the write scope) with an
+  optional `selection`; `import_apply` refuses a mode other than fill / overwrite before
+  any request; a 409 carries "Nothing was written. Call import_plan again, show the
+  operator the new plan, then apply."
+- **Out of scope, parked in the design's Later list:** answering link offers from the
+  preview, a mirror mode, staged restore (bak-05).
+
+---
+
 ## 2026-11-20 — Backup, export and import, bak-03 (import engine)
 
 Calls made while building phase 3 (`prompts/2026-11-20-bak-03-import-engine.md`), with the

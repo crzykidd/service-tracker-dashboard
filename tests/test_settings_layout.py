@@ -1,6 +1,7 @@
 """Settings page structure: section registry, sidebar, deep links, flash placement
 (design: docs/design/2026-11-20-settings-modernization.md, phase 1)."""
 
+import io
 import re
 from datetime import datetime
 
@@ -130,18 +131,21 @@ def _redirect_section(resp):
     return m.group(1)
 
 
-def test_backup_and_restore_paths_redirect_to_backup(admin_client):
+def test_import_paths_redirect_to_backup(admin_client):
     posts = [
-        {"action": "backup", "backup_operation": "save_on_server"},
-        {"action": "backup", "backup_operation": "bogus"},
-        {"action": "restore", "restore_source": "upload"},
-        {"action": "restore", "restore_source": "server"},
-        {"action": "restore", "restore_source": "server", "server_backup_filename": "../x.yml"},
-        {"action": "restore", "restore_source": "server", "server_backup_filename": "missing.yml"},
-        {"action": "restore", "restore_source": "nope"},
+        {},
+        {"server_file": "../x.yml"},
+        {"server_file": "missing.yml"},
+        {"server_file": "x.sqlite3"},
     ]
     for data in posts:
-        assert _redirect_section(admin_client.post("/settings", data=data)) == "backup", data
+        assert _redirect_section(admin_client.post("/settings/import", data=data)) == "backup", data
+    # a file that is not an export, and an unknown / expired token
+    resp = admin_client.post("/settings/import", data={"import_file": (io.BytesIO(b"nope: ["), "x.yml")},
+                             content_type="multipart/form-data")
+    assert _redirect_section(resp) == "backup"
+    assert _redirect_section(admin_client.get("/settings/import/not-a-real-token-1234")) == "backup"
+    assert _redirect_section(admin_client.post("/settings/import/not-a-real-token-1234/cancel")) == "backup"
 
 
 def test_set_user_password_success_and_unknown_user_return_to_users(app, admin_client):
@@ -253,8 +257,7 @@ def test_error_category_maps_to_a_banner(admin_client):
 
 def test_warning_flash_is_an_amber_banner(admin_client):
     _drain(admin_client)
-    resp = admin_client.post("/settings", data={"action": "restore", "restore_source": "upload"},
-                             follow_redirects=True)
+    resp = admin_client.post("/settings/import", data={}, follow_redirects=True)
     html = resp.get_data(as_text=True)
     assert "flash-alert--warning" in _section_html(html, "backup")
 

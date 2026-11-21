@@ -25,6 +25,7 @@ from pydantic import (
     StrictStr,
     StringConstraints,
     field_validator,
+    model_validator,
 )
 
 # pydantic refuses `typing.TypedDict` before Python 3.12, and CI runs 3.11.
@@ -286,6 +287,45 @@ class BackupSettingsPut(_Request):
 
 class BackupRunRequest(_Request):
     kind: Literal["snapshot", "export"]
+
+
+class ImportSelectionRow(_Request):
+    """One row of an import selection (design 7.1). A row left out of `selection` is not applied;
+    `fields: null` means every field that is actionable in the chosen mode."""
+
+    apply: bool = True
+    fields: list[str] | None = None
+    target_id: int | None = None
+    create: bool = False
+    options: list[str] = []
+
+
+class ImportPlanRequest(_Request):
+    """Dry-run an import. Send the export as `document` (a v1 object) or `document_text` (YAML or
+    JSON text, also an old YAML backup); exactly one. `stream_map` maps a file stream id to a local
+    stream id (`null` skips it); a stream left out is matched by id. `selection` (optional) is the
+    set of rows you intend to apply, and `fingerprint` in the answer is the one for exactly those
+    rows; without it the answer carries the default (pre-ticked) selection."""
+
+    document: dict[str, Any] | None = None
+    document_text: str | None = None
+    stream_map: dict[str, str | None] | None = None
+    selection: dict[str, ImportSelectionRow] | None = None
+
+    @model_validator(mode="after")
+    def _one_document(self):
+        if (self.document is None) == (self.document_text is None):
+            raise ValueError("send exactly one of document and document_text")
+        return self
+
+
+class ImportApplyRequest(ImportPlanRequest):
+    """Apply the selected rows. `fingerprint` must be the one `POST /import/plan` returned for this
+    same `selection` and `stream_map`; if the rows changed since, nothing is written (409)."""
+
+    selection: dict[str, ImportSelectionRow]
+    mode: Literal["fill", "overwrite"] = "fill"
+    fingerprint: str
 
 
 class NotificationChannelCreate(_Request):
@@ -778,6 +818,32 @@ class BackupRunOut(TypedDict):
     error: str | None
     at: str
     trigger: str
+
+
+class ImportPlanOut(TypedDict):
+    header: dict[str, Any]
+    stream_mapping: list[dict[str, Any]]
+    rows: list[dict[str, Any]]
+    counts: dict[str, Any]
+    warnings: list[str]
+    stream_map: dict[str, str | None]
+    default_selection: dict[str, dict[str, Any]]
+    fingerprint: str
+
+
+class ImportResultOut(TypedDict):
+    mode: str
+    counts: dict[str, int]
+    skipped: dict[str, int]
+    still_to_do: dict[str, Any]
+    notes: list[str]
+    applied: list[str]
+
+
+class ImportStaleOut(TypedDict):
+    error: str
+    details: None
+    plan: ImportPlanOut
 
 
 class UpdateCheckSettingsOut(TypedDict):

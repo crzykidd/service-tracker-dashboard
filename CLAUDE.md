@@ -418,8 +418,13 @@ export_format.py    ← export format v1 (PRD 20.2): pydantic models (lenient on
 importer.py         ← import engine (PRD 20.3-20.4): `parse` (v1 + legacy, record validation),
                       pure `plan()` (matcher, per-field missing/differs), `fingerprint`, `apply()`
                       (takes `routes_api._UPSERT_LOCK` then `streams._LOCK`, re-plans, one
-                      transaction; no secret is ever written), and the `import-staging/` store;
-                      no routes or UI yet (bak-04)
+                      transaction; no secret is ever written), and the `import-staging/` store
+                      (it also keeps the preview state, `plan.digests`: the UI hashes the submitted
+                      selection with `fingerprint_from_digests`)
+routes_import.py    ← Settings import routes on `dashboard_bp` (upload, preview, stream mapping,
+                      apply, cancel); templates/settings_import.html +
+                      partials/settings/import_rows.html, static/js/settings/import.js; the
+                      management API's `/import/plan` and `/import/apply` live in routes_mgmt_api.py
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot/export runs,
                       per-kind retention, file list + confined `resolve_file`; run functions record
                       `backup_last_runs`

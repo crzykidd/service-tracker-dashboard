@@ -374,38 +374,6 @@ is a security feature nobody asked for.
 
 ---
 
-## Backup contents and format
-
-**Parked:** 2026-11-17, during the network-inventory design review.
-
-### Context
-
-The nightly backup is a YAML list of entries with nested checks
-(`jobs.py` `run_scheduled_backup`). It isn't a table dump: groups
-are carried only by name, notification channels aren't included, and
-restore skips host-less entries unless `source = manual`. Tags,
-saved views, monitor profiles, assignment rules, alert policies,
-inventory sources and the inventory block list would all be missing.
-
-### Open questions
-
-- Back up everything, or only operator-set state (overrides, tags,
-  views, profiles, rules, the block list)? Observed data rebuilds
-  from the notifier and the DHCP sync.
-- A versioned top-level format (`format_version`, `entries`, `tags`,
-  `profiles`, ...) and how older backups map onto it.
-- Whether channel and source secrets belong in a backup file.
-
-### Interim
-
-A nightly SQLite snapshot via `sqlite3.Connection.backup()` (WAL-safe,
-per CLAUDE.md), stored next to the YAML backups with the same
-retention, and restored manually (stop the container, swap the file).
-It covers every table with no format work. A candidate for 0.10.0;
-see the design doc, sections 11 and 12.8.
-
----
-
 ## Notifier: log STD's API revision
 
 **Parked:** 2026-11-17, after the API revision landed on `dev` (PRD 18.1).

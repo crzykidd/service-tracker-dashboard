@@ -735,6 +735,8 @@ token.
 | GET | `/api/v1/backups` | read | List backup files |
 | POST | `/api/v1/backups/run` | write | Run a snapshot or an export now |
 | GET | `/api/v1/export` | read | Export the operator-set settings (format v1) |
+| POST | `/api/v1/import/plan` | write | Dry-run an import (what would change) |
+| POST | `/api/v1/import/apply` | write | Apply the selected rows of an import |
 | GET | `/api/v1/notifications/channels` | read | List notification channels |
 | POST | `/api/v1/notifications/channels` | write | Add a notification channel |
 | GET | `/api/v1/notifications/channels/{id}` | read | Get a notification channel |
@@ -1410,6 +1412,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/settings/api-keys` `/settings/api-keys/<id>/rotate` `/settings/api-keys/<id>/revoke` | Create and rotate (the key is shown once in a dialog) and revoke admin API keys (admin POST). |
 | `/settings/update-check` | Save the update-check toggle and interval (admin POST). |
 | `/settings/backups/export?format=yaml\|json` | Download the export of your settings now (admin GET; never any secret). |
+| `/settings/import` `/settings/import/<token>` `.../map` `.../apply` `.../cancel` | Import: upload an export or an old YAML backup (or pick one from the backup folder), the preview page with stream mapping, apply and cancel (admin; the staged file lives in `/config/import-staging/` for 60 minutes). |
 | `/api/update-status` | Cached update-check status for the header (JSON, login). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
@@ -1419,7 +1422,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/api/v1/meta`       | STD version, API revision and features (public). |
 | `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope, plus the STD version, build commit/channel and update status (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
-| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/settings/backup` `/api/v1/backups[/run]` `/api/v1/export` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; backup settings, the backup file list, Run now and the export (no secrets); read-only effective config with secrets masked (admin API key; `write` scope for changes). |
+| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/settings/backup` `/api/v1/backups[/run]` `/api/v1/export` `/api/v1/import/{plan,apply}` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; backup settings, the backup file list, Run now, the export (no secrets) and import plan / apply; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
 | `/login` `/logout`   | Local user auth.                         |
 
 ### Admin API keys (management API)
@@ -1518,11 +1521,51 @@ restored.
   - **On a new install, redo by hand:** create the API keys, set the MQTT password, set a
     password for each user, put each widget's API key back, and point the sidecars at the
     new install. A database snapshot is the way to keep secrets.
-  - Importing an export is not built yet; the file is for reading, diffing and the
-    import that follows. The old **Restore Service Data** form still reads only the
-    pre-0.11 entry-list YAML (`*-std_backup.yml`, `backup.yml`), not this format.
-- To restore from a snapshot (manual steps; an old entry-list YAML is restored from
-  Settings as before):
+- **Import** (Settings → Backup & restore → Import; also **Import…** in the ⋯ menu of an
+  export in the file list; or `POST /api/v1/import/plan` and `/apply`, and the MCP
+  tools `import_plan` and `import_apply`). It reads an export (YAML or JSON) **or an
+  old YAML backup** (`*-std_backup.yml`, `backup.yml`, the UI backup), and nothing
+  changes until you review and apply:
+  1. **Upload** the file, or pick one from the backup folder, and click **Preview
+     import**. The file is staged on the server for 60 minutes.
+  2. **Map streams.** Each stream in the file is matched to the local stream with
+     the same id (change it, or skip it). A stream that is not there yet says so;
+     run the import again once the sidecar has posted.
+  3. **Preview.** Every record in the file is matched against the database **now**
+     (by host and name, by stream and key, never by id) and grouped: Docker,
+     Manual, one group per stream, Groups, Notification channels, Streams & blocks,
+     Users, Settings. A row says what it is: *Missing settings* (a field in the
+     file is still at its fresh value here; ticked), *Differs* (here already has a
+     value of its own; unticked), *Identical*, *Deleted locally*, *Ambiguous*
+     (choose which local record), *Not found* (off; **Import as new** creates a
+     manual entry that the notifier adopts when the container registers), *Waiting*
+     (its stream is not there or not enabled), *Conflict* and *Invalid*. Open a row
+     for the per-field table.
+  4. **Mode.** The default **Fill missing only** writes only the fields that are
+     missing. **Also overwrite differences** lets you tick a differing field to
+     overwrite it, and asks before you apply.
+  5. **Apply import.** One transaction: everything you ticked, or nothing. If a
+     register or a snapshot changed a ticked row since the preview, nothing is
+     written, you get a "something changed" banner, and your ticks are kept.
+  6. **Summary** with counts, what was skipped, and **Still to do**.
+  - **Import never deletes anything**, never writes a password or key, and makes no
+    outbound request. Users are created **without a password** (Users shows "No
+    password set, cannot sign in" until you set one). Channels are created disabled
+    without their password. A locked record is never created locked: run the import
+    again after the container registers and the lock is applied.
+  - **It can be run again.** After the notifier registers and the sidecars post, run
+    the same file again: what was missing the first time is picked up, and a third
+    run shows everything *identical*.
+  - **What to redo on a new install** (the summary repeats this): a new ingest key for
+    each sidecar (Settings → API keys, scope Ingest), the notifier's `api_token`, the
+    MQTT password and enabling the channel, a password for each imported user, each
+    widget's API key, and new management API keys.
+  - The old **Restore Service Data** form and **Save backup to server** are gone;
+    an old YAML backup goes through the same import. The daily job no longer writes
+    that list, but old `*-std_backup.yml` files in the folder are still listed and
+    importable.
+- To restore from a snapshot (manual steps; an old entry-list YAML is imported from
+  Settings → Backup & restore → Import):
   1. Stop the container: `docker compose stop std`.
   2. Keep the current database: copy `/config/services.db` (and
      `services.db-wal` if present) to a safe name, for example

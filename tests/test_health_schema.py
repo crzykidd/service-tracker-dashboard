@@ -1,6 +1,5 @@
 """Health checks as their own tables (v0.7.0, PRD 13.3)."""
 
-import io
 import os
 import re
 import sqlite3
@@ -14,6 +13,7 @@ import yaml
 import jobs
 from extensions import db
 from models import HealthCheck, HealthResult, ServiceEntry, ensure_url_checks
+from tests.import_helpers import import_flow
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREVIOUS_HEAD = "a7c3e9f15d28"
@@ -345,12 +345,9 @@ def test_loop_skips_soft_deleted_entries(app):
 # --- backups ---------------------------------------------------------------------
 
 
-def _restore(admin_client, records):
-    payload = yaml.dump(records)
-    return admin_client.post("/settings", data={
-        "action": "restore", "restore_source": "upload", "restore_scope": "all",
-        "restore_file": (io.BytesIO(payload.encode()), "b.yaml"),
-    }, content_type="multipart/form-data")
+def _import(admin_client, records, **kw):
+    """Import a legacy (v0) list through the UI flow; replaces the old Restore form."""
+    return import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml", **kw)
 
 
 def test_backup_exports_check_config_only(app):
@@ -386,7 +383,7 @@ def test_new_format_backup_round_trip(app, admin_client):
         db.session.delete(e)
         db.session.commit()
     records[0]["last_updated"] = "2026-01-01 00:00:00"
-    assert _restore(admin_client, records).status_code == 302
+    assert _import(admin_client, records).status_code == 200      # not found: imported as new
     with app.app_context():
         e = _get("rt")
         assert _kinds(e) == ["external_url", "internal_url", "service"]
@@ -398,16 +395,17 @@ def test_new_format_backup_round_trip(app, admin_client):
         assert e.internal_health_check_enabled is None  # legacy column not written
 
 
-def test_restore_replaces_service_checks_wholesale(app, admin_client):
+def test_import_never_removes_a_local_service_check(app, admin_client):
+    # The old Restore replaced service checks wholesale; import only fills and never deletes.
     with app.app_context():
         e = _make("rs")
         e.checks.append(HealthCheck(kind="service", name="old", check_type="tcp", target="x:1",
                                     consecutive_failures=0))
         db.session.commit()
     rec = {"host": "host1", "container_name": "rs", "last_updated": "2026-01-01 00:00:00", "checks": []}
-    assert _restore(admin_client, [rec]).status_code == 302
+    assert _import(admin_client, [rec], mode="overwrite").status_code == 200
     with app.app_context():
-        assert _get("rs").service_checks == []
+        assert [c.name for c in _get("rs").service_checks] == ["old"]
 
 
 def test_old_format_backup_maps_legacy_fields(app, admin_client):
@@ -418,14 +416,14 @@ def test_old_format_backup_maps_legacy_fields(app, admin_client):
         "internal_health_check_status": "200", "internal_health_check_update": "2026-01-01 00:00:00",
     }
     bare = {"host": "h", "container_name": "oldest", "last_updated": "2026-01-01 00:00:00"}
-    assert _restore(admin_client, [rec, bare]).status_code == 302
+    assert _import(admin_client, [rec, bare]).status_code == 200
     with app.app_context():
         e = _get("old")
         assert _kinds(e) == ["external_url", "internal_url"]
         assert e.url_check("internal").enabled is True and e.url_check("external").enabled is False
         assert e.url_check("internal").timeout_seconds == 25 == e.url_check("external").timeout_seconds
         assert e.url_check("internal").verify_tls is False
-        assert e.internal_health_check_status == "200"  # status strings still restore
+        assert e.internal_health_check_status is None  # observed status is never imported
         b = _get("oldest")
         assert b.url_check("internal").enabled is False and b.url_check_timeout is None
         assert b.url_check_verify_tls is True

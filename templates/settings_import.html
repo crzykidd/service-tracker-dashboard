@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% from "partials/_flash.html" import toast, flash_category_kind %}
+{% from "partials/settings/_macros.html" import section_header, flash_slot, inline_warning, settings_group with context %}
+{% from "partials/settings/import_rows.html" import import_row with context %}
+
+{% block head %}
+  <title>Import - Settings</title>
+{% endblock %}
+
+{% block content %}
+{# The Settings shell for the import page (design 12.2): the same sidebar, with Backup & restore
+   current; the links go back to Settings. The preview is a full page because thousands of rows
+   do not fit a dialog. #}
+{% set _in_summary = (step == 'summary') %}
+<div id="settings-root" class="settings-root max-w-screen-2xl mx-auto py-8 px-6" data-imp-mode="{{ 'fill' if _in_summary else mode }}">
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Settings">
+      <h2 class="settings-nav-title">Settings</h2>
+      {% for gkey, glabel in settings_groups %}
+      <h3 class="settings-nav-label">{{ glabel }}</h3>
+      {% for slug, label, group in settings_sections if group == gkey %}
+      <a class="settings-nav-link" href="{{ url_for('dashboard.settings', section=slug) }}"{% if slug == 'backup' %} aria-current="page"{% endif %}><span>{{ label }}</span></a>
+      {% endfor %}
+      {% endfor %}
+    </nav>
+
+    <div class="settings-main">
+      <section id="section-import" class="settings-section">
+        {% call section_header('Import', 'Review what the file would change. Nothing changes until you apply.') %}
+          <p>Import matches each record in the file against what is in the database <strong>now</strong>. The default mode only
+            fills settings that are missing; a value that differs is never overwritten unless you switch to overwrite and tick it.
+            Import never deletes anything, and it can be run again.</p>
+        {% endcall %}
+
+        <ol class="imp-stepper" aria-label="Import steps">
+          <li class="is-done">Upload</li>
+          {% if step == 'preview' and plan.stream_mapping %}<li class="is-done">Map streams</li>{% endif %}
+          <li{% if step == 'preview' %} aria-current="step"{% else %} class="is-done"{% endif %}>Preview</li>
+          <li{% if step == 'summary' %} class="is-done"{% endif %}>Apply</li>
+          <li{% if step == 'summary' %} aria-current="step"{% endif %}>Summary</li>
+        </ol>
+
+        {{ flash_slot('import') }}
+
+        {% if step == 'summary' %}
+        {# ------------------------------------------------------------ summary (design 7.7) #}
+        {% set c = result.counts %}
+        <div class="settings-card" id="import-summary">
+          <h3 class="settings-card-heading">Import applied</h3>
+          <p class="settings-subtitle-note">{{ filename or 'The document' }}, mode: {{ 'fill missing only' if result.mode == 'fill' else 'also overwrite differences' }}.</p>
+          <div class="imp-summary-grid">
+            {% for key, label in (('rows_applied', 'Records updated'), ('fields_filled', 'Fields filled'), ('fields_overwritten', 'Fields overwritten'),
+                                  ('entries_created', 'Entries created'), ('entries_restored', 'Entries restored'), ('groups_created', 'Groups created'),
+                                  ('widgets_created', 'Widgets created'), ('channels_created', 'Channels created'), ('users_created', 'Users created'),
+                                  ('blocks_created', 'Blocks created'), ('settings_changed', 'Settings changed'), ('entries_soft_deleted', 'Entries soft-deleted')) %}
+            {% if c.get(key) %}<div class="imp-stat"><div class="imp-stat-n">{{ c[key] }}</div><div class="imp-stat-l">{{ label }}</div></div>{% endif %}
+            {% endfor %}
+            {% if not c %}<p class="settings-empty">Nothing was written: no row needed a change.</p>{% endif %}
+          </div>
+          {% if c.get('entries_created') %}
+          <p class="settings-subtitle-note">Entries created as new are manual entries. The notifier adopts a Docker one when its container registers; a device from a stream waits for the sidecar and a link offer.</p>
+          {% endif %}
+          {% if result.skipped %}
+          <p class="settings-subtitle-note">Skipped: {% for reason, n in result.skipped.items() %}{{ n }} {{ reason }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+          {% endif %}
+          {% for note in result.notes %}{% call inline_warning('warn') %}<span>{{ note }}</span>{% endcall %}{% endfor %}
+        </div>
+
+        {% set todo = result.still_to_do %}
+        <div class="settings-card" id="import-todo">
+          <h3 class="settings-card-heading">Still to do</h3>
+          <ul class="imp-todo">
+            {% if todo.users_without_password %}<li>Set a password for the users created without one (Users → Set password): <strong>{{ todo.users_without_password|join(', ') }}</strong>.</li>{% endif %}
+            {% if todo.channels_disabled %}<li>Set the password of each channel created disabled, then enable it (Notifications): <strong>{{ todo.channels_disabled|join(', ') }}</strong>.</li>{% endif %}
+            {% if todo.widgets_need_key %}<li>Enter the widget API key (Edit entry → widget) for: <strong>{{ todo.widgets_need_key|join(', ') }}</strong>.</li>{% endif %}
+            {% if todo.streams_not_present %}<li>Streams not present yet (the sidecar has not posted): <strong>{{ todo.streams_not_present|join(', ') }}</strong>. Run the import again once they appear.</li>{% endif %}
+            {% if todo.streams_to_enable %}<li>Enable the pending streams in Streams, then run the import again: <strong>{{ todo.streams_to_enable|join(', ') }}</strong>.</li>{% endif %}
+            {% if todo.open_link_offers %}<li>{{ todo.open_link_offers }} link offer{{ '' if todo.open_link_offers == 1 else 's' }} to answer (Streams).</li>{% endif %}
+            {% if todo.locks_deferred %}<li>Run the import again after these containers register, to apply their static lock: {{ todo.locks_deferred|join(', ') }}.</li>{% endif %}
+            {% for line in todo.generic %}<li>{{ line }}</li>{% endfor %}
+          </ul>
+          <div class="settings-card-actions">
+            <a class="btn-primary" href="{{ url_for('dashboard.settings', section='backup') }}">Back to Backup &amp; restore</a>
+            {% if server_file %}
+            <form method="POST" action="{{ url_for('dashboard.import_upload') }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="server_file" value="{{ server_file }}">
+              <button type="submit" class="btn-secondary">Run the import again</button>
+            </form>
+            {% else %}
+            <a class="btn-secondary" href="{{ url_for('dashboard.settings', section='backup') }}" title="Choose the file again in the Import card">Run the import again</a>
+            {% endif %}
+          </div>
+        </div>
+
+        {% else %}
+        {# ---------------------------------------------------------------- preview #}
+        {% set h = plan.header %}
+        <div class="imp-meta">
+          <span>File <strong>{{ filename or 'document' }}</strong></span>
+          <span>Exported <strong>{{ h.exported_at }}</strong></span>
+          <span>STD <strong>{{ h.std_version }}</strong></span>
+          <span>Format <strong>{{ 'older backup (converted)' if h.legacy else 'v' ~ h.format_version }}</strong></span>
+          {% if h.other_install %}<span class="settings-tag settings-tag--manual">from another install</span>{% endif %}
+        </div>
+        {% for w in plan.warnings %}{% call inline_warning('warn') %}<span>{{ w }}</span>{% endcall %}{% endfor %}
+        {% if h.legacy %}{% call inline_warning('warn') %}<span>This is an old YAML backup. It may carry secrets (a widget API key); import never reads them. Only what an export carries is matched and applied.</span>{% endcall %}{% endif %}
+
+        {% if plan.stream_mapping %}
+        <div class="settings-card" id="import-mapping">
+          <h3 class="settings-card-heading">Map streams</h3>
+          <p class="settings-subtitle-note">Each stream in the file is matched to a stream here. Only streams with the same key type can be chosen. Change it, and the preview is rebuilt.</p>
+          <form method="POST" action="{{ url_for('dashboard.import_map', token=token) }}" id="import-map-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% for m in plan.stream_mapping %}
+            <div class="imp-map-row">
+              <div><strong>{{ m.display_name or m.file_id }}</strong> <span class="imp-muted">({{ m.file_id }}, {{ m.key_type }})</span></div>
+              <span class="imp-map-arrow" aria-hidden="true">&rarr;</span>
+              <select class="input-clean" name="map-{{ m.file_id }}" aria-label="Local stream for {{ m.file_id }}" data-imp-map>
+                <option value="">Skip this stream</option>
+                {% for o in m.options %}<option value="{{ o.id }}"{% if o.id == m.local_id %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+              </select>
+              <div class="imp-muted" style="white-space:normal">
+                {% if m.error %}<span class="backup-bad">{{ m.error }}</span>
+                {% elif m.local_id %}Local status: {{ m.local_status }}.{% endif %}
+                {% if m.note %} {{ m.note }}{% endif %}
+              </div>
+            </div>
+            {% endfor %}
+            <div class="settings-card-actions" style="padding:0.5rem 1rem 0.75rem"><button type="submit" class="btn-secondary btn-sm">Update mapping</button></div>
+          </form>
+        </div>
+        {% endif %}
+
+        <form id="import-form" method="POST" action="{{ url_for('dashboard.import_apply_route', token=token) }}" data-imp-form
+              {% if mode == 'overwrite' %}data-confirm="Overwrite the values that differ?" data-confirm-label="Overwrite" data-confirm-title="Apply import" data-confirm-danger{% endif %}>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="fingerprint" value="{{ plan.fingerprint }}">
+
+          <div class="settings-card">
+            <div class="imp-toolbar">
+              <div class="imp-segmented" role="radiogroup" aria-label="Import mode">
+                <label class="{{ 'is-on' if mode == 'fill' }}"><input type="radio" name="mode" value="fill"{% if mode == 'fill' %} checked{% endif %}><span>Fill missing only</span></label>
+                <label class="{{ 'is-on' if mode == 'overwrite' }}"><input type="radio" name="mode" value="overwrite"{% if mode == 'overwrite' %} checked{% endif %}><span>Also overwrite differences</span></label>
+              </div>
+              <span class="imp-muted" data-imp-mode-note>
+                {% if mode == 'fill' %}Differing values are shown greyed out. Switch to overwrite to apply them.{% else %}Tick a differing field to overwrite it.{% endif %}
+              </span>
+            </div>
+            <div class="imp-toolbar">
+              <input type="search" class="input-clean" style="max-width:16rem" placeholder="Search name or host" aria-label="Search" data-imp-search>
+              <div class="imp-chips" role="group" aria-label="Filter by status">
+                {% for s in chips %}{% if status_counts[s] %}<button type="button" class="imp-chip" aria-pressed="false" data-imp-chip="{{ s }}">{{ pill_labels[s] }} · {{ status_counts[s] }}</button>{% endif %}{% endfor %}
+              </div>
+              <span class="settings-card-actions">
+                <button type="button" class="btn-ghost btn-sm" data-imp-select="all">Select all</button>
+                <button type="button" class="btn-ghost btn-sm" data-imp-select="none">Select none</button>
+              </span>
+            </div>
+          </div>
+
+          <div class="settings-card" id="import-groups">
+            {% if not groups %}<p class="settings-empty">The file has nothing to import.</p>{% endif %}
+            {% for g in groups %}
+            {% call settings_group(g.key, g.label, g.total, g.checked, collapsed=(g.total == 0), check=(g.total > 0)) %}
+              {% if g.subtitle %}<p class="settings-subtitle-note">{{ g.subtitle }}</p>{% endif %}
+              {% for v in g.rows %}{{ import_row(v) }}{% endfor %}
+              {% if g.identical %}
+              <details class="imp-identical">
+                <summary>{{ g.identical|length }} identical</summary>
+                <ul>{% for v in g.identical %}<li>{{ v.row.label }}{% if v.sub %} <span class="imp-muted">{{ v.sub }}</span>{% endif %}</li>{% endfor %}</ul>
+              </details>
+              {% endif %}
+            {% endcall %}
+            {% endfor %}
+          </div>
+
+          <div class="imp-applybar" data-imp-bar>
+            <span class="imp-applybar-hint" aria-live="polite"><strong data-imp-count="records">{{ bar.records }}</strong> records &middot;
+              <strong data-imp-count="fields">{{ bar.fields }}</strong> fields &middot; <strong data-imp-count="new">{{ bar.new }}</strong> new &middot;
+              <span data-imp-mode-label>{{ 'fill missing only' if mode == 'fill' else 'overwrite differences' }}</span></span>
+            <button type="submit" form="import-cancel" class="btn-ghost">Cancel</button>
+            <button type="submit" class="btn-primary" data-imp-apply>Apply import</button>
+          </div>
+        </form>
+        <form id="import-cancel" method="POST" action="{{ url_for('dashboard.import_cancel', token=token) }}" hidden>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        </form>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      {% if flash_category_kind(category)|trim == 'toast' %}{{ toast(category, message) }}{% endif %}
+    {% endfor %}
+  </div>
+
+  <dialog id="confirm-modal" class="std-modal std-modal--sm" aria-labelledby="confirm-title">
+    <div class="std-modal-header">
+      <h3 id="confirm-title">Are you sure?</h3>
+      <button type="button" class="std-modal-close" aria-label="Close" data-confirm-cancel>&#10005;</button>
+    </div>
+    <div class="std-modal-body"><p id="confirm-body" class="text-sm"></p></div>
+    <div class="std-modal-footer">
+      <button type="button" class="btn-secondary" data-confirm-cancel>Cancel</button>
+      <button type="button" class="btn-primary" id="confirm-ok">OK</button>
+    </div>
+  </dialog>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ static_v('js/settings/ui.js') }}"></script>
+<script src="{{ static_v('js/settings/import.js') }}"></script>
+{% endblock %}

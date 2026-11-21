@@ -44,7 +44,7 @@ WRITE_TOOLS = {
     "delete_notification_channel", "update_notification_channel", "scan_notification_orphans",
     "clear_notification_orphans", "update_stream", "enable_stream", "disable_stream", "ignore_stream", "delete_stream",
     "unblock_stream_key", "answer_link_offer", "link_entry_to_stream_item",
-    "apply_stream_default_checks", "unlink_entry", "run_backup",
+    "apply_stream_default_checks", "unlink_entry", "run_backup", "import_plan", "import_apply",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -63,6 +63,11 @@ CALLS = {
     "list_backups": ({}, "GET", "/api/v1/backups", {}, None),
     "export_config": ({}, "GET", "/api/v1/export", {"format": "json"}, None),
     "run_backup": ({"kind": "export"}, "POST", "/api/v1/backups/run", {}, {"kind": "export"}),
+    "import_plan": ({"document_text": "a: 1"}, "POST", "/api/v1/import/plan", {}, {"document_text": "a: 1"}),
+    "import_apply": ({"document_text": "a: 1", "stream_map": None, "selection": {"r": {"apply": True}},
+                      "mode": "fill", "fingerprint": "f"}, "POST", "/api/v1/import/apply", {},
+                     {"document_text": "a: 1", "selection": {"r": {"apply": True}}, "mode": "fill",
+                      "fingerprint": "f"}),
     "list_notification_channels": ({}, "GET", "/api/v1/notifications/channels",
                                    {"limit": "200", "offset": "0"}, None),
     "get_notification_channel": ({"channel_id": 4}, "GET", "/api/v1/notifications/channels/4", {}, None),
@@ -635,3 +640,43 @@ def test_backup_tools_against_the_real_app(app, tmp_path):
         assert doc["format"] == "std-export" and doc["format_version"] == 1
     finally:
         app.config["backup_path"], app.config["CONFIG_FROM_ENV"], app.config["CONFIG_FROM_FILE"] = old
+
+
+# --- import tools (STD API revision 4, bak-04) ---------------------------------------------------
+
+
+def test_import_apply_rejects_an_unknown_mode_without_a_request():
+    fake = Fake()
+    server = std_mcp.build_server(fake.client(), "write")
+    with pytest.raises(Exception, match="fill"):
+        call(server, "import_apply", {"document_text": "x", "stream_map": None, "selection": {},
+                                      "mode": "everything", "fingerprint": "f"})
+    assert fake.requests == []
+
+
+def test_import_tools_document_the_plan_first_rule():
+    import asyncio
+    server = std_mcp.build_server(Fake().client(), "write")
+    tools = {t.name: t for t in asyncio.run(server.list_tools())}
+    assert "ALWAYS call this first" in tools["import_plan"].description
+    assert "import_plan first" in tools["import_apply"].description
+
+
+def test_import_tools_against_the_real_app(app, register):
+    import yaml
+    assert register(host="h1", container_name="grafana").status_code == 200
+    doc = yaml.safe_dump({"format": "std-export", "format_version": 1, "exported_at": "2026-11-20T00:10:02Z",
+                          "std_version": "0.11.0", "api_revision": 4,
+                          "entries": [{"kind": "docker", "identity": {"host": "h1", "container_name": "grafana"},
+                                       "description": "from the file"}]})
+    server = std_mcp.build_server(_live_client(app, "write"), "write")
+    plan = call(server, "import_plan", {"document_text": doc})
+    assert plan["rows"][0]["status"] == "missing" and plan["default_selection"]
+    result = call(server, "import_apply", {"document_text": doc, "stream_map": None,
+                                           "selection": plan["default_selection"], "mode": "fill",
+                                           "fingerprint": plan["fingerprint"]})
+    assert result["counts"]["rows_applied"] == 1
+    with pytest.raises(Exception, match="import_plan again"):
+        call(server, "import_apply", {"document_text": doc, "stream_map": None,
+                                      "selection": plan["default_selection"], "mode": "fill",
+                                      "fingerprint": plan["fingerprint"]})

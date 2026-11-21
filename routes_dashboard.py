@@ -23,7 +23,6 @@ from datetime import datetime, timedelta
 
 import markdown as _md
 import requests
-import yaml
 from flask import (
     Blueprint,
     Response,
@@ -61,22 +60,12 @@ import version_check
 from extensions import db
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
-    CHECK_KIND_CONTAINER,
-    CHECK_KIND_SERVICE,
-    CHECK_MODES,
-    CHECK_TYPE_DNS,
-    CHECK_TYPE_HTTP,
-    CHECK_TYPES,
     NAME_SOURCE_UI_EDIT,
     SOURCE_MANUAL,
     SOURCE_NOTIFIER,
-    SOURCE_STREAM,
-    URL_CHECK_KINDS,
-    VALID_SOURCES,
     ApiAudit,
     ApiKey,
     Group,
-    HealthCheck,
     InventoryBlock,
     InventoryStream,
     NotificationChannel,
@@ -86,7 +75,6 @@ from models import (
     Widget,
     WidgetValue,
     check_counts,
-    ensure_container_check,
     ensure_url_checks,
     hard_delete_entry,
 )
@@ -180,19 +168,6 @@ def _restore_hint():
         f"It can be restored from Settings → Deleted for {days} "
         f"day{'' if days == 1 else 's'}."
     )
-
-
-def _parse_backup_datetime(value):
-    """Parse a backup timestamp ('%Y-%m-%d %H:%M:%S' or a YAML datetime)."""
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S')
-    except ValueError:
-        logger.warning(f"Ignoring unparseable deleted_at in backup: {value!r}")
-        return None
 
 
 def _detached_widget_rows():
@@ -426,267 +401,12 @@ def _audit_change_lines(changes):
     return lines
 
 
-@dashboard_bp.route('/settings', methods=['GET', 'POST'])
+@dashboard_bp.route('/settings', methods=['GET'])
 @login_required
 @is_admin_required
 def settings():
-    BACKUP_DIR = backups.backup_dir(current_app)
-    BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
-    try:
-        os.makedirs(BACKUP_DIR, exist_ok=True)
-    except OSError:
-        logger.warning("Could not create the backup folder %s", BACKUP_DIR)
-
-    if request.method == 'POST':
-        action = request.form.get('action')
-
-        if action == 'backup':
-            backup_operation = request.form.get('backup_operation')
-
-            # Backup is always for all entries now, soft-deleted included
-            # (to_dict carries deleted_at so a restore round-trips it).
-            entries = ServiceEntry.query.all()
-            data = []
-            for e in entries:
-                entry_data = e.to_dict()
-
-                # Add authoritative group_name from the relationship if group is linked
-                if e.group:
-                    entry_data['group_name'] = e.group.group_name
-                else:
-                    entry_data['group_name'] = None  # fallback for safety
-
-                data.append(entry_data)
-
-
-            try:
-                with open(BACKUP_PATH, 'w') as f:
-                    yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-                logger.info(f"📦 Default YAML backup updated at {BACKUP_PATH} (all entries)")
-
-                if backup_operation == 'save_on_server':
-                    # If the goal was just to save on the server, we're done.
-                    flash(f"✅ Backup saved to server: {BACKUP_PATH}", "success")
-                    return _settings_redirect('backup')
-
-                elif backup_operation == 'download_all':
-                    # If the goal is to download, send the file that was just written.
-                    logger.info(f"📦 Preparing YAML backup for download from {BACKUP_PATH} (all entries)")
-                    return send_file(
-                        BACKUP_PATH,
-                        mimetype='text/yaml',
-                        as_attachment=True,
-                        download_name=f'service_backup_all_{datetime.now().strftime("%Y%m%d_%H%M%S")}.yaml' # Added timestamp to download
-                    )
-                else:
-                    flash("Unknown backup operation.", "danger")
-                    return _settings_redirect('backup')
-
-            except Exception as e:
-                logger.exception("❌ Backup operation failed")
-                flash(f"Backup operation failed: {str(e)}", "danger")
-                return _settings_redirect('backup')
-
-        elif action == 'restore':
-            restore_source = request.form.get('restore_source')
-            restore_scope = request.form.get('restore_scope', 'all') # Defaults to 'all'
-
-            records = None
-            source_description = "unknown source"
-
-            try:
-                if restore_source == 'upload':
-                    file = request.files.get('restore_file')
-                    if file and file.filename:
-                        content = file.read().decode('utf-8')
-                        records = yaml.safe_load(content)
-                        source_description = f"uploaded file '{file.filename}'"
-                    else:
-                        flash("No file uploaded for restore.", "warning")
-                        return _settings_redirect('backup')
-
-                elif restore_source == 'server':
-                    selected_filename = request.form.get('server_backup_filename')
-                    if selected_filename:
-                        # Confined to the backup folder: a bare `.yml` / `.yaml` filename
-                        # whose real path stays inside it (backups.resolve_file).
-                        file_path = backups.resolve_file(
-                            selected_filename, directory=BACKUP_DIR, suffixes=('.yaml', '.yml'))
-                        if file_path is None:
-                            if (selected_filename != os.path.basename(selected_filename)
-                                    or not selected_filename.endswith(('.yaml', '.yml'))):
-                                flash("Invalid server filename selected.", "danger")
-                            else:
-                                flash(f"Selected server backup file '{selected_filename}' not found or is invalid.", "danger")
-                            return _settings_redirect('backup')
-
-                        if os.path.exists(file_path) and os.path.isfile(file_path):
-                            with open(file_path, 'r') as f:
-                                records = yaml.safe_load(f)
-                            source_description = f"server file '{selected_filename}'"
-                        else:
-                            flash(f"Selected server backup file '{selected_filename}' not found or is invalid.", "danger")
-                            return _settings_redirect('backup')
-                    else:
-                        flash("No server backup file selected.", "warning")
-                        return _settings_redirect('backup')
-                else:
-                    flash("Invalid restore source selected.", "danger")
-                    return _settings_redirect('backup')
-
-                if records is None:
-                    if not flash_is_present(request): # Avoid double flashing if already flashed above
-                         flash("Could not load records for restore.", "danger")
-                    return _settings_redirect('backup')
-
-                restored_count = 0
-                skipped_count = 0
-
-                for item in records:
-                    # Source: backups from before v0.7.0 have none; use the
-                    # migration's backfill rule (never registered -> manual).
-                    item_source = item.get('source')
-                    if item_source is None:
-                        item_source = SOURCE_NOTIFIER if item.get('last_api_update') else SOURCE_MANUAL
-                    elif item_source not in VALID_SOURCES or item_source == SOURCE_STREAM:
-                        # Unknown (e.g. a source from a newer STD): operator-made. A stream
-                        # entry has no stream to rejoin on restore, so it comes back manual.
-                        item_source = SOURCE_MANUAL
-                    item_host = (item.get('host') or '').strip() or None
-
-                    # Host is optional for manual entries only.
-                    if not item.get('container_name') or (item_host is None and item_source != SOURCE_MANUAL):
-                        logger.warning(f"⛔ Skipping entry with missing host/container_name: {item}")
-                        skipped_count +=1
-                        continue
-
-                    item_is_static_from_backup = item.get('is_static', False)
-
-                    # Apply restore_scope: if scope is 'static', skip non-static items from backup
-                    if restore_scope == 'static' and not item_is_static_from_backup:
-                        skipped_count +=1
-                        continue
-
-                    # Handle embedded widget data if present
-                    # --- 1. Restore or create the widget ---
-                    widget_data = item.get('widget')
-                    widget_obj = None
-
-                    if widget_data:
-                        widget_obj = Widget.query.filter_by(
-                            widget_name=widget_data.get('widget_name'),
-                            widget_url=widget_data.get('widget_url')
-                        ).first()
-
-                        if not widget_obj:
-                            widget_obj = Widget(
-                                widget_name=widget_data.get('widget_name'),
-                                widget_url=widget_data.get('widget_url'),
-                                widget_fields=widget_data.get('widget_fields') or [],
-                                widget_api_key=widget_data.get('widget_api_key'),
-                            )
-                            db.session.add(widget_obj)
-                        else:
-                            widget_obj.widget_fields = widget_data.get('widget_fields') or []
-                            widget_obj.widget_api_key = widget_data.get('widget_api_key')
-
-                        db.session.flush()  # ensure widget_obj.id is available
-
-
-
-                    entry = ServiceEntry.query.filter_by(
-                        container_name=item['container_name'],
-                        host=item_host
-                    ).first()
-
-                    group_name = item.get('group_name')
-                    group_obj = None
-
-                    if group_name:
-                        group_obj = Group.query.filter_by(group_name=group_name).first()
-                        if not group_obj:
-                            group_obj = Group(group_name=group_name)
-                            db.session.add(group_obj)
-                            db.session.flush()
-
-                    # Fetch or create entry
-                    entry = ServiceEntry.query.filter_by(
-                        container_name=item['container_name'],
-                        host=item_host
-                    ).first()
-
-                    if not entry:
-                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
-                        db.session.add(entry)
-                    elif entry.stream_id is not None:
-                        # A live stream entry is owned by its stream; a backup never overwrites it.
-                        skipped_count += 1
-                        continue
-
-                    # Assign group_id only now (after entry exists)
-                    entry.group_id = group_obj.id if group_obj else None
-
-
-                    if entry: # Entry exists in DB
-                        # Rule: Protect existing static entries in DB from being overwritten by non-static items
-                        # during a 'restore all' operation.
-                        if entry.is_static and restore_scope == 'all' and not item_is_static_from_backup:
-                            logger.info(f"ℹ️ Skipping update for DB static entry '{entry.container_name}' "
-                                        f"by non-static item from backup during 'all' scope restore.")
-                            skipped_count +=1
-                            continue
-                        # Otherwise (entry is not static, or item from backup is static, or scope is 'static'), proceed to update.
-                    else: # New entry, create it
-                        entry = ServiceEntry(host=item_host, container_name=item['container_name'])
-                        db.session.add(entry)
-                    if widget_obj:
-                        entry.widget_id = widget_obj.id
-
-                    # Apply fields from backup item to DB entry
-                    for field, value in item.items():
-                        # Ensure 'is_static' is handled correctly based on the item from backup
-                        if field == 'is_static':
-                            if hasattr(entry, 'is_static'):
-                                entry.is_static = item_is_static_from_backup
-                        elif hasattr(entry, field) and field not in ['id', 'last_updated', 'last_api_update', 'widget', 'deleted_at', 'health_check_timeout', 'health_check_verify_tls', 'host', 'source', 'checks', 'internal_health_check_enabled', 'external_health_check_enabled']:
-                            setattr(entry, field, value)
-
-                    entry.source = item_source
-                    entry.host = item_host
-
-                    # deleted_at round-trips; absent (v0.6.8 backups) means active.
-                    entry.deleted_at = _parse_backup_datetime(item.get('deleted_at'))
-
-                    # Health checks (v0.7.0): a new-format backup carries `checks`;
-                    # an older one is mapped from the legacy fields.
-                    _restore_checks(entry, item)
-
-                    # If 'is_static' wasn't in item.items() but we are creating, ensure it's set
-                    # (especially if item_is_static_from_backup was derived from .get with a default)
-                    if not entry.id and hasattr(entry, 'is_static'): # if it's a new entry being added
-                         if 'is_static' not in item: # if 'is_static' was not explicitly in the backup item dict
-                            entry.is_static = item_is_static_from_backup # ensure it's set from .get default
-
-                    entry.last_updated = datetime.now()
-                    restored_count += 1
-
-                db.session.commit()
-                flash_message = f"✅ Restored {restored_count} entries"
-                if restore_scope == 'static':
-                    flash_message += " (static entries only)"
-                flash_message += f" from {source_description}."
-                if skipped_count > 0:
-                    flash_message += f" Skipped {skipped_count} items."
-                flash(flash_message, "success")
-                logger.info(f"♻️ {flash_message}")
-
-            except Exception as e:
-                db.session.rollback() # Rollback in case of error during DB operations
-                logger.exception("❌ Restore failed")
-                flash(f"Restore failed: {str(e)}", "danger")
-
-            return _settings_redirect('backup')
-
+    # The old backup / restore branches (a POST with `action=backup|restore`) were removed
+    # in 0.11.0: export and import (routes_import.py) replace them.
     return _render_settings()
 
 
@@ -782,26 +502,12 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
     backup_next = {k: (v.strftime('%Y-%m-%d %H:%M') if v else None)
                    for k, v in jobs.next_run_times().items()}
 
-    # List backup files for the restore dropdown
-    server_backup_files = []
-    if os.path.exists(BACKUP_DIR):
-        try:
-            # List files and filter for .yaml or .yml, sort them (e.g., reverse for newest first if names allow)
-            all_files = [f for f in os.listdir(BACKUP_DIR) if os.path.isfile(os.path.join(BACKUP_DIR, f)) and (f.endswith('.yaml') or f.endswith('.yml'))]
-            # You might want to sort these files, e.g., by modification time or name
-            all_files.sort(reverse=True) # Example: newest first if names are sortable by time
-            server_backup_files = all_files
-        except Exception:
-            logger.exception(f"Error listing backup files from {BACKUP_DIR}")
-
-
-# Check which icon files are missing
-        missing_icons = []
-        all_entries = ServiceEntry.active().all()
-        for entry in all_entries:
-            icon = entry.image_icon
-            if icon and not os.path.exists(os.path.join(image_dir, icon)):
-                missing_icons.append(f"{entry.container_name} → {icon}")
+    # Check which icon files are missing
+    missing_icons = []
+    for entry in ServiceEntry.active().all():
+        icon = entry.image_icon
+        if icon and not os.path.exists(os.path.join(image_dir, icon)):
+            missing_icons.append(f"{entry.container_name} → {icon}")
     widgets = Widget.query.all()
     users = User.query.order_by(User.username.asc()).all()
 
@@ -849,7 +555,6 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
          current_config=current_app.config['LOADED_SETTINGS'],
          config_from_env=current_app.config['CONFIG_FROM_ENV'],
          config_from_file=current_app.config['CONFIG_FROM_FILE'],
-         server_backup_files=server_backup_files,
          backup_settings=backups.effective_settings(current_app),
          backup_form=backup_form,
          backup_files=backup_files,
@@ -1596,77 +1301,6 @@ def _positive_int(value):
 def _text_or_none(value):
     value = value.strip() if isinstance(value, str) else ''
     return value or None
-
-
-def _restore_checks(entry, item):
-    """Apply a backup record's health-check configuration to `entry`.
-
-    New format: `item['checks']` is a list of check configs. URL-kind rows
-    are matched by kind; service rows are replaced wholesale. Old format (no
-    `checks`): the legacy `*_health_check_enabled`, `health_check_timeout`
-    and `health_check_verify_tls` fields are mapped onto the two URL rows,
-    absent meaning disabled / global timeout / verify TLS on.
-    """
-    ensure_url_checks(entry)
-    ensure_container_check(entry)
-    checks = item.get('checks')
-    if isinstance(checks, list):
-        # Service rows are replaced wholesale by what the backup carries.
-        for old in entry.service_checks:
-            entry.checks.remove(old)
-        for cfg in checks:
-            if not isinstance(cfg, dict):
-                continue
-            kind = cfg.get('kind')
-            if kind == CHECK_KIND_CONTAINER:
-                # Notifier entries only; just enabled + interval round-trip.
-                check = entry.container_check
-                if check is not None:
-                    check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
-                    check.enabled = bool(cfg.get('enabled'))
-                continue
-            if kind in URL_CHECK_KINDS:
-                check = entry.url_check(kind)
-            elif kind == CHECK_KIND_SERVICE:
-                check = HealthCheck(kind=CHECK_KIND_SERVICE, consecutive_failures=0)
-                entry.checks.append(check)
-            else:
-                continue
-            check.name = cfg.get('name')
-            if cfg.get('check_type') in CHECK_TYPES:
-                check.check_type = cfg['check_type']
-            check.target = cfg.get('target') if kind == CHECK_KIND_SERVICE else None
-            if cfg.get('mode') in CHECK_MODES:
-                check.mode = cfg['mode']
-            check.interval_seconds = _positive_int(cfg.get('interval_seconds'))
-            check.timeout_seconds = _positive_int(cfg.get('timeout_seconds'))
-            check.verify_tls = cfg.get('verify_tls') is not False
-            check.enabled = bool(cfg.get('enabled'))
-            check.ha_exclude = cfg.get('ha_exclude') is True
-            # DNS settings (v0.9.0); absent in older backups, so they stay NULL.
-            is_dns = check.check_type == CHECK_TYPE_DNS and kind == CHECK_KIND_SERVICE
-            check.dns_name = _text_or_none(cfg.get('dns_name')) if is_dns else None
-            rtype = _text_or_none(cfg.get('dns_record_type'))
-            check.dns_record_type = rtype.upper() if is_dns and rtype else None
-            rcode = _text_or_none(cfg.get('dns_expected_rcode'))
-            check.dns_expected_rcode = rcode.upper() if is_dns and rcode else None
-            check.dns_expected_answer = _text_or_none(cfg.get('dns_expected_answer')) if is_dns else None
-            # Certificate-expiry minimum (v0.9.0); absent in older backups. Only
-            # http checks use it, and the cached expiry is never restored.
-            days = cfg.get('cert_min_days')
-            is_http = check.check_type == CHECK_TYPE_HTTP
-            valid = isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= 365
-            check.cert_min_days = days if is_http and valid else None
-            check.last_cert_expires_at = None
-        return
-
-    timeout = _positive_int(item.get('health_check_timeout'))
-    verify = item.get('health_check_verify_tls') is not False
-    for which in ('internal', 'external'):
-        check = entry.url_check(which)
-        check.enabled = bool(item.get(f'{which}_health_check_enabled'))
-        check.timeout_seconds = timeout
-        check.verify_tls = verify
 
 
 @dashboard_bp.route('/edit/<int:id>', methods=['GET', 'POST'])

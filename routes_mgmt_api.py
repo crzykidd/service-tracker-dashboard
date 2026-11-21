@@ -34,6 +34,7 @@ import check_form
 import entry_rules
 import export_format
 import health_history
+import importer
 import jobs
 import mgmt_openapi
 import notify
@@ -59,6 +60,8 @@ from mgmt_schemas import (
     ExposureSettingsPut,
     GroupCreate,
     GroupPatch,
+    ImportApplyRequest,
+    ImportPlanRequest,
     NotificationChannelCreate,
     NotificationChannelPatch,
     NotificationOrphanClearRequest,
@@ -308,6 +311,8 @@ def audit_response(response):
         return response
     if request.endpoint == "mgmt_api.put_stream_snapshot":
         return response     # a snapshot arrives every few minutes; the stream row keeps the counts (PRD 18.5)
+    if request.endpoint == "mgmt_api.import_plan":
+        return response     # a dry run: it reads and writes nothing
     info = g.get("audit") or {}
     try:
         db.session.add(ApiAudit(
@@ -1474,6 +1479,81 @@ def get_export():
     response = Response(data, mimetype="application/yaml" if fmt == "yaml" else "application/json")
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+# --- import (PRD 20; design 7, 11) ---------------------------------------------------------
+
+
+def _import_request(model):
+    """The validated request body of the import routes. The size is checked first (413); the
+    document may arrive as an object or as text (YAML, JSON or an old YAML backup)."""
+    limit = importer.MAX_UPLOAD_BYTES + 64 * 1024
+    if request.content_length is not None and request.content_length > limit:
+        raise ApiError(413, f"The request body is larger than {limit} bytes.", {"limit": limit})
+    return model.model_validate(_json_body())
+
+
+def _import_parsed(data):
+    """The `ParsedDoc` of a request, or a 400 response for a file that cannot be read."""
+    if data.document is not None:
+        raw, name = json.dumps(data.document).encode("utf-8"), "document.json"
+    else:
+        raw, name = data.document_text.encode("utf-8"), None
+    try:
+        return importer.parse(raw, name), None
+    except importer.ImportParseError as exc:
+        return None, json_error(400, str(exc))
+
+
+def _import_selection(data):
+    if data.selection is None:
+        return None
+    return {rid: row.model_dump() for rid, row in data.selection.items()}
+
+
+def _import_plan_out(the_plan, selection=None):
+    """The plan as JSON. `fingerprint` is the one for `selection`, or for the default selection
+    (`default_selection`, the rows the UI pre-ticks) when none is given."""
+    out = the_plan.to_dict()
+    out.pop("digests", None)
+    default = the_plan.default_selection()
+    out["default_selection"] = default
+    out["fingerprint"] = importer.fingerprint(the_plan, default if selection is None else selection)
+    return out
+
+
+@mgmt_bp.route("/import/plan", methods=["POST"])
+@require_api_key("write")
+def import_plan():
+    data = _import_request(ImportPlanRequest)
+    parsed, error = _import_parsed(data)
+    if error is not None:
+        return error
+    the_plan = importer.plan(parsed, data.stream_map)
+    return jsonify(_import_plan_out(the_plan, _import_selection(data)))
+
+
+@mgmt_bp.route("/import/apply", methods=["POST"])
+@require_api_key("write")
+def import_apply():
+    audit("import")
+    data = _import_request(ImportApplyRequest)
+    parsed, error = _import_parsed(data)
+    if error is not None:
+        return error
+    selection = _import_selection(data)
+    try:
+        result = importer.apply(parsed, data.stream_map, selection, data.mode, data.fingerprint,
+                                g.get("api_key_name") or "api")
+    except importer.ImportStale as exc:
+        response = jsonify({"error": str(exc), "details": None, "plan": _import_plan_out(exc.plan, selection)})
+        response.status_code = 409
+        return response
+    except importer.ImportApplyError as exc:
+        return json_error(400, str(exc))
+    out = result.to_dict()
+    audit("import", None, {key: [None, value] for key, value in sorted(out["counts"].items())})
+    return jsonify(out)
 
 
 # --- notification channels (PRD 17.2) --------------------------------------------

@@ -220,6 +220,26 @@ OPERATIONS: tuple = (
                    "(without the password), streams and blocks, users (without passwords) and the runtime "
                    "settings. Never any secret: `secret_set` and `api_key_set` only say that one exists. "
                    "Soft-deleted entries and everything STD rebuilds on its own are left out."),
+    Op("POST", "/import/plan", "write", "Dry-run an import (what would change)", S.ImportPlanOut,
+       request=S.ImportPlanRequest, errors=(413,),
+       description="Send an export as `document` (a v1 object) or `document_text` (YAML or JSON text, also an "
+                   "old YAML backup). The answer matches every record against the database as it is now: one "
+                   "row per record with a `status` (missing, differs, identical, deleted, ambiguous, "
+                   "not_found, waiting, conflict, invalid), its per-field differences and what you can choose "
+                   "(`target_id`, `create`, `options`). Nothing is written and nothing is stored. "
+                   "`default_selection` is what the UI pre-ticks. `fingerprint` is the one for `selection` "
+                   "when you send it, else for `default_selection`: send the same `selection` and "
+                   "`stream_map` back to `POST /import/apply`. A 400 means the file cannot be read."),
+    Op("POST", "/import/apply", "write", "Apply the selected rows of an import", S.ImportResultOut,
+       request=S.ImportApplyRequest, errors=(409, 413),
+       description="Re-plans against the database now and applies the rows in `selection` in one "
+                   "transaction, or nothing. `mode` is `fill` (default: only fields that are missing) or "
+                   "`overwrite` (also the differing fields named in `fields`). `fingerprint` must be the "
+                   "one `POST /import/plan` returned for this `selection` and `stream_map`; when a selected "
+                   "row changed since, nothing is written and the answer is 409 with `plan` (a fresh plan "
+                   "to review). A 400 is a bad stream mapping, a bad choice, or a row that cannot be "
+                   "applied; nothing was changed. Never deletes anything, never writes a secret, makes no "
+                   "outbound call. Users are created without a password; channels disabled."),
     Op("GET", "/notifications/channels", "read", "List notification channels",
        S.Page[S.NotificationChannelOut], params=_PAGE,
        description="Each channel carries its live connection `status`. The secret (the MQTT "

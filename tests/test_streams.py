@@ -1173,31 +1173,38 @@ def test_entry_api_carries_the_inventory_block(app, put, op, manual):
 # --- backups ---------------------------------------------------------------------------------------
 
 
-def test_a_stream_entry_restores_from_backup_as_manual(app, put, op, admin_client):
-    from tests.test_entry_sources import _restore
+def _import_legacy(admin_client, records, **kw):
+    import yaml
+
+    from tests.import_helpers import import_flow
+    return import_flow(admin_client, yaml.dump(records).encode(), name="b.yaml", **kw)
+
+
+def test_a_stream_entry_from_an_old_backup_imports_as_manual(app, put, op, admin_client):
     enabled_stream(app, put, op)
     with app.app_context():
         record = stream_entries()["aa:bb:cc:00:00:01"].to_dict()
         assert record["source"] == "stream" and record["mac"] == "aa:bb:cc:00:00:01"
         assert "stream_id" not in record and "stream_key" not in record
     op("DELETE", "/streams/dhcp", query_string={"cleanup": "purge"})
-    assert _restore(admin_client, [record]).status_code == 302
+    assert _import_legacy(admin_client, [record]).status_code == 200
     with app.app_context():
         e = ServiceEntry.query.filter_by(container_name="shelly-pump").one()
-        assert (e.source, e.stream_id, e.stream_key, e.ip, e.mac, e.host) == \
-            ("manual", None, None, "10.0.40.21", "aa:bb:cc:00:00:01", None)
+        # No stream here owns the MAC any more: a manual entry. Observed facts (ip, mac) are not imported.
+        assert (e.source, e.stream_id, e.stream_key, e.ip, e.host) == ("manual", None, None, None, None)
 
 
-def test_restore_does_not_overwrite_a_live_stream_entry(app, put, op, admin_client):
-    from tests.test_entry_sources import _restore
+def test_import_does_not_overwrite_a_live_stream_entry(app, put, op, admin_client):
     enabled_stream(app, put, op)
     with app.app_context():
         record = stream_entries()["aa:bb:cc:00:00:01"].to_dict()
     record["ip"] = "1.2.3.4"
-    assert _restore(admin_client, [record]).status_code == 302
+    record["description"] = "from the backup"
+    assert _import_legacy(admin_client, [record], mode="overwrite").status_code == 200
     with app.app_context():
         e = stream_entries()["aa:bb:cc:00:00:01"]
-        assert e.ip == "10.0.40.21" and e.source == "stream"
+        # Matched by key, never re-created; the stream's own facts stay, an operator setting is filled.
+        assert e.ip == "10.0.40.21" and e.source == "stream" and e.description == "from the backup"
         assert ServiceEntry.query.filter_by(container_name="shelly-pump").count() == 1
 
 

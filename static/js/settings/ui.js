@@ -323,7 +323,13 @@
   function groupParts(group) {
     var body = group.querySelector('.settings-group-body');
     var check = group.querySelector('.settings-group-check');
-    var boxes = body ? Array.prototype.slice.call(body.querySelectorAll('input[type=checkbox]')) : [];
+    // A group whose rows mark their box with data-group-row (the import page, where a row also
+    // holds per-field boxes) counts only those; otherwise every checkbox in the body is a row.
+    var boxes = [];
+    if (body) {
+      boxes = Array.prototype.slice.call(body.querySelectorAll('input[type=checkbox][data-group-row]'));
+      if (!boxes.length) { boxes = Array.prototype.slice.call(body.querySelectorAll('input[type=checkbox]')); }
+    }
     return { body: body, check: check, boxes: boxes };
   }
 
