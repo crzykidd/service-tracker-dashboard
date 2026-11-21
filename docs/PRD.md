@@ -88,6 +88,7 @@
 | 0.78    | 2026-11-19 | v0.10.0 release prep: §16, §17 and §18 (version in the UI, MQTT and Home Assistant notifications, inventory streams and API revision 2) marked Delivered in v0.10.0. No content change. |
 | 0.79    | 2026-11-20 | Stream observability (inv-08), API revision 3 (unreleased, next after 0.10.0): new §18.9 (rejected snapshots, staleness with grace factor 2 and the expected / advertised interval, `missing` lifecycle with `inventory_missing_since` and the optional per-stream auto soft-delete and its "edited by a human" exemptions, IP-following checks instead of templated targets, MCP `server_info` re-check); §5.10 migration `c6f2a8d4e157`; §18.1 revision 3 row; §18.5 optional `snapshot_interval_seconds` and rejection recording; §18.7 `PATCH` fields; §14.3 health summary `streams` / `stale_streams` / `counts.streams_stale`; §17.3 stream topic `stale` etc. and entry `missing` / `missing_since`; §17.4 stream hub `problem` binary sensor. Register contract unchanged. |
 | 0.80    | 2026-11-20 | v0.10.1 release prep: §18.9 stream observability (API revision 3) marked Delivered in v0.10.1; §18.1 revision 3 row names 0.10.1. No content change. |
+| 0.81    | 2026-11-20 | 0.10.2 fixes (unreleased): `service_entry.container_name` widened to `String(128)` (migration `d7a3e9b2c418`, §5.10) to match the 128-character stream item name; entry name limit 128 in `/add` and the management API (register `container_name` has no length cap, unchanged); notification **Send test message** bounded to about 5 s in total (§17.2). Register and stream contracts unchanged, API revision stays 3. |
 
 ---
 
@@ -475,7 +476,7 @@ Migrations `d8e2a6f4b915` and `e3b7c1d9a204` (§17.4). No foreign keys, no new i
 
 ### 5.10 Inventory stream schema changes
 
-Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_checks`, below), `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, below) and `c6f2a8d4e157` (stream observability, §18.9, below). Every FK column has its index in the same migration.
+Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_checks`, below), `b4e7a1c9d325` (`service_entry.stream_linked`, `pre_link_host`, below), `c6f2a8d4e157` (stream observability, §18.9, below) and `d7a3e9b2c418` (`service_entry.container_name` widened from `String(100)` to `String(128)`, so a 128-character stream item name fits; `batch_alter_table`, the `ix_service_entry_host_container_name` index survives the rebuild). Every FK column has its index in the same migration.
 
 | Change | Detail |
 |--------|--------|
@@ -2557,7 +2558,7 @@ No register-contract change: the notifier is not involved.
   enable/disable, delete; write-only password (blank keeps it, a checkbox
   clears it); **Send test message** publishes a non-retained JSON message to
   `<base>/test` using the submitted, possibly unsaved, values (a throwaway
-  client with a `-test` client id, so the live connection is not dropped).
+  client with a `-test` client id, so the live connection is not dropped). The test runs on the request thread under one budget of about 5 s in total (connect wait 4 s, the publish wait gets the remainder, at least 1 s), so a broker that does not answer ends with "No answer from host:port within 4 seconds."
 - Management API: `GET`/`POST /api/v1/notifications/channels`,
   `GET`/`PATCH`/`DELETE .../channels/{id}`, `POST .../channels/{id}/test`
   (read scope for GET, write for the rest). `secret` is write-only
@@ -2919,7 +2920,7 @@ a half-written file never carries the `.sqlite3` name; the prune matches only
 
 ### 18.4 Schema [`inv-04`] — Delivered
 
-**As built:** migration `f4c8a2e6d173`, documented in §5.10. Deviations from the list below: `inventory_stream.api_key_id` and the two `ON DELETE CASCADE` FKs are enforced by the ORM (`cascade="all, delete-orphan"`), because SQLite runs without foreign-key enforcement. `service_entry.container_name` stays `String(100)`; SQLite doesn't enforce VARCHAR length, so an item name of up to 128 characters (the contract limit) is stored whole.
+**As built:** migration `f4c8a2e6d173`, documented in §5.10. Deviations from the list below: `inventory_stream.api_key_id` and the two `ON DELETE CASCADE` FKs are enforced by the ORM (`cascade="all, delete-orphan"`), because SQLite runs without foreign-key enforcement. `service_entry.container_name` stayed `String(100)` at first (SQLite doesn't enforce VARCHAR length, so a 128-character item name was stored whole anyway); migration `d7a3e9b2c418` (§5.10) widened it to 128 to match the contract.
 
 One Alembic migration, FK indexes in the same migration. §5.10 is written when it
 ships.

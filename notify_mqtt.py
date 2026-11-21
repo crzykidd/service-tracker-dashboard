@@ -36,8 +36,12 @@ logger = logging.getLogger(__name__)
 
 TYPE = "mqtt"
 DEFAULT_BASE_TOPIC = "std"
-TEST_TIMEOUT_SECONDS = 8
-PUBLISH_WAIT_SECONDS = 5
+# The Test button runs on a request thread, so the whole test shares one short budget:
+# the connect wait takes up to TEST_CONNECT_SECONDS, the publish wait gets what is left
+# (at least TEST_MIN_PUBLISH_SECONDS). The live publisher path does not use these.
+TEST_TOTAL_SECONDS = 5.0
+TEST_CONNECT_SECONDS = 4.0
+TEST_MIN_PUBLISH_SECONDS = 1.0
 _CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
@@ -360,16 +364,24 @@ class MqttSession:
             logger.debug("MQTT channel '%s': publish failed: %s", self.name, exc)
 
 
+def _stop_quietly(client):
+    try:
+        client.loop_stop()
+    except Exception:
+        pass
+
+
 def test_connection(config: dict, secret, instance_id: str, factory=None) -> tuple[bool, str]:
     """Connect with a throwaway client, publish a non-retained JSON message to
     `<base>/test`, report `(ok, message)`. The client id gets `-test` so the
     broker does not drop the live connection that shares the channel's id.
-    Blocks up to ~13s (called from a request thread, never the publisher)."""
+    Blocks up to ~5s in total (called from a request thread, never the publisher)."""
     factory = factory or default_client_factory
     topic = f"{config['base_topic']}/test"
     where = f"{config['host']}:{config['port']}"
     result = {}
     done = threading.Event()
+    started_at = time.monotonic()
     try:
         client = _build_client(config, secret, instance_id, factory, suffix="-test", will=False)
     except Exception as exc:
@@ -391,8 +403,9 @@ def test_connection(config: dict, secret, instance_id: str, factory=None) -> tup
         client.connect_async(config["host"], config["port"], config["keepalive"])
         client.loop_start()
         started = True
-        if not done.wait(TEST_TIMEOUT_SECONDS):
-            return False, f"No answer from {where} within {TEST_TIMEOUT_SECONDS} seconds."
+        connect_wait = min(TEST_CONNECT_SECONDS, TEST_TOTAL_SECONDS)
+        if not done.wait(connect_wait):
+            return False, f"No answer from {where} within {connect_wait:g} seconds."
         if "error" in result:
             return False, result["error"][0].upper() + result["error"][1:] + "."
         body = json.dumps({
@@ -401,7 +414,8 @@ def test_connection(config: dict, secret, instance_id: str, factory=None) -> tup
             "sent_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
         info = client.publish(topic, body, qos=config["qos"], retain=False)
-        info.wait_for_publish(timeout=PUBLISH_WAIT_SECONDS)
+        remaining = TEST_TOTAL_SECONDS - (time.monotonic() - started_at)
+        info.wait_for_publish(timeout=max(TEST_MIN_PUBLISH_SECONDS, remaining))
         if getattr(info, "rc", 0) != 0 or not info.is_published():
             return False, f"Connected to {where}, but the test message was not delivered to {topic}."
         return True, f"Published a test message to {topic} on {where}."
@@ -410,10 +424,15 @@ def test_connection(config: dict, secret, instance_id: str, factory=None) -> tup
     finally:
         try:
             client.disconnect()
-            if started:
-                client.loop_stop()
         except Exception:
             pass
+        if started:
+            # loop_stop() joins the network thread, which can sit in a blocking socket
+            # connect for seconds against a dead broker; never make the caller wait.
+            stopper = threading.Thread(target=_stop_quietly, args=(client,), daemon=True,
+                                       name="mqtt-test-stop")
+            stopper.start()
+            stopper.join(0.5)
 
 
 class MqttChannelType:

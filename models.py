@@ -67,7 +67,7 @@ class ServiceEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # NULL host is allowed for manual entries (v0.7.0).
     host = db.Column(db.String(100), nullable=True)
-    container_name = db.Column(db.String(100), nullable=False)
+    container_name = db.Column(db.String(128), nullable=False)
     container_id = db.Column(db.String(100), nullable=True)
     internalurl = db.Column(db.String(255), nullable=True)
     externalurl = db.Column(db.String(255), nullable=True)

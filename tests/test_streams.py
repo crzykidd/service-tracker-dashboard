@@ -1337,7 +1337,21 @@ def test_migration_on_an_empty_db_reaches_a_single_head(tmp_path):
     db_path = str(tmp_path / "empty.db")
     _alembic(tmp_path, db_path, "upgrade", "head")
     heads = _alembic(tmp_path, db_path, "heads").stdout
-    assert heads.count("(head)") == 1 and "c6f2a8d4e157" in heads
+    assert heads.count("(head)") == 1 and "d7a3e9b2c418" in heads
     tables, cols, _ = _schema(db_path)
     assert "inventory_stream" in tables and "name_source" in cols
     _alembic(tmp_path, db_path, "downgrade", "base")
+
+
+def test_128_char_item_name_is_stored_whole(app, put, op):
+    name = "n" * 128
+    body = snapshot(items=[{"key": "aa:bb:cc:00:00:99", "name": name, "ip": "10.0.40.99"}])
+    assert put(body).status_code == 202
+    assert op("POST", "/streams/dhcp/enable").status_code == 200
+    with app.app_context():
+        assert stream_entries()["aa:bb:cc:00:00:99"].container_name == name
+
+
+def test_129_char_item_name_is_rejected(put):
+    body = snapshot(items=[{"key": "aa:bb:cc:00:00:99", "name": "n" * 129}])
+    assert put(body).status_code == 400

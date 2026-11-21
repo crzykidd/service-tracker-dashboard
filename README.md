@@ -1035,7 +1035,7 @@ publishing and Home Assistant discovery build on it). Configure it under **Setti
 2. **Check it.** **Send test message** connects with the values currently in
    the form (saved or not) and publishes a JSON message to
    `<base topic>/test` (not retained). Success or the reason for the failure
-   shows right next to the button. Subscribe with
+   shows right next to the button (a broker that does not answer is reported within about 5 seconds). Subscribe with
    `mosquitto_sub -t 'std/#' -v` to watch.
 3. **Watch the status.** The channel list shows connected, connecting,
    error (with the last error) or disabled, and refreshes while the tab is

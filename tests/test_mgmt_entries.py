@@ -685,3 +685,14 @@ def test_mgmt_entries_source_query_covers_valid_sources(app, client, rkey):
         body = client.get(f"/api/v1/entries?source={s}", headers=rkey).get_json()
         assert [i["name"] for i in body["items"]] == [f"q-{s}"]
     assert client.get("/api/v1/entries?source=bogus", headers=rkey).status_code == 400
+
+
+def test_entry_name_may_be_128_chars_and_129_is_rejected(client, wkey):
+    name = "n" * 128
+    created = _post_entry(client, wkey, name=name)
+    assert created.status_code == 201 and created.get_json()["name"] == name
+    eid = created.get_json()["id"]
+    assert client.patch(f"/api/v1/entries/{eid}", headers=wkey, json={"name": "m" * 128}).status_code == 200
+    assert client.get(f"/api/v1/entries/{eid}", headers=wkey).get_json()["name"] == "m" * 128
+    assert _post_entry(client, wkey, name="n" * 129).status_code == 400
+    assert client.patch(f"/api/v1/entries/{eid}", headers=wkey, json={"name": "m" * 129}).status_code == 400

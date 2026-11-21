@@ -473,10 +473,27 @@ def test_test_message_publish_failure(app, factory):
 
 def test_test_message_timeout(app, factory, monkeypatch):
     factory.client_kwargs["outcome"] = "silent"
-    monkeypatch.setattr(notify_mqtt, "TEST_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(notify_mqtt, "TEST_CONNECT_SECONDS", 0.05)
     with app.app_context():
         ok, message = notify.test_channel("mqtt", {"host": "b.lan"}, None)
     assert not ok and "No answer" in message
+
+
+def test_test_message_budget_is_short_and_bounded():
+    # the whole test (connect + publish) is about 5 s, never the old ~13 s
+    assert notify_mqtt.TEST_TOTAL_SECONDS <= 5
+    assert notify_mqtt.TEST_CONNECT_SECONDS < notify_mqtt.TEST_TOTAL_SECONDS
+
+
+def test_test_message_silent_broker_returns_within_budget(app, factory, monkeypatch):
+    import time
+    factory.client_kwargs["outcome"] = "silent"
+    monkeypatch.setattr(notify_mqtt, "TEST_CONNECT_SECONDS", 0.2)
+    started = time.monotonic()
+    with app.app_context():
+        ok, message = notify.test_channel("mqtt", {"host": "b.lan", "port": 1884}, None)
+    assert not ok and "b.lan:1884" in message and "within 0.2 seconds" in message
+    assert time.monotonic() - started < 2
 
 
 def test_test_with_invalid_config_reports_it(app, factory):

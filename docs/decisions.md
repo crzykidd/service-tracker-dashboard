@@ -5,6 +5,29 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — 0.10.2: MQTT test budget and 128-char entry names
+
+- **Test budget split.** `test_connection` had `TEST_TIMEOUT_SECONDS = 8` plus
+  `PUBLISH_WAIT_SECONDS = 5`. Now `TEST_TOTAL_SECONDS = 5`, `TEST_CONNECT_SECONDS = 4`
+  and a publish wait of the remainder, minimum `TEST_MIN_PUBLISH_SECONDS = 1` (so the
+  worst case is a little over 5 s when connect takes the full 4 s). `PUBLISH_WAIT_SECONDS`
+  was used only by the test and was removed; the live publisher never used it.
+  It still runs on the request thread (notif-01 reasoning unchanged).
+- **`loop_stop()` is run on a throwaway daemon thread, joined for at most 0.5 s.**
+  paho's `loop_stop()` joins the network thread, which can be inside a blocking
+  socket connect against a dead broker (paho's connect timeout is 5 s), re-adding
+  the delay in `finally`. The thread finishes on its own; the caller does not wait.
+- **No `API_REVISION` bump.** The register schema's `container_name` has no length
+  cap (a bare `str`) and the stream item `name`/`key` were already `_text(128)`, so
+  no wire maximum changed. Only the DB column (an internal limit) and the UI /
+  management-API entry-name limit (`entry_rules.NAME_MAX`, 100 -> 128) moved; the
+  latter loosens a check on operator-created entries, not a producer-visible contract.
+  Group names stay 100 (`GROUP_NAME_MAX`), `pre_link_host` stays 100 (it holds a host).
+- Migration `d7a3e9b2c418` uses `batch_alter_table`; the downgrade narrows the
+  declared type only (SQLite does not enforce VARCHAR length), so no data is cut.
+
+---
+
 ## 2026-11-20 — Known-gap triage after v0.10.1
 
 All of 0.10.1 passed the operator's browser checks. The known gaps from the
@@ -19,7 +42,7 @@ handoff were sorted so they stop coming back as open items:
 - **Parked in `docs/FUTURE.md`:** persisting the "republish: false" purge hold, and
   renaming a stream ("Small gaps parked after v0.10.1"); expiry vs.
   `deleted_retention_days: 0` ("Stream observability follow-ups").
-- **Still open, to fix:** the MQTT test button blocking about 13 s against a
+- **Fixed in 0.10.2 (see the entry above):** the MQTT test button blocking about 13 s against a
   broker that doesn't answer, and `container_name` being `String(100)` while the
   contract allows 128 characters.
 

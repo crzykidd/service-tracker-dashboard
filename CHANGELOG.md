@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Send test message no longer hangs on a silent broker.** Against a broker that
+  does not answer, the Settings → Notifications test button used to block for about
+  13 seconds; the whole test now gives up after about 5 seconds with "No answer from
+  host:port within 4 seconds."
+- **Entry names can be 128 characters.** Inventory stream items were allowed names
+  up to 128 characters while entries stored 100 (SQLite let it through, the Add form
+  and the management API did not). The limit is now 128 everywhere an entry name is
+  entered or stored. A migration widens the column; existing entries are untouched.
+
 ## [0.10.1] — 2026-11-20
 
 ### Added
