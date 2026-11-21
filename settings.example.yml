@@ -1,5 +1,5 @@
 # settings.example.yml
-# This is the settings for for STD (Service Tracker Dashboard)
+# This is the settings file for STD (Service Tracker Dashboard)
 # Any ENV variables set will be used before the entry in this config file.
 
 # Backup file location.   Make sure this is mountable in from your container.  
@@ -23,7 +23,8 @@ api_token: supersecrettoken
 # How often (in seconds) the background loop tests the configured URLs.
 url_healthcheck_interval: 300
 
-# How often do we reload the widget data default 300 seconds
+# Seconds between widget data refreshes (default 900).
+# Can be set as WIDGET_BACKGROUND_RELOAD in ENV.
 widget_background_reload: 900
 
 # Number of days of widget value history to retain. Rows in the
@@ -54,8 +55,8 @@ register_field_ownership: user_wins
 user_session_length: 120
 
 # Minutes without a notifier update before a dynamic service is flagged
-# stale (warning icon on the Dashboard, Tiled, and Compact views). Static
-# entries are never stale. The notifier re-scans every 60 s by default.
+# stale (warning icon on the Dashboard, Tiled, and Compact views). Manual,
+# locked and stream entries are never stale. The notifier re-scans every 60 s by default.
 stale_after_minutes: 5
 
 # Seconds to wait for a URL health check before giving up. A service can

@@ -98,6 +98,7 @@
 | 0.88    | 2026-11-20 | §20.3 and §20.4 describe the import engine as built on `dev` (bak-03; still Planned for operators, because nothing reaches it until bak-04): new `importer.py` (`parse` for v1 and the legacy entry list, a pure `plan()`, `fingerprint`, `apply()` under the register and stream locks, a staging store under `CONFIG_DIR/import-staging/`), `export_format.from_legacy()`, and a `User.has_password` property for users created with the `!unset` hash. §3.1 module layout and §20.6 updated. No schema, wire-contract or `/api/v1` change. |
 | 0.89    | 2026-11-20 | §20.3 delivered on `dev` (bak-04): the import UI (Settings → Backup & restore → Import card, `/settings/import/<token>` preview page with stream mapping, the fill / overwrite mode switch, grouped rows with tri-state and per-field ticks, sticky apply bar, summary with "Still to do"), users created without a password (a muted tag in Users), management API `POST /import/plan` and `POST /import/apply` and MCP `import_plan` / `import_apply`. The old Restore form, "Save backup to server" and the `action=backup\|restore` branches of `/settings` are removed (old YAML backups import through the new flow). **`API_REVISION` 4** row extended (§18.1), `import` feature added; no new revision. §3.1 module layout, §14.4 route list, §20.3, §20.4, §20.6 updated. No schema, register or stream-ingest wire-contract change. |
 | 0.90    | 2026-11-20 | §20.5 delivered on `dev` (bak-05), completing §20 (Backup, export and import; all five phases delivered, unreleased): staged database restore. `restore_staging.py` validates and stages a snapshot (⋯ → Restore… or an upload, ≤ 200 MB); `restore_swap.py`, run by `entrypoint.sh` before `alembic upgrade head`, keeps the current database as `pre-restore-<timestamp>.sqlite3` (`Connection.backup()`), swaps the file and never blocks startup; pending banner on every Settings section, last-result banner, `pre-restore-*` files listed with the snapshots and never pruned. §3 (startup sequence) and §3.1 updated. No schema, wire-contract or `/api/v1` change. |
+| 0.91    | 2026-11-21 | Docs-only, with the README revamp: §21 says the `Test` check is required (it is, in the "Require PR for Main" ruleset, with a code-scanning rule for CodeQL), no longer "pending operator action"; the §21.3 heading says inventory stream producers shipped in 0.10.0 instead of "planned". Operator reference material moved out of the README into `docs/register-api.md`, `docs/inventory-streams.md` and `docs/mqtt-home-assistant.md`. No code, schema or contract changes. |
 
 ---
 
@@ -3754,9 +3755,9 @@ route (a whole-database swap through an API key is too sharp).
   `ruff.toml`), `Config validation` (YAML/JSON parse), `Migration check`
   (`alembic upgrade head` on an empty DB, exactly one head),
   `Compose validation` (`docker compose config --quiet`), and `Test`
-  (pytest, `tests/`; added in v0.6.9 — pending operator action to mark it
-  required in branch protection). `CI` triggers on push to `dev`/`main`
-  only.
+  (pytest, `tests/`; added in v0.6.9, required). Protection is a repository
+  ruleset ("Require PR for Main") with a code-scanning rule for CodeQL. `CI`
+  triggers on push to `dev`/`main` only.
 - Registry retention: `.github/workflows/retention.yml` prunes GHCR
   versions weekly and after each publish — keeps the 30 most recent
   `sha-*` and 15 most recent semver versions, never deletes `latest`,
@@ -3826,12 +3827,12 @@ not lead.
 
 ---
 
-### 21.3 Inventory stream producers (planned, §18)
+### 21.3 Inventory stream producers (§18; delivered in 0.10.0)
 
 From 0.10.0 STD also owns the **ingest contract** (§18.5), and inventory
 sidecars are its producers. The first is
 [std-source-technitium](https://github.com/crzykidd/std-source-technitium)
-(new repo; Technitium DHCP static reservations), with its own version line,
+(its own repo; Technitium DHCP static reservations), with its own version line,
 image and release cadence. The same rules apply as for the notifier:
 
 - **STD leads, producers follow.** The ingest schema uses `extra="forbid"`, so a

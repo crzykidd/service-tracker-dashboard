@@ -5,6 +5,43 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — README revamp: deep reference moves to docs/ pages
+
+Calls made while rewriting the README (`prompts/2026-11-21-readme-revamp.md`). Docs only.
+
+- **Three reference pages under `docs/`, the README keeps an overview of each.** The
+  full register contract (payload, ownership, capture, exposure, provenance, wire
+  semantics, labels) is `docs/register-api.md`; the full stream guide (UI steps, view
+  markers, API semantics, limits) is `docs/inventory-streams.md`; channels, topic
+  payloads, every Home Assistant entity, purge and broker clean-up are
+  `docs/mqtt-home-assistant.md`. The text moved mostly as written and was corrected
+  where it was stale. Rejected: one `docs/reference.md` (too long to navigate) and
+  leaving it all in the README (1,700 lines, operator setup buried under reference).
+  The README sections link to them, and the pages link back.
+- **The management API endpoint table stays in the README.** It is the reference most
+  operators and agents look for, and it matches the code route for route (checked
+  against `routes_mgmt_api.py`).
+- **What's New headings keep the `v` prefix** (`### v0.10.1 (2026-11-20)`): they name a
+  release, which is the one place the release standard allows it, and `/release-prep`
+  step 4 writes exactly that heading. Each block links to its CHANGELOG entry by GitHub
+  anchor (`#0101--2026-11-20`); all anchors were checked. The 0.11.0 block is headed
+  "unreleased, on `dev`" and links `#unreleased`, with an HTML comment telling
+  `/release-prep` to replace the heading and the link rather than add a second block.
+- **The UI route table is gone.** It listed about a third of the routes and was the
+  most stale part. The README now lists the Settings sections (from
+  `settings_sections.py`) and the stable pages; the UI's own POST/JSON routes are
+  described as internal (login + CSRF, not a stable interface).
+- **Proposed screenshots are real image references** (`std_streams.png`,
+  `std_import_preview.png`, `std_home_assistant.png`, `std_health_detail.png`) with a
+  `<!-- screenshot needed: ... -->` comment each, so the operator only drops files in.
+  They show as broken images until then.
+- **`TZ` is documented** although STD does not read it: the image has tzdata, and the
+  daily job times are container local time (checked: `TZ=America/Chicago` gives CST in
+  the `:dev` image).
+- **`settings.example.yml` comment fixes only** (the widget reload default said 300,
+  the code and value say 900; "static entries" became manual, locked and stream
+  entries). No key or value changed; it still parses and loads every key.
+
 ## 2026-11-20 — Backup, export and import, bak-05 (staged restore)
 
 Calls made while building phase 5 (`prompts/2026-11-20-bak-05-staged-restore.md`), with the

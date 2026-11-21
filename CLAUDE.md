@@ -195,6 +195,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 - Full PRD is at `docs/PRD.md` — read this before starting any phase.
 - Project history (structural events, milestones) at `docs/HISTORY.md`.
 - Parked ideas (not built, not in the PRD) at `docs/FUTURE.md`.
+- Operator reference pages linked from the README: `docs/register-api.md`,
+  `docs/inventory-streams.md`, `docs/mqtt-home-assistant.md`.
 - Decision log (non-obvious calls, rejected alternatives) at
   `docs/decisions.md`, newest at top.
 - Adopted engineering standards and their pinned versions at `standards.md`.
