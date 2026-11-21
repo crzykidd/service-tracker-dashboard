@@ -42,14 +42,15 @@ def release_notes_url(source):
     return f"https://github.com/{match.group(1)}/{match.group(2)}/releases"
 
 
-def image_update_info(entry):
+def image_update_info(entry, enabled=None):
     """What the views show for one entry, or None when there is nothing to show (not a Docker
     entry, no state, or the check is switched off). Keys: state, model, latest, kind, reason,
     rebuilt, checked_at, pushed_at, error, tag, running_version, release_url, checkable,
-    badge_title."""
+    badge_title. `enabled` is the global switch when the caller already has it (the MQTT
+    publisher, outside a request); otherwise it is read once per request."""
     if not entry.is_docker or entry.image_update_state is None:
         return None
-    state = image_update.effective_state(entry, image_updates_enabled())
+    state = image_update.effective_state(entry, image_updates_enabled() if enabled is None else enabled)
     if state not in _DETAIL_STATES:
         return None
     detail = entry.image_update_detail if isinstance(entry.image_update_detail, dict) else {}

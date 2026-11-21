@@ -76,6 +76,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `PATCH /api/v1/entries/{id}`, `GET /api/v1/image-updates`,
     `GET`/`PUT /api/v1/settings/image-updates`, `POST /api/v1/image-updates/run`, and the
     features `image_updates` and `image_info` in `GET /api/v1/meta`.
+  - **MQTT and Home Assistant:** with the check on, each Docker entry's image state is
+    published as a retained topic `<base>/entry/<id>/image` (installed and latest version,
+    state, release link), `<base>/summary` gains an `updates` count and an entry's state
+    topic gains `image_update_state`. Home Assistant gets a read-only **Image** `update`
+    entity on each published entry (diagnostic, no install button) and an **Updates
+    available** sensor on the STD hub. Turning the check off, or an entry's policy to Off,
+    removes them. An update never changes an entry's health or its State sensor.
 - **The Docker image in an entry's details links to its repository page (closes #6).**
   On the Dashboard, Tiled and Compact details, the image (`registry/owner/name:tag`) is
   a link, derived from the image the notifier reports: Docker Hub (official and user

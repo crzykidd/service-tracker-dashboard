@@ -525,13 +525,14 @@ MQTT client can read, and Home Assistant discovery on the channels where you tur
    certificate verification. **Send test** publishes to `<base>/test`.
 2. **Published state** (retained, topics by database id so a rename never moves them):
    `<base>/status` (online / offline, with a last will), `<base>/entry/<id>/state`,
-   `<base>/entry/<id>/check/<check id>`, `<base>/summary` and `<base>/stream/<stream id>`.
+   `<base>/entry/<id>/check/<check id>`, `<base>/entry/<id>/image` (image updates, when on), `<base>/summary` and `<base>/stream/<stream id>`.
    STD publishes on changes, and republishes everything on reconnect and every 10
    minutes.
 3. **Home Assistant:** tick **Add to Home Assistant** on the channel, then pick entries
    with **Publish to Home Assistant** on an entry or in **Settings → Home Assistant**.
    Entries are opt-in. STD creates a hub device, one device per published entry (a
-   State sensor, a Since sensor and a problem sensor per check) and one per stream.
+   State sensor, a Since sensor and a problem sensor per check, plus an Image `update`
+   entity and an Updates available hub sensor when image update checking is on) and one per stream.
    Entity ids start with `std_`.
 4. **Clean-up tools:** purge and republish per channel, per entry or per stream;
    deleting, disabling or re-basing a channel can clear its broker data; **Scan for

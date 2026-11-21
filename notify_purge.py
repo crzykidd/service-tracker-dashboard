@@ -27,6 +27,7 @@ import re
 import threading
 import time
 
+import image_update
 import notify_ha
 import notify_state
 import settings_store
@@ -49,7 +50,7 @@ BASE_MAX = 128
 # The topic shapes STD publishes under a base topic; the orphan scan never reports
 # anything else, so an operator-typed base cannot sweep up another application's topics.
 _STATE_SHAPE = re.compile(
-    r"^(status|summary|entry/\d+/state|entry/\d+/check/\d+|stream/[a-z0-9][a-z0-9_-]*)$")
+    r"^(status|summary|entry/\d+/state|entry/\d+/image|entry/\d+/check/\d+|stream/[a-z0-9][a-z0-9_-]*)$")
 
 
 class PurgeError(Exception):
@@ -189,6 +190,7 @@ def _purge_entries(publisher, entry_ids, stream=None):
             check_ids[entry_id].add(check_id)
     check_re = re.compile(r"entry/(\d+)/check/(\d+)")
     with state.lock:
+        remembered = set(state.topics)
         for topic in state.topics:               # remembered checks that may no longer exist
             m = check_re.fullmatch(topic)
             if m and int(m.group(1)) in ids:
@@ -196,6 +198,8 @@ def _purge_entries(publisher, entry_ids, stream=None):
     state_suffixes = set()
     for eid in ids:
         state_suffixes.add(notify_state.entry_topic(eid))
+        if notify_state.image_topic(eid) in remembered:      # only when one was published
+            state_suffixes.add(notify_state.image_topic(eid))
         state_suffixes |= {notify_state.check_topic(eid, c) for c in check_ids[eid]}
     if stream is not None:
         state_suffixes.add(notify_state.stream_topic(stream.stream_id))
@@ -394,6 +398,7 @@ def _desired_topics(channel):
     from flask import current_app
     state_keys = set(notify_state.desired_state(notify_state.PublishState()))
     entries = notify_state._active_entries()
+    image_enabled = image_update.is_enabled()
     instance_id = settings_store.get_instance_id()
     version = current_app.config.get("VERSION_INFO", {}).get("version", "unknown")
     host, port = (channel.config or {}).get("host"), (channel.config or {}).get("port")
@@ -405,7 +410,7 @@ def _desired_topics(channel):
         out |= {f"{cfg['base_topic']}/{k}" for k in state_keys}
         out.add(f"{cfg['base_topic']}/status")
         if cfg.get("ha_discovery"):
-            out |= set(notify_ha.desired_configs(entries, cfg, instance_id, version))
+            out |= set(notify_ha.desired_configs(entries, cfg, instance_id, version, image_enabled))
     return out
 
 

@@ -677,7 +677,11 @@ def maybe_nudge(app):
 
 def on_settings_changed(app, was_enabled):
     """After the switch changes: turning it on schedules the first run a few minutes out,
-    unless one ran in the last 24 hours."""
+    unless one ran in the last 24 hours. Either way a change of the switch asks for a full MQTT
+    sync, which publishes or withdraws the image topics and the Home Assistant entities."""
+    if was_enabled != is_enabled():
+        import notify
+        notify.request_sync(force=True)
     if was_enabled or not is_enabled():
         return False
     last = _parse_iso((last_run() or {}).get("at"))

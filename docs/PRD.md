@@ -107,6 +107,7 @@
 | 0.97    | 2026-11-21 | Image reference parser (img-01, phase 1 of the image update check; design `docs/design/2026-11-21-image-update-check.md`): new pure `image_ref.py` (distribution reference grammar: ports, nested paths, digests, Docker Hub normalisation) replaces the naive split in `image_utils.resolve_image_metadata`; new observed column `service_entry.image_ref` (migration `a2c6e8f1b345`, indexed, backfilled where the old columns are sound), written by register from the raw `image_name`, shown in the entry facts and returned read-only as `notifier.image_ref` by the management API (**`API_REVISION` 5** row extended, §18.1); `image_repo.py` derives links from it (correct nested GHCR paths). §3.1 module layout, §5.12, §13.7 updated. `schemas.py` and the register wire contract unchanged; not exported. |
 | 0.98    | 2026-11-21 | Image update check engine (img-02, phase 2; design `docs/design/2026-11-21-image-update-check.md`), on `dev`, unreleased: new §24 (architecture, provider seam, tag and digest models, the daily job, data model, the `image_info` register field, management API and MCP), new §5.13 (migration `b5d9a3f1c7e2`: `image_reference` table and the `service_entry` image update columns), §3.1 module layout (`registry_client.py`, `image_tags.py`, `image_update.py`), §18.1 revision 5 row extended (register `image_info`, `image_update` block, the new routes, features `image_updates` and `image_info`), §20.2 ownership table (the three operator columns round-trip), §22 cross-repo notes (notifier 0.5.0 will send `image_info`, gated on `/api/v1/meta`). Off by default (`STD_IMAGE_UPDATE_ENABLED`); no UI yet (img-03), no MQTT/Home Assistant yet (img-04). Register contract: additive optional field, so STD ships first per the ordering rule. |
 | 0.99    | 2026-11-21 | Image update UI (img-03, phase 3), on `dev`, unreleased: new §24.8 (dashboard badge and `?updates=true` filter, entry-details lines, Check now, the edit-page block, Settings → Sources → Image updates, the Docker hint); the old §24.8 "Not built yet" becomes §24.9 and now lists only MQTT / Home Assistant (img-04), credentials and other providers. §13.7 (badge, details line, Check now in the entry facts), §19.1 (fourteen sections, `image-updates` under Sources), §3.1 module layout (`image_update_ui.py`, `static/js/image_update.js`). New session routes `POST /service/<id>/image-update/check`, `POST /settings/image-updates`, `POST /settings/image-updates/check`. No schema, API revision or wire-contract change (the UI reads the state img-02 stores). |
+| 0.100   | 2026-11-21 | Image update MQTT and Home Assistant (img-04, phase 4), on `dev`, unreleased: new §24.10; §17.3 (`entry/<id>/image` topic, `summary.updates`, `entry/<id>/state.image_update_state`, the new sync triggers), §17.4 (the read-only `update` entity and the hub "Updates available" sensor), §24.9 now lists only credentials and other providers. `notify_state.py`, `notify_ha.py`, `notify_purge.py`, `image_update.on_settings_changed`. No schema, API revision or register wire-contract change. |
 
 ---
 
@@ -2728,9 +2729,10 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
 | Topic | Payload |
 |-------|---------|
 | `<base>/status` | `online` / `offline` (§17.2). |
-| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). Stream entries (§18.9): `missing` and `missing_since` (null for other sources); they never change `state`. |
+| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). Stream entries (§18.9): `missing` and `missing_since` (null for other sources); they never change `state`. Additive: `image_update_state` (the effective image update state, null when nothing is published); it never changes `state`. |
 | `<base>/entry/<entry_id>/check/<check_id>` | One check: `ok` (true / false / null before its first run), `state` (`up` / `down` / `unknown`), `entry_id`, `check_id`, `name`, `kind` (`container`, `internal_url`, `external_url`, `service`), `check_type` (`http`, `tcp`, `ping`, `dns`, or `container`), `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` (when `ok` last changed). |
-| `<base>/summary` | `{up, degraded, down, unknown, none, total}` over active (not soft-deleted) entries. |
+| `<base>/entry/<entry_id>/image` | The image update check (§24.10), only while the check is on and the entry's effective state is not `off`: `installed_version`, `latest_version`, `title` (the image repository), `release_url`, `release_summary`, `state` (`update`, `current`, `unknown`, `error`, `pinned`), `kind`, `checked_at`, `std_entry_id`. |
+| `<base>/summary` | `{up, degraded, down, unknown, none, total, updates}` over active (not soft-deleted) entries; `updates` (additive) counts effective `update` states and is 0 while the check is off. It is never part of the roll-up. |
 | `<base>/stream/<stream_id>` | One inventory stream (§18.6): `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at` (null before the first), `counts` (`{active, missing, pending_offers}`: entries not soft-deleted, those flagged missing, open link offers), `item_count` (the last snapshot's item count). §18.9 adds `stale` (computed at publish time; the health tick requests a sync when it flips), `expected_interval_seconds` (the effective one), `last_error`, `last_rejected_at` and `last_rejection`. |
 
 - **Stream topic (notif-06).** Published for every stream, whatever its status
@@ -2758,7 +2760,7 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
   (re)connect and every 10 minutes (an APScheduler job, the safety net); and,
   not forced (only topics whose payload changed), 2 seconds after any commit
   that changed what a topic carries (entry name, host, group, URLs, source,
-  soft delete, a check's enabled/kind/name/type/target, a group's name), via
+  soft delete, a check's enabled/kind/name/type/target, a group's name, an entry's image reference, update policy, or computed image update state or newer value), via
   `notify.request_sync()`. Nothing is published, and nothing remembered, while
   no channel has a live session; the connect that follows forces a sync.
 - The published topic set persists in the `setting` key
@@ -2794,6 +2796,8 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 |--------|--------|
 | Hub `binary_sensor` connectivity | object id `hub_connectivity`, unique id `<node>_hub_connectivity`; state topic `<base>/status`, on `online` / off `offline`. No separate availability topic (it would turn "off" into "unavailable"). |
 | Hub `sensor`s `up`, `degraded`, `down`, `unknown` | object ids `hub_<state>`, unique ids `<node>_hub_<state>`; state topic `<base>/summary`, `value_template` `{{ value_json.<state> }}`. |
+| Entry `update` "Image" (§24.10) | Only while the image update check is on and the image topic is published: object id `entry_<id>_image`, unique id `<node>_entry_<id>_image`, `entity_category: diagnostic`; `state_topic` = `<base>/entry/<id>/image`, **no `command_topic`** (read-only, §17.1), no `entity_picture`; the JSON carries `installed_version`, `latest_version`, `title`, `release_url`, `release_summary`. |
+| Hub `sensor` "Updates available" (§24.10) | Only while the check is on: object id `hub_updates`, unique id `<node>_hub_updates`; state topic `<base>/summary`, `value_template` `{{ value_json.updates }}`. |
 | Entry `sensor` "Since" | object id `entry_<id>_since`, unique id `<node>_entry_<id>_since`, `device_class: timestamp`; state topic `<base>/entry/<id>/state` with `value_template` `{{ value_json.since if value_json.since else None }}` (ISO 8601 UTC; null renders `None`, which MQTT sensors read as unknown). |
 | Entry `sensor` "State" | object id `entry_<id>_state`, unique id `<node>_entry_<id>_state`, `device_class: enum`, `options: [up, degraded, down, unknown, none]`; state and `json_attributes_topic` = `<base>/entry/<id>/state`. |
 | Stream hub `sensor` "Status" | object id `stream_<stream_id>_status`, unique id `<node>_stream_<stream_id>_status`, `device_class: enum`, `options: [pending, enabled, disabled, ignored]`; state and `json_attributes_topic` = `<base>/stream/<stream_id>`, `value_template` `{{ value_json.status }}`. |
@@ -3986,8 +3990,8 @@ image and release cadence. The same rules apply as for the notifier:
 ## 24. v0.12.0 — Image update check
 
 **Status:** the engine, data model, register field, management API and MCP (img-02) and the UI
-(img-03: badges, filter, entry details, edit block, Settings section, §24.8) are built on `dev`,
-unreleased. There is no MQTT / Home Assistant output yet (img-04). Design: `docs/design/2026-11-21-image-update-check.md`
+(img-03: badges, filter, entry details, edit block, Settings section, §24.8) and the MQTT topic and
+Home Assistant `update` entity (img-04, §24.10) are built on `dev`, unreleased. Design: `docs/design/2026-11-21-image-update-check.md`
 (its section 14 decisions are final). Decisions made while building are in `docs/decisions.md`.
 
 ### 24.1 What it does
@@ -4148,5 +4152,31 @@ session. The state shown is `image_update.effective_state()`, so everything is h
 
 ### 24.9 Not built yet
 
-The MQTT `image topic and Home Assistant `update` entity (img-04); registry credentials and insecure
-registries (img-05, out of the MVP: no private registries); a What's Up Docker or Komodo provider.
+Registry credentials and insecure registries (img-05, out of the MVP: no private registries); a
+What's Up Docker or Komodo provider.
+
+### 24.10 MQTT and Home Assistant (img-04) [`img-04`] — Delivered
+
+Reconciled by `notify_state.full_sync()` like every other topic (§17.3); no second mechanism.
+
+- **Topic and payload:** `<base>/entry/<id>/image` (§17.3), for every active entry whose
+  effective state (`image_update.effective_state`, so `off` while the check is off) is not `off`.
+  Tag model: `installed_version` is the running tag, `latest_version` the newer tag or the running
+  tag when current. Digest model: `<tag>@<first 7 hex>` on both sides, with `Running version <OCI
+  version label>` in `release_summary` when known. `unknown` and `error`: both versions null, so
+  Home Assistant shows the entity as unknown. `pinned` (a digest-only reference): `@<7 hex>` on both
+  sides, so Home Assistant reads it as up to date. The topic follows every active entry, not only
+  `ha_publish` ones, like the other entry topics; `ha_publish` only gates the discovery entity.
+- **Additive fields:** `summary.updates` and `entry/<id>/state.image_update_state` (§17.3). No
+  existing key changes, and no update ever affects the roll-up, a health count or a State sensor.
+- **Discovery (§17.4):** an `update` entity per published entry with an image topic, and the hub
+  "Updates available" sensor. Both exist only while the check is on: switching it off (or an
+  entry's policy to Off) withdraws them through the normal reconcile, and the entry, channel and
+  stream purges clear the image topic and its entity with the rest of the entry.
+- **Sync triggers:** `image_ref`, `image_update_policy`, `image_update_state`,
+  `image_update_latest` and `image_update_kind` are in the commit listener's attribute list, so the
+  daily job's `apply_evaluation` (which writes a column only when its value changed) requests the
+  usual non-forced, debounced sync only when something changed. `image_update.on_settings_changed`
+  requests a forced sync when the switch flips. The job never touches the broker.
+- `checked_at` in the payload is the reference row's last check; it refreshes with the next sync
+  that republishes the topic (any state change, the 10-minute safety net compares payloads).

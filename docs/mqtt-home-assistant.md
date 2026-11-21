@@ -41,9 +41,10 @@ moves them (`<base>` is the channel's base topic, `std` by default):
 | Topic | What it carries |
 |-------|-----------------|
 | `<base>/status` | `online` / `offline` |
-| `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `std_entry_id`, `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`) |
+| `<base>/entry/<entry id>/state` | JSON: roll-up `state` (`up`, `degraded`, `down`, `unknown`, `none`), `std_entry_id`, `name`, `host`, `group`, `source`, `dashboard_url` (a path), `since`, `checks` (`{up, down, unknown}`), `image_update_state` (the image update state, or null) |
 | `<base>/entry/<entry id>/check/<check id>` | JSON: `ok`, `state`, `std_entry_id`, `entry_name`, `host`, `group`, `source`, `dashboard_url`, `check_type`, `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` |
-| `<base>/summary` | JSON: `{up, degraded, down, unknown, none, total}` over active entries |
+| `<base>/entry/<entry id>/image` | JSON, only while [image update checking](../README.md) is on and the entry has something to show: `installed_version`, `latest_version`, `title` (the image repository), `release_url`, `release_summary`, `state` (`update`, `current`, `unknown`, `error`, `pinned`), `kind`, `checked_at`, `std_entry_id`. A tag-versioned image shows the running tag and the newer tag (the running tag when current); a moving tag shows `<tag>@<7 hex of the digest>` on both sides. `unknown` and `error` leave both versions null; a digest-pinned image shows `@<7 hex>` on both sides. Cleared when the check is switched off or the entry's policy is Off. |
+| `<base>/summary` | JSON: `{up, degraded, down, unknown, none, total, updates}` over active entries; `updates` counts entries with a newer image (0 while the check is off) |
 | `<base>/stream/<stream id>` | JSON, one per inventory stream: `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at`, `counts` (`{active, missing, pending_offers}`), `item_count`. Entry topics stay under `entry/<entry id>`; they never move under a stream. |
 
 ```sh
@@ -77,6 +78,15 @@ What gets created:
   the check is failing, plus a **Since** timestamp sensor (when the entry
   last changed state). Docker entries show the image tag as the software
   version.
+- With image update checking on (Settings → Sources → Image updates): an **Image**
+  `update` entity on each published Docker entry's device (diagnostic category, read
+  from `<base>/entry/<entry id>/image`; STD cannot update containers, so it has no
+  install button and no release picture), and an **Updates available** sensor on the
+  hub (the number of entries with a newer image). An update shows as `on` on the
+  entity, with the installed and latest versions and the release link when the image
+  names a GitHub source. Switching the check off, or an entry's image policy to Off,
+  removes them. An update is information: it never changes an entry's **State**
+  sensor, the roll-up counts or any problem sensor.
 - One **device per inventory stream** that has at least one published entry,
   named `<prefix> <stream name> stream`, linked to the hub, with a **Status**
   sensor, **Active entries** and **Missing entries** count sensors and a

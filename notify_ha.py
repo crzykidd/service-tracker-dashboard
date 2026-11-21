@@ -184,9 +184,10 @@ def stream_configs(base, prefix, node, device_prefix, stream, version):
     return out
 
 
-def entry_configs(base, prefix, node, device_prefix, entry):
-    """The entry device's entities: roll-up state, since, and one problem sensor per
-    counted check that is not opted out."""
+def entry_configs(base, prefix, node, device_prefix, entry, image_enabled=False):
+    """The entry device's entities: roll-up state, since, one problem sensor per counted
+    check that is not opted out, and (image update check on, something published for the
+    entry) a read-only `update` entity."""
     device = entry_device(node, device_prefix, entry)
     device_slug = slug(device["name"])
     state_topic = notify_state.entry_topic(entry.id)
@@ -232,20 +233,45 @@ def entry_configs(base, prefix, node, device_prefix, entry):
             **_availability(base),
             "device": device,
         }
+    if notify_state.image_info(entry, image_enabled) is not None:
+        # HA `update` entity, read-only: no command_topic, so HA offers no install. No
+        # entity_picture (STD has no public base URL). The state topic's JSON carries
+        # installed_version, latest_version, title, release_url and release_summary.
+        out[config_topic(prefix, "update", node, f"entry_{entry.id}_image")] = {
+            "name": "Image",
+            "unique_id": f"{node}_entry_{entry.id}_image",
+            "default_entity_id": f"update.{device_slug}_image",
+            "entity_category": "diagnostic",
+            "state_topic": f"{base}/{notify_state.image_topic(entry.id)}",
+            **_availability(base),
+            "device": device,
+        }
     return out
 
 
-def desired_configs(entries, config, instance_id, version):
-    """`{discovery topic: config}` for one channel with `ha_discovery` on."""
+def desired_configs(entries, config, instance_id, version, image_enabled=False):
+    """`{discovery topic: config}` for one channel with `ha_discovery` on. `image_enabled` is
+    the image update check's switch: off, no `update` entity and no "Updates available" sensor."""
     base, prefix = config["base_topic"], config["ha_prefix"]
     device_prefix = config["ha_device_prefix"]
     node = node_id(instance_id)
     out = hub_configs(base, prefix, node, device_prefix, version)
+    if image_enabled:
+        out[config_topic(prefix, "sensor", node, "hub_updates")] = {
+            "name": "Updates available",
+            "unique_id": f"{node}_hub_updates",
+            "default_entity_id": f"sensor.{slug(device_prefix)}_updates_available",
+            "state_topic": f"{base}/summary",
+            "value_template": "{{ value_json.updates }}",
+            "state_class": "measurement",
+            **_availability(base),
+            "device": hub_device(node, device_prefix, version),
+        }
     streams = {}
     for entry in entries:
         if not entry.ha_publish:
             continue
-        out.update(entry_configs(base, prefix, node, device_prefix, entry))
+        out.update(entry_configs(base, prefix, node, device_prefix, entry, image_enabled))
         if entry.stream_id is not None and entry.stream is not None:
             streams[entry.stream.id] = entry.stream
     # A stream gets a hub device only while at least one of its entries is published.

@@ -5,6 +5,35 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Image update over MQTT and Home Assistant (img-04)
+
+- **Sync trigger: add the computed columns to `notify_state._ENTRY_ATTRS`** (`image_ref`,
+  `image_update_policy`, `image_update_state`, `image_update_latest`, `image_update_kind`) instead of
+  calling `request_sync` from the job. `image_update._set` writes only a changed value, so the
+  commit listener fires only on a real change, and the 2 s debounce collapses any burst into one
+  sync: no double sync, and the job (which already commits) never touches the publisher.
+- **Toggle:** `image_update.on_settings_changed` requests a forced sync when the effective switch
+  flips (both the UI and the API call it).
+- **Switch off withdraws the hub "Updates available" sensor** as well as the entities (consistent,
+  and an operator who never enables the check sees no new entity). `summary.updates` stays in the
+  topic, as 0; the key is additive and always present.
+- **`pinned` shows `@<7 hex>` on both sides**, not null: nothing is meant to update, so HA shows an
+  up-to-date entity instead of "unknown". `unknown` and `error` stay null.
+- **The image topic follows every active entry with a shown state, not only `ha_publish` ones**,
+  matching the other entry topics; `ha_publish` gates only the discovery entity.
+- **Entity existence = image topic existence** (effective state not `off`/none, `ha_publish`), so
+  the entity never points at a topic that is not there.
+- **Purge:** the image topic is cleared by the entry/stream purge only when it is remembered as
+  published, so purge counts for installs with the check off are unchanged; the `update` config is
+  cleared through the remembered `ha_topics` like the other entry configs. The orphan scan
+  recognises `entry/<id>/image` as an STD topic shape.
+- **`checked_at` can lag:** it is in the payload but not a sync trigger (a sync per daily run for
+  every entry would publish when nothing meaningful changed); it refreshes on the next publish.
+- Existing test `test_first_result_publishes_check_entry_and_summary` now expects `updates: 0`
+  in the summary (additive key).
+
+---
+
 ## 2026-11-21 — Image update UI (img-03)
 
 - **Check now is a fetch POST with a toast, not a form redirect.** The three dashboard views
