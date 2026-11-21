@@ -5,6 +5,22 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Code fixes from the README audit
+
+- **The UI delete route moved to `/entries/<id>/delete`** instead of staying under
+  `/api/v1`, where it looked like a management API route but used a session login. No
+  alias for the old path: the only callers were our own templates and JS, and the old
+  path now gets the normal JSON 404 for unmatched `/api/v1/*`.
+- **`settings.yml` values are cast with the same table as env values** (`cast_value`).
+  A file value that fails to cast is kept raw with a warning (today's file behavior),
+  not replaced by the default; env handling is unchanged. Bool parsing is explicit
+  because `bool("false")` is True, though no bool keys exist yet.
+- **The widget reload fallback reads one constant** (`WIDGET_BACKGROUND_RELOAD_DEFAULT`,
+  900) instead of a hard-coded 300. The dead `STD_DOZZLE_URL` line in `app.py` is gone;
+  `load_settings` plus `app.config.update(settings)` already cover env and file.
+
+---
+
 ## 2026-11-21 — Compact view details open in a dialog, loaded on demand
 
 The Compact grid flows by column (10 rows), so an inline drawer would reshuffle every

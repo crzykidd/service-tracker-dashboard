@@ -360,7 +360,7 @@ window.stdPost = function (url, options) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ block: true })
     } : {};
-    stdPost(`/api/v1/entries/${entryId}/delete`, opts)
+    stdPost(`/entries/${entryId}/delete`, opts)
       .then(r => r.ok ? onSuccess() : onError())
       .catch(onError);
   }

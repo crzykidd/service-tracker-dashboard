@@ -1642,7 +1642,7 @@ def _truthy(value):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-@dashboard_bp.route('/api/v1/entries/<int:id>/delete', methods=['POST'])
+@dashboard_bp.route('/entries/<int:id>/delete', methods=['POST'])
 @login_required
 @is_admin_required
 def delete_entry_json(id):

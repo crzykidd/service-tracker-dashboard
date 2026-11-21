@@ -84,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The dashboard's delete-entry call moved from `/api/v1/entries/<id>/delete` to
+  `/entries/<id>/delete`.** It is a browser (login) route, not part of the management
+  API, and was never in the OpenAPI spec. API clients keep using
+  `DELETE /api/v1/entries/<id>`.
 - **The main dashboard's expanded row shows the same details as the tile drawer.**
   The chevron on a Dashboard row now opens two columns: on the left the host,
   description, stack, internal and external URLs with their last check, Docker status,
@@ -165,6 +169,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Values in `settings.yml` are converted to each setting's type**, the same way
+  environment values are, so a quoted number such as `health_check_timeout: "5"` works.
+  A value that cannot be converted logs a warning.
+- **An invalid `widget_background_reload` falls back to the documented 900 seconds**
+  (it was 300).
 - **Setting a user's password** no longer sends you back to Info and no longer shows
   a too-short password or an unknown user as a green success bar; a too-short
   password reopens the Set password dialog with the error, an unknown user shows

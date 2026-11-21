@@ -52,6 +52,7 @@ from models import (
     evaluate_container,
     hard_delete_entry,
 )
+from settings_loader import WIDGET_BACKGROUND_RELOAD_DEFAULT
 
 logger = logging.getLogger(__name__)
 
@@ -731,7 +732,7 @@ def start_background_workers(app):
     scheduler = BackgroundScheduler()
     reload_seconds = app.config.get("widget_background_reload")
     if not isinstance(reload_seconds, int) or reload_seconds <= 0:
-        reload_seconds = 300  # default fallback
+        reload_seconds = WIDGET_BACKGROUND_RELOAD_DEFAULT
     scheduler.add_job(
         partial(update_widget_data_periodically, app),
         IntervalTrigger(seconds=reload_seconds),

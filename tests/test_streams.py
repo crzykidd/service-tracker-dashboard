@@ -808,8 +808,8 @@ def test_ui_delete_with_block(app, put, op, admin_client):
     with app.app_context():
         a = stream_entries()["aa:bb:cc:00:00:01"].id
         b = stream_entries()["aa:bb:cc:00:00:02"].id
-    assert admin_client.post(f"/api/v1/entries/{a}/delete", json={"block": True}).get_json() == {"ok": True}
-    assert admin_client.post(f"/api/v1/entries/{b}/delete").get_json() == {"ok": True}
+    assert admin_client.post(f"/entries/{a}/delete", json={"block": True}).get_json() == {"ok": True}
+    assert admin_client.post(f"/entries/{b}/delete").get_json() == {"ok": True}
     with app.app_context():
         keys = {x.key: x.blocked_by for x in InventoryBlock.query.all()}
         assert keys == {"aa:bb:cc:00:00:01": "admin"}

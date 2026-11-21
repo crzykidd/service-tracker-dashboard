@@ -116,8 +116,6 @@ def create_app():
     app.register_blueprint(api_bp)
     app.register_blueprint(mgmt_bp)
 
-    app.config['std_dozzle_url'] = os.getenv("STD_DOZZLE_URL", settings.get("STD_DOZZLE_URL", ""))
-
     logger.info("🔧 Loaded settings:")
     for k, v in settings.items():
         logger.info(f"    {k} = {mask_value(k, v)}")

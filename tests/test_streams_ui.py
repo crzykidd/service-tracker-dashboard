@@ -141,7 +141,7 @@ def test_disable_cleanups(admin_client, app, put, op, cleanup, expect_active, ex
 def test_disable_purge_can_clear_the_block_list(admin_client, app, put, op):
     enabled_stream(app, put, op)
     eid = _entry_id(app)
-    assert admin_client.post(f"/api/v1/entries/{eid}/delete", json={"block": True}).status_code == 200
+    assert admin_client.post(f"/entries/{eid}/delete", json={"block": True}).status_code == 200
     admin_client.post("/settings/streams/dhcp/disable", data={"cleanup": "purge"})
     with app.app_context():
         assert InventoryBlock.query.count() == 1                        # purge alone keeps blocks
@@ -174,7 +174,7 @@ def test_delete_drops_blocks_and_offers_with_the_stream(admin_client, app, put, 
     manual("nas")
     enabled_stream(app, put, op)
     eid = _entry_id(app)
-    admin_client.post(f"/api/v1/entries/{eid}/delete", json={"block": True})
+    admin_client.post(f"/entries/{eid}/delete", json={"block": True})
     admin_client.post("/settings/streams/dhcp/delete", data={"cleanup": "keep"})
     with app.app_context():
         assert InventoryBlock.query.count() == 0 and StreamLinkOffer.query.count() == 0
@@ -216,7 +216,7 @@ def test_update_display_name_and_filters(admin_client, app, put, op):
 def test_blocked_list_and_unblock(admin_client, app, put, op):
     enabled_stream(app, put, op)
     eid = _entry_id(app)
-    admin_client.post(f"/api/v1/entries/{eid}/delete", json={"block": True})
+    admin_client.post(f"/entries/{eid}/delete", json={"block": True})
     html = admin_client.get("/settings?section=streams").get_data(as_text=True)
     assert 'id="stream-blocks"' in html and PUMP_KEY in html and ">Unblock</button>" in html
     with app.app_context():
@@ -402,7 +402,7 @@ def test_delete_buttons_carry_the_stream_flag(admin_client, app, put, op, manual
 def test_delete_allow_readding_lets_the_next_snapshot_restore_it(admin_client, app, put, op):
     enabled_stream(app, put, op)
     eid = _entry_id(app)
-    assert admin_client.post(f"/api/v1/entries/{eid}/delete", json={}).status_code == 200
+    assert admin_client.post(f"/entries/{eid}/delete", json={}).status_code == 200
     with app.app_context():
         assert InventoryBlock.query.count() == 0
     put()
@@ -413,7 +413,7 @@ def test_delete_allow_readding_lets_the_next_snapshot_restore_it(admin_client, a
 def test_delete_dont_readd_blocks_the_key(admin_client, app, put, op):
     enabled_stream(app, put, op)
     eid = _entry_id(app)
-    assert admin_client.post(f"/api/v1/entries/{eid}/delete", json={"block": True}).status_code == 200
+    assert admin_client.post(f"/entries/{eid}/delete", json={"block": True}).status_code == 200
     with app.app_context():
         b = InventoryBlock.query.one()
         assert b.key == PUMP_KEY and b.blocked_by == "admin"
@@ -434,7 +434,7 @@ def test_edit_page_delete_form_blocks_too(admin_client, app, put, op):
 
 def test_block_on_a_non_stream_entry_is_ignored(admin_client, manual, app):
     mid = manual("hand-made")
-    assert admin_client.post(f"/api/v1/entries/{mid}/delete", json={"block": True}).status_code == 200
+    assert admin_client.post(f"/entries/{mid}/delete", json={"block": True}).status_code == 200
     with app.app_context():
         assert InventoryBlock.query.count() == 0
 

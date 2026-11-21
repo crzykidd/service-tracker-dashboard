@@ -25,7 +25,7 @@ def test_delete_hides_from_dashboard_and_health_query(app, admin_client):
         keep, gone = _make("keep"), _make("gone")
         gone_id = gone.id
         assert keep.id
-    resp = admin_client.post(f"/api/v1/entries/{gone_id}/delete")
+    resp = admin_client.post(f"/entries/{gone_id}/delete")
     assert resp.status_code == 200
     with app.app_context():
         assert db.session.get(ServiceEntry, gone_id).deleted_at is not None
@@ -55,7 +55,7 @@ def test_delete_keeps_widget_attached(app, admin_client):
         db.session.flush()
         e = _make("svc1", widget_id=w.id)
         eid, wid = e.id, w.id
-    admin_client.post(f"/api/v1/entries/{eid}/delete")
+    admin_client.post(f"/entries/{eid}/delete")
     with app.app_context():
         assert db.session.get(Widget, wid) is not None
         assert db.session.get(ServiceEntry, eid).widget_id == wid
@@ -284,3 +284,10 @@ def test_old_backup_with_deleted_at_imports_active_only_when_ticked(app, admin_c
     import_flow(admin_client, payload, name="b.yaml", restore=True)
     with app.app_context():
         assert ServiceEntry.query.filter_by(container_name="svc1").one().deleted_at is None
+
+
+def test_old_api_prefixed_delete_path_is_a_json_404(client):
+    """The UI delete moved off /api/v1; an API client hitting the old path gets the normal JSON 404."""
+    resp = client.post("/api/v1/entries/1/delete", headers={"Accept": "application/json"})
+    assert resp.status_code == 404
+    assert resp.get_json()["error"]
