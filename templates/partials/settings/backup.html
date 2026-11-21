@@ -128,9 +128,13 @@
       <div class="backup-card-head">
         <div>
           <h3 class="settings-card-heading">Exports</h3>
-          <p class="settings-subtitle-note">A YAML file of every entry, soft-deleted ones included. The format setting applies once the new export format ships.</p>
+          <p class="settings-subtitle-note">The settings you chose (groups, URLs you set, checks, stream filters and blocks, notification channels, users, ...) as one YAML or JSON file. It never contains passwords or keys, and leaves out anything STD rebuilds on its own. The format setting applies to the daily and Run now files.</p>
         </div>
-        <button type="submit" form="backup-run-export" class="btn-secondary btn-sm">Run now</button>
+        <span class="settings-card-actions">
+          <a class="btn-secondary btn-sm" id="export-download-yaml" href="{{ url_for('dashboard.download_export', format='yaml') }}">Download YAML</a>
+          <a class="btn-secondary btn-sm" id="export-download-json" href="{{ url_for('dashboard.download_export', format='json') }}">Download JSON</a>
+          <button type="submit" form="backup-run-export" class="btn-secondary btn-sm">Run now</button>
+        </span>
       </div>
       {{ last_run('export', 'export') }}
       {{ schedule_row('export', 'export') }}

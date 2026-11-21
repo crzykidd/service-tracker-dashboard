@@ -20,6 +20,7 @@ from pydantic import TypeAdapter
 
 import mgmt_schemas as S
 from api_version import API_REVISION
+from export_format import ExportDoc
 from models import VALID_SOURCES
 from view_helpers import VALID_STATUS_FILTERS
 
@@ -192,6 +193,33 @@ OPERATIONS: tuple = (
        S.UpdateCheckSettingsOut, request=S.UpdateCheckSettingsPut,
        description="`enabled` (default on) and `interval_hours` (default 6, minimum 1). Omitted "
                    "fields keep their value. When disabled STD makes no request to GitHub."),
+    Op("GET", "/settings/backup", "read", "Backup settings", S.BackupSettingsOut,
+       description="The folder and the two daily jobs (`snapshot`, `export`), each value with its `origin`: "
+                   "`env` (pinned by an environment variable, read-only), `ui` (saved in Settings), `file` "
+                   "(settings.yml) or `default`. `last_runs` and `next_runs` are by kind."),
+    Op("PUT", "/settings/backup", "write", "Change the backup settings", S.BackupSettingsSavedOut,
+       request=S.BackupSettingsPut, errors=(409,),
+       description="Same rules as Settings -> Backup & restore. `path` is an absolute folder (created when "
+                   "missing; one outside /config is a warning). `snapshot` and `export` take `enabled`, "
+                   "`time` (HH:MM) and `keep_days` (1 to 365); `export` also takes `format` (`yaml` or `json`). "
+                   "Omitted fields keep their value. A field pinned by an environment variable is a 409 "
+                   "unless the value is unchanged. The daily jobs are rescheduled at once."),
+    Op("GET", "/backups", "read", "List backup files", S.BackupListOut, errors=(409,),
+       description="Snapshots and exports in the backup folder, newest first. There is no download route: a "
+                   "snapshot holds every secret (download it in Settings), and an export is `GET /export`. "
+                   "409 when the folder cannot be read."),
+    Op("POST", "/backups/run", "write", "Run a snapshot or an export now", S.BackupRunOut,
+       request=S.BackupRunRequest, errors=(409,),
+       description="`kind` is `snapshot` or `export`. Synchronous: the answer says whether the run worked "
+                   "(`ok`, and `error` when it did not) and names the timestamped file. 409 when that kind "
+                   "is already running."),
+    Op("GET", "/export", "read", "Export the operator-set settings (format v1)", ExportDoc,
+       params=(Param("format", {"type": "string", "enum": ["json", "yaml"], "default": "json"},
+                     "`json` (default) or `yaml` (served as `application/yaml`; the same document)."),),
+       description="Groups, URLs you set, checks, widgets (without their API keys), notification channels "
+                   "(without the password), streams and blocks, users (without passwords) and the runtime "
+                   "settings. Never any secret: `secret_set` and `api_key_set` only say that one exists. "
+                   "Soft-deleted entries and everything STD rebuilds on its own are left out."),
     Op("GET", "/notifications/channels", "read", "List notification channels",
        S.Page[S.NotificationChannelOut], params=_PAGE,
        description="Each channel carries its live connection `status`. The secret (the MQTT "

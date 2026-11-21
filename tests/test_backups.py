@@ -218,7 +218,38 @@ def test_manual_snapshot_is_valid_timestamped_and_recorded(app, folder):
 
 def test_scheduled_names_have_no_time(app, folder):
     assert backups.run_snapshot(app, "schedule")["file"] == datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3")
-    assert backups.run_export(app, "schedule")["file"] == datetime.now().strftime("%Y-%m-%d-std_backup.yml")
+    assert backups.run_export(app, "schedule")["file"] == datetime.now().strftime("%Y-%m-%d-std_export.yml")
+
+
+def test_scheduled_export_is_a_v1_document_in_the_chosen_format(app, folder):
+    import json
+
+    import yaml
+
+    result = backups.run_export(app, "schedule")
+    assert result["ok"] and result["file"] == datetime.now().strftime("%Y-%m-%d-std_export.yml")
+    doc = yaml.safe_load((folder / result["file"]).read_text())
+    assert doc["format"] == "std-export" and doc["format_version"] == 1
+    _save(app, export_format="json")
+    manual = backups.run_export(app, "manual")
+    assert re.match(r"^\d{4}-\d{2}-\d{2}_\d{6}-std_export\.json$", manual["file"])
+    assert json.loads((folder / manual["file"]).read_text())["format"] == "std-export"
+    assert backups.run_export(app, "schedule")["file"].endswith("-std_export.json")
+    assert not list(folder.glob("*.tmp")) and not list(folder.glob("*-std_backup.yml"))
+
+
+def test_export_run_prunes_legacy_entry_list_files(app, folder):
+    old = time.time() - 30 * 86400
+    legacy = folder / "2020-01-01-std_backup.yml"
+    legacy.write_text("- container_name: x\n")
+    os.utime(legacy, (old, old))
+    keep = folder / "backup.yml"
+    keep.write_text("x")
+    os.utime(keep, (old, old))
+    assert backups.run_export(app, "manual")["ok"]
+    assert not legacy.exists() and keep.exists()
+    listed = [f["name"] for f in backups.list_files(str(folder))["exports"]]
+    assert "backup.yml" in listed
 
 
 def test_failed_snapshot_is_recorded_and_leaves_no_tmp(app, folder, monkeypatch):
@@ -376,7 +407,7 @@ def test_run_now_redirects_with_a_toast(app, folder, admin_client):
     assert "Snapshot saved:" in toasts and "-std_backup.sqlite3" in toasts
     assert len(list(folder.glob("*-std_backup.sqlite3"))) == 1
     resp = admin_client.post("/settings/backups/run", data={"kind": "export"})
-    assert resp.status_code == 302 and len(list(folder.glob("*-std_backup.yml"))) == 1
+    assert resp.status_code == 302 and len(list(folder.glob("*-std_export.yml"))) == 1
     resp = admin_client.post("/settings/backups/run", data={"kind": "nope"}, follow_redirects=True)
     assert "Unknown backup kind" in resp.get_data(as_text=True)
 

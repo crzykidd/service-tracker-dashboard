@@ -13,7 +13,7 @@ are plain functions returning these dicts, and the OpenAPI generator
 `pydantic.TypeAdapter(SomeTypedDict).json_schema()`.
 """
 
-from typing import Annotated, Any, Generic, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -262,6 +262,32 @@ class UpdateCheckSettingsPut(_Request):
     interval_hours: int | None = None   # whole hours, 1 or more
 
 
+class BackupJobPut(_Request):
+    """One daily backup job. Omitted fields keep their value."""
+
+    enabled: bool | None = None
+    time: str | None = None             # HH:MM, 00:00 to 23:59, container time
+    keep_days: int | None = None        # 1 to 365
+
+
+class BackupExportJobPut(BackupJobPut):
+    format: Literal["yaml", "json"] | None = None
+
+
+class BackupSettingsPut(_Request):
+    """Change the backup settings (same rules as Settings -> Backup & restore). Omitted
+    fields keep their value; at least one is required. A field pinned by an environment
+    variable is a 409 unless the value is unchanged."""
+
+    path: str | None = None             # absolute folder; created when missing
+    snapshot: BackupJobPut | None = None
+    export: BackupExportJobPut | None = None
+
+
+class BackupRunRequest(_Request):
+    kind: Literal["snapshot", "export"]
+
+
 class NotificationChannelCreate(_Request):
     """Add a notification channel. `config` holds the non-secret settings of the
     channel type (for `mqtt`: host, port, tls, tls_insecure, username, client_id,
@@ -402,7 +428,7 @@ class StreamStatusOut(TypedDict):
 class MetaOut(TypedDict):
     std_version: str                 # bare semver, e.g. "0.10.0"
     api_revision: int                # /api/v1 contract revision
-    features: list[str]              # register | management | notifications | streams
+    features: list[str]              # register | management | notifications | streams | backup
 
 
 class CheckDeleteOut(TypedDict):
@@ -693,6 +719,65 @@ class ExposureSettingsOut(TypedDict):
 
 class ExposureSettingsSavedOut(ExposureSettingsOut):
     recomputed: int                  # services whose URLs were recomputed
+
+
+class BackupSettingOut(TypedDict):
+    value: Any
+    origin: str                      # "env" | "ui" | "file" | "default"
+
+
+class BackupJobOut(TypedDict):
+    enabled: BackupSettingOut
+    time: BackupSettingOut           # HH:MM
+    keep_days: BackupSettingOut
+
+
+class BackupExportJobOut(BackupJobOut):
+    format: BackupSettingOut         # "yaml" | "json"
+
+
+class BackupRunInfoOut(TypedDict):
+    at: str                          # container local time, ISO 8601
+    ok: bool
+    file: str | None
+    size: int | None
+    error: str | None
+    trigger: str                     # "schedule" | "manual"
+
+
+class BackupSettingsOut(TypedDict):
+    path: BackupSettingOut
+    snapshot: BackupJobOut
+    export: BackupExportJobOut
+    last_runs: dict[str, BackupRunInfoOut]   # by kind; absent before the first run
+    next_runs: dict[str, str | None]         # by kind; null when disabled (container local time)
+
+
+class BackupSettingsSavedOut(BackupSettingsOut):
+    warnings: list[str]              # for example: the folder is outside /config
+
+
+class BackupFileOut(TypedDict):
+    name: str
+    kind: str                        # "snapshot" | "export"
+    size: int                        # bytes
+    modified: str                    # ISO 8601, UTC, with Z
+    manual: bool                     # made by Run now (the name carries a time)
+    legacy: bool                     # a pre-0.11 entry-list file
+
+
+class BackupListOut(TypedDict):
+    items: list[BackupFileOut]       # snapshots and exports, newest first
+
+
+class BackupRunOut(TypedDict):
+    kind: str
+    ok: bool
+    file: str | None
+    size: int | None
+    error: str | None
+    at: str
+    trigger: str
 
 
 class UpdateCheckSettingsOut(TypedDict):

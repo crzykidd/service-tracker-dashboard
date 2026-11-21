@@ -730,6 +730,11 @@ token.
 | PUT | `/api/v1/settings/exposure` | write | Replace exposure direction settings |
 | GET | `/api/v1/settings/update-check` | read | Update check settings |
 | PUT | `/api/v1/settings/update-check` | write | Change the update check settings |
+| GET | `/api/v1/settings/backup` | read | Backup settings |
+| PUT | `/api/v1/settings/backup` | write | Change the backup settings |
+| GET | `/api/v1/backups` | read | List backup files |
+| POST | `/api/v1/backups/run` | write | Run a snapshot or an export now |
+| GET | `/api/v1/export` | read | Export the operator-set settings (format v1) |
 | GET | `/api/v1/notifications/channels` | read | List notification channels |
 | POST | `/api/v1/notifications/channels` | write | Add a notification channel |
 | GET | `/api/v1/notifications/channels/{id}` | read | Get a notification channel |
@@ -1270,7 +1275,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/config/services.db`    | SQLite database (WAL mode).      |
 | `/config/std.log`        | Main app log (rotated).          |
 | `/config/images/`        | Cached service icons.            |
-| `/config/backups/`       | Daily and manual snapshots (`*-std_backup.sqlite3`) and exports (`*-std_backup.yml`). The folder is editable in Settings → Backup & restore. |
+| `/config/backups/`       | Daily and manual snapshots (`*-std_backup.sqlite3`) and exports (`*-std_export.yml` or `.json`; older `*-std_backup.yml` entry lists are still listed). The folder is editable in Settings → Backup & restore. |
 | `/config/settings.yml`   | Optional config file.            |
 
 ---
@@ -1404,6 +1409,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
 | `/settings/api-keys` `/settings/api-keys/<id>/rotate` `/settings/api-keys/<id>/revoke` | Create and rotate (the key is shown once in a dialog) and revoke admin API keys (admin POST). |
 | `/settings/update-check` | Save the update-check toggle and interval (admin POST). |
+| `/settings/backups/export?format=yaml\|json` | Download the export of your settings now (admin GET; never any secret). |
 | `/api/update-status` | Cached update-check status for the header (JSON, login). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |
 | `/dbdump`            | Raw dump of all DB entries (admin).      |
@@ -1413,7 +1419,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/api/v1/meta`       | STD version, API revision and features (public). |
 | `/api/v1/whoami`     | Management API: the calling key's name, prefix and scope, plus the STD version, build commit/channel and update status (admin API key). |
 | `/api/v1/entries[/<id>]` `/api/v1/entries/<id>/{restore,checks,checks/run,health}` `/api/v1/checks/<id>` `/api/v1/health/summary` | Management API: list, create, edit, delete and restore entries; manage checks; run checks now; health (admin API key; `write` scope for changes). |
-| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; read-only effective config with secrets masked (admin API key; `write` scope for changes). |
+| `/api/v1/groups[/<id>]` `/api/v1/widgets` `/api/v1/widgets/types` `/api/v1/widgets/<id>` `/api/v1/entries/<id>/widget` `/api/v1/settings/exposure` `/api/v1/settings/update-check` `/api/v1/settings/backup` `/api/v1/backups[/run]` `/api/v1/export` `/api/v1/config` | Management API: groups; widget types and instances, attach/detach/delete a widget (the widget API key is never returned); exposure direction settings; backup settings, the backup file list, Run now and the export (no secrets); read-only effective config with secrets masked (admin API key; `write` scope for changes). |
 | `/login` `/logout`   | Local user auth.                         |
 
 ### Admin API keys (management API)
@@ -1482,7 +1488,7 @@ restored.
 - Two backup jobs run every day, each with its own time, keep days and **Run
   now** button in Settings → Backup & restore: a **database snapshot**
   (`<date>-std_backup.sqlite3`, a full WAL-safe copy, default 00:05) and an
-  **export** (`<date>-std_backup.yml`, your entries, default 00:10). A manual run
+  **export** (`<date>-std_export.yml`, or `.json` when you pick JSON, default 00:10). A manual run
   puts the time in the file name. Old files of each kind are pruned after its
   keep days; nothing else in the folder is touched. The folder, the times and the
   keep days are edited in Settings (an environment variable such as `BACKUP_PATH`
@@ -1492,7 +1498,30 @@ restored.
   contains every secret (password hashes, API key hashes, the MQTT password), so
   keep it private. If the folder is outside `/config`, make sure it is a mounted
   volume.
-- To restore from a snapshot (manual steps; the YAML export is restored from
+- **Export** (Settings → Backup & restore → Exports → **Download YAML** / **Download
+  JSON**, the daily export, and `GET /api/v1/export`): one versioned file
+  (`format: std-export`, `format_version: 1`) with the settings you chose: groups
+  (name, priority, icon), the URLs you typed (not the ones STD works out from container
+  labels or Traefik), the icon of manual, stream and locked entries, lock, description,
+  group, sort priority, Home Assistant picks, health checks, widget type, URL and
+  fields, notification channels (host, port, topic, Home Assistant settings),
+  inventory streams (filters, default checks, blocks), users (name, email, admin,
+  active), the exposure direction settings, the update-check settings and the backup
+  schedule. Records are matched by name, never by database id, and sorted, so two
+  exports diff cleanly. YAML is the default; both formats hold the same data.
+  - **Never exported:** passwords or keys of any kind (user passwords, API keys, widget
+    API keys, the MQTT password: the file only says `secret_set` / `api_key_set`),
+    container status, IPs and MACs, networks and ports, health results and history,
+    exposure observations, stream snapshots and link offers, soft-deleted entries and
+    detached widgets (a database snapshot has them), the backup folder path, and
+    `settings.yml` and environment values.
+  - **On a new install, redo by hand:** create the API keys, set the MQTT password, set a
+    password for each user, put each widget's API key back, and point the sidecars at the
+    new install. A database snapshot is the way to keep secrets.
+  - Importing an export is not built yet; the file is for reading, diffing and the
+    import that follows. The old **Restore Service Data** form still reads only the
+    pre-0.11 entry-list YAML (`*-std_backup.yml`, `backup.yml`), not this format.
+- To restore from a snapshot (manual steps; an old entry-list YAML is restored from
   Settings as before):
   1. Stop the container: `docker compose stop std`.
   2. Keep the current database: copy `/config/services.db` (and

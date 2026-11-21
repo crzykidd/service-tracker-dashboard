@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from api_version import API_REVISION
 from tests.test_mgmt_api_keys import _key
 
 # httpx and mcp come from mcp/requirements.txt (pulled in by requirements-dev.txt),
@@ -33,7 +34,7 @@ READ_TOOLS = {
     "list_widgets", "list_widget_types", "get_exposure_settings", "get_config", "server_info",
     "list_notification_channels", "get_notification_channel", "list_notification_previous_bases",
     "list_streams", "get_stream", "preview_stream", "list_stream_blocks", "list_stream_offers",
-    "list_stream_unmatched_items",
+    "list_stream_unmatched_items", "backup_settings", "list_backups", "export_config",
 }
 WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
@@ -43,7 +44,7 @@ WRITE_TOOLS = {
     "delete_notification_channel", "update_notification_channel", "scan_notification_orphans",
     "clear_notification_orphans", "update_stream", "enable_stream", "disable_stream", "ignore_stream", "delete_stream",
     "unblock_stream_key", "answer_link_offer", "link_entry_to_stream_item",
-    "apply_stream_default_checks", "unlink_entry",
+    "apply_stream_default_checks", "unlink_entry", "run_backup",
 }
 
 # tool name -> (arguments, expected method, expected path, expected query, expected body)
@@ -58,6 +59,10 @@ CALLS = {
     "list_widget_types": ({}, "GET", "/api/v1/widgets/types", {}, None),
     "get_exposure_settings": ({}, "GET", "/api/v1/settings/exposure", {}, None),
     "get_config": ({}, "GET", "/api/v1/config", {}, None),
+    "backup_settings": ({}, "GET", "/api/v1/settings/backup", {}, None),
+    "list_backups": ({}, "GET", "/api/v1/backups", {}, None),
+    "export_config": ({}, "GET", "/api/v1/export", {"format": "json"}, None),
+    "run_backup": ({"kind": "export"}, "POST", "/api/v1/backups/run", {}, {"kind": "export"}),
     "list_notification_channels": ({}, "GET", "/api/v1/notifications/channels",
                                    {"limit": "200", "offset": "0"}, None),
     "get_notification_channel": ({"channel_id": 4}, "GET", "/api/v1/notifications/channels/4", {}, None),
@@ -567,7 +572,7 @@ def test_stream_observability_against_the_real_app(app):
                                                                         "missing_expiry_days": 30}})
     assert out["stale"] is False and out["missing_expiry_days"] == 30
     info = call(server, "server_info")
-    assert info["current"]["checked"] is True and info["std_api_revision"] == 3
+    assert info["current"]["checked"] is True and info["std_api_revision"] == API_REVISION
 
 
 def test_whoami_includes_the_std_version(app):
@@ -602,3 +607,31 @@ def test_startup_line_when_versions_are_equal(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert f"connected to STD {std_mcp.MCP_VERSION} as key 'k' (read); std_mcp {std_mcp.MCP_VERSION}" in err
     assert "talking to" not in err
+
+
+# --- backup and export tools (STD API revision 4) -----------------------------------------
+
+
+def test_run_backup_rejects_an_unknown_kind_without_a_request():
+    fake = Fake()
+    server = std_mcp.build_server(fake.client(), "write")
+    with pytest.raises(Exception, match="snapshot"):
+        call(server, "run_backup", {"kind": "everything"})
+    assert fake.requests == []
+
+
+def test_backup_tools_against_the_real_app(app, tmp_path):
+    old = (app.config.get("backup_path"), app.config["CONFIG_FROM_ENV"], app.config["CONFIG_FROM_FILE"])
+    app.config["backup_path"] = str(tmp_path)
+    app.config["CONFIG_FROM_ENV"], app.config["CONFIG_FROM_FILE"] = {}, {}
+    try:
+        server = std_mcp.build_server(_live_client(app, "write"), "write")
+        run = call(server, "run_backup", {"kind": "export"})
+        assert run["ok"] is True and run["file"].endswith("-std_export.yml")
+        listing = call(server, "list_backups")
+        assert [i["name"] for i in listing["items"]] == [run["file"]]
+        assert call(server, "backup_settings")["export"]["format"]["value"] == "yaml"
+        doc = call(server, "export_config")
+        assert doc["format"] == "std-export" and doc["format_version"] == 1
+    finally:
+        app.config["backup_path"], app.config["CONFIG_FROM_ENV"], app.config["CONFIG_FROM_FILE"] = old

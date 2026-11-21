@@ -617,8 +617,12 @@ def next_run_times(scheduler=None):
     scheduler = scheduler or _SCHEDULER
     out = {}
     for kind, job_id in _BACKUP_JOB_IDS.items():
-        job = scheduler.get_job(job_id) if scheduler is not None else None
-        out[kind] = getattr(job, 'next_run_time', None) if job is not None else None
+        try:
+            job = scheduler.get_job(job_id) if scheduler is not None else None
+        except Exception:  # a scheduler that is not running (shut down, or not started yet)
+            job = None
+        when = getattr(job, 'next_run_time', None) if job is not None else None
+        out[kind] = when if isinstance(when, datetime) else None
     return out
 
 

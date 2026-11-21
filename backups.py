@@ -5,8 +5,9 @@ Two kinds of file live in one folder:
 
 - **snapshot**: a WAL-safe copy of the whole database (`sqlite3.Connection.backup()`),
   `YYYY-MM-DD-std_backup.sqlite3`.
-- **export**: today (bak-01) the YAML entry list, `YYYY-MM-DD-std_backup.yml`; bak-02
-  replaces it with the versioned export (`-std_export.yml|json`).
+- **export**: the versioned export of operator-set state (`export_format.py`, format v1),
+  `YYYY-MM-DD-std_export.yml|json`. Older `-std_backup.yml` files (the pre-0.11 entry list)
+  are still listed and pruned with the exports.
 
 Manual runs carry a time in the name (`YYYY-MM-DD_HHMMSS-...`) so they never overwrite the
 scheduled file of the day. Retention is per kind, by mtime, by suffix only: a file that
@@ -28,12 +29,11 @@ import threading
 import time
 from datetime import datetime
 
-import yaml
 from flask import current_app
 
+import export_format
 import settings_store
 from extensions import db
-from models import ServiceEntry
 from settings_loader import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ KINDS = ("snapshot", "export")
 KIND_LABELS = {"snapshot": "snapshot", "export": "export"}
 
 SNAPSHOT_SUFFIX = "-std_backup.sqlite3"
-# Export files. `-std_backup.yml` is the legacy daily YAML (today's export content too).
+# Export files. `-std_backup.yml` is the legacy daily YAML entry list (before 0.11).
 EXPORT_SUFFIXES = ("-std_export.yml", "-std_export.json", "-std_backup.yml")
 LEGACY_SUFFIXES = ("-std_backup.yml",)
 LEGACY_NAMES = ("backup.yml",)          # the old "Save to server" file; never auto-deleted
@@ -372,10 +372,12 @@ def prune(directory, kind, keep_days):
 # --- runs ----------------------------------------------------------------------------------
 
 
-def _file_name(kind, trigger, now=None):
+def _file_name(kind, trigger, now=None, fmt="yaml"):
     now = now or datetime.now()
     stamp = now.strftime("%Y-%m-%d") if trigger == "schedule" else now.strftime("%Y-%m-%d_%H%M%S")
-    return stamp + (SNAPSHOT_SUFFIX if kind == "snapshot" else "-std_backup.yml")
+    if kind == "snapshot":
+        return stamp + SNAPSHOT_SUFFIX
+    return stamp + ("-std_export.json" if fmt == "json" else "-std_export.yml")
 
 
 def _write_sqlite_snapshot(path):
@@ -406,15 +408,14 @@ def _write_sqlite_snapshot(path):
         raise
 
 
-def _write_entry_yaml(path):
-    """Today's export content: every entry's `to_dict()`, soft-deleted included. bak-02
-    replaces this with the versioned export."""
+def _write_export(path, fmt):
+    """The v1 export (`export_format`) through `<path>.tmp` and `os.replace`. Raises on
+    failure and leaves no temp file."""
     tmp = path + ".tmp"
     try:
-        entries = ServiceEntry.query.all()
-        data = [e.to_dict() for e in entries]
-        with open(tmp, "w") as f:
-            yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+        data = export_format.dump(export_format.build_export(), fmt)
+        with open(tmp, "wb") as f:
+            f.write(data)
         os.replace(tmp, path)
     except Exception:
         try:
@@ -454,12 +455,13 @@ def _run(app, kind, trigger):
                 eff = effective_settings(app)
                 directory = eff["path"]["value"]
                 os.makedirs(directory, exist_ok=True)
-                name = _file_name(kind, trigger, now)
+                fmt = eff["export"]["format"]["value"]
+                name = _file_name(kind, trigger, now, fmt)
                 path = os.path.join(directory, name)
                 if kind == "snapshot":
                     _write_sqlite_snapshot(path)
                 else:
-                    _write_entry_yaml(path)
+                    _write_export(path, fmt)
                 size = os.path.getsize(path)
                 result.update(ok=True, file=name, size=size, size_text=human_size(size))
                 logger.info(f"🌙 {trigger.capitalize()} {kind} saved to {path}")

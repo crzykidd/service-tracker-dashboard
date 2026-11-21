@@ -108,6 +108,8 @@ Read (any key): `list_entries`, `get_entry`, `health_summary`,
 `list_notification_previous_bases`,
 `list_streams`, `get_stream`, `preview_stream`, `list_stream_blocks`,
 `list_stream_offers`, `list_stream_unmatched_items` (inventory streams),
+`backup_settings`, `list_backups`, `export_config` (the export of your settings as
+JSON, never any secret; STD API revision 4),
 `get_config` (secrets are masked), `server_info` (the
 versions of this script and of your STD, and whether they match).
 
@@ -118,7 +120,8 @@ Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
 `purge_entry_notifications`, `purge_stream_notifications`, `delete_notification_channel`,
 `update_notification_channel`, `scan_notification_orphans`, `clear_notification_orphans`, `update_stream`, `enable_stream`, `disable_stream`,
 `ignore_stream`, `delete_stream`, `unblock_stream_key`, `answer_link_offer`,
-`link_entry_to_stream_item`, `apply_stream_default_checks`. `update_stream` also sets a
+`link_entry_to_stream_item`, `apply_stream_default_checks`, `run_backup` (`snapshot` or
+`export`, synchronous; a snapshot stays in STD's backup folder, it is never returned). `update_stream` also sets a
 stream's `default_checks`, `expected_interval_seconds` and `missing_expiry_days`;
 `list_streams` returns the `pending` and `stale` stream counts. `list_streams` and
 `get_stream` report each stream's observability fields (`last_snapshot_at`,

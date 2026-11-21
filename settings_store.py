@@ -240,6 +240,13 @@ def get_instance_id() -> str:
     return value
 
 
+def peek_instance_id():
+    """The install's UUID if it has been created, else None. Never writes (the export
+    header is informational and a read must not create a row)."""
+    value = _get_value(KEY_INSTANCE_ID, None)
+    return value if isinstance(value, str) and value else None
+
+
 def short_instance_id(instance_id: str) -> str:
     """The first 8 hex digits, for client ids (`std-1a2b3c4d`)."""
     return instance_id.replace("-", "")[:8]

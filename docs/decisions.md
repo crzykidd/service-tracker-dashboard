@@ -5,6 +5,53 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Backup, export and import, bak-02 (export format v1)
+
+Calls made while building phase 2 (`prompts/2026-11-20-bak-02-export.md`).
+
+- **Null fields are left out of the file; free-form dicts are kept as they are.** The
+  writer walks the models and skips `None`, so the file reads like the design example and
+  reading it back gives the same defaults. Every optional field therefore defaults to
+  `None` (or its false/empty default), which keeps YAML and JSON round trips equal. `config`
+  and `default_checks` are dicts and keep their own nulls (`tcp_port: null`).
+- **Widgets in the export are the ones an active entry points at.** The design says
+  "attached widgets only". A widget used only by a soft-deleted entry is not exported,
+  because the entry that would reference it is not either (the snapshot has the trash).
+  Two widgets with the same `(name, url)` collapse to one record.
+- **The export header never creates `instance_id`.** `settings_store.peek_instance_id()`
+  reads without writing, so `GET /export` and the daily job stay read-only. An install that
+  never used MQTT simply has no `instance_id` in its header (the field is optional).
+- **A channel `config` key that looks like a secret is dropped** (`secret`, `password`,
+  `token`, `api_key` in the name), on top of `config` being non-secret by design. The cost
+  is a key the channel type might legitimately want back; today `MqttConfig` has none.
+- **Per-record validation and the v0 reader are left to bak-03.** The models only check
+  types and the header literal. The cross-record rules of design 5.2 ("a docker entry needs
+  a host", group and widget names must resolve) are import-time, per-row errors, so they
+  live with the importer, not in the model validators that would reject the whole file.
+- **`PUT /settings/backup` answers 409 for an env-pinned field before calling
+  `backups.save_settings`**, comparing the submitted value with the effective one (an
+  unchanged value passes, as in the UI). Other failures are 400 with the dotted field in
+  `details[].loc` (`snapshot.time`). The nested request models are strict, and `format` is
+  only accepted on `export`.
+- **`POST /backups/run` returns 200 with `ok: false` and `error` when the run fails**
+  (the run itself happened and was recorded), and 409 only for "already running". The
+  UI toast does the same split.
+- **`GET /backups` has no `total` / paging** (design 11: `{items}`), carries a `legacy`
+  flag beside `manual`, and answers 409 when the folder cannot be read.
+- **`GET /export` uses the `ExportDoc` model as its OpenAPI response schema**, so the spec
+  documents the whole document. YAML is served as `application/yaml` and is not described
+  separately (the spec generator emits JSON content only).
+- **`API_REVISION` is 4 now, with the history row `(4, "0.11.0", "backup settings, backup
+  list and run, export")`.** bak-04 extends the row text (and adds the `import` feature)
+  and does not bump again. Three existing tests that hard-coded revision 3
+  (`test_stream_observability.py`, `test_mcp_server.py`) now compare with `API_REVISION`,
+  and the stream test keeps checking that revision 3 still has its row.
+- **The MCP server keeps `MCP_VERSION` as is.** It follows `VERSION`, which `/release-prep`
+  bumps. `export_config` takes no format argument (it returns the JSON document); an agent
+  that wants YAML has no reason to.
+
+---
+
 ## 2026-11-20 — Backup, export and import, bak-01 (scheduled backups)
 
 Calls made while building phase 1 (`prompts/2026-11-20-bak-01-scheduled-backups.md`).

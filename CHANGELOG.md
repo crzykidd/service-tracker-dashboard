@@ -19,12 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning on its card, and a red `!` on the Backup & restore link, until the next run
   succeeds. A snapshot contains every secret, so the page says to keep it private.
 - **The README describes how to restore a database snapshot by hand.**
+- **Export your settings as a YAML or JSON file, with no secrets.** In Settings →
+  Backup & restore → Exports, **Download YAML** and **Download JSON** give you one
+  versioned file of everything you chose: groups, the URLs you typed, health checks,
+  lock, description, sort priority and Home Assistant picks, widgets, notification
+  channels, inventory streams with their filters and blocks, users, and the exposure,
+  update-check and backup-schedule settings. It never contains a password or key
+  (user passwords, API keys, widget API keys, the MQTT password): the file only says
+  that one was set, so you know what to enter again on a new install. Things STD
+  rebuilds on its own (container status, IPs, health history) and soft-deleted entries
+  are left out. YAML is the default; the daily export uses the format you pick in
+  Settings. Importing an export is not built yet.
+- **Management API routes and MCP tools for backups and export** (API revision 4):
+  `GET`/`PUT /api/v1/settings/backup`, `GET /api/v1/backups`, `POST /api/v1/backups/run`
+  (Run now, snapshot or export) and `GET /api/v1/export` (`?format=json` or `yaml`),
+  and the MCP tools `backup_settings`, `list_backups`, `export_config` and `run_backup`.
+  There is no download route for snapshots, because they contain every secret.
 
 ### Changed
 
 - **One daily backup job became two.** The database snapshot runs at 00:05 and the
   export at 00:10 by default, each with its own keep days (old backups of each kind
-  are pruned separately). The export still writes the same YAML entry list.
+  are pruned separately). The export now writes the new settings export
+  (`<date>-std_export.yml`, or `.json` when you pick JSON) instead of the YAML list of
+  every entry. Older `-std_backup.yml` files are still listed, still age out with the
+  export keep days, and can be imported once import ships.
 - **`backup_path` and `backup_days_to_keep` in `settings.yml` are now initial
   values.** Settings can change them, and a value saved there wins over the file.
   An environment variable (`BACKUP_PATH`, `BACKUP_DAYS_TO_KEEP`) still wins over

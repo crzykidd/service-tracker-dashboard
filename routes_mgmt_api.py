@@ -20,17 +20,19 @@ blueprint's `after_request` hook, including 4xx responses.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request
 from pydantic import ValidationError
 from sqlalchemy.orm import joinedload, selectinload
 from werkzeug.exceptions import HTTPException
 
 import api_keys
+import backups
 import check_form
 import entry_rules
+import export_format
 import health_history
 import jobs
 import mgmt_openapi
@@ -48,6 +50,8 @@ from health_state import entry_health
 from image_utils import fetch_icon_if_missing
 from mgmt_schemas import (
     NOTIFIER_OWNED_FIELDS,
+    BackupRunRequest,
+    BackupSettingsPut,
     CheckPatch,
     EntryCreate,
     EntryPatch,
@@ -1360,6 +1364,116 @@ def put_update_check_settings():
     after = _update_check_payload()
     audit("update_check_settings", None, _diff(before, after))
     return jsonify(after)
+
+
+# --- backups and export (PRD 20) -----------------------------------------------------
+
+
+def _backup_flat_values():
+    """The effective backup values keyed like the audit trail (`snapshot.time`)."""
+    return {key.replace("_", ".", 1): entry["value"] for key, entry in backups.effective_flat(current_app).items()}
+
+
+def _backup_payload():
+    eff = backups.effective_settings(current_app)
+
+    def one(entry):
+        return {"value": entry["value"], "origin": entry["origin"]}
+
+    out = {"path": one(eff["path"])}
+    for kind in backups.KINDS:
+        out[kind] = {name: one(entry) for name, entry in eff[kind].items()}
+    out["last_runs"] = {
+        kind: {k: run.get(k) for k in ("at", "ok", "file", "size", "error", "trigger")}
+        for kind, run in backups.last_runs().items() if kind in backups.KINDS and isinstance(run, dict)}
+    out["next_runs"] = {
+        kind: (when.isoformat(timespec="seconds") if when else None)
+        for kind, when in jobs.next_run_times().items()}
+    return out
+
+
+@mgmt_bp.route("/settings/backup", methods=["GET"])
+@require_api_key("read")
+def get_backup_settings():
+    return jsonify(_backup_payload())
+
+
+@mgmt_bp.route("/settings/backup", methods=["PUT"])
+@require_api_key("write")
+def put_backup_settings():
+    audit("backup_settings")
+    data = BackupSettingsPut.model_validate(_json_body())
+    values = {}
+    if data.path is not None:
+        values["path"] = data.path
+    for kind, job in (("snapshot", data.snapshot), ("export", data.export)):
+        if job is None:
+            continue
+        for name in ("enabled", "time", "keep_days", "format"):
+            if getattr(job, name, None) is not None:
+                values[f"{kind}_{name}"] = getattr(job, name)
+    if not values:
+        return _fail([{"field": "body",
+                       "message": "name at least one of path, snapshot, export (each with at least one field)"}])
+    current = backups.effective_flat(current_app)
+    for key, raw in values.items():
+        entry = current[key]
+        if entry["env_name"] and str(raw).strip() != str(entry["value"]):
+            return json_error(409, f"{key.replace('_', '.', 1)} is set by the environment "
+                                   f"({entry['env_name']}) and cannot be changed here.")
+    before = _backup_flat_values()
+    errors, warnings = backups.save_settings(current_app, values)
+    if errors:
+        db.session.rollback()
+        return _fail([{"field": key.replace("_", ".", 1), "message": msg}
+                      for key, msg in errors.items()])
+    db.session.commit()
+    jobs.reschedule_backups(current_app)
+    audit("backup_settings", None, _diff(before, _backup_flat_values()))
+    return jsonify({**_backup_payload(), "warnings": warnings})
+
+
+@mgmt_bp.route("/backups", methods=["GET"])
+@require_api_key("read")
+def list_backups():
+    try:
+        files = backups.list_files()
+    except OSError as e:
+        return json_error(409, f"Could not read the backup folder: {e.strerror or e}.")
+    rows = files["snapshots"] + files["exports"]
+    rows.sort(key=lambda r: (r["modified"], r["name"]), reverse=True)
+    return jsonify({"items": [
+        {"name": r["name"], "kind": r["kind"], "size": r["size"],
+         "modified": r["modified"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+         "manual": r["manual"], "legacy": r["legacy"]}
+        for r in rows]})
+
+
+@mgmt_bp.route("/backups/run", methods=["POST"])
+@require_api_key("write")
+def run_backup():
+    audit("backup_run")
+    data = BackupRunRequest.model_validate(_json_body())
+    audit("backup_run", data.kind)
+    app = current_app._get_current_object()
+    result = backups.run_snapshot(app, "manual") if data.kind == "snapshot" else backups.run_export(app, "manual")
+    if result.get("busy"):
+        return json_error(409, result["error"])
+    audit("backup_run", data.kind, {"result": [None, "ok" if result["ok"] else "failed"],
+                                    "file": [None, result.get("file")]})
+    return jsonify({"kind": data.kind, **{k: result.get(k) for k in ("ok", "file", "size", "error", "at", "trigger")}})
+
+
+@mgmt_bp.route("/export", methods=["GET"])
+@require_api_key("read")
+def get_export():
+    fmt = (request.args.get("format") or "json").strip().lower()
+    if fmt not in ("json", "yaml"):
+        return _fail([{"field": "format", "message": "must be json or yaml"}])
+    data = export_format.dump(export_format.build_export(), fmt)
+    response = Response(data, mimetype="application/yaml" if fmt == "yaml" else "application/json")
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # --- notification channels (PRD 17.2) --------------------------------------------

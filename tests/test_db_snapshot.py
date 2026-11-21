@@ -49,7 +49,7 @@ def test_snapshot_has_same_tables_and_rows(app, tmp_path):
     name = datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3")
     snap = tmp_path / name
     assert snap.is_file()
-    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_backup.yml")).is_file()
+    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_export.yml")).is_file()
     assert sqlite3.connect(snap).execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     counts = _counts(snap)
     assert counts == _live_counts(app)
@@ -64,7 +64,7 @@ def test_snapshot_failure_does_not_stop_yaml_backup(app, tmp_path, monkeypatch):
     monkeypatch.setattr(backups.sqlite3, "connect", boom)
     assert not backups.run_snapshot(app, "schedule")["ok"]
     assert backups.run_export(app, "schedule")["ok"]
-    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_backup.yml")).is_file()
+    assert (tmp_path / datetime.now().strftime("%Y-%m-%d-std_export.yml")).is_file()
     assert not list(tmp_path.glob("*.sqlite3"))
 
 

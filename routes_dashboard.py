@@ -26,6 +26,7 @@ import requests
 import yaml
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
@@ -47,6 +48,7 @@ import api_keys
 import backups
 import check_form
 import entry_rules
+import export_format
 import health_history
 import jobs
 import mgmt_serializers
@@ -1266,6 +1268,24 @@ def run_backup_now():
     else:
         flash(f"{label} failed: {result['error']}", "danger")
     return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/export', methods=['GET'])
+@login_required
+@is_admin_required
+def download_export():
+    """Download the export of operator-set state now (format v1, never any secret).
+    `?format=yaml` (default) or `json`; nothing is written to the backup folder."""
+    fmt = (request.args.get('format') or 'yaml').strip().lower()
+    if fmt not in ('yaml', 'json'):
+        abort(400)
+    data = export_format.dump(export_format.build_export(), fmt)
+    ext, mimetype = ('yml', 'application/yaml') if fmt == 'yaml' else ('json', 'application/json')
+    name = f"std_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+    resp = Response(data, mimetype=mimetype)
+    resp.headers['Content-Disposition'] = f'attachment; filename="{name}"'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @dashboard_bp.route('/settings/backups/<name>/download', methods=['GET'])

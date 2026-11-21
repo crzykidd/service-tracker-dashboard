@@ -94,6 +94,7 @@
 | 0.84    | 2026-11-20 | §19 phase 3 delivered on `dev` (set-03): Settings → Streams as cards (status dot, ⋯ menu, read-only Docker card), an Edit stream dialog with three independent blocks (name and networks, staleness and missing entries, default checks) that reopens with the typed values on a value or `StreamError` failure (400 re-render), Preview in a wide dialog, pending and stale inline warnings with Preview / Enable / Ignore, compact Blocked and Link offers lists, an amber open-offers badge on the Streams link. §18.8 UI text updated. Routes, `streams.py`, the wire contract and `/api/v1` are unchanged. |
 | 0.85    | 2026-11-20 | §19 phase 4 delivered on `dev` (set-04), completing the Settings modernization except Backup & restore, which the separate backup project (`docs/design/2026-11-20-backup-export-import.md`) rebuilds: Groups as cards with a staging dialog inside the single form; Widgets as cards (⋯ Copy API key); Docker with a Layer directions card, collapsible per-host overrides and a sticky **Save & recompute URLs** bar, and the Docker (register) card moved there from Streams; Users as cards with Add user and Set password dialogs; API keys as cards with a Create key dialog and the key shown once in a dialog on the Settings page (`api_key_created.html` removed); About, Configuration, Deleted and detached widgets restyled. §12.5, §12.6, §14.2, §14.6, §15.3, §15.4, §16 and §18.8 UI text updated; §19 marked Delivered. No schema, wire-contract or `/api/v1` change. |
 | 0.86    | 2026-11-20 | Added §20 (v0.11.0 — Backup, export and import, planned; design in `docs/design/2026-11-20-backup-export-import.md`) and delivered its phase 1 (§20.1, bak-01) on `dev`: backup path, snapshot and export settings editable in Settings with env > UI > `settings.yml` > default precedence, two daily jobs (snapshot 00:05, export 00:10) replacing the single 00:05 job, per-kind retention and Run now, a backup file list with download and delete, last-run status with a failure warning and navigation badge, new `backups.py`. §3 job list, §3.1 module layout and §4 settings table updated. Former §20–§22 renumbered §21–§23 and live cross-references updated (older revision rows keep the numbers of their day); the §19 TOC entry now says Delivered. No schema (the existing `setting` table is used), wire-contract or `/api/v1` change. |
+| 0.87    | 2026-11-20 | §20.2 delivered on `dev` (bak-02): export format v1 (`std-export`, YAML or JSON, same document, never a secret) built by the new `export_format.py` with the §5.3 field ownership rules, the daily and manual export job now writes `<date>-std_export.yml\|json` (replacing the entry-list YAML; old `-std_backup.yml` files stay listed and age out with export retention), `GET /settings/backups/export` download with Download YAML / JSON buttons on the Exports card, and management API routes `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export` with MCP tools `backup_settings`, `list_backups`, `export_config`, `run_backup`. **`API_REVISION` 4** (§18.1) and the `backup` feature. §3.1 module layout, §14.4 route list and §20.6 updated. No schema change; register and stream-ingest wire contracts unchanged. |
 
 ---
 
@@ -118,7 +119,7 @@
 17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
 18. [Next release — Inventory streams and API revision (Delivered on `dev`)](#18-next-release--inventory-streams-and-api-revision-delivered-on-dev)
 19. [v0.11.0 — Settings modernization (Delivered on `dev`)](#19-v0110--settings-modernization-delivered-on-dev)
-20. [v0.11.0 — Backup, export and import (Planned)](#20-v0110--backup-export-and-import-planned)
+20. [v0.11.0 — Backup, export and import (In progress)](#20-v0110--backup-export-and-import-in-progress)
 21. [Versioning, Branches, and Releases](#21-versioning-branches-and-releases)
 22. [Cross-Repo Coordination](#22-cross-repo-coordination)
 23. [Open Questions](#23-open-questions)
@@ -258,6 +259,7 @@ health_history.py   ← history bars, uptime, recent failures for the detail pan
 health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
 settings_store.py   ← DB-stored runtime settings (per-interpreter directions, backup settings)
+export_format.py    ← export format v1 (PRD 20.2): pydantic models, `build_export()`, `dump()`
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot and export
                       runs, retention, file list and confined file lookup (§20.1)
 settings_sections.py ← Settings section registry: groups, slugs, labels, legacy
@@ -2043,6 +2045,11 @@ All paths are under `/api/v1`. Every list endpoint takes `limit` (default
 | `DELETE /widgets/<id>` | write | Delete a detached widget. |
 | `GET /settings/exposure` | read | Per-interpreter direction mappings, per-host overrides, and discovered layers and hosts (`settings_store`). |
 | `PUT /settings/exposure` | write | Replace them, with the same validation as Settings → Exposure. |
+| `GET /settings/backup` | read | Backup settings (folder, snapshot and export jobs) each with its `origin` (`env`, `ui`, `file`, `default`), plus `last_runs` and `next_runs` (§20, API revision 4). |
+| `PUT /settings/backup` | write | Change them with the UI's validation; an env-pinned field is a 409; reschedules the jobs. Audited as `backup_settings`. |
+| `GET /backups` | read | Backup files, newest first: `{name, kind, size, modified, manual, legacy}`. No download route: a snapshot holds every secret. |
+| `POST /backups/run` | write | `{kind: snapshot\|export}`, synchronous; 409 when that kind is already running. Audited as `backup_run`. |
+| `GET /export` | read | The export document (§20.2), `?format=json` (default) or `yaml` (`application/yaml`). Not audited. |
 | `GET /config` | read | Effective `settings.yml`/env values, read-only, with **secrets masked** (`api_token`, `secret_key`, widget keys) plus the app version. These are not editable through the API (they are loaded once at startup). |
 
 Users and passwords are **not** exposed through the API (out of scope).
@@ -2893,6 +2900,7 @@ server supports and log it.
 | 1 | ≤ 0.9.0 | `/api/v1/register` (v0.5.0+, canonical since v0.6.0); management API (v0.8.0, v0.9.0 additions) |
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
+| 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`; feature `backup`. bak-04 extends this row with the import routes (one bump for the whole 0.11.0 set) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3475,14 +3483,14 @@ the backup, export and import project rebuilds it (`docs/design/2026-11-20-backu
 
 ---
 
-## 20. v0.11.0 — Backup, export and import (Planned)
+## 20. v0.11.0 — Backup, export and import (In progress)
 
 Settings → Backup & restore becomes two features: **database backups** for disaster
 recovery and **export and import** of operator-set state. The full design (field
 ownership tables, matching rules, the import engine, API and UI) is
 [`docs/design/2026-11-20-backup-export-import.md`](design/2026-11-20-backup-export-import.md)
 (mockup alongside) and its operator decisions are in `docs/decisions.md`. It is built in
-five phases (`prompts/2026-11-20-bak-01` … `bak-05`); only §20.1 has shipped on `dev`.
+five phases (`prompts/2026-11-20-bak-01` … `bak-05`); §20.1 and §20.2 have shipped on `dev`.
 No change to the register or stream-ingest wire contracts.
 
 **Goals (design §1).** The scenario "new machine, empty `/config`, restore what the
@@ -3498,8 +3506,8 @@ syncing two running installs, scheduled import, remote targets (S3, SFTP).
   writes a WAL-safe copy of the database (`sqlite3.Connection.backup()` through a `.tmp`
   file and `os.replace`), and `backup_export_job` (default 00:10) writes the export. Each
   has its own switch, time of day (container local time), keep days and **Run now**. In
-  this phase the export job still writes today's YAML entry list
-  (`<date>-std_backup.yml`); bak-02 swaps it for the versioned export.
+  the export job writes the versioned export (§20.2; until bak-02 it wrote the YAML
+  entry list `<date>-std_backup.yml`).
 - **Settings are editable in the UI** (Settings → Backup & restore) and stored in the
   `setting` table: `backup_path`, `backup_snapshot_enabled|time|keep_days`,
   `backup_export_enabled|time|keep_days|format`, plus the observed `backup_last_runs`.
@@ -3514,7 +3522,7 @@ syncing two running installs, scheduled import, remote targets (S3, SFTP).
   registered and paused so the UI still shows its state). This relies on the single
   gunicorn worker. `backups._RUN_LOCKS` allows one run per kind at a time.
 - **Files and retention.** Scheduled names are `YYYY-MM-DD-std_backup.sqlite3` and
-  `YYYY-MM-DD-std_backup.yml`; a manual run puts a time in the name
+  `YYYY-MM-DD-std_export.yml` (or `.json`, per the export format setting); a manual run puts a time in the name
   (`YYYY-MM-DD_HHMMSS-...`) so it never overwrites the day's scheduled file. Retention
   runs at the end of each job for that kind only, by mtime and by suffix; legacy
   `-std_backup.yml` files age out with the export retention; `backup.yml` and any other
@@ -3536,18 +3544,52 @@ syncing two running installs, scheduled import, remote targets (S3, SFTP).
   the README: stop the container, keep the current file, copy the snapshot over
   `services.db`, delete the `-wal` and `-shm` files, start the container.
 
-### 20.2 Export format v1 (Planned; bak-02)
+### 20.2 Export format v1 (Delivered, unreleased; bak-02)
 
-A versioned `std-export` document, the same content as YAML or JSON, holding **only
-operator-set state** (design §5): groups, entry settings (group, sort priority,
-operator-owned URLs, description, lock, `ha_publish`, widget reference), health checks,
-stream filters, default checks and blocks, notification channels without passwords, users
-without password hashes and the runtime settings. Natural keys, never database ids.
-Anything that rebuilds itself (status, IPs, MACs, exposure observations, container ids,
-snapshots, timestamps) and every secret is left out; booleans such as `secret_set` and
-`api_key_set` say that something must be set again. Soft-deleted entries are not exported
-(the snapshot covers the trash). Adding an optional field keeps `format_version` 1; a newer
-version is rejected. Also adds the management API routes and `API_REVISION` 4.
+A versioned `std-export` document, the same content as YAML (default) or JSON, holding
+**only operator-set state** (design §5), built by `export_format.build_export()` and
+serialised by `export_format.dump(doc, "yaml" | "json")`. Natural keys, never database
+ids; records are sorted (entries by kind, host, name; the rest by name or key) so two
+exports diff cleanly; datetimes are UTC ISO 8601 with `Z`; a null field is left out.
+YAML opens with a short comment listing what is not included.
+
+- **Header:** `format: std-export`, `format_version: 1`, `exported_at`, `std_version`,
+  `api_revision`, `instance_id` (informational; omitted until the install has one, and
+  an export never creates it).
+- **Top-level sections:** `settings` (exposure layers and per-host overrides,
+  update-check, the backup schedule without the folder path), `groups` (name, priority,
+  icon), `widgets` (name, URL, fields, `api_key_set`), `notification_channels` (name,
+  type, enabled, non-secret `config`, `secret_set`), `streams` (identity, `key_type`,
+  `producer`, `display_name`, informational `status`, filters, default checks, intervals,
+  `blocks`), `entries`, `users` (username, email, admin, active).
+- **Entry ownership (design §5.3).** `kind` is `docker`, `manual` or `stream`;
+  identity is `(host, container_name)` for Docker and manual entries and `(stream,
+  stream_key)` for stream entries (plus `name_source`, `linked`, `pre_link_host`).
+  Exported: lock, description, group (by name), sort priority, `ha_publish`, widget
+  reference, every check's configuration (`HealthCheck.to_config()`), **a URL only when
+  operator-owned** (source `ui_edit`, or any URL on a manual or stream entry; the source
+  is written so import can restore it), and **`image_icon` only for manual, stream and
+  locked Docker entries** (an unlocked Docker entry's icon is rewritten on every
+  register). Not exported: status, container ids, image metadata, networks and ports,
+  IP, MAC, `attributes`, missing markers, exposure observations, label-owned
+  (`explicit_label`) and `synthesized` URLs, health results, link offers, snapshots,
+  timestamps.
+- **Never a secret.** No MQTT password (`secret_set` instead), no widget API key
+  (`api_key_set`), no password hash, no API key or its hash, no `api_audit`. A channel
+  config key that looks like a secret is dropped as a second line of defence.
+  Soft-deleted entries, widgets only they used and detached widgets are not exported
+  (the database snapshot has them).
+- **Reading.** The models are lenient (`extra="allow"`); `unknown_keys()` lists unknown
+  keys by path for the import warning. `SUPPORTED_VERSIONS = (0, 1)`. Adding an optional
+  field keeps `format_version` 1; a newer version is rejected. Per-record validation and
+  the v0 reader belong to the import (bak-03).
+- **Surfaces.** The daily and Run now export job writes `<date>-std_export.yml|json`
+  (manual runs timestamped); `GET /settings/backups/export?format=yaml|json` (admin
+  session; `Content-Disposition: attachment; filename="std_export_YYYYMMDD_HHMMSS.yml"`,
+  `Cache-Control: no-store`) backs the **Download YAML** / **Download JSON** buttons on
+  the Exports card; the management API (§14.4) has `GET /export` and the backup routes;
+  the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
+  `API_REVISION` is 4 (§18.1).
 
 ### 20.3 Import (Planned; bak-03, bak-04)
 
@@ -3584,7 +3626,7 @@ stops STD from starting if anything fails. No management API for it.
 | Phase | Prompt | Scope | Status |
 |---|---|---|---|
 | 1 | `bak-01-scheduled-backups` | Backup settings, two jobs, manual run, list, path validation, last-run status (§20.1) | Delivered (unreleased) |
-| 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP | Planned |
+| 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP (§20.2) | Delivered (unreleased) |
 | 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Planned |
 | 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Planned |
 | 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Planned |

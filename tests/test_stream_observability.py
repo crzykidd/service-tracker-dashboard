@@ -66,9 +66,11 @@ def fresh_watch():
 # --- revision ------------------------------------------------------------------------
 
 
-def test_api_revision_is_3_with_a_history_row():
-    assert API_REVISION == 3
-    assert API_REVISION_HISTORY[-1][0] == 3
+def test_api_revision_3_has_its_history_row():
+    # Revision 3 is the stream observability set; later revisions append rows (4 in 0.11.0).
+    assert API_REVISION >= 3
+    assert 3 in [row[0] for row in API_REVISION_HISTORY]
+    assert API_REVISION_HISTORY[-1][0] == API_REVISION
 
 
 # --- rejected snapshots -----------------------------------------------------------------
@@ -533,4 +535,4 @@ def test_openapi_carries_the_new_fields(client):
     for name in ("snapshot_interval_seconds", "expected_interval_seconds", "missing_expiry_days",
                  "last_rejection", "stale_streams", "missing_since", "streams_stale"):
         assert name in text, name
-    assert spec["info"]["x-api-revision"] == 3
+    assert spec["info"]["x-api-revision"] == API_REVISION

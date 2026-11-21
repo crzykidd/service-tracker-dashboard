@@ -434,11 +434,33 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("GET", f"/streams/{stream_id}/unmatched", params=dict(limit=limit, offset=offset))
 
     @read_tool
+    def backup_settings() -> dict:
+        """The backup settings: the folder and the two daily jobs (snapshot, export), each value with its origin (env | ui | file | default; env means pinned by an environment variable and read-only), plus last_runs and next_runs by kind."""
+        return client.request("GET", "/settings/backup")
+
+    @read_tool
+    def list_backups() -> dict:
+        """List the backup files in STD's backup folder, newest first: {items: [{name, kind (snapshot | export), size, modified, manual, legacy}]}. Snapshots hold every secret and cannot be downloaded through the API; use export_config for the exportable settings."""
+        return client.request("GET", "/backups")
+
+    @read_tool
+    def export_config() -> dict:
+        """The export of the operator-set settings (format std-export, version 1) as JSON: groups, URLs the operator set, checks, widgets, notification channels, inventory streams and blocks, users, exposure and update-check settings and the backup schedule. It never contains a secret: secret_set and api_key_set only say that a password or key exists. Soft-deleted entries and anything STD rebuilds on its own (status, IPs, health results) are left out. Can be large."""
+        return client.request("GET", "/export", params={"format": "json"})
+
+    @read_tool
     def get_config() -> dict:
         """The effective STD configuration, read-only. Secrets appear as `***`; `sources` says whether each value came from env, file or default."""
         return client.request("GET", "/config")
 
     # ---- write tools --------------------------------------------------------
+
+    @write_tool
+    def run_backup(kind: str) -> dict:
+        """Run a backup now and wait for it. kind: snapshot (a full copy of the database, secrets included; stays in STD's backup folder) or export (the operator-set settings, no secrets, as YAML or JSON per the backup settings). Returns {kind, ok, file, size, error, at, trigger}; ok false carries the error. It is a 409 when that kind is already running."""
+        if kind not in ("snapshot", "export"):
+            raise ToolError("kind must be 'snapshot' or 'export'.")
+        return client.request("POST", "/backups/run", json={"kind": kind})
 
     @write_tool
     def create_manual_entry(name: str, host: str | None = None, description: str | None = None,
