@@ -255,6 +255,67 @@
     else if (event.key === 'Tab') { if (tr) { closeMenu(tr, false); } }
   });
 
+  /* ------------------------------------------------------- clipboard, toast */
+
+  // ui.copyText(text) -> Promise<boolean>. Falls back to a temporary textarea when the
+  // async clipboard API is missing (plain http).
+  ui.copyText = function (text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  };
+
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    return ok;
+  }
+
+  // ui.toast(message): the same markup as a server-rendered success toast.
+  ui.toast = function (message) {
+    var region = document.getElementById('toast-region');
+    if (!region) { return; }
+    var t = document.createElement('div');
+    t.className = 'toast toast--success';
+    t.setAttribute('role', 'status');
+    t.setAttribute('data-toast', '');
+    var icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '\u2713';
+    var text = document.createElement('span');
+    text.className = 'toast-text';
+    text.textContent = message;
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.setAttribute('data-toast-close', '');
+    close.innerHTML = '&times;';
+    t.appendChild(icon); t.appendChild(text); t.appendChild(close);
+    region.appendChild(t);
+    if (window.STDFlash) { window.STDFlash.arm(t); }
+  };
+
+  // [data-copy-text="..."] (any button, usually a menu item) copies that text and toasts.
+  document.addEventListener('click', function (event) {
+    var btn = event.target.closest('[data-copy-text]');
+    if (!btn) { return; }
+    var label = btn.getAttribute('data-copy-label') || 'Copied';
+    Promise.resolve(ui.copyText(btn.getAttribute('data-copy-text'))).then(function (ok) {
+      ui.toast(ok ? label : 'Could not copy; select the text and copy it by hand.');
+    });
+  });
+
   /* --------------------------------------------- collapsible groups, tri-state */
 
   var groups = S.groups = S.groups || {};

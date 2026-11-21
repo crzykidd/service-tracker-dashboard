@@ -1,75 +1,81 @@
-{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+{# Settings -> Groups (design 9.3). One form, one Save: every group's values live in hidden inputs
+   (`group-<id>-name|icon|priority|delete`, name before value) and the optional `new-*` trio. The
+   dialog is a staging editor inside the form: its inputs have no name, so they never submit, and
+   there is no second <form>. Behaviour is in static/js/settings/groups.js. #}
+{% from "partials/settings/_macros.html" import section_header, flash_slot, kebab, menu_item, modal, save_bar with context %}
+{% macro group_card(gid, name, icon, priority, count, deleted, errs, staged=False) %}
+<div class="settings-card-row{% if deleted %} opacity-50{% endif %}" data-group-row="{{ gid }}"{% if staged and not name %} hidden{% endif %}
+     data-group-count="{{ count }}"{% if deleted %} data-group-deleted="true"{% endif %}>
+  <input type="hidden" name="{{ 'new-name' if staged else 'group-' ~ gid ~ '-name' }}" value="{{ name }}">
+  <input type="hidden" name="{{ 'new-icon' if staged else 'group-' ~ gid ~ '-icon' }}" value="{{ icon }}">
+  <input type="hidden" name="{{ 'new-priority' if staged else 'group-' ~ gid ~ '-priority' }}" value="{{ priority }}">
+  {% if not staged %}<input type="hidden" name="group-{{ gid }}-delete" value="{{ '1' if deleted else '0' }}">{% endif %}
+  <div class="settings-card-main">
+    <div class="settings-card-title">
+      <code class="settings-muted" data-group-icon-text>{{ icon }}</code>
+      <span data-group-name-text{% if deleted %} class="line-through"{% endif %}>{{ name }}</span>
+      {% if staged %}<span class="settings-tag settings-tag--warn">new, saved with Save changes</span>{% endif %}
+      <span class="settings-tag settings-tag--bad" data-group-deleted-tag{% if not deleted %} hidden{% endif %}>Will be deleted</span>
+    </div>
+    <div class="settings-card-summary">
+      <span data-group-priority-text>{% if priority != '' and priority is not none %}Priority {{ priority }}{% else %}No priority{% endif %}</span>
+      {%- if not staged %} &middot; {{ count }} entr{{ 'y' if count == 1 else 'ies' }}{% endif %}
+    </div>
+    {% for e in errs %}<div class="settings-card-error" data-group-error>{{ e }}</div>{% endfor %}
+  </div>
+  <div class="settings-card-actions">
+    <button type="button" class="btn-ghost btn-sm" data-group-delete-toggle data-group-undo{% if not deleted %} hidden{% endif %}>Undo</button>
+    <button type="button" class="btn-secondary btn-sm" data-group-edit="{{ gid }}" data-group-live{% if deleted %} hidden{% endif %}>Edit</button>
+    {% if staged %}
+    <span data-group-live>{% call kebab('group-menu-new', 'the new group') %}{{ menu_item('Discard new group', 'data-group-new-discard', danger=True) }}{% endcall %}</span>
+    {% elif count == 0 or deleted %}
+    <span data-group-live{% if deleted %} hidden{% endif %}>{% call kebab('group-menu-' ~ gid, name) %}{{ menu_item('Delete', 'data-group-delete-toggle', danger=True) }}{% endcall %}</span>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
 <section id="section-groups" class="settings-section{% if (initial_section or settings_default_section) != 'groups' %} hidden{% endif %}">
-  {{ section_header('Groups', 'Categories entries are grouped by on the dashboard.') }}
+  {{ section_header('Groups', 'Categories entries are grouped by on the dashboard.', add_label='Add group', add_attrs='data-group-add') }}
   {{ flash_slot('groups') }}
   {% set new_row = group_form.new if group_form and group_form.new else {} %}
   {% set group_errors = group_form.errors if group_form else {} %}
   <form method="POST" action="{{ url_for('dashboard.save_groups') }}" id="groups-form"
         data-unsaved-guard {% if group_form %}data-unsaved-start-dirty{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    {% macro save_bar() %}
-    <div class="flex items-center gap-3 my-3">
-      <button type="submit" data-unsaved-save class="btn-primary">Save changes</button>
-      <a href="{{ url_for('dashboard.settings', section='groups') }}" data-unsaved-discard class="btn-ghost">Discard</a>
-      <span data-unsaved-hint class="hidden text-yellow-400 text-sm">Unsaved changes</span>
+    <div class="settings-card settings-card-list" id="group-list">
+      {% for row in group_rows %}
+      {{ group_card(row.id, row.name, row.icon, row.priority, row.services_count, row.delete, group_errors.get(row.id, [])) }}
+      {% endfor %}
+      {{ group_card('new', new_row.name or '', new_row.icon or '', new_row.priority or '', 0, False, group_errors.get('new', []), staged=True) }}
+      <p class="settings-empty" id="group-empty" style="padding:0.875rem 1rem"{% if group_rows or new_row.name %} hidden{% endif %}>No groups yet.</p>
     </div>
-    {% endmacro %}
-    {{ save_bar() }}
-    <div class="settings-card overflow-x-auto">
-      <table id="group-table" class="sortable settings-table">
-        <thead>
-          <tr>
-            <th class="cursor-pointer" onclick="sortTable(0)">Group ID</th>
-            <th class="cursor-pointer" onclick="sortTable(1)">Group Name</th>
-            <th class="cursor-pointer" onclick="sortTable(2)">Group Icon</th>
-            <th class="cursor-pointer" onclick="sortTable(3)">Priority</th>
-            <th class="cursor-pointer" onclick="sortTable(4)">Services</th>
-            <th class="text-center">Controls</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in group_rows %}
-          {% set errs = group_errors.get(row.id, []) %}
-          <tr class="{% if row.delete %}opacity-50 line-through{% endif %}" data-group-row="{{ row.id }}">
-            <td>{{ row.id }}</td>
-            <td>
-              <input type="text" name="group-{{ row.id }}-name" value="{{ row.name }}" class="input-clean{% if errs %} border-red-500{% endif %}"{% if errs %} aria-invalid="true"{% endif %} aria-label="Group {{ row.id }} name">
-              {% for e in errs %}<p class="text-red-400 text-xs mt-1 no-underline">{{ e }}</p>{% endfor %}
-            </td>
-            <td>
-              <input type="text" name="group-{{ row.id }}-icon" value="{{ row.icon }}" class="input-clean" aria-label="Group {{ row.id }} icon">
-            </td>
-            <td>
-              <input type="number" name="group-{{ row.id }}-priority" value="{{ row.priority }}" class="input-clean" aria-label="Group {{ row.id }} priority">
-            </td>
-            <td class="text-center">{{ row.services_count }}</td>
-            <td class="text-right">
-              <input type="hidden" name="group-{{ row.id }}-delete" value="{{ '1' if row.delete else '0' }}">
-              {% if row.services_count == 0 or row.delete %}
-              <button type="button" data-group-delete-toggle
-                      class="btn-danger btn-sm">{{ 'Undo' if row.delete else 'Delete' }}</button>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-          <tr data-no-sort>
-            <td class="text-gray-500 italic">new</td>
-            <td>
-              <input type="text" name="new-name" value="{{ new_row.name or '' }}" placeholder="New group name" class="input-clean{% if group_errors.get('new') %} border-red-500{% endif %}"{% if group_errors.get('new') %} aria-invalid="true"{% endif %} aria-label="New group name">
-              {% for e in group_errors.get('new', []) %}<p class="text-red-400 text-xs mt-1">{{ e }}</p>{% endfor %}
-            </td>
-            <td>
-              <input type="text" name="new-icon" value="{{ new_row.icon or '' }}" placeholder="Optional icon" class="input-clean" aria-label="New group icon">
-            </td>
-            <td>
-              <input type="number" name="new-priority" value="{{ new_row.priority or '' }}" placeholder="Optional priority" class="input-clean" aria-label="New group priority">
-            </td>
-            <td></td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    {{ save_bar() }}
+
+    {# Staging editor: inside the form but with unnamed inputs, so nothing here is submitted. #}
+    {% call(part) modal('group-modal', 'Edit group', size='sm', attrs=('data-group-id="' ~ group_modal_id ~ '"')|safe if group_modal_id is defined and group_modal_id else '') %}
+    {% if part == 'body' %}
+      <div class="space-y-4">
+        <div>
+          <label class="settings-label" for="group-modal-name">Name</label>
+          <input id="group-modal-name" type="text" class="input-clean" maxlength="100" autocomplete="off">
+        </div>
+        <div>
+          <label class="settings-label" for="group-modal-icon">Icon</label>
+          <input id="group-modal-icon" type="text" class="input-clean" placeholder="Optional icon" autocomplete="off">
+        </div>
+        <div>
+          <label class="settings-label" for="group-modal-priority">Priority</label>
+          <input id="group-modal-priority" type="number" class="input-clean" placeholder="Optional priority">
+          <span class="edit-helper">Lower numbers come first on the dashboard.</span>
+        </div>
+        <div class="settings-card-error" id="group-modal-errors" role="alert" hidden></div>
+        <p class="edit-helper" id="group-modal-note">Apply stages the change on the card; nothing is saved until you press Save changes.</p>
+      </div>
+    {% else %}
+      <button type="button" class="btn-secondary" data-modal-close>Cancel</button>
+      <button type="button" class="btn-primary" data-group-apply>Apply</button>
+    {% endif %}
+    {% endcall %}
+
+    {{ save_bar(discard=url_for('dashboard.settings', section='groups'), label='Save changes') }}
   </form>
 </section>

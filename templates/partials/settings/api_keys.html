@@ -1,6 +1,33 @@
-{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+{% from "partials/settings/_macros.html" import section_header, flash_slot, card_row, kebab, menu_form_item, menu_sep, modal, empty_state with context %}
+{% macro key_card(k) %}
+{% call(part) card_row(attrs='data-api-key-id="' ~ k.id ~ '"', cls='opacity-50' if k.revoked_at else '') %}
+  {% if part == 'main' %}
+    <div class="settings-card-title">
+      <span class="status-dot status-dot--{{ 'off' if k.revoked_at else 'ok' }}" aria-hidden="true" style="margin-top:0"></span>
+      {{ k.name }}
+      <span class="settings-tag">{{ k.scope }}</span>
+      <code class="settings-muted">{{ k.prefix }}</code>
+      <span class="settings-state-word">{% if k.revoked_at %}revoked{% else %}active{% endif %}</span>
+    </div>
+    <div class="settings-card-summary settings-card-summary--wrap">
+      Created {{ k.created_at.strftime('%Y-%m-%d %H:%M') }} UTC &middot;
+      rotated {% if k.rotated_at %}{{ k.rotated_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}—{% endif %} &middot;
+      last used {% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if k.last_used_ip %} from {{ k.last_used_ip }}{% endif %}{% else %}never{% endif %}
+      {%- if k.revoked_at %} &middot; revoked {{ k.revoked_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+    </div>
+  {% elif not k.revoked_at %}
+    {% call kebab('api-key-menu-' ~ k.id, k.name) %}
+      {{ menu_form_item(url_for('dashboard.rotate_api_key', id=k.id), 'Rotate',
+          confirm="Rotate '" ~ k.name ~ "'? The current key stops working immediately; you'll get a new one to copy.") }}
+      {{ menu_form_item(url_for('dashboard.revoke_api_key', id=k.id), 'Revoke', danger=True,
+          confirm="Revoke key " ~ k.name ~ "? Anything using it stops working.") }}
+    {% endcall %}
+  {% endif %}
+{% endcall %}
+{% endmacro %}
+{% set kf = api_key_form or {} %}
 <section id="section-api-keys" class="settings-section{% if (initial_section or settings_default_section) != 'api-keys' %} hidden{% endif %}">
-  {% call section_header('API keys', 'Keys for the management API, sidecars and agents.') %}
+  {% call section_header('API keys', 'Keys for the management API, sidecars and agents.', add_label='Create key', add_attrs='data-api-key-add') %}
     <p>
       Admin keys for the management API (<code>Authorization: Bearer &lt;key&gt;</code>).
       They are separate from the notifier's <code>api_token</code>, which only registers services.
@@ -10,69 +37,60 @@
   {% endcall %}
   {{ flash_slot('api-keys') }}
 
-  <form method="POST" action="{{ url_for('dashboard.create_api_key') }}" class="settings-card flex flex-wrap items-end gap-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div>
-      <label class="settings-label" for="new-key-name">Name</label>
-      <input id="new-key-name" type="text" name="name" maxlength="64" required class="input-clean">
-    </div>
-    <div>
-      <label class="settings-label" for="new-key-scope">Scope</label>
-      <select id="new-key-scope" name="scope" class="input-clean">
-        <option value="read">read</option>
-        <option value="write">write</option>
-        <option value="ingest">Ingest (sidecars)</option>
-      </select>
-      <span class="edit-helper block max-w-xs">Ingest keys can only send inventory snapshots to <code>/api/v1/streams</code>; use one per sidecar.</span>
-    </div>
-    <button type="submit" class="btn-primary">Create key</button>
-  </form>
-
   {% if api_key_rows %}
-  <div class="settings-card overflow-x-auto">
-  <table class="settings-table" id="api-key-table">
-    <thead>
-      <tr>
-        <th class="px-4 py-2">Name</th>
-        <th class="px-4 py-2">Prefix</th>
-        <th class="px-4 py-2">Scope</th>
-        <th class="px-4 py-2">Created</th>
-        <th class="px-4 py-2">Rotated</th>
-        <th class="px-4 py-2">Last used</th>
-        <th class="px-4 py-2">Status</th>
-        <th class="px-4 py-2"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for k in api_key_rows %}
-      <tr class="{% if k.revoked_at %}opacity-50{% endif %}">
-        <td class="px-4 py-2">{{ k.name }}</td>
-        <td class="px-4 py-2"><code>{{ k.prefix }}</code></td>
-        <td class="px-4 py-2">{{ k.scope }}</td>
-        <td class="px-4 py-2">{{ k.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
-        <td class="px-4 py-2">{% if k.rotated_at %}{{ k.rotated_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}—{% endif %}</td>
-        <td class="px-4 py-2">{% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') }} UTC{% if k.last_used_ip %} from {{ k.last_used_ip }}{% endif %}{% else %}never{% endif %}</td>
-        <td class="px-4 py-2">{% if k.revoked_at %}revoked {{ k.revoked_at.strftime('%Y-%m-%d %H:%M') }} UTC{% else %}active{% endif %}</td>
-        <td class="px-4 py-2">
-          {% if not k.revoked_at %}
-          <div class="flex gap-2">
-          <form method="POST" action="{{ url_for('dashboard.rotate_api_key', id=k.id) }}" data-confirm="Rotate '{{ k.name }}'? The current key stops working immediately; you'll get a new one to copy.">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn-secondary btn-sm">Rotate</button>
-          </form>
-          <form method="POST" action="{{ url_for('dashboard.revoke_api_key', id=k.id) }}" data-confirm="Revoke key {{ k.name }}? Anything using it stops working.">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn-danger btn-sm">Revoke</button>
-          </form>
-          </div>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="settings-card settings-card-list" id="api-key-list">
+    {% for k in api_key_rows if not k.revoked_at %}{{ key_card(k) }}{% endfor %}
+    {% for k in api_key_rows if k.revoked_at %}{{ key_card(k) }}{% endfor %}
   </div>
   {% else %}
-  <p class="settings-empty">No API keys yet.</p>
+  {{ empty_state('No API keys yet.', id='api-key-empty') }}
+  {% endif %}
+
+  {# Create key. An error re-renders (400) with this dialog open and the name kept. #}
+  {% call(part) modal('api-key-modal', 'Create API key', size='sm', form_attrs='method="POST" action="' ~ url_for('dashboard.create_api_key') ~ '"') %}
+  {% if part == 'body' %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="space-y-4">
+      <div>
+        <label class="settings-label" for="new-key-name">Name</label>
+        <input id="new-key-name" type="text" name="name" maxlength="64" required class="input-clean" value="{{ kf.get('name', '') }}" autocomplete="off">
+      </div>
+      <div>
+        {% set kscope = kf.get('scope') or 'read' %}
+        <label class="settings-label" for="new-key-scope">Scope</label>
+        <select id="new-key-scope" name="scope" class="input-clean">
+          <option value="read"{% if kscope == 'read' %} selected{% endif %}>read</option>
+          <option value="write"{% if kscope == 'write' %} selected{% endif %}>write</option>
+          <option value="ingest"{% if kscope == 'ingest' %} selected{% endif %}>Ingest (sidecars)</option>
+        </select>
+        <span class="edit-helper block" data-scope-help="read"{% if kscope != 'read' %} hidden{% endif %}>Read keys can read everything the management API exposes and change nothing.</span>
+        <span class="edit-helper block" data-scope-help="write"{% if kscope != 'write' %} hidden{% endif %}>Write keys can read and change entries, groups, widgets and settings.</span>
+        <span class="edit-helper block" data-scope-help="ingest"{% if kscope != 'ingest' %} hidden{% endif %}>Ingest keys can only send inventory snapshots to <code>/api/v1/streams</code>; use one per sidecar.</span>
+      </div>
+    </div>
+  {% else %}
+    <button type="button" class="btn-secondary" data-modal-close>Cancel</button>
+    <button type="submit" class="btn-primary">Create key</button>
+  {% endif %}
+  {% endcall %}
+
+  {# Show once. Only this response carries the key; a reload is a plain GET without it. #}
+  {% if api_key_secret is defined and api_key_secret %}
+  {% call(part) modal('api-key-secret-modal', 'Key rotated' if api_key_secret.rotated else 'Key created', size='md') %}
+  {% if part == 'body' %}
+    <div class="inline-warning inline-warning--warn">
+      <div><strong>Copy this key now. You won't see it again.</strong>
+      Only a hash is stored, so a lost key can't be recovered; revoke it and create a new one.
+      {% if api_key_secret.rotated %}The previous key for this name has stopped working. Update anything that used it.{% endif %}</div>
+    </div>
+    <p class="text-sm mb-2">Name <strong>{{ api_key_secret.name }}</strong>, scope <strong>{{ api_key_secret.scope }}</strong>.</p>
+    <div class="flex gap-2">
+      <input id="new-api-key" type="text" readonly value="{{ api_key_secret.full_key }}" class="input-clean settings-code" aria-label="The new API key">
+      <button type="button" id="copy-api-key" class="btn-primary">Copy</button>
+    </div>
+  {% else %}
+    <button type="button" class="btn-secondary" data-modal-close>Done</button>
+  {% endif %}
+  {% endcall %}
   {% endif %}
 </section>

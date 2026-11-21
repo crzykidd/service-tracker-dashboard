@@ -63,6 +63,13 @@ def refresh_default_password_flag(app):
     return in_use
 
 
+def _render_settings_for(**kwargs):
+    """Re-render Settings from here; routes_dashboard imports this module, so import lazily."""
+    from routes_dashboard import render_settings_for
+
+    return render_settings_for(**kwargs)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -109,14 +116,15 @@ def logout():
 @is_admin_required
 def set_user_password(user_id):
     new_password = request.form.get("new_password", "").strip()
-    if not new_password or len(new_password) < 6:
-        flash("Password must be at least 6 characters", "error")
-        return redirect(url_for("dashboard.settings", section="users"))
-
     user = User.query.get(user_id)
     if not user:
-        flash("User not found", "error")
+        flash("User not found", "danger")
         return redirect(url_for("dashboard.settings", section="users"))
+    if not new_password or len(new_password) < 6:
+        # Re-render with the set-password dialog open (the password is never echoed).
+        flash("Password must be at least 6 characters", "danger")
+        return _render_settings_for(
+            section="users", open_modal="password-modal", status=400, password_user=user)
 
     user.set_password(new_password)
     db.session.commit()
@@ -136,7 +144,10 @@ def add_user():
 
     if User.query.filter((User.username == username) | (User.email == email)).first():
         flash("User already exists with this username or email", "danger")
-        return redirect(url_for("dashboard.settings", section="users"))
+        # Re-render with the Add user dialog open; username and email are kept, the password is not.
+        return _render_settings_for(
+            section="users", open_modal="user-modal", status=400,
+            user_form={"username": username or "", "email": email or "", "is_admin": is_admin})
 
     user = User(username=username, email=email, is_admin=is_admin)
     user.set_password(password)

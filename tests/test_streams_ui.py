@@ -62,9 +62,13 @@ def test_scope_select_offers_ingest_and_creating_one_works(admin_client, app):
 def test_streams_tab_empty_and_docker_row(admin_client, register):
     register(container_name="svc-a")
     html = admin_client.get("/settings?section=streams").get_data(as_text=True)
-    assert 'id="section-streams"' in html and "Docker (register)" in html
-    assert 'id="stream-empty"' in html
-    card = html.split('id="stream-row-docker"', 1)[1].split('id="stream-empty"', 1)[0]
+    assert 'id="section-streams"' in html and 'id="stream-empty"' in html
+    # The register card lives at the top of the Docker section, not in Streams (operator decision).
+    docker = html.split('id="section-docker"', 1)[1].split('id="section-streams"', 1)[0]
+    streams_html = html.split('id="section-streams"', 1)[1]
+    assert "Docker (register)" in docker and "Docker (register)" not in streams_html.split('id="section-notifications"', 1)[0]
+    assert 'id="stream-row-docker"' not in streams_html
+    card = docker.split('id="stream-row-docker"', 1)[1].split("</div>\n  </div>", 1)[0]
     assert "1 entr" in card and "never" not in card      # one entry, registered just now
 
 

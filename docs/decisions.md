@@ -5,6 +5,54 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Settings modernization, set-04 (the remaining sections)
+
+Calls made while building phase 4 (`prompts/2026-11-20-set-04-remaining.md`).
+
+- **Backup & restore is out of this phase.** The operator decided to redesign backup,
+  export and import as a separate project (`bak-01` onward), which rebuilds the section.
+  `backup.html`, `backup.js` and the backup and restore routes and tests were not touched.
+  The PRD §19 marks the modernization delivered except for that section.
+- **The Docker (register) card moved to the top of Docker** (the operator's design Q3
+  answer, deferred from set-03). Same markup and `id="stream-row-docker"`. The Streams list
+  wrapper `#stream-list` stays in the markup but is `hidden` while there are no streams, so
+  the Phase-1 layout test that looks for it still holds.
+- **Groups stage in a `<dialog>` inside the one form.** The dialog's inputs have no
+  `name`, so they never submit and the section keeps exactly one `<form`. Apply copies
+  into the card's hidden inputs (name before value, as the tests read them) and dispatches
+  `change` on the form so the unsaved guard sees it. Discard on the save bar is the
+  existing reload link. The new group is a hidden card row that appears when staged, with
+  a "Discard new group" ⋯ item. `save_groups` computes the first row with a message and
+  passes `group_modal_id`; a stale-table failure has no row to edit, so it keeps its banner
+  in the section (the phase-1 test for `data-flash-slot="groups"`).
+- **Show-once key: `_render_settings` renders it, not a separate template.** The key reaches
+  the page only as `api_key_secret` in that one response. Create keeps
+  `Cache-Control: no-store`; rotate keeps `no-store, no-cache` and `Pragma: no-cache`.
+  `api_key_created.html` was removed. It relies on `nav.js` `replaceState` to make a
+  reload a plain GET (check it in a browser, since a re-POST on reload would otherwise
+  create or rotate a second key).
+- **Key and user validation errors now re-render with HTTP 400** (they redirected with a
+  flash). `routes_auth` reaches Settings through the new
+  `routes_dashboard.render_settings_for()`, imported inside the function because
+  `routes_dashboard` imports `routes_auth`. `set_user_password` checks the user before the
+  password length, so an unknown user is still a redirect with a `danger` flash.
+- **A re-render does not echo secrets.** The Add user dialog gets `user_form` (username,
+  email, admin) and never the password; the dialogs are blanked by JS on open (not
+  `form.reset()`, which would restore the re-rendered values).
+- **Tests changed on purpose:** `test_mgmt_api_keys.py` (bad key input and a duplicate name
+  now 400 with `data-open-modal="api-key-modal"`; the Rotated cell and column assertions
+  became the card summary "rotated <date>" / "rotated —"), `test_settings_layout.py` (a
+  short password is no longer a redirect, and the key-name error is no longer a redirect),
+  `test_streams_ui.py` (the Docker card is looked up in `#section-docker`).
+- **Small shared additions:** `modal()` takes `attrs`, `card_row()` takes `cls`,
+  `settings_group()` takes `check=False` and `count_text`, `save_bar()` takes `disabled`.
+  `ui.js` gained `copyText`, `toast` and `[data-copy-text]` (widgets' Copy API key; the
+  old `window.copyToClipboard` override in `access.js` was dropped). `.settings-root
+  [hidden]` is now `display: none !important`, because `.settings-card-row` and the
+  button rules set `display` and would otherwise beat the attribute.
+
+---
+
 ## 2026-11-20 — Backup, export and import design (0.11.0)
 
 Design in `docs/design/2026-11-20-backup-export-import.md` (mockup alongside), built by

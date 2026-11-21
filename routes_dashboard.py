@@ -875,6 +875,13 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
     ), status
 
 
+def render_settings_for(**kwargs):
+    """Public wrapper over `_render_settings` for other route modules (routes_auth re-renders
+    Settings with a dialog open). Returns `(html, status)`; imported lazily there because
+    this module imports routes_auth."""
+    return _render_settings(**kwargs)
+
+
 # --- Settings -> Notifications (PRD 17.2) -----------------------------------------
 
 
@@ -1246,6 +1253,12 @@ def save_groups():
     if errors:
         group_form = {'rows': rows, 'new': new_row, 'errors': errors}
         flash("Nothing was saved. Fix the marked rows and save again.", "danger")
+        # Open the staging dialog on the first row with a message (design 9.3); a stale
+        # table has no row to edit, so its banner stays in the Groups section.
+        first = next((r['id'] for r in rows if r['id'] in errors), 'new' if 'new' in errors else None)
+        if first is not None:
+            return _render_settings(section='groups', forms={'group': group_form}, status=400,
+                                    open_modal='group-modal', group_modal_id=first)
         return _render_settings(section='groups', forms={'group': group_form}, status=400)
 
     updated = added = deleted = 0
@@ -1843,6 +1856,23 @@ def delete_entry_json(id):
     return jsonify({'ok': True})
 
 
+def _api_key_secret_response(key, full_key, rotated):
+    """Render Settings with the new key in the show-once dialog (design 9.10).
+
+    The key is not flashed or put in the session; it exists only in this response's
+    HTML (nav.js then replaces the POST URL, so a reload is a plain Settings GET)."""
+    html, _status = _render_settings(
+        section='api-keys', open_modal='api-key-secret-modal',
+        api_key_secret={'name': key.name, 'scope': key.scope, 'full_key': full_key, 'rotated': rotated})
+    response = make_response(html)
+    if rotated:
+        response.headers['Cache-Control'] = 'no-store, no-cache'
+        response.headers['Pragma'] = 'no-cache'
+    else:
+        response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @dashboard_bp.route('/settings/api-keys', methods=['POST'])
 @login_required
 @is_admin_required
@@ -1859,12 +1889,11 @@ def create_api_key():
         error = "Choose a scope: read, write or ingest."
     if error:
         flash(error, "danger")
-        return _settings_redirect('api-keys')
+        return _render_settings(section='api-keys', open_modal='api-key-modal', status=400,
+                                api_key_form={'name': name, 'scope': scope})
     key, full_key = api_keys.create_key(name, scope, created_by=current_user.id)
     logger.info(f"Created API key '{key.name}' ({key.prefix}, {key.scope}) by {current_user.username}.")
-    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key))
-    response.headers['Cache-Control'] = 'no-store'
-    return response
+    return _api_key_secret_response(key, full_key, rotated=False)
 
 
 @dashboard_bp.route('/settings/api-keys/<int:id>/rotate', methods=['POST'])
@@ -1881,11 +1910,7 @@ def rotate_api_key(id):
         return _settings_redirect('api-keys')
     full_key = api_keys.rotate_key(key)
     logger.info(f"Rotated API key id={key.id} by {current_user.username}.")
-    response = make_response(render_template('api_key_created.html', key=key, full_key=full_key,
-                                             rotated=True))
-    response.headers['Cache-Control'] = 'no-store, no-cache'
-    response.headers['Pragma'] = 'no-cache'
-    return response
+    return _api_key_secret_response(key, full_key, rotated=True)
 
 
 @dashboard_bp.route('/settings/api-keys/<int:id>/revoke', methods=['POST'])

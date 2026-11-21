@@ -92,6 +92,7 @@
 | 0.82    | 2026-11-20 | Added §19 (v0.11.0 — Settings modernization, planned; design in `docs/design/2026-11-20-settings-modernization.md`) and delivered its phase 1 on `dev`: section registry, grouped sidebar with deep links, flash policy, shared UI kit and restyle. Former §19–§21 renumbered §20–§22 and live cross-references updated (older revision rows keep the numbers of their day). §3.1 module layout updated. No schema, wire-contract or `/api/v1` change. |
 | 0.83    | 2026-11-20 | §19 phase 2 delivered on `dev` (set-02): Settings → Notifications channel cards with ⋯ menu and Enabled switch, Add/Edit channel dialog (Send test beside Save, validation errors reopen it), Settings → Home Assistant grouped by source with search and a sticky Save bar; §17.2/§17.4 UI text updated; the "no channel publishes discovery" warning counts enabled channels only. No schema, wire-contract or `/api/v1` change. |
 | 0.84    | 2026-11-20 | §19 phase 3 delivered on `dev` (set-03): Settings → Streams as cards (status dot, ⋯ menu, read-only Docker card), an Edit stream dialog with three independent blocks (name and networks, staleness and missing entries, default checks) that reopens with the typed values on a value or `StreamError` failure (400 re-render), Preview in a wide dialog, pending and stale inline warnings with Preview / Enable / Ignore, compact Blocked and Link offers lists, an amber open-offers badge on the Streams link. §18.8 UI text updated. Routes, `streams.py`, the wire contract and `/api/v1` are unchanged. |
+| 0.85    | 2026-11-20 | §19 phase 4 delivered on `dev` (set-04), completing the Settings modernization except Backup & restore, which the separate backup project (`docs/design/2026-11-20-backup-export-import.md`) rebuilds: Groups as cards with a staging dialog inside the single form; Widgets as cards (⋯ Copy API key); Docker with a Layer directions card, collapsible per-host overrides and a sticky **Save & recompute URLs** bar, and the Docker (register) card moved there from Streams; Users as cards with Add user and Set password dialogs; API keys as cards with a Create key dialog and the key shown once in a dialog on the Settings page (`api_key_created.html` removed); About, Configuration, Deleted and detached widgets restyled. §12.5, §12.6, §14.2, §14.6, §15.3, §15.4, §16 and §18.8 UI text updated; §19 marked Delivered. No schema, wire-contract or `/api/v1` change. |
 
 ---
 
@@ -1237,9 +1238,10 @@ Picks up the FUTURE.md "Soft-delete for service entries" entry.
   `/dbdump` default view. Implement as one model-level helper
   (e.g. `ServiceEntry.active()`), and audit every `ServiceEntry.query`
   call site — there are ~18.
-- **Settings → Deleted** tab lists soft-deleted entries with
-  **Restore** and **Delete permanently** (the latter goes through
-  §12.6's hard-delete path).
+- **Settings → Deleted** lists soft-deleted entries as cards (name, host,
+  deleted at, days until purge) with **Restore** and a ⋯ menu with
+  **Delete permanently** (the latter goes through §12.6's hard-delete
+  path; the confirm dialog keeps its text).
 - **Purge job:** daily at 00:25 hard-deletes rows whose `deleted_at` is
   older than `deleted_retention_days` (new setting, default `30`,
   `0` = purge on the next run).
@@ -1275,9 +1277,9 @@ scheduled/manual backups deliberately include deleted rows. New routes:
 - A widget is **detached** when no service entry (active or
   soft-deleted) references it. Detached widgets are skipped by the
   widget refresh job.
-- **Settings → Deleted** gains a "Detached widgets" list: **Attach to
-  service** (picker of entries with no widget) or **Delete** (removes
-  the widget and its values).
+- **Settings → Deleted** gains a "Detached widgets" list of cards:
+  **Attach to service** (picker of entries with no widget) or, in the ⋯
+  menu, **Delete** (removes the widget and its values).
 
 As built: `Widget.detached()` (no `ServiceEntry` references it);
 `hard_delete_entry` now only deletes the entry. Routes (admin, CSRF):
@@ -1923,12 +1925,11 @@ token and needs no update.
   `secrets.token_urlsafe`. Because the key is high-entropy, a plain SHA-256
   is sufficient (no KDF). Lookup is by `prefix`, then the hash is compared
   with `hmac.compare_digest`.
-- **Settings → API tab** (admin only):
-  - **Create key** asks for a name and scope and shows the full key
-    **once**, with a copy button.
-  - Key list: name, prefix, scope, created, rotated (v0.9.0), last used
-    (time and IP), **Rotate** (v0.9.0) and **Revoke**.
-  - The recent audit log is shown here too (§14.6).
+- **Settings → API keys** (admin only; the Audit log is its own section, §14.6):
+  - **Create key** opens a dialog (name and scope) and shows the full key
+    **once**, in a dialog on the Settings page with a copy button (§19.6).
+  - Key cards: name, scope, prefix, active or revoked, created, rotated
+    (v0.9.0), last used (time and IP), ⋯ **Rotate** (v0.9.0) and **Revoke**.
 - **Decorator `require_api_key(scope)`:**
   - Missing or invalid key → 401 JSON. Revoked → 401. Read key on a write
     endpoint → 403.
@@ -1954,9 +1955,9 @@ also returns `version` (the STD version, same source as `/config`); see §15.7.
   (400, field-level `details`) and unhandled exceptions (500). Routing-level
   404/405 (no matching URL) are not handled by a blueprint and keep Flask's
   default response.
-- Settings → API (admin, CSRF): create shows the key on the POST response page
-  (`api_key_created.html`, `Cache-Control: no-store`), never via flash or
-  session; revoke keeps the row greyed out. (Superseded in v0.9.0, §15.3: names are unique among active keys only; originally unique including
+- Settings → API keys (admin, CSRF): create shows the key once in the response's
+  show-once dialog (`Cache-Control: no-store`; v0.8.0 used `api_key_created.html`,
+  removed in v0.11.0), never via flash or session; revoke keeps the row greyed out. (Superseded in v0.9.0, §15.3: names are unique among active keys only; originally unique including
   revoked keys.) The audit list on this tab arrives with v080-04.
 
 ### 14.3 Entries, checks and health [`v080-02-entries-checks-health`] — Delivered in v0.8.0
@@ -2105,7 +2106,7 @@ with the JSON error shape when the caller sends a Bearer header or
   failures (4xx). Reads are not logged.
 - **Retention:** new setting `api_audit_retention_days` (default 90), with a
   daily purge job.
-- **Settings → API** shows the most recent 200 rows, filterable by key.
+- **Settings → Audit log** shows the most recent 200 rows, filterable by key.
 
 **As built (v080-01):** model, retention and the hook are in. The hook is
 `routes_mgmt_api.audit_response`, registered with `mgmt_bp.after_request`; it
@@ -2118,7 +2119,7 @@ old and new values before they reach the database. Unauthenticated requests
 are only logged. `jobs.purge_api_audit` runs daily at 00:35. The Settings
 view of the log is not built yet.
 
-**As built (v080-04):** Settings → API lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
+**As built (v080-04):** Settings → Audit log lists the 200 most recent rows (time UTC, key, method, path, object, status, changes) with a filter by key name (`?audit_key=`, from the stored snapshot so deleted keys still filter). Changes render as escaped text lines, shortened to 120 characters per value; secrets are already `***`.
 
 ### 14.7 MCP server [`v080-05-mcp-server`] — Delivered in v0.8.0
 
@@ -2294,7 +2295,7 @@ expiry, even though the HTTP status is fine.
 
 ### 15.3 API key rotation [`v090-03-api-key-rotate`] — Delivered in v0.9.0
 
-- **Rotate** on each active key in Settings → API (`POST
+- **Rotate** on each active key in Settings → API keys (`POST
   /settings/api-keys/<id>/rotate`, admin and CSRF, like revoke). It keeps the
   row (id, name, scope, `created_at`, audit history) and issues a fresh key
   from `generate_key()`, so the prefix and the secret are both new.
@@ -2303,11 +2304,12 @@ expiry, even though the HTTP status is fine.
   secret) and returns the full key. A revoked key raises `ValueError`.
 - No grace period: `verify` looks up by prefix and hash, so the old secret is
   rejected at once.
-- The new key is shown once on `api_key_created.html` (headed "Key rotated"),
+- The new key is shown once in the show-once dialog on the Settings page (headed
+  "Key rotated"; v0.9.0 used `api_key_created.html`, removed in v0.11.0),
   with `Cache-Control: no-store, no-cache`. A revoked or unknown id flashes an
   error and redirects to the API tab. The log line carries the key id only.
 - New column `api_key.rotated_at` (nullable, naive UTC); the list shows it as
-  **Rotated** ("—" when never rotated).
+  "rotated" in the key card's summary ("—" when never rotated).
 - **Name reuse.** `api_key.name` is no longer unique across all rows: the
   column constraint `uq_api_key_name` is replaced by the partial unique index
   `ux_api_key_name_active` (`name WHERE revoked_at IS NULL`), so a revoked
@@ -2335,7 +2337,8 @@ expiry, even though the HTTP status is fine.
   delete-marked group has no active entries. The name, icon and priority rules
   are `entry_rules.validate_group` / `parse_sort_priority`, shared with the
   management API. Any failure writes nothing and re-renders Settings (HTTP 400)
-  on the Groups tab with the submitted values and per-row messages.
+  on the Groups section with the submitted values and per-row messages (v0.11.0:
+  as cards, and the staging dialog opens on the first row with a message; §19.6).
 - **Applying.** One transaction: deletes (soft-deleted entries detached), renamed
   rows parked on a placeholder name so SQLite's per-statement UNIQUE check
   allows swaps, then the final values and the new row. Flash: "Saved: N updated,
@@ -2351,7 +2354,7 @@ expiry, even though the HTTP status is fine.
 - **Setting.** `tile_show_host` (`TILE_SHOW_HOST`): `duplicates` (default),
   `always`, `never`. Lower-cased and trimmed at startup in `settings_loader`;
   an unknown value logs a warning and falls back to `duplicates`. Startup-only
-  like every `settings.yml` value; it appears in Settings → Info and in
+  like every `settings.yml` value; it appears in Settings → Configuration and in
   `GET /api/v1/config` (not a secret) with no schema change.
 - **Detection.** `view_helpers.duplicate_name_ids(entries)` returns ids whose
   name (case-insensitive, trimmed) is shared by another active entry on a
@@ -2492,10 +2495,11 @@ register-contract change.
     `interval × 2^failures`, capped at 24 h;
   - the last good result (with ETag) persists in the `setting` table;
     backoff and the last error are in memory only.
-- **Settings** (DB runtime, Settings → Info): `update_check_enabled`
+- **Settings** (DB runtime, Settings → About): `update_check_enabled`
   (default on) and `update_check_interval_hours` (default 6, minimum 1).
-  Disabled means no fetch and no link. Info also shows channel, linked
-  commit, build time, latest release seen, last checked and last error.
+  Disabled means no fetch and no link. About also shows channel, linked
+  commit, build time, latest release seen, last checked and last error, in
+  a Version grid with the settings in an Update check card (v0.11.0).
 - **Management API / MCP:** `whoami` and `config` add `commit`, `channel`,
   `build_time` and `update {enabled, latest_version, update_available,
   release_url, checked_at}`; `GET/PUT /api/v1/settings/update-check`. MCP
@@ -3164,7 +3168,7 @@ becomes a flash, never a 500). Deviations and details:
 - **Settings UI (settings modernization phase 3, §19):** one card per stream (status
   dot, producer, last snapshot, interval, counts, errors) with **Edit** and a ⋯ menu
   (Preview, Enable, Ignore, Purge MQTT/HA, Disable…, Delete…); the read-only Docker
-  (register) card stays first. Pending and stale streams are flagged inline above the
+  (register) card moved to the top of Settings → Docker in phase 4. Pending and stale streams are flagged inline above the
   list (pending carries Preview / Enable / Ignore). **Edit stream** is one dialog per
   stream with three independent forms (`update`, `monitoring`, `default-checks`, plus
   **Apply to existing entries**); a value error or `StreamError` from those three routes
@@ -3235,8 +3239,8 @@ becomes a flash, never a 500). Deviations and details:
     **Disable…** / **Delete…** (a dialog with counts first, the three cleanup
     choices, and the customised entries listed by name), **Ignore**;
   - inline edit of the display name and the network include/exclude lists;
-  - a read-only **Docker (register)** row: the number of notifier entries and the
-    last register time;
+  - a read-only **Docker (register)** row (now in Settings → Docker): the number of
+    notifier entries and the last register time;
   - a pending stream is highlighted with "New stream waiting: enable it to import
     N items";
   - **Blocked** sub-list with **Unblock**; **Link offers** sub-list with
@@ -3349,7 +3353,7 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
 
 ---
 
-## 19. v0.11.0 — Settings modernization (Planned)
+## 19. v0.11.0 — Settings modernization (Delivered on `dev`)
 
 The Settings page grew one tab per release and no longer looks like Add and Edit.
 0.11.0 regroups it, gives every section a link, changes how messages are shown and
@@ -3425,7 +3429,45 @@ previously undefined `bg-dashboard-info-box`).
 | 1 | `prompts/2026-11-20-set-01-foundation.md`: registry, partial split, grouped sidebar, deep links, flash policy, shared kit, restyle of every section (no new layouts) | Delivered on `dev` |
 | 2 | `prompts/2026-11-20-set-02-notifications-ha.md`: Notifications cards and channel modal; Home Assistant groups | Delivered on `dev` |
 | 3 | `prompts/2026-11-20-set-03-streams.md`: Streams cards, Edit stream modal, Preview modal | Delivered on `dev` |
-| 4 | `prompts/2026-11-20-set-04-remaining.md`: Groups, Users, API keys (show-once modal), Docker, Audit log, Backup, Deleted | Planned |
+| 4 | `prompts/2026-11-20-set-04-remaining.md`: Groups, Widgets, Docker, Users, API keys (show-once modal), Audit log, Deleted, About, Configuration | Delivered on `dev` |
+
+**Backup & restore is not part of this work.** Its section keeps the phase-1 restyle only;
+the backup, export and import project rebuilds it (`docs/design/2026-11-20-backup-export-import.md`).
+
+### 19.6 As built (phase 4)
+
+- **Groups.** One card per group in priority then name order. The dialog `#group-modal`
+  lives inside `#groups-form` with unnamed inputs and no second `<form`; **Apply** writes
+  into the card's hidden `group-<id>-name|icon|priority` inputs and **Add group** into
+  `new-name|icon|priority` (one at a time; the button then reads "Edit new group"). Delete
+  toggles "Will be deleted · Undo" (only offered when the group has no active entries). A
+  400 re-render shows the submitted values and per-row messages on the cards and opens the
+  dialog on the first row with a message (`open_modal='group-modal'`, `data-group-id`). A
+  stale table (no row to edit) keeps its banner in the section. Column sorting is gone.
+- **Docker.** The always-on Docker (register) card (`id="stream-row-docker"`) moved here
+  from Streams (operator decision). Layer directions are a card, per-host overrides are
+  collapsible groups without a checkbox ("N overrides"), the form is guarded and its
+  sticky bar reads **Save & recompute URLs** (disabled with no layers). Field names
+  `layer:<L>` and `override:<host>:<L>` are unchanged.
+- **Users.** Cards (username, Admin tag, email, last login) with **Set password**
+  (`#password-modal`, `POST /settings/users/<id>/set_password`), ⋯ Delete (non-admins) and
+  **Add user** (`#user-modal`, `POST /add_user`). A duplicate username or email re-renders
+  (400) with the dialog open and username and email kept; the password is never echoed. A
+  too-short password re-renders (400) with the set-password dialog open. Flashes use
+  `danger`.
+- **API keys.** Cards (name, scope tag, prefix, active or revoked, created / rotated / last
+  used) with ⋯ Rotate and Revoke (revoked keys last, dimmed, no menu) and a **Create key**
+  dialog. A validation error re-renders (400) with the dialog open and the name kept.
+  Create and Rotate render Settings itself with `#api-key-secret-modal` holding the key
+  (`#new-api-key`, `#copy-api-key`), keeping the old response headers (`no-store`; rotate
+  also `no-cache` and `Pragma`). `nav.js` replaces the POST URL, so a reload is a plain GET
+  without the key.
+- **Deleted, About, Configuration, Widgets.** Deleted entries and detached widgets are
+  cards (Restore or Attach, ⋯ Delete). About has the Version grid and an Update check card.
+  Configuration is a table with a Source pill. Widgets are cards with ⋯ Copy API key (no
+  more password field in the page).
+- **Routes.** No new routes. `routes_dashboard.render_settings_for()` lets `routes_auth`
+  re-render Settings without an import cycle.
 
 ---
 

@@ -573,9 +573,12 @@ observed appear) gets a direction dropdown:
 - **neither** (default) — STD records the observation and shows a
   badge, but doesn't synthesize a URL from this layer.
 
-Per-host overrides let you say "Traefik on the home host is
-internal, but Traefik on the edge VPS is external" without writing
-different YAML per host.
+Per-host overrides (one collapsible group per host) let you say "Traefik on the
+home host is internal, but Traefik on the edge VPS is external" without writing
+different YAML per host. Changes are saved together with **Save & recompute
+URLs** in the bar that appears at the bottom. The always-on **Docker (register)**
+card at the top shows how many entries the notifier registered and when it last
+did.
 
 #### URL provenance
 
@@ -662,8 +665,9 @@ producer a `User-Agent: name/version`.
 
 ### Create a key and send it
 
-1. Open **Settings → API keys**, enter a name and pick a scope, and press
-   **Create key**.
+1. Open **Settings → API keys**, press **Create key**, enter a name, pick a scope
+   and press **Create key** in the dialog (a duplicate or invalid name keeps the
+   dialog open with what you typed).
    - **read** can read everything (entries, checks, health, groups, widgets,
      settings, the masked config).
    - **write** can read and change.
@@ -673,8 +677,11 @@ producer a `User-Agent: name/version`.
      [stream ingest](#inventory-streams-and-sidecars) routes. It cannot read or
      change anything else. Pick **Ingest (sidecars)** in the scope list and
      create one key per sidecar.
-2. Copy the key now. It is shown **once** (`std_<prefix>_<secret>`); only a
-   hash is stored. A lost key is revoked and replaced.
+2. Copy the key now. It is shown **once**, in a dialog on the Settings page
+   (`std_<prefix>_<secret>`), with a **Copy** button; reloading the page does not
+   show it again and does not create another. Only a hash is stored. A lost key is
+   revoked and replaced. **Rotate** and **Revoke** are in each key's ⋯ menu;
+   rotating shows the new key the same way.
 3. Send it on every request:
 
 ```bash
@@ -1391,9 +1398,11 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/settings/streams/<stream_id>/...` | Streams tab: `enable`, `ignore`, `disable`, `delete`, `update`, `default-checks`, `default-checks/apply`, `blocks/<id>/unblock`, `offers/<id>/accept\|decline` (admin POST). |
 | `/edit/<id>/stream-link` | Link a manual entry to a stream item (admin POST). |
 | `/settings/notifications/...` | Notifications tab: `save`, `<id>/toggle`, `<id>/delete`, `test` (admin POST), `status` (admin GET). |
+| `/settings/groups/save` | Save the whole Groups table at once (admin POST). Groups are edited in a dialog and saved with the Save bar. |
+| `/add_user` `/settings/users/<id>/set_password` `/delete_user` | Users: add (dialog), set a password (dialog), delete (admin POST). A mistake keeps the dialog open. |
 | `/settings/deleted/<id>/restore` | Restore a soft-deleted entry (admin POST). |
 | `/settings/deleted/<id>/delete`  | Permanently delete a soft-deleted entry (admin POST). |
-| `/settings/api-keys` `/settings/api-keys/<id>/revoke` | Create (shown once) and revoke admin API keys (admin POST). |
+| `/settings/api-keys` `/settings/api-keys/<id>/rotate` `/settings/api-keys/<id>/revoke` | Create and rotate (the key is shown once in a dialog) and revoke admin API keys (admin POST). |
 | `/settings/update-check` | Save the update-check toggle and interval (admin POST). |
 | `/api/update-status` | Cached update-check status for the header (JSON, login). |
 | `/settings/exposure` | Save per-interpreter direction settings + recompute synthesized URLs (admin POST). |

@@ -19,7 +19,7 @@
       <tbody>
         {% for key, value in current_config.items() %}
         <tr>
-          <td>{{ key }}</td>
+          <td><code>{{ key }}</code></td>
           <td>
             <code>
               {% if key == 'api_token' %}
@@ -31,11 +31,11 @@
           </td>
           <td>
             {% if key in config_from_env %}
-              <span class="text-green-400">ENV</span>
+              <span class="settings-pill settings-pill--env">ENV</span>
             {% elif key in config_from_file %}
-              <span class="text-yellow-400">YAML</span>
+              <span class="settings-pill settings-pill--yaml">YAML</span>
             {% else %}
-              <span class="text-red-400">Default</span>
+              <span class="settings-pill settings-pill--default">Default</span>
             {% endif %}
           </td>
         </tr>

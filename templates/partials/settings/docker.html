@@ -1,4 +1,4 @@
-{% from "partials/settings/_macros.html" import section_header, flash_slot with context %}
+{% from "partials/settings/_macros.html" import section_header, flash_slot, status_dot, settings_group, save_bar with context %}
 <section id="section-docker" class="settings-section{% if (initial_section or settings_default_section) != 'docker' %} hidden{% endif %}">
   {% call section_header('Docker', 'How exposure layers (Traefik, Dockflare, …) turn into internal and external URLs.') %}
     <p>
@@ -11,10 +11,23 @@
   {% endcall %}
   {{ flash_slot('docker') }}
 
-  <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}">
+  {# The register endpoint is always on; it moved here from Streams (operator decision, 2026-11-20). #}
+  <div class="settings-card settings-card-list" id="docker-register">
+    <div class="settings-card-row" id="stream-row-docker">
+      {{ status_dot('ok', 'always on') }}
+      <div class="settings-card-main">
+        <div class="settings-card-title">Docker (register) <span class="settings-tag">always on</span></div>
+        <div class="settings-card-summary settings-card-summary--wrap">docker-api-notifier &middot; <code>/api/v1/register</code> &middot;
+          {{ docker_row.count }} entr{{ 'y' if docker_row.count == 1 else 'ies' }} &middot;
+          last register {% if docker_row.last_register %}{{ docker_row.last_register | time_since }}{% else %}never{% endif %}</div>
+      </div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}" id="exposure-form" data-unsaved-guard>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="settings-card">
-      <h3 class="settings-card-heading">Layer directions (global)</h3>
+      <h3 class="settings-card-heading">Layer directions</h3>
       {% if exposure_layers %}
         <table class="settings-table">
           <thead>
@@ -40,23 +53,25 @@
           </tbody>
         </table>
       {% else %}
-        <p class="text-sm text-gray-400 italic">
+        <p class="settings-empty">
           No interpreter layers have been observed yet. Once the notifier emits exposure observations
           (Traefik / Dockflare / etc.) the layers will appear here for configuration.
         </p>
       {% endif %}
     </div>
 
-    {% if exposure_hosts %}
-      <div class="settings-card">
-        <h3 class="settings-card-heading">Per-host overrides</h3>
-        <p class="settings-subtitle-note">
-          Override the global direction for a specific host. Useful when the same interpreter (e.g.
-          Traefik) means internal on a home host and external on an edge VPS.
-        </p>
+    {% if exposure_hosts and exposure_layers %}
+      <h3 class="settings-sub">Per-host overrides</h3>
+      <p class="settings-subtitle-note">
+        Override the global direction for a specific host. Useful when the same interpreter (e.g.
+        Traefik) means internal on a home host and external on an edge VPS.
+      </p>
+      <div class="settings-card settings-card-list" id="exposure-hosts">
         {% for host in exposure_hosts %}
-          <div class="mb-4">
-            <div class="text-sm text-white font-semibold mb-2 font-mono">{{ host }}</div>
+          {% set host_over = exposure_host_overrides.get(host, {}) %}
+          {% set n_over = host_over.values()|select|list|length %}
+          {% call settings_group('host-' ~ loop.index, host, exposure_layers|length, 0, collapsed=True, check=False,
+                                 count_text=(n_over ~ ' override' ~ ('' if n_over == 1 else 's'))) %}
             <table class="settings-table">
               <thead>
                 <tr>
@@ -66,7 +81,7 @@
               </thead>
               <tbody>
                 {% for layer in exposure_layers %}
-                  {% set override_current = exposure_host_overrides.get(host, {}).get(layer, '') %}
+                  {% set override_current = host_over.get(layer, '') %}
                   <tr>
                     <td class="font-mono">{{ layer }}</td>
                     <td>
@@ -81,13 +96,11 @@
                 {% endfor %}
               </tbody>
             </table>
-          </div>
+          {% endcall %}
         {% endfor %}
       </div>
     {% endif %}
 
-    <button type="submit" class="btn-primary" {% if not exposure_layers %}disabled{% endif %}>
-      Save &amp; Recompute URLs
-    </button>
+    {{ save_bar(label='Save & recompute URLs', disabled=not exposure_layers) }}
   </form>
 </section>

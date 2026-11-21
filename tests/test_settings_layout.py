@@ -144,12 +144,11 @@ def test_backup_and_restore_paths_redirect_to_backup(admin_client):
         assert _redirect_section(admin_client.post("/settings", data=data)) == "backup", data
 
 
-def test_set_user_password_always_returns_to_users(app, admin_client):
+def test_set_user_password_success_and_unknown_user_return_to_users(app, admin_client):
     with app.app_context():
         uid = User.query.filter_by(username="admin").one().id
-    for pw in ("abc", "longenough1"):
-        resp = admin_client.post(f"/settings/users/{uid}/set_password", data={"new_password": pw})
-        assert _redirect_section(resp) == "users"
+    resp = admin_client.post(f"/settings/users/{uid}/set_password", data={"new_password": "longenough1"})
+    assert _redirect_section(resp) == "users"
     resp = admin_client.post("/settings/users/99999/set_password", data={"new_password": "longenough1"})
     assert _redirect_section(resp) == "users"
 
@@ -158,7 +157,6 @@ def test_set_user_password_always_returns_to_users(app, admin_client):
     ("/settings/update-check", {"update_check_enabled": "1", "update_check_interval_hours": "0"}, "about"),
     ("/settings/update-check", {"update_check_enabled": "1", "update_check_interval_hours": "12"}, "about"),
     ("/settings/exposure", {}, "docker"),
-    ("/settings/api-keys", {"name": "", "scope": "read"}, "api-keys"),
     ("/settings/notifications/ha-entries", {}, "home-assistant"),
 ])
 def test_post_routes_redirect_to_their_section(admin_client, url, data, expected):
@@ -294,3 +292,116 @@ def test_stream_badges_in_the_sidebar(app, admin_client):
         _stream()
     html = _page(admin_client)
     assert 'settings-nav-badge--warn" title="1 pending"' in html
+
+
+# --- phase 4: dialogs re-rendered on a validation error, show-once key, groups modal ----
+
+
+def test_api_key_validation_error_reopens_the_dialog_with_the_name(admin_client):
+    resp = admin_client.post("/settings/api-keys", data={"name": "x" * 65, "scope": "read"})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 400
+    assert 'data-open-modal="api-key-modal"' in html and 'data-initial-section="api-keys"' in html
+    assert 'value="' + "x" * 65 + '"' in html
+    assert 'class="flash-alert' in html[html.index('id="api-key-modal"'):]
+
+
+def test_created_and_rotated_keys_show_in_the_dialog_and_never_again(app, admin_client):
+    created = admin_client.post("/settings/api-keys", data={"name": "agent", "scope": "write"})
+    html = created.get_data(as_text=True)
+    assert created.status_code == 200 and 'data-open-modal="api-key-secret-modal"' in html
+    assert created.headers["Cache-Control"] == "no-store"
+    assert "Key created" in html
+    full = re.search(r'id="new-api-key"[^>]*value="(std_[^"]+)"', html).group(1)
+    assert "Copy this key now. You won't see it again." in html and 'id="copy-api-key"' in html
+    assert full not in _page(admin_client, "/settings?section=api-keys")
+    import api_keys
+    with app.app_context():
+        kid = api_keys.verify(full).id
+    rotated = admin_client.post(f"/settings/api-keys/{kid}/rotate")
+    rhtml = rotated.get_data(as_text=True)
+    assert rotated.status_code == 200 and 'data-open-modal="api-key-secret-modal"' in rhtml
+    assert "no-cache" in rotated.headers["Cache-Control"] and rotated.headers["Pragma"] == "no-cache"
+    assert "Key rotated" in rhtml and "Key created" not in rhtml
+    assert 'data-open-modal=""' in _page(admin_client, "/settings?section=api-keys")
+
+
+def test_add_user_duplicate_reopens_the_dialog_without_the_password(app, admin_client):
+    resp = admin_client.post("/add_user", data={
+        "username": "admin", "email": "other@example.com", "password": "s3cret-pass", "is_admin": "on"})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 400
+    assert 'data-open-modal="user-modal"' in html and 'data-initial-section="users"' in html
+    assert 'value="admin"' in html and 'value="other@example.com"' in html
+    assert "s3cret-pass" not in html
+    assert "User already exists" in html[html.index('id="user-modal"'):]
+
+
+def test_short_password_reopens_the_set_password_dialog(app, admin_client):
+    with app.app_context():
+        uid = User.query.filter_by(username="admin").one().id
+    resp = admin_client.post(f"/settings/users/{uid}/set_password", data={"new_password": "abc"})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 400 and 'data-open-modal="password-modal"' in html
+    assert f"/settings/users/{uid}/set_password" in html[html.index('id="password-modal"'):]
+    assert "at least 6 characters" in html[html.index('id="password-modal"'):]
+    ok = admin_client.post(f"/settings/users/{uid}/set_password", data={"new_password": "longenough1"})
+    assert ok.status_code == 302 and "section=users" in _location(ok)
+
+
+def test_group_modal_has_unnamed_inputs_and_no_second_form(app, admin_client):
+    with app.app_context():
+        db.session.add(Group(group_name="A", group_sort_priority=1))
+        db.session.commit()
+    html = _page(admin_client, "/settings?section=groups")
+    section = _section_html(html, "groups")
+    assert section.count("<form") == 1 and 'id="group-modal"' in section
+    modal = section[section.index('id="group-modal"'):section.index("</dialog>")]
+    assert "<input" in modal and " name=" not in modal
+
+
+def test_groups_failed_save_opens_the_modal_on_the_first_bad_row(app, admin_client):
+    with app.app_context():
+        a, b = Group(group_name="A", group_sort_priority=1), Group(group_name="B", group_sort_priority=2)
+        db.session.add_all([a, b])
+        db.session.commit()
+        ids = (a.id, b.id)
+    data = {f"group-{i}-{k}": v for i in ids for k, v in (("name", "same"), ("icon", ""), ("priority", ""), ("delete", "0"))}
+    resp = admin_client.post("/settings/groups/save", data=data)
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 400
+    assert 'data-open-modal="group-modal"' in html and f'data-group-id="{ids[0]}"' in html
+    assert "Another group is already named" in html
+
+
+def test_docker_register_card_is_in_the_docker_section(admin_client):
+    html = _page(admin_client)
+    assert 'id="stream-row-docker"' in _section_html(html, "docker")
+    assert 'id="stream-row-docker"' not in _section_html(html, "streams")
+
+
+def test_widget_cards_offer_copy_api_key_in_the_menu(app, admin_client):
+    from models import Widget
+    with app.app_context():
+        db.session.add(Widget(widget_name="weather", widget_url="http://x/api", widget_fields=["temp"],
+                              widget_api_key="wkey-123"))
+        db.session.commit()
+    section = _section_html(_page(admin_client, "/settings?section=widgets"), "widgets")
+    assert "weather" in section and "not attached" in section
+    assert 'data-copy-text="wkey-123"' in section and "Copy API key" in section
+    assert 'type="password"' not in section
+
+
+def test_docker_overrides_are_collapsible_groups_with_a_save_bar(app, admin_client):
+    from models import ServiceExposure
+    with app.app_context():
+        e = ServiceEntry(host="edge", container_name="web", last_updated=datetime.now())
+        db.session.add(e)
+        db.session.flush()
+        db.session.add(ServiceExposure(service_entry_id=e.id, layer="traefik", hostname="x.example.com"))
+        db.session.commit()
+    html = _page(admin_client, "/settings?section=docker")
+    docker = html[html.index('id="section-docker"'):html.index('id="section-streams"')]
+    assert 'name="layer:traefik"' in docker and 'name="override:edge:traefik"' in docker
+    assert "data-unsaved-guard" in docker and "Save &amp; recompute URLs" in docker
+    assert 'class="settings-group-check"' not in docker and "0 overrides" in docker

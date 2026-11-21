@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-set-04-remaining
-status: pending          # pending | completed | failed
+status: completed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: Phase 4 built (Groups, Widgets, Docker incl. the moved register card, Users, API keys with show-once dialog, Deleted, About, Configuration); Audit log kept as phase 1 left it; Backup & restore out of scope per operator. Tests and lint green.
 ---
 
 # Task: Settings modernization phase 4: the remaining sections, and close out the PRD section

@@ -49,11 +49,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are compact lists, and the Streams link shows an amber count while link offers
   wait for an answer.
 
+- **Users, API keys, groups and deleted items are cards.** Each has a ⋯ menu and
+  the forms moved into dialogs: **Add user** and **Set password**, **Create key**,
+  and **Edit group**. A mistake (a duplicate user or key name, a short password, a
+  duplicate group name) keeps the dialog open with what you typed; a password is
+  never sent back. Deleting a user, rotating or revoking a key and deleting a
+  deleted item for good ask first, as before. Revoked keys sit last, dimmed.
+- **A new or rotated API key is shown once in a dialog on the Settings page.** It
+  has a **Copy** button, and reloading the page neither shows the key again nor
+  creates another.
+- **Groups are edited in a dialog and saved together.** **Edit** (or **Add group**)
+  stages the change on the group's card; the Save bar at the bottom saves every
+  change at once, **Delete** marks a group "Will be deleted" until you save or
+  undo, and a rejected save reopens the dialog on the first group with a problem.
+- **Docker has a Save bar.** Layer directions and the per-host overrides (one
+  collapsible group per host) save with **Save & recompute URLs**, which appears
+  while you have unsaved changes. The always-on **Docker (register)** card moved
+  here from Streams.
+- **About, Configuration, Audit log and Widgets are restyled.** About has a Version
+  grid and an Update check card, Configuration shows where each value came from as
+  a coloured label, and widgets are cards whose ⋯ menu copies the widget's API key
+  (it is no longer shown in the page).
+
 ### Fixed
 
 - **Setting a user's password** no longer sends you back to Info and no longer shows
-  a too-short password or an unknown user as a green success bar; the message
-  appears in Users as an error.
+  a too-short password or an unknown user as a green success bar; a too-short
+  password reopens the Set password dialog with the error, an unknown user shows
+  it in Users.
 - **Restore errors** (no file chosen, a bad or missing server file) return to
   Backup & restore instead of Info.
 
@@ -65,6 +88,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   up to 128 characters while entries stored 100 (SQLite let it through, the Add form
   and the management API did not). The limit is now 128 everywhere an entry name is
   entered or stored. A migration widens the column; existing entries are untouched.
+
+### Removed
+
+- **Column sorting on the groups table.** Groups are listed as cards in priority
+  order (then by name), so there is nothing left to sort.
 
 ## [0.10.1] — 2026-11-20
 

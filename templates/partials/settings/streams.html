@@ -39,16 +39,7 @@
   </div>
   {% endfor %}
 
-  <div class="settings-card settings-card-list" id="stream-list">
-    <div class="settings-card-row" id="stream-row-docker">
-      {{ status_dot('ok', 'always on') }}
-      <div class="settings-card-main">
-        <div class="settings-card-title">Docker (register) <span class="settings-tag">always on</span></div>
-        <div class="settings-card-summary settings-card-summary--wrap">docker-api-notifier &middot; <code>/api/v1/register</code> &middot;
-          {{ docker_row.count }} entr{{ 'y' if docker_row.count == 1 else 'ies' }} &middot;
-          last register {% if docker_row.last_register %}{{ docker_row.last_register | time_since }}{% else %}never{% endif %}</div>
-      </div>
-    </div>
+  <div class="settings-card settings-card-list" id="stream-list"{% if not stream_rows %} hidden{% endif %}>
     {% for row in stream_rows %}
     {% set st = row.stream %}
     {% set sh = row.health %}

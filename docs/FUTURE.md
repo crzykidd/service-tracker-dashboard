@@ -506,6 +506,37 @@ the sidecar and are fine.
 
 ---
 
+## Settings follow-ups (after 0.11.0)
+
+**Parked:** 2026-11-20, at the end of the Settings modernization (design
+`docs/design/2026-11-20-settings-modernization.md` §15).
+
+### Context
+
+The Settings page was rebuilt in the card and dialog pattern in 0.11.0. These
+follow-ups were left out on purpose: each is small, none blocks the new layout.
+
+### Sketched shape
+
+- **Toasts on the Dashboard, Tiled and Compact views** ("Entry updated", "Logged
+  in"). Today those flashes wait in the session and `_drop_stale_success_flashes`
+  drops them.
+- **One combined "save stream" route** so the Edit stream dialog has a single Save
+  instead of one per block.
+- **Edit a user's email or admin flag.** No route exists; Users only sets a password
+  or deletes.
+- **Search across all of Settings.**
+- **A per-entry Home Assistant preview** (which entities each device would get).
+- **A JS test runner** for the settings modules (`ui.js`, `nav.js`, `groups.js`,
+  `streams.js`, ...). They are checked by hand in a browser today.
+
+### Why parked
+
+The first three change behaviour or routes beyond a restyle, and the rest are
+conveniences. Renaming a stream from its card is already parked above.
+
+---
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

@@ -42,8 +42,8 @@
 {% macro card() %}<div class="settings-card">{{ caller() }}</div>{% endmacro %}
 
 {# A list row; caller('main') fills the text column, caller('actions') the buttons. #}
-{% macro card_row(id=None, attrs='') %}
-<div class="settings-card-row"{% if id %} id="{{ id }}"{% endif %} {{ attrs|safe }}>
+{% macro card_row(id=None, attrs='', cls='') %}
+<div class="settings-card-row{% if cls %} {{ cls }}{% endif %}"{% if id %} id="{{ id }}"{% endif %} {{ attrs|safe }}>
   <div class="settings-card-main">{{ caller('main') }}</div>
   <div class="settings-card-actions">{{ caller('actions') }}</div>
 </div>
@@ -68,8 +68,8 @@
 {% macro menu_sep() %}<div class="kebab-sep" role="separator"></div>{% endmacro %}
 
 {# Native <dialog>. caller('body') / caller('footer'). With form_attrs the whole dialog is one <form>. #}
-{% macro modal(id, title, size='md', form_attrs=None) %}
-<dialog id="{{ id }}" class="std-modal std-modal--{{ size }}" aria-labelledby="{{ id }}-title">
+{% macro modal(id, title, size='md', form_attrs=None, attrs='') %}
+<dialog id="{{ id }}" class="std-modal std-modal--{{ size }}" aria-labelledby="{{ id }}-title" {{ attrs|safe }}>
   {% if form_attrs %}<form {{ form_attrs|safe }}>{% endif %}
   <div class="std-modal-header">
     <h3 id="{{ id }}-title">{{ title }}</h3>
@@ -97,13 +97,14 @@
 {% endmacro %}
 
 {# Collapsible group with a tri-state checkbox (design 6.8); the behaviour is in ui.js. #}
-{% macro settings_group(key, label, total, checked_count, collapsed=True, check_label=None) %}
+{# check=False drops the tri-state checkbox (a plain collapsible group); count_text replaces "N of M". #}
+{% macro settings_group(key, label, total, checked_count, collapsed=True, check_label=None, check=True, count_text=None) %}
 <section class="settings-group" data-group-key="{{ key }}" data-collapsed="{{ 'true' if collapsed else 'false' }}">
   <div class="settings-group-header">
-    <input type="checkbox" class="settings-group-check" aria-label="{{ check_label or ('Select all in ' ~ label) }}">
+    {% if check %}<input type="checkbox" class="settings-group-check" aria-label="{{ check_label or ('Select all in ' ~ label) }}">{% endif %}
     <button type="button" class="settings-group-toggle" aria-expanded="{{ 'false' if collapsed else 'true' }}" aria-controls="grp-{{ key }}">
       <span class="chevron" aria-hidden="true"></span> {{ label }}
-      <span class="settings-group-count">{{ checked_count }} of {{ total }}</span>
+      <span class="settings-group-count">{{ count_text if count_text is not none else (checked_count ~ ' of ' ~ total) }}</span>
     </button>
   </div>
   <div id="grp-{{ key }}" class="settings-group-body"{% if collapsed %} hidden{% endif %}>{{ caller() }}</div>
@@ -111,12 +112,12 @@
 {% endmacro %}
 
 {# Sticky bar inside a guarded form; CSS shows it only while the form is dirty. #}
-{% macro save_bar(discard='reset', label='Save changes') %}
+{% macro save_bar(discard='reset', label='Save changes', disabled=False) %}
 <div class="settings-savebar">
   <span class="settings-savebar-hint" data-unsaved-hint>Unsaved changes</span>
   {% if discard == 'reset' %}<button type="reset" class="btn-ghost">Discard</button>
   {% else %}<a href="{{ discard }}" class="btn-ghost" data-unsaved-discard>Discard</a>{% endif %}
-  <button type="submit" class="btn-primary" data-unsaved-save>{{ label }}</button>
+  <button type="submit" class="btn-primary" data-unsaved-save{% if disabled %} disabled{% endif %}>{{ label }}</button>
 </div>
 {% endmacro %}
 
