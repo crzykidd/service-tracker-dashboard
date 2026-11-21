@@ -101,6 +101,7 @@
 | 0.91    | 2026-11-21 | Docs-only, with the README revamp: §21 says the `Test` check is required (it is, in the "Require PR for Main" ruleset, with a code-scanning rule for CodeQL), no longer "pending operator action"; the §21.3 heading says inventory stream producers shipped in 0.10.0 instead of "planned". Operator reference material moved out of the README into `docs/register-api.md`, `docs/inventory-streams.md` and `docs/mqtt-home-assistant.md`. No code, schema or contract changes. |
 | 0.92    | 2026-11-21 | §13.7: the Dashboard expand row shows the shared entry facts (`partials/entry_facts.html`, the tile drawer's info rows) beside the health detail, two columns stacking below 768px. No schema, API or wire-contract change. |
 | 0.93    | 2026-11-21 | §13.7: Compact view gets an expand button per tile that opens a details dialog (facts, health detail, Edit / Delete / Dozzle) fetched from the new `GET /service/<id>/details` session route (`partials/compact_details.html`, `static/js/compact_details.js`). Tile size, grid and click-to-open unchanged. No schema, API or wire-contract change. |
+| 0.94    | 2026-11-21 | v0.11.0 released: §19 Settings modernization and §20 backup, export, import and staged restore marked delivered (API revision 4), plus the Dashboard and Compact expand views (§13.7) and the 0.10.2 fixes (MQTT test bounded to ~5 s, 128-character entry names). Table of contents headings for §16–§20 brought in line with the section headings. |
 
 ---
 
@@ -121,11 +122,11 @@
 13. [v0.7.0 — Dashboard and Monitoring (Delivered)](#13-v070--dashboard-and-monitoring-delivered)
 14. [v0.8.0 — Management API (Delivered)](#14-v080--management-api-delivered)
 15. [v0.9.0 — DNS and certificate-expiry checks (Delivered)](#15-v090--dns-and-certificate-expiry-checks-delivered)
-16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
-17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
-18. [Next release — Inventory streams and API revision (Delivered on `dev`)](#18-next-release--inventory-streams-and-api-revision-delivered-on-dev)
-19. [v0.11.0 — Settings modernization (Delivered on `dev`)](#19-v0110--settings-modernization-delivered-on-dev)
-20. [v0.11.0 — Backup, export and import (In progress)](#20-v0110--backup-export-and-import-in-progress)
+16. [v0.10.0 — Version in the UI (Delivered)](#16-v0100--version-in-the-ui-delivered)
+17. [v0.10.0 — Notifications: MQTT and Home Assistant (Delivered)](#17-v0100--notifications-mqtt-and-home-assistant-delivered)
+18. [v0.10.0 — Inventory streams and API revision (Delivered)](#18-v0100--inventory-streams-and-api-revision-delivered)
+19. [v0.11.0 — Settings modernization (Delivered)](#19-v0110--settings-modernization-delivered)
+20. [v0.11.0 — Backup, export and import (Delivered)](#20-v0110--backup-export-and-import-delivered)
 21. [Versioning, Branches, and Releases](#21-versioning-branches-and-releases)
 22. [Cross-Repo Coordination](#22-cross-repo-coordination)
 23. [Open Questions](#23-open-questions)
@@ -3402,7 +3403,7 @@ command and "restart the MCP client". The startup notice stays. `list_streams`,
 
 ---
 
-## 19. v0.11.0 — Settings modernization (Delivered on `dev`)
+## 19. v0.11.0 — Settings modernization (Delivered)
 
 The Settings page grew one tab per release and no longer looks like Add and Edit.
 0.11.0 regroups it, gives every section a link, changes how messages are shown and
@@ -3520,7 +3521,7 @@ the backup, export and import project rebuilds it (`docs/design/2026-11-20-backu
 
 ---
 
-## 20. v0.11.0 — Backup, export and import (Delivered, unreleased)
+## 20. v0.11.0 — Backup, export and import (Delivered)
 
 Settings → Backup & restore becomes two features: **database backups** for disaster
 recovery and **export and import** of operator-set state. The full design (field
@@ -3537,7 +3538,7 @@ re-run (idempotent), never deletes local data, and **an export never contains a 
 Old YAML backups (today's entry list) stay importable. Not in scope: a live database swap,
 syncing two running installs, scheduled import, remote targets (S3, SFTP).
 
-### 20.1 Backup jobs (Delivered, unreleased; bak-01)
+### 20.1 Backup jobs (Delivered in 0.11.0; bak-01)
 
 - **Two daily jobs replace the single 00:05 job.** `backup_snapshot_job` (default 00:05)
   writes a WAL-safe copy of the database (`sqlite3.Connection.backup()` through a `.tmp`
@@ -3581,7 +3582,7 @@ syncing two running installs, scheduled import, remote targets (S3, SFTP).
   the README: stop the container, keep the current file, copy the snapshot over
   `services.db`, delete the `-wal` and `-shm` files, start the container.
 
-### 20.2 Export format v1 (Delivered, unreleased; bak-02)
+### 20.2 Export format v1 (Delivered in 0.11.0; bak-02)
 
 A versioned `std-export` document, the same content as YAML (default) or JSON, holding
 **only operator-set state** (design §5), built by `export_format.build_export()` and
@@ -3628,7 +3629,7 @@ YAML opens with a short comment listing what is not included.
   the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
   `API_REVISION` is 4 (§18.1).
 
-### 20.3 Import (Delivered, unreleased; bak-03 engine, bak-04 UI and API)
+### 20.3 Import (Delivered in 0.11.0; bak-03 engine, bak-04 UI and API)
 
 Import matches the file's records against the database **now** and shows a dry-run
 preview; only ticked rows apply. A row is one of: matched with missing settings
@@ -3703,7 +3704,7 @@ only; a stale fingerprint answers 409 with a fresh `plan`; a parse error or an a
 400. `plan` writes nothing and is not audited. MCP: `import_plan`, `import_apply` (the tool
 text says to plan first and show the operator).
 
-### 20.4 Import engine and plan handoff (Delivered, unreleased; bak-03, UI bak-04)
+### 20.4 Import engine and plan handoff (Delivered in 0.11.0; bak-03, UI bak-04)
 
 `importer.plan()` and `apply()` mirror `streams.plan()` / `apply()`. The plan is never
 kept as an object: the UI stages the parsed upload as a JSON file in
@@ -3718,7 +3719,7 @@ for the default selection. Observed data is not in a digest. One transaction: an
 rolls it back (`ImportApplyError`). The legacy entry-list YAML is read as format version 0.
 A 5,000-entry apply takes about 2 seconds, including the re-plan, under the locks.
 
-### 20.5 Staged database restore (Delivered, unreleased; bak-05)
+### 20.5 Staged database restore (Delivered in 0.11.0; bak-05)
 
 Pick a snapshot (⋯ → **Restore…** in the snapshot list; `pre-restore-*` files are listed
 there too) or upload a `.sqlite3` (≤ 200 MB, streamed to `<CONFIG_DIR>/restore/`), and

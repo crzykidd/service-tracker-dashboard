@@ -522,7 +522,7 @@ def test_server_info_falls_back_to_the_startup_values_when_meta_fails():
 
 
 def test_server_info_without_a_startup_check():
-    out = call(std_mcp.build_server(Fake(_meta_reply("0.10.0")).client(), "read"), "server_info")
+    out = call(std_mcp.build_server(Fake(_meta_reply(std_mcp.MCP_VERSION)).client(), "read"), "server_info")
     assert out["status"] == "match" and out["startup"]["std_version"] is None
 
 
@@ -585,7 +585,7 @@ def test_whoami_includes_the_std_version(app):
     assert who["version"] == app.config["VERSION_INFO"]["version"]
 
 
-@pytest.mark.parametrize("version", ["0.11.0", "0.8.0", "dev", None])
+@pytest.mark.parametrize("version", ["99.0.0", "0.8.0", "dev", None])
 def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
     who = {"name": "k", "prefix": "abcd1234", "scope": "write"}
     if version is not None:

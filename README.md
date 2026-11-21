@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.10.1-blue)
+![Version](https://img.shields.io/badge/version-0.11.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -96,9 +96,7 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
-<!-- release-prep: replace the 0.11.0 heading below with "### v0.11.0 (<date>)" and point
-     its link at the new CHANGELOG anchor (for example #0110--2026-11-22). -->
-### v0.11.0 (unreleased, on `dev`)
+### v0.11.0 (2026-11-21)
 
 - **Backup, export and import:** scheduled database snapshots and settings exports, and
   an import that previews what it will fill in before you apply it.
@@ -107,7 +105,7 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
 - **More detail everywhere:** the Dashboard row and Compact tiles expand to the full entry
   details and health history.
 
-[Full entry](CHANGELOG.md#unreleased)
+[Full entry](CHANGELOG.md#0110--2026-11-21)
 
 ### v0.10.1 (2026-11-20)
 
@@ -703,7 +701,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.1/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.11.0/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|

@@ -37,7 +37,7 @@ claude mcp add std -s user \
 claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.1/mcp/std_mcp.py
+  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.11.0/mcp/std_mcp.py
 ```
 
 Updating means changing the tag in that URL (and re-running `claude mcp add`).
