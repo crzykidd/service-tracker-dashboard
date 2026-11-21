@@ -5,6 +5,100 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — inv-08 stream observability
+
+- **Check targets follow the IP by rewrite, not by template (decided before code).**
+  A `{inventory.ip}` placeholder was evaluated and rejected. The checker would stay
+  pure (resolution would happen in `select_due_jobs`), but everything around it gets
+  harder: the dict-based validators in `check_form.py` validate a literal host/URL
+  per type and would need a second, placeholder-aware grammar; the API and MCP would
+  have to round-trip a raw and a resolved target (and every consumer would need to
+  know which one a `target` is); backups would carry templates that mean nothing on
+  a manual entry after an unlink; a null IP would need a new "skipped" state because
+  `health_result.ok` is NOT NULL; and the UI would show two values. Instead, when a
+  snapshot (or a link) changes an entry's IP, `streams.follow_ips()` rewrites every
+  *service* check whose target points at the old IP: ping (the target), TCP and DNS
+  (the host of `host[:port]`, IPv6 bracketed), HTTP (the URL host; port, path and
+  userinfo kept). Each move is logged and the check is asked to run at the next
+  tick. A target that names a hostname is left alone (it follows DNS, not the
+  stream). One query loads the service checks of all IP-changed entries, so the
+  5,000-item query budget holds. If the IP disappears from the item, nothing can be
+  followed: the checks keep their target and a warning is logged per check. inv-06
+  default checks stay literal and keep counting as "untouched defaults" after a move.
+- **Rejections are their own fields.** `last_rejected_at` + `last_rejection`
+  (`"<status>: <first error>"`, 255 chars) beside `last_error`, not one field with a
+  kind: `last_error` is an STD-side apply failure that a good apply clears, a
+  rejection is the producer's fault and stays for the record. `rejecting` (derived:
+  rejected after the last accepted snapshot) says whether it is current. Recorded
+  only when the stream row exists and the key passed the binding (400 from pydantic
+  or the value rules, 409 `key_type`, 413); a 403 is never written to a stream the
+  caller doesn't own. Not audited, like every snapshot PUT. `record_rejection` rolls
+  back first and commits only the two columns.
+- **The producer may advertise its interval now (API revision 3).** The bump was
+  needed anyway (0.10.0 shipped revision 2 and this release adds management fields),
+  so the optional `snapshot_interval_seconds` (60-86400) rides on the same revision
+  instead of being parked. STD ships first; std-source-technitium sends it only
+  against revision 3+. Stored as `producer_interval_seconds` on every accepted
+  snapshot (absent clears it: an older producer). The operator's
+  `expected_interval_seconds` always wins; with neither, 15 minutes.
+- **Grace factor 2.** Stale when enabled and `now - last_snapshot_at > 2 x
+  interval` (strictly greater; first seen is the reference when an enabled stream
+  never sent one). One late post (restart, backoff) is not an outage; two missed
+  posts in a row are. A 5-minute producer that advertises its interval is flagged
+  after 10 minutes; one that doesn't, after 30. Pending, disabled and ignored
+  streams are never stale.
+- **Entries of a stale stream are not marked stale.** Entry health comes from the
+  entry's own checks; a dead producer is one signal on the stream (Settings badge,
+  header count, a `stale_streams` line in the health summary, MQTT `stale`, HA
+  problem sensor). Entries only get a muted "stream stale" hint in tooltips, the
+  Tiled drawer, the detail facts and the edit page, so one dead sidecar does not flip
+  50 devices.
+- **health_summary keeps `failing` entry-only.** Stale streams are a separate
+  `stale_streams` list (`state: "down"`, `message`, `since`) plus
+  `counts.streams_stale`, rather than rows mixed into `failing`, whose items are
+  entries with an `id` that agents follow up with `get_entry`. A compact `streams`
+  block lists every stream.
+- **Staleness is computed on read; the existing health tick drives MQTT.** No new
+  column or thread: `stream_health()` is pure, the UI/API call it per request, and
+  `HealthScheduler.tick()` calls `streams.watch_staleness()` (throttled to every 30
+  s, one query). It logs each transition once and calls `notify.request_sync()` when
+  the stale set changes, so `stale` on `<base>/stream/<id>` follows the clock.
+- **The HA problem sensor lives on the stream hub device.** The task said "the
+  stream's `ha_publish`"; streams have no such column, and the hub device already
+  exists whenever the stream has a published entry, so the `problem` binary_sensor
+  (`stream_<id>_problem`, ON while `stale`) is added there; no new opt-in. The stream
+  purge clears it too.
+- **`inventory_missing_since` is naive UTC; the backfill uses the upgrade time.**
+  Rows already flagged missing get `CURRENT_TIMESTAMP` at upgrade: later than the
+  truth, which can only delay an auto soft-delete. `last_updated` was rejected as a
+  source because it is local time and moves with every snapshot change.
+- **"Edited by a human" for auto soft-delete, concretely:** linked
+  (`stream_linked`), renamed (`name_source = ui_edit`), locked, a group, a
+  description, an icon, an internal or external URL, a sort priority, a widget,
+  Home Assistant publishing, or any service check that is not an untouched default
+  check (exactly as `add_default_checks` made it: `Ping` on the entry's IP or `TCP
+  <port>` on `ip:port`, enabled, no interval/timeout/cert/HA overrides). Untouched
+  default checks do not protect an entry, so turning defaults on does not disable
+  the expiry.
+- **Expiry runs in the daily soft-delete purge job, before the purge**, only for
+  enabled streams with `missing_expiry_days` set (default off). It only soft-deletes;
+  the item coming back restores the entry by key (the existing apply path). Each
+  delete and each kept entry is logged. With `deleted_retention_days: 0` the same run
+  then hard-deletes them; documented rather than special-cased.
+- **Missing is a warning badge, never Down.** The Dashboard marker became an amber
+  badge ("missing 3 days ago", full time in the tooltip); Tiled and Compact keep the
+  amber router icon (the tooltip and the drawer carry "since"); the detail panel and
+  the edit page say "Missing ... since". The roll-up is unchanged.
+- **MCP `server_info` re-checks on every call** with `GET /api/v1/meta` (public,
+  3 s timeout) and keeps the startup values beside the current ones; on failure it
+  answers with the startup values labelled "as of startup <time>". `restart_advised`
+  when STD's version or revision changed since the MCP started; `update_advised` (and
+  an explicit `uv run .../v<std>/mcp/std_mcp.py` or `git pull`, then restart the MCP
+  client) when the script is behind STD's major.minor. `MCP_VERSION` stays 0.10.0
+  until `/release-prep` sets the next version.
+
+---
+
 ## 2026-11-19 — inv-07 linked entries are the operator's; cleanup unlinks them
 
 - **Linked entries are unlinked, never deleted, by cleanup.** A manual entry that

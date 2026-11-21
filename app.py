@@ -21,6 +21,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, url
 from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
+import streams
 import version_check
 from api_version import API_REVISION
 from extensions import csrf, db, login_manager
@@ -178,15 +179,19 @@ def create_app():
                           'upd': version_check.status(running)}
         except Exception as exc:  # the header must never break a page
             logger.debug(f"version header unavailable: {exc}")
-        pending_streams = 0
+        pending_streams = stale_streams = 0
         try:
             if current_user.is_authenticated:
                 pending_streams = InventoryStream.query.filter_by(status=STREAM_PENDING).count()
+                stale_streams = len(streams.stale_streams())
         except Exception as exc:  # the header must never break a page
             db.session.rollback()
             logger.debug(f"pending stream count unavailable: {exc}")
         return {
             'pending_streams': pending_streams,
+            'stale_streams': stale_streams,
+            # PRD 18.9: computed on read; templates show stale badges and tooltip hints.
+            'stream_health': streams.stream_health,
             'version_ui': version_ui,
             'static_v': static_v,
             'now': datetime.now,

@@ -1,7 +1,9 @@
 {# Compact inventory-stream icon (Tiled and Compact): a DHCP/network glyph in the Docker
-   icon's slot. Green normally, amber when the item is missing from the latest snapshot
-   (the icon carries the ghost state). Expects `entry` (a stream entry). #}
+   icon's slot. Green normally, amber (a warning, never Down) when the item is missing
+   from the latest snapshot, with "missing since" in the tooltip; a stale stream adds a
+   muted hint to the tooltip only (PRD 18.9). Expects `entry` (a stream entry). #}
+{% set _stale = entry.stream is not none and stream_health is defined and stream_health(entry.stream).stale %}
 <span class="status-icon {{ 'status-icon-warn' if entry.inventory_missing else 'status-icon-ok' }} stream-icon"
-      title="Stream: {{ entry.stream.display_name if entry.stream else 'unknown' }}{% if entry.ip %} — {{ entry.ip }}{% endif %}{% if entry.inventory_missing %} — missing from the latest snapshot{% endif %}">
+      title="Stream: {{ entry.stream.display_name if entry.stream else 'unknown' }}{% if entry.ip %} — {{ entry.ip }}{% endif %}{% if entry.inventory_missing %} — missing from the latest snapshot{% if entry.inventory_missing_since %} since {{ entry.inventory_missing_since | time_since_utc }}{% endif %}{% endif %}{% if _stale %} — stream stale (no recent snapshot){% endif %}">
   <i class="ti ti-router" aria-hidden="true"></i>
 </span>

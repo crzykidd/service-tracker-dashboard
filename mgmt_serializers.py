@@ -32,7 +32,7 @@ from models import (
     StreamLinkOffer,
     check_counts,
 )
-from streams import default_checks_of, entry_stats
+from streams import default_checks_of, entry_stats, stream_health
 
 
 def _local_iso(dt):
@@ -101,6 +101,7 @@ def inventory_out(entry: ServiceEntry) -> InventoryOut | None:
         "network": entry.network,
         "attributes": entry.attributes,
         "missing": bool(entry.inventory_missing),
+        "missing_since": iso_z(entry.inventory_missing_since),
         "name_source": entry.name_source,
         "linked": bool(entry.stream_linked),
     }
@@ -210,6 +211,7 @@ def notification_channel_out(channel) -> NotificationChannelOut:
 
 
 def stream_out(stream: InventoryStream) -> StreamOut:
+    health = stream_health(stream)
     row = db.session.get(ApiKey, stream.api_key_id) if stream.api_key_id is not None else None
     key = row.name if row is not None else None
     return {
@@ -229,6 +231,18 @@ def stream_out(stream: InventoryStream) -> StreamOut:
         "last_item_count": stream.last_item_count,
         "last_counts": stream.last_counts,
         "last_error": stream.last_error,
+        "expected_interval_seconds": stream.expected_interval_seconds,
+        "producer_interval_seconds": stream.producer_interval_seconds,
+        "effective_interval_seconds": health["effective_interval_seconds"],
+        "interval_source": health["interval_source"],
+        "stale": health["stale"],
+        "stale_after_seconds": health["stale_after_seconds"],
+        "snapshot_age_seconds": health["snapshot_age_seconds"],
+        "stale_message": health["message"],
+        "last_rejected_at": iso_z(stream.last_rejected_at),
+        "last_rejection": stream.last_rejection,
+        "rejecting": health["rejecting"],
+        "missing_expiry_days": stream.missing_expiry_days,
         "entries": entry_stats(stream),
         "blocks": InventoryBlock.query.filter_by(stream_id=stream.id).count(),
         "link_offers": StreamLinkOffer.query.filter_by(stream_id=stream.id).count(),

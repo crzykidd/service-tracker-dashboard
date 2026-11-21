@@ -451,14 +451,123 @@ def test_instructions_mention_a_mismatch_only_when_there_is_one():
         assert "Version notice" in text and "update the MCP server" in text
 
 
-def test_server_info_reports_the_startup_comparison_without_a_request():
-    fake = Fake()
-    info = std_mcp.compare_versions("0.9.0", "0.10.1")
-    for scope in ("read", "write"):
-        server = std_mcp.build_server(fake.client(), scope, info)
-        assert call(server, "server_info") == info
-    assert call(std_mcp.build_server(fake.client(), "read"), "server_info")["status"] == "unknown"
-    assert fake.requests == []
+def _meta_reply(version, revision=3):
+    def reply(request):
+        if request.url.path == "/api/v1/meta":
+            return httpx.Response(200, json={"std_version": version, "api_revision": revision,
+                                             "features": ["streams"]})
+        return None
+    return reply
+
+
+def _startup(std="0.10.0", revision=2):
+    info = std_mcp.compare_versions("0.10.0", std)
+    info.update(std_api_revision=revision, checked_at="2026-11-20T08:00:00Z", std_commit="abc")
+    return info
+
+
+def test_server_info_rechecks_with_meta_on_every_call():
+    fake = Fake(_meta_reply("0.10.0", 2))
+    server = std_mcp.build_server(fake.client(), "read", _startup())
+    for _ in range(2):
+        out = call(server, "server_info")
+        assert out["status"] == "match" and out["std_version"] == "0.10.0"
+        assert out["std_version_source"] == "current" and out["current"]["checked"] is True
+        assert out["startup"] == {"std_version": "0.10.0", "std_api_revision": 2,
+                                  "checked_at": "2026-11-20T08:00:00Z"}
+        assert out["restart_advised"] is False and out["update_advised"] is False
+        assert out["std_commit"] == "abc"                  # startup facts kept
+    assert [r.url.path for r in fake.requests] == ["/api/v1/meta", "/api/v1/meta"]
+
+
+def test_server_info_advises_restart_and_update_when_std_moved_on():
+    server = std_mcp.build_server(Fake(_meta_reply("0.11.0", 3)).client(), "read", _startup())
+    out = call(server, "server_info")
+    assert out["status"] == "std_newer" and out["std_version"] == "0.11.0"
+    assert out["startup"]["std_version"] == "0.10.0" and out["current"]["std_api_revision"] == 3
+    assert out["restart_advised"] is True and out["update_advised"] is True
+    assert "upgraded from 0.10.0 to 0.11.0" in out["advice"] and "restart the MCP server" in out["advice"]
+    assert "stream tools" in out["advice"] and "v0.11.0/mcp/std_mcp.py" in out["advice"]
+    assert "git pull" in out["advice"] and "restart the MCP client" in out["advice"]
+
+
+def test_server_info_restart_only_on_a_patch_upgrade():
+    out = call(std_mcp.build_server(Fake(_meta_reply("0.10.1", 2)).client(), "read", _startup()),
+               "server_info")
+    assert out["status"] == "match" and out["restart_advised"] is True and out["update_advised"] is False
+    assert "update the script" not in out["advice"].lower()
+
+
+def test_server_info_falls_back_to_the_startup_values_when_meta_fails():
+    def boom(request):
+        raise httpx.ConnectError("refused", request=request)
+    out = call(std_mcp.build_server(Fake(boom).client(), "read", _startup("0.11.0")), "server_info")
+    assert out["std_version"] == "0.11.0" and out["status"] == "std_newer"
+    assert out["std_version_source"] == "as of startup 2026-11-20T08:00:00Z"
+    assert out["current"]["checked"] is False and "ConnectError" in out["current"]["error"]
+    assert out["update_advised"] is True and "as of startup" in out["advice"]
+    out = call(std_mcp.build_server(Fake(lambda r: httpx.Response(500, json={"error": "x"})).client(),
+                                    "read", _startup()), "server_info")
+    assert out["current"]["checked"] is False and out["std_version"] == "0.10.0"
+
+
+def test_server_info_without_a_startup_check():
+    out = call(std_mcp.build_server(Fake(_meta_reply("0.10.0")).client(), "read"), "server_info")
+    assert out["status"] == "match" and out["startup"]["std_version"] is None
+
+
+def test_meta_uses_a_short_timeout(monkeypatch):
+    seen = {}
+    client = Fake(_meta_reply("0.10.0")).client()
+    real = client._http.get
+    monkeypatch.setattr(client._http, "get", lambda path, timeout: seen.update(t=timeout) or real(path))
+    client.meta()
+    assert seen["t"] == std_mcp.META_TIMEOUT <= 5
+
+
+def test_instructions_name_the_update_command_when_std_is_newer():
+    text = _instructions(std_mcp.compare_versions("0.10.0", "0.11.0"))
+    assert "stream tools" in text and "git pull" in text and "v0.11.0/mcp/std_mcp.py" in text
+
+
+def test_stream_tool_descriptions_name_the_observability_fields():
+    tools = {t.name: t.description for t in asyncio.run(std_mcp.build_server(Fake().client(), "read").list_tools())}
+    for name in ("list_streams", "get_stream"):
+        for field in ("last_snapshot_at", "last_applied_at", "last_item_count", "last_error",
+                      "last_rejected_at", "last_rejection", "stale", "effective_interval_seconds",
+                      "missing", "missing_expiry_days"):
+            assert field in tools[name], (name, field)
+    for field in ("stale_streams", "streams_stale", "last_rejection"):
+        assert field in tools["health_summary"]
+
+
+def test_stream_observability_against_the_real_app(app):
+    from datetime import datetime, timedelta
+
+    from extensions import db
+    from models import InventoryStream
+    ingest = _key(app, "sidecar", "ingest")[1]
+    body = json.loads((_ROOT / "tests" / "fixtures" / "stream_snapshot.json").read_text())
+    body["snapshot_interval_seconds"] = 300
+    c = app.test_client()
+    assert c.put("/api/v1/streams/dhcp/snapshot", json=body,
+                 headers={"Authorization": f"Bearer {ingest}"}).status_code == 202
+    with app.app_context():
+        s = InventoryStream.query.one()
+        s.status = "enabled"
+        s.last_snapshot_at = datetime.utcnow() - timedelta(hours=1)
+        db.session.commit()
+    server = std_mcp.build_server(_live_client(app, "write"), "write")
+    streams_out = call(server, "list_streams")
+    assert streams_out["stale"] == 1 and streams_out["items"][0]["producer_interval_seconds"] == 300
+    assert call(server, "get_stream", {"stream_id": "dhcp"})["stale"] is True
+    summary = call(server, "health_summary")
+    assert summary["counts"]["streams_stale"] == 1 and summary["stale_streams"][0]["state"] == "down"
+    out = call(server, "update_stream", {"stream_id": "dhcp", "fields": {"expected_interval_seconds": 7200,
+                                                                        "missing_expiry_days": 30}})
+    assert out["stale"] is False and out["missing_expiry_days"] == 30
+    info = call(server, "server_info")
+    assert info["current"]["checked"] is True and info["std_api_revision"] == 3
 
 
 def test_whoami_includes_the_std_version(app):

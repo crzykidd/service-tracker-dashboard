@@ -1,9 +1,10 @@
 {# Health detail panel shell (PRD 13.7). Context: `entry`; optional `autoload`
    (load on page load instead of when opened). The body is filled by
    static/js/health_detail.js from GET /service/<id>/health. #}
-{% if not hide_facts and (entry.ip or entry.mac or entry.network) %}
+{% if not hide_facts and (entry.ip or entry.mac or entry.network or entry.inventory_missing) %}
 <div class="health-detail-facts" data-entry-facts>
-  {% if entry.stream_id and entry.stream %}<span><span class="health-fact-label">Stream</span> {{ entry.stream.display_name }}</span>{% endif %}
+  {% if entry.stream_id and entry.stream %}<span><span class="health-fact-label">Stream</span> {{ entry.stream.display_name }}{% if stream_health(entry.stream).stale %} <span class="text-gray-400">(stale)</span>{% endif %}</span>{% endif %}
+  {% if entry.inventory_missing %}<span class="stream-missing-fact" data-missing-since><span class="health-fact-label">Missing</span> from the latest snapshot{% if entry.inventory_missing_since %} since {{ entry.inventory_missing_since.strftime('%Y-%m-%d %H:%M') }} UTC ({{ entry.inventory_missing_since | time_since_utc }}){% endif %}</span>{% endif %}
   {% if entry.ip %}<span><span class="health-fact-label">IP</span> {{ entry.ip }}</span>{% endif %}
   {% if entry.mac %}<span><span class="health-fact-label">MAC</span> <code>{{ entry.mac }}</code></span>{% endif %}
   {% if entry.network %}<span><span class="health-fact-label">Network</span> {{ entry.network }}</span>{% endif %}

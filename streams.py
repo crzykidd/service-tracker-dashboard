@@ -25,8 +25,10 @@ import logging
 import math
 import re
 import threading
+import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import func
 
@@ -34,6 +36,9 @@ import entry_rules
 from check_form import new_service_check, validate_service_check
 from extensions import db
 from models import (
+    CHECK_KIND_SERVICE,
+    CHECK_TYPE_DNS,
+    CHECK_TYPE_HTTP,
     CHECK_TYPE_PING,
     CHECK_TYPE_TCP,
     NAME_SOURCE_STREAM,
@@ -44,6 +49,7 @@ from models import (
     STREAM_ENABLED,
     STREAM_IGNORED,
     STREAM_PENDING,
+    HealthCheck,
     InventoryBlock,
     InventoryStream,
     ServiceEntry,
@@ -63,6 +69,14 @@ MAX_ATTRIBUTES = 32
 MAX_ATTRIBUTE_VALUE = 256
 MAX_FILTER_ENTRIES = 64
 KEY_TYPE_MAC = "mac"
+
+# Observability (PRD 18.9).
+DEFAULT_INTERVAL_SECONDS = 15 * 60       # when neither the operator nor the producer says
+MIN_INTERVAL_SECONDS = 60
+MAX_INTERVAL_SECONDS = 86400
+STALE_GRACE_FACTOR = 2                   # stale after 2 x the expected interval without a snapshot
+MAX_EXPIRY_DAYS = 3650
+INTERVAL_OPERATOR, INTERVAL_PRODUCER, INTERVAL_DEFAULT = "operator", "producer", "default"
 
 CLEANUP_KEEP = "keep"
 CLEANUP_SOFT_DELETE = "soft_delete"
@@ -295,6 +309,7 @@ def plan(stream, items):
                 changes["container_name"] = name
             if entry.inventory_missing:
                 changes["inventory_missing"] = False
+                changes["inventory_missing_since"] = None
             if entry.deleted_at is not None:
                 action = ACTION_RESTORED
                 changes["deleted_at"] = None
@@ -333,11 +348,15 @@ def plan(stream, items):
 def _execute(stream, the_plan, now):
     """Write a plan. Caller holds the lock and commits."""
     stamp = datetime.now()
+    moved = []
     for p in the_plan.items:
         if p.action in (ACTION_UPDATED, ACTION_RESTORED):
+            old_ip = p.entry.ip
             for attr, value in p.changes.items():
                 setattr(p.entry, attr, value)
             p.entry.last_updated = stamp
+            if "ip" in p.changes and old_ip:
+                moved.append((p.entry, old_ip, p.entry.ip))
         elif p.action == ACTION_CREATED:
             db.session.add(new_stream_entry(stream, p.item))
         elif p.action == ACTION_LINK_OFFER:
@@ -350,9 +369,11 @@ def _execute(stream, the_plan, now):
                                                created_at=now))
     for entry in the_plan.newly_missing:
         entry.inventory_missing = True
+        entry.inventory_missing_since = now
         entry.last_updated = stamp
     for offer in the_plan.stale_offers:
         db.session.delete(offer)
+    follow_ips(moved)
     stream.last_applied_at = now
     stream.last_counts = dict(the_plan.counts)
     stream.last_error = None
@@ -511,6 +532,7 @@ def receive_snapshot(slug, payload, items, api_key):
             stream = InventoryStream(
                 stream_id=slug, display_name=payload.display_name, producer=payload.producer,
                 producer_version=payload.producer_version, key_type=payload.key_type,
+                producer_interval_seconds=payload.snapshot_interval_seconds,
                 status=STREAM_PENDING, api_key_id=api_key.id, first_seen_at=now, created_at=now)
             db.session.add(stream)
         elif stream.key_type != payload.key_type:
@@ -520,6 +542,8 @@ def receive_snapshot(slug, payload, items, api_key):
         else:
             stream.producer = payload.producer
             stream.producer_version = payload.producer_version
+            # Observation: a producer that stops advertising its interval clears it.
+            stream.producer_interval_seconds = payload.snapshot_interval_seconds
         stream.snapshot = items
         stream.last_snapshot_at = now
         stream.last_item_count = len(items)
@@ -547,6 +571,298 @@ def status_body(stream):
 
 def _iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt else None
+
+
+# --- rejected snapshots -------------------------------------------------------------
+
+
+def rejection_text(status, message):
+    """`"<status>: <first error>"`, at most 255 characters."""
+    return f"{status}: {message}"[:255]
+
+
+def record_rejection(stream_pk, status, message, now=None):
+    """Remember that a snapshot PUT to an existing stream (by a key bound to it) was
+    refused. Not audited, like every snapshot PUT. Rolls back whatever the request
+    left in the session first, then commits only these two columns."""
+    with _LOCK:
+        db.session.rollback()
+        stream = db.session.get(InventoryStream, stream_pk)
+        if stream is None:
+            return
+        stream.last_rejected_at = now or datetime.utcnow()
+        stream.last_rejection = rejection_text(status, message)
+        db.session.commit()
+        logger.warning("Snapshot for stream %s rejected: %s", stream.stream_id, stream.last_rejection)
+
+
+# --- staleness (computed on read) ---------------------------------------------------
+
+
+def effective_interval(stream):
+    """`(seconds, source)`: the operator's expected interval, else the producer's
+    advertised one, else 15 minutes. `source` is operator | producer | default."""
+    if stream.expected_interval_seconds:
+        return int(stream.expected_interval_seconds), INTERVAL_OPERATOR
+    if stream.producer_interval_seconds:
+        return int(stream.producer_interval_seconds), INTERVAL_PRODUCER
+    return DEFAULT_INTERVAL_SECONDS, INTERVAL_DEFAULT
+
+
+def stale_after_seconds(stream):
+    return effective_interval(stream)[0] * STALE_GRACE_FACTOR
+
+
+def is_stale(stream, now=None):
+    """An enabled stream with no snapshot for more than `STALE_GRACE_FACTOR` x its
+    expected interval (measured from the last snapshot, or from when it was first
+    seen if it never sent one since). Pending, disabled and ignored streams are never
+    stale: nobody asked STD to rely on them."""
+    if stream.status != STREAM_ENABLED:
+        return False
+    ref = stream.last_snapshot_at or stream.first_seen_at
+    if ref is None:
+        return False
+    now = now or datetime.utcnow()
+    return (now - ref).total_seconds() > stale_after_seconds(stream)
+
+
+def is_rejecting(stream):
+    """The latest snapshot attempt was refused (newer than the last accepted one)."""
+    if stream.last_rejected_at is None:
+        return False
+    return stream.last_snapshot_at is None or stream.last_rejected_at > stream.last_snapshot_at
+
+
+def _minutes(seconds):
+    minutes = max(1, round(seconds / 60))
+    return f"{minutes} min" if minutes < 120 else f"{round(minutes / 60)} h"
+
+
+def stream_health(stream, now=None):
+    """The observability facts of one stream, for the API, the UI and MQTT."""
+    now = now or datetime.utcnow()
+    interval, source = effective_interval(stream)
+    stale = is_stale(stream, now)
+    ref = stream.last_snapshot_at or stream.first_seen_at
+    age = int((now - ref).total_seconds()) if ref is not None else None
+    message = None
+    if stale:
+        what = (f"No snapshot for {_minutes(age)}" if stream.last_snapshot_at is not None
+                else f"No snapshot since it was first seen {_minutes(age)} ago")
+        message = f"{what} (expected every {_minutes(interval)})"
+        if is_rejecting(stream):
+            message += f"; last snapshot rejected: {stream.last_rejection}"
+    return {"stale": stale, "effective_interval_seconds": interval, "interval_source": source,
+            "stale_after_seconds": interval * STALE_GRACE_FACTOR,
+            "snapshot_age_seconds": age, "rejecting": is_rejecting(stream), "message": message,
+            "stale_since": (_iso(ref + timedelta(seconds=interval * STALE_GRACE_FACTOR))
+                            if stale else None)}
+
+
+def stale_streams(now=None):
+    """Enabled streams that are stale now (one query)."""
+    now = now or datetime.utcnow()
+    return [s for s in InventoryStream.query.filter_by(status=STREAM_ENABLED)
+            .order_by(InventoryStream.id).all() if is_stale(s, now)]
+
+
+_STALE_WATCH = {"known": None, "next": 0.0}
+STALE_WATCH_SECONDS = 30
+
+
+def watch_staleness(now=None, force=False):
+    """Called by the health scheduler tick (no thread of its own), at most every 30 s.
+    Logs each stale/fresh transition once and asks the notifier for a sync so the
+    `stale` field on `<base>/stream/<id>` (and the HA problem sensor) follow time,
+    not only commits. Returns the set of stale stream ids."""
+    mono = time.monotonic()
+    if not force and mono < _STALE_WATCH["next"]:
+        return _STALE_WATCH["known"]
+    _STALE_WATCH["next"] = mono + STALE_WATCH_SECONDS
+    current = {s.stream_id for s in stale_streams(now)}
+    known = _STALE_WATCH["known"]
+    if known is None:
+        for slug in sorted(current):
+            logger.warning("Inventory stream %s is stale (no snapshot within the expected interval).", slug)
+        changed = bool(current)
+    else:
+        for slug in sorted(current - known):
+            logger.warning("Inventory stream %s is stale (no snapshot within the expected interval).", slug)
+        for slug in sorted(known - current):
+            logger.info("Inventory stream %s is receiving snapshots again (or no longer enabled).", slug)
+        changed = current != known
+    _STALE_WATCH["known"] = current
+    if changed:
+        import notify
+        notify.request_sync()
+    return current
+
+
+def reset_stale_watch():
+    _STALE_WATCH.update(known=None, next=0.0)
+
+
+# --- IP follow (PRD 18.9: no templated targets) --------------------------------------
+
+
+def _same_ip(a, b):
+    na, nb = normalize_ip(a) if a else None, normalize_ip(b) if b else None
+    return na is not None and na == nb
+
+
+def _host_port(text):
+    """`(host, port | None)` of `host`, `host:port` or `[v6]:port` (a bare v6 too)."""
+    text = (text or "").strip()
+    if text.startswith("["):
+        host, _, rest = text[1:].partition("]")
+        return host, (rest[1:] if rest.startswith(":") else None)
+    if text.count(":") == 1:
+        host, _, port = text.partition(":")
+        return host, port
+    return text, None
+
+
+def _join_host_port(host, port):
+    shown = f"[{host}]" if ":" in host else host
+    return f"{shown}:{port}" if port else host
+
+
+def retarget(check_type, target, old_ip, new_ip):
+    """The check target with `old_ip` replaced by `new_ip`, or None when the target
+    does not point at `old_ip`. Ping: the target; TCP and DNS: the host of
+    `host[:port]`; HTTP: the URL's host (port, path and userinfo kept)."""
+    if not target or not old_ip or not new_ip:
+        return None
+    if check_type == CHECK_TYPE_PING:
+        return new_ip if _same_ip(target, old_ip) else None
+    if check_type in (CHECK_TYPE_TCP, CHECK_TYPE_DNS):
+        host, port = _host_port(target)
+        if not _same_ip(host, old_ip):
+            return None
+        if port is None and ":" in new_ip and check_type == CHECK_TYPE_DNS:
+            return new_ip
+        return _join_host_port(new_ip, port)
+    if check_type == CHECK_TYPE_HTTP:
+        try:
+            parts = urlsplit(target)
+            host, port = parts.hostname, parts.port
+        except ValueError:
+            return None
+        if not host or not _same_ip(host, old_ip):
+            return None
+        netloc = parts.netloc.rpartition("@")
+        userinfo = netloc[0] + "@" if netloc[1] else ""
+        shown = f"[{new_ip}]" if ":" in new_ip else new_ip
+        return urlunsplit(parts._replace(netloc=f"{userinfo}{shown}{f':{port}' if port else ''}"))
+    return None
+
+
+def follow_ips(changes):
+    """The producer changed some entries' IPs (`[(entry, old_ip, new_ip)]`): every
+    service check whose target points at the old IP is moved to the new one (and
+    asked to run at the next tick), so no check keeps probing the old host. One query
+    for all their service checks. With no new IP nothing can be followed; that is
+    logged per check. Returns the ids of the checks retargeted. Caller commits."""
+    changes = [(e, old, new) for e, old, new in changes if old and old != new and e.id is not None]
+    if not changes:
+        return []
+    by_entry = {}
+    for check in HealthCheck.query.filter(
+            HealthCheck.service_entry_id.in_([e.id for e, _o, _n in changes]),
+            HealthCheck.kind == CHECK_KIND_SERVICE):
+        by_entry.setdefault(check.service_entry_id, []).append(check)
+    moved = []
+    for entry, old_ip, new_ip in changes:
+        for check in by_entry.get(entry.id, ()):
+            if not new_ip:
+                if retarget(check.check_type, check.target, old_ip, "0.0.0.0") is not None:
+                    logger.warning("Entry %s lost its IP (%s); check %r still targets %s.",
+                                   entry.container_name, old_ip, check.name, check.target)
+                continue
+            target = retarget(check.check_type, check.target, old_ip, new_ip)
+            if target is None or target == check.target:
+                continue
+            logger.info("Entry %s moved from %s to %s: check %r now targets %s (was %s).",
+                        entry.container_name, old_ip, new_ip, check.name, target, check.target)
+            check.target = target[:255]
+            moved.append(check.id)
+    if moved:
+        import jobs
+        jobs.request_run(moved)
+    return moved
+
+
+# --- missing entries: auto soft-delete ---------------------------------------------
+
+_TCP_DEFAULT_NAME = re.compile(r"^TCP (\d{1,5})$")
+
+
+def _is_default_check(entry, check):
+    """True for a service check exactly as `add_default_checks` makes it (Ping on the
+    entry's IP, `TCP <port>` on ip:port), never edited since."""
+    ip = (entry.ip or "").strip()
+    if (not ip or check.kind != CHECK_KIND_SERVICE or not check.enabled or check.interval_seconds
+            or check.timeout_seconds or check.cert_min_days or check.ha_exclude):
+        return False
+    if check.check_type == CHECK_TYPE_PING:
+        return check.name == "Ping" and check.target == ip
+    if check.check_type == CHECK_TYPE_TCP:
+        m = _TCP_DEFAULT_NAME.match(check.name or "")
+        return bool(m) and check.target == _join_host_port(ip, m.group(1))
+    return False
+
+
+def human_edits(entry):
+    """Why an entry counts as edited by a human and is never auto soft-deleted: linked
+    (a manual entry that joined the stream), renamed, locked, group, description,
+    icon, URLs, sort priority, widget, Home Assistant, or any service check that is
+    not an untouched default check (added, edited or disabled). Empty = not edited."""
+    reasons = []
+    for flag, reason in ((entry.stream_linked, "linked"),
+                         (entry.name_source == NAME_SOURCE_UI_EDIT, "renamed"),
+                         (entry.is_static, "locked"), (entry.group_id is not None, "group"),
+                         (entry.description, "description"), (entry.image_icon, "icon"),
+                         (entry.internalurl or entry.externalurl, "urls"),
+                         (entry.sort_priority is not None, "sort_priority"),
+                         (entry.widget_id is not None, "widget"), (entry.ha_publish, "home_assistant")):
+        if flag:
+            reasons.append(reason)
+    if any(c.kind == CHECK_KIND_SERVICE and not _is_default_check(entry, c) for c in entry.checks):
+        reasons.append("checks")
+    return reasons
+
+
+def expire_missing(now=None):
+    """Soft-delete entries of enabled streams with `missing_expiry_days` set that have
+    been missing longer than that, unless a human edited them (`human_edits`). Run by
+    the daily soft-delete purge job. The item coming back restores the entry by key
+    (the normal apply path). Returns `{"soft_deleted": n, "kept": n}`."""
+    now = now or datetime.utcnow()
+    result = {"soft_deleted": 0, "kept": 0}
+    with _LOCK:
+        rows = InventoryStream.query.filter(InventoryStream.status == STREAM_ENABLED,
+                                            InventoryStream.missing_expiry_days.isnot(None)).all()
+        stamp = datetime.now()
+        for stream in rows:
+            cutoff = now - timedelta(days=stream.missing_expiry_days)
+            for entry in (ServiceEntry.active().filter(
+                    ServiceEntry.stream_id == stream.id, ServiceEntry.inventory_missing.is_(True),
+                    ServiceEntry.inventory_missing_since.isnot(None),
+                    ServiceEntry.inventory_missing_since <= cutoff).order_by(ServiceEntry.id).all()):
+                reasons = human_edits(entry)
+                if reasons:
+                    result["kept"] += 1
+                    logger.info("Stream %s: %s missing since %s, kept (edited: %s).", stream.stream_id,
+                                entry.container_name, _iso(entry.inventory_missing_since), ", ".join(reasons))
+                    continue
+                entry.deleted_at = stamp
+                result["soft_deleted"] += 1
+                logger.info("Stream %s: soft-deleted %s (missing since %s, expiry %d days).",
+                            stream.stream_id, entry.container_name,
+                            _iso(entry.inventory_missing_since), stream.missing_expiry_days)
+        db.session.commit()
+    return result
 
 
 # --- reading -----------------------------------------------------------------------
@@ -683,6 +999,7 @@ def _become_manual(entry):
     entry.stream_id = None
     entry.stream_key = None
     entry.inventory_missing = False
+    entry.inventory_missing_since = None
     entry.name_source = None
     entry.stream_linked = False
     entry.pre_link_host = None
@@ -801,13 +1118,27 @@ def delete(stream, cleanup=CLEANUP_KEEP):
 
 
 def update(stream, display_name=None, network_include=None, network_exclude=None, sent=(),
-           default_checks=None):
-    """Change the display name, the network filters and the default checks
-    (`default_checks`: `{"ping": bool, "tcp_port": int | None}`, null clears). `sent` names the fields
+           default_checks=None, expected_interval_seconds=None, missing_expiry_days=None):
+    """Change the display name, the network filters, the default checks
+    (`default_checks`: `{"ping": bool, "tcp_port": int | None}`, null clears), the
+    expected snapshot interval (seconds, 60-86400, null = the producer's or 15 min)
+    and the missing-entry expiry (days, 1-3650, null = off). `sent` names the fields
     the caller provided; an empty list or null clears a filter. Returns the changes
     as `{field: [old, new]}`. Raises `StreamError(400)` on a bad value."""
     changes = {}
     with _LOCK:
+        for field_name, value, low, high, unit in (
+                ("expected_interval_seconds", expected_interval_seconds,
+                 MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS, "seconds"),
+                ("missing_expiry_days", missing_expiry_days, 1, MAX_EXPIRY_DAYS, "days")):
+            if field_name not in sent:
+                continue
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                      or not low <= value <= high):
+                raise StreamError(400, f"{field_name} must be {low}-{high} {unit}, or null.")
+            if value != getattr(stream, field_name):
+                changes[field_name] = [getattr(stream, field_name), value]
+                setattr(stream, field_name, value)
         if "display_name" in sent:
             name = (display_name or "").strip()
             if not 1 <= len(name) <= 32:
@@ -896,8 +1227,12 @@ def _convert(entry, stream, item):
     entry.stream_key = item["key"]
     entry.name_source = NAME_SOURCE_UI_EDIT
     entry.inventory_missing = False
+    entry.inventory_missing_since = None
+    old_ip = entry.ip
     for attr, value in _item_values(item).items():
         setattr(entry, attr, value)
+    if old_ip and old_ip != entry.ip:
+        follow_ips([(entry, old_ip, entry.ip)])
     entry.last_updated = datetime.now()
     # Offers on this entry from other items are moot now.
     StreamLinkOffer.query.filter_by(entry_id=entry.id).delete()

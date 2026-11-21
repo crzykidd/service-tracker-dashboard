@@ -153,7 +153,11 @@ OPERATIONS: tuple = (
        params=(Param("range", {"type": "string", "enum": ["24h", "7d"], "default": "24h"},
                      "Bucket range."),), errors=(404,)),
     Op("GET", "/health/summary", "read", "Counts and the failing entries", S.HealthSummaryOut,
-       description="The quickest way to ask what is broken."),
+       description="The quickest way to ask what is broken. `streams` is a compact block per inventory "
+                   "stream (status, stale, last snapshot, item count, interval, last apply error, last "
+                   "rejection, active / missing entries); `stale_streams` has one `down` line per stale "
+                   "stream (entries of a stale stream keep their own health). `counts.streams_stale` "
+                   "counts them."),
 
     Op("GET", "/groups", "read", "List groups", S.Page[S.GroupOut], params=_PAGE),
     Op("POST", "/groups", "write", "Create a group", S.GroupOut, request=S.GroupCreate,
@@ -287,13 +291,18 @@ OPERATIONS: tuple = (
                    "(200 once enabled, 202 before). `key_type: mac` means every `key` is a MAC (any "
                    "common form, normalised to lower-case colon form). Up to 5000 items and 2 MiB; a "
                    "snapshot is applied whole or not at all. 403 when the stream belongs to another "
-                   "`ingest` key, 409 when `key_type` differs from the stream's, 413 over the size limit."),
+                   "`ingest` key, 409 when `key_type` differs from the stream's, 413 over the size limit. "
+                   "Optional `snapshot_interval_seconds` (60-86400, API revision 3+) tells STD how often "
+                   "the producer posts, for staleness; the operator's value wins. A 400/409/413 for an "
+                   "existing stream is recorded on it (`last_rejected_at`, `last_rejection`)."),
     Op("GET", "/streams/{stream_id}/status", "ingest", "A stream's status, for a sidecar to log", S.StreamStatusOut,
        errors=(404,), description="404 until the first snapshot has created the stream."),
 
     Op("GET", "/streams", "read", "List inventory streams", S.StreamListOut, params=_PAGE,
-       description="Status, producer, last counts, filters, default checks, entry counts and the last error of "
-                   "every stream. `pending` counts the streams waiting for review (all pages)."),
+       description="Status, producer, last snapshot / apply times, item count, last counts, filters, default "
+                   "checks, entry counts (incl. missing), the last apply error, the last rejected snapshot, "
+                   "the effective interval and whether the stream is stale, for every stream. `pending` "
+                   "counts the streams waiting for review and `stale` the stale ones (all pages)."),
     Op("GET", "/streams/{stream_id}", "read", "Get one stream", S.StreamOut, errors=(404,)),
     Op("PATCH", "/streams/{stream_id}", "write", "Rename a stream or change its filters and default checks", S.StreamOut,
        request=S.StreamPatch, errors=(404,),
@@ -303,7 +312,12 @@ OPERATIONS: tuple = (
                    "snapshot. `default_checks` is `{\"ping\": bool, \"tcp_port\": 1-65535 | null}` (null "
                    "clears): new stream entries start with an enabled Ping check on their IP and, when "
                    "set, a TCP check on `ip:port`. It affects entries created from then on; use "
-                   "`POST /streams/{stream_id}/default-checks/apply` for the existing ones."),
+                   "`POST /streams/{stream_id}/default-checks/apply` for the existing ones. "
+                   "`expected_interval_seconds` (60-86400, null = the producer's advertised interval or "
+                   "15 minutes) sets when the stream counts as stale (no snapshot for 2 x the interval). "
+                   "`missing_expiry_days` (1-3650, null = off) soft-deletes entries missing that long, "
+                   "daily, except entries a human edited (linked, renamed, locked, grouped, described, "
+                   "icon, URLs, sort priority, widget, Home Assistant, or any non-default check)."),
     Op("POST", "/streams/{stream_id}/default-checks/apply", "write",
        "Add the stream's default checks to its existing entries", S.StreamApplyChecksOut, errors=(404,),
        description="Adds the missing default checks to every active entry of the stream that has an IP. An "

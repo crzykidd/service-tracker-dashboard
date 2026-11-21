@@ -95,6 +95,9 @@ class StreamSnapshotPut(_Request):
     producer_version: _text(32)
     key_type: Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]{1,16}$")]   # `mac`: every key is a MAC
     items: Annotated[list[StreamSnapshotItem], Field(max_length=5000)]
+    # Optional (API revision 3): how often the producer posts, 60-86400 s. STD uses it
+    # for staleness unless the operator set an expected interval. Older STDs refuse it.
+    snapshot_interval_seconds: Annotated[int, Field(ge=60, le=86400)] | None = None
 
 
 class StreamDefaultChecksIn(_Request):
@@ -112,6 +115,8 @@ class StreamPatch(_Request):
     network_include: list[str] | None = None
     network_exclude: list[str] | None = None
     default_checks: StreamDefaultChecksIn | None = None
+    expected_interval_seconds: int | None = None   # 60-86400; null = the producer's interval or 15 min
+    missing_expiry_days: int | None = None         # 1-3650; null = never auto soft-delete missing entries
 
 
 class StreamDisableRequest(_Request):
@@ -498,6 +503,7 @@ class InventoryOut(TypedDict):
     network: str | None
     attributes: Any
     missing: bool                    # absent from the stream's latest snapshot
+    missing_since: str | None        # when it was flagged missing (UTC, Z); null while present (revision 3)
     name_source: str | None          # "stream" | "ui_edit" (renamed in STD)
     linked: bool                     # was a manual entry linked to the stream; cleanup unlinks it, never deletes it
 
@@ -546,7 +552,8 @@ class SummaryCountsOut(TypedDict):
     passing: int
     failing: int
     unknown: int
-    stale: int
+    stale: int                       # Docker entries whose notifier stopped reporting
+    streams_stale: int               # stale inventory streams (revision 3)
 
 
 class SummaryFailureOut(TypedDict):
@@ -564,9 +571,34 @@ class SummaryEntryOut(TypedDict):
     failures: list[SummaryFailureOut]
 
 
+class SummaryStreamOut(TypedDict):
+    stream_id: str
+    display_name: str
+    status: str                      # pending | enabled | disabled | ignored
+    stale: bool
+    last_snapshot_at: str | None
+    last_item_count: int | None
+    effective_interval_seconds: int
+    last_error: str | None
+    last_rejected_at: str | None
+    last_rejection: str | None
+    entries_active: int
+    entries_missing: int
+
+
+class SummaryStaleStreamOut(TypedDict):
+    stream_id: str
+    display_name: str
+    state: str                       # "down"
+    message: str                     # e.g. "No snapshot for 42 min (expected every 5 min)"
+    since: str | None                # when it became stale (UTC, Z)
+
+
 class HealthSummaryOut(TypedDict):
     counts: SummaryCountsOut
     failing: list[SummaryEntryOut]
+    streams: list[SummaryStreamOut]              # every inventory stream, compact (revision 3)
+    stale_streams: list[SummaryStaleStreamOut]   # one "down" line per stale stream (revision 3)
 
 
 
@@ -802,7 +834,20 @@ class StreamOut(TypedDict):
     last_applied_at: str | None
     last_item_count: int | None
     last_counts: StreamCountsOut | None
-    last_error: str | None
+    last_error: str | None           # the last STD-side apply failure (cleared by a good apply)
+    # Observability (revision 3, PRD 18.9).
+    expected_interval_seconds: int | None    # the operator's value (null = not set)
+    producer_interval_seconds: int | None    # what the producer advertises (snapshot_interval_seconds)
+    effective_interval_seconds: int          # operator > producer > 900
+    interval_source: str                     # operator | producer | default
+    stale: bool                              # enabled and no snapshot for > 2 x the effective interval
+    stale_after_seconds: int
+    snapshot_age_seconds: int | None         # since the last snapshot (or first seen)
+    stale_message: str | None                # e.g. "No snapshot for 42 min (expected every 5 min)"
+    last_rejected_at: str | None             # the last refused snapshot PUT (400/409/413)
+    last_rejection: str | None               # "<status>: <first error>"
+    rejecting: bool                          # the latest attempt was refused (newer than the last accepted one)
+    missing_expiry_days: int | None          # auto soft-delete after N days missing; null = off
     entries: StreamEntryStatsOut
     blocks: int
     link_offers: int
@@ -814,6 +859,7 @@ class StreamListOut(TypedDict):
     limit: int
     offset: int
     pending: int                     # streams waiting for review (status "pending"), all pages
+    stale: int                       # enabled streams that are stale, all pages (revision 3)
 
 
 class StreamApplyChecksOut(TypedDict):

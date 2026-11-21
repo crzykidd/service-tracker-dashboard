@@ -1100,7 +1100,13 @@ tr.group-entry.entry-health-down > td:first-child { border-left: 3px solid var(-
 .stream-pill { background-color: #1d4ed8; max-width: 9rem; }
 .stream-pill-name { overflow: hidden; text-overflow: ellipsis; }
 .stream-pill-missing { opacity: 0.6; }
-.stream-missing { color: #9ca3af; font-size: 0.72rem; font-style: italic; white-space: nowrap; }
+.stream-missing {
+  display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap;
+  font-size: 0.72rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 9999px;
+  color: #1f2937; background-color: var(--color-status-warn);
+}
+/* PRD 18.9: a "missing since" fact in the health detail facts and drawers. */
+.stream-missing-fact { color: var(--color-status-warn); }
 .compact-end .stream-missing-text { display: none; }
 .delete-popover-block { display: none; }
 .delete-popover-block.visible { display: inline-block; }

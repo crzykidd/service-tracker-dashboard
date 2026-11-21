@@ -139,7 +139,7 @@ STREAM_STATUSES = ["pending", "enabled", "disabled", "ignored"]
 
 def stream_configs(base, prefix, node, device_prefix, stream, version):
     """A stream hub device's entities, all read from `<base>/stream/<stream_id>`:
-    the status, and the active and missing entry counts."""
+    the status, the active and missing entry counts and the stale `problem` sensor."""
     device = stream_device(node, device_prefix, stream, version)
     device_slug = slug(device["name"])
     topic = f"{base}/{notify_state.stream_topic(stream.stream_id)}"
@@ -168,6 +168,19 @@ def stream_configs(base, prefix, node, device_prefix, stream, version):
             **_availability(base),
             "device": device,
         }
+    # PRD 18.9: on while the stream is stale (enabled, no snapshot for 2 x its interval).
+    out[config_topic(prefix, "binary_sensor", node, f"stream_{key}_problem")] = {
+        "name": "Problem",
+        "unique_id": f"{node}_stream_{key}_problem",
+        "default_entity_id": f"binary_sensor.{device_slug}_problem",
+        "device_class": "problem",
+        "state_topic": topic,
+        "value_template": "{{ 'ON' if value_json.stale else 'OFF' }}",
+        "payload_on": "ON", "payload_off": "OFF",
+        "json_attributes_topic": topic,
+        **_availability(base),
+        "device": device,
+    }
     return out
 
 

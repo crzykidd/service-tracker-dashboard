@@ -438,6 +438,41 @@ model.
 
 ---
 
+## Stream observability follow-ups
+
+**Parked:** 2026-11-20, during inv-08 (stream observability, PRD §18.9).
+
+### Context
+
+inv-08 made stale producers, rejected snapshots and missing records visible and
+moved checks with a changed IP. A few adjacent ideas came up and were left out to
+keep the change set small.
+
+### Sketched shape
+
+- **Templated check targets** (`{inventory.ip}`, `{inventory.mac}`, hostname)
+  resolved at check time. Rejected for now in favour of rewriting targets on IP
+  change (see `docs/decisions.md`, 2026-11-20); worth revisiting together with
+  monitor profiles (design doc §7), where a profile's checks are templates anyway.
+- **Staleness on the ingest status route.** `GET /streams/{id}/status` could carry
+  the effective interval and `stale`, so a sidecar can log what STD expects. Needs
+  an additive ingest field (a revision bump).
+- **Notifications on transitions.** The staleness and missing-expiry events are
+  logged and published as retained state; alert policies (design doc slice 5)
+  would turn them into pushes.
+- **Expiry vs. `deleted_retention_days: 0`.** With retention 0 the purge job
+  hard-deletes auto-expired entries in the same run, so the "item returns, entry is
+  restored" path cannot happen; the job could skip entries soft-deleted in that run.
+
+### Why parked
+
+None of these is needed to see a dead producer or a vanished record; each adds a
+contract or a policy decision that is better made with real use of the first
+sidecar.
+
+
+---
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

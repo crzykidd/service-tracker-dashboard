@@ -30,6 +30,7 @@ import logging
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -45,6 +46,9 @@ MCP_VERSION = "0.10.0"
 
 API = "/api/v1"
 DEFAULT_TIMEOUT = 15.0
+# server_info re-checks the STD version with GET /api/v1/meta (public, no DB) on each call.
+META_TIMEOUT = 3.0
+SCRIPT_URL = "https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v{version}/mcp/std_mcp.py"
 
 # Fields the PATCH endpoints accept. Checked client-side so that a typo gives a
 # readable error, not a round trip. The server stays the authority.
@@ -95,6 +99,23 @@ class StdClient:
             return resp.json()
         except ValueError:
             raise ToolError(f"STD returned a non-JSON answer (HTTP {resp.status_code}).") from None
+
+    def meta(self, timeout: float = META_TIMEOUT) -> dict:
+        """`GET /api/v1/meta` with a short timeout: `{std_version, api_revision, features}`.
+        Raises ToolError on any failure (the caller falls back to the startup values)."""
+        try:
+            resp = self._http.get("/meta", timeout=timeout)
+        except httpx.HTTPError as exc:
+            raise ToolError(f"{exc.__class__.__name__}: {exc}") from exc
+        if resp.status_code >= 400:
+            raise ToolError(_format_error(resp))
+        try:
+            body = resp.json()
+        except ValueError:
+            raise ToolError(f"non-JSON answer (HTTP {resp.status_code})") from None
+        if not isinstance(body, dict):
+            raise ToolError("unexpected /meta answer")
+        return body
 
     def close(self) -> None:
         self._http.close()
@@ -182,6 +203,66 @@ def compare_versions(mcp_version: str, std_version: Any) -> dict:
     return info
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def update_advice(mcp_version: str, std_version: Any) -> str:
+    """What to do when this script is older (major.minor) than STD."""
+    return (f"This MCP script ({mcp_version}) is older than STD ({std_version}): stream tools and other "
+            "tools or fields added since may be missing or incomplete. Update the script: "
+            f"`uv run {SCRIPT_URL.format(version=std_version)}` in the MCP config, or `git pull` in your "
+            "checkout. Then restart the MCP client (or reconnect the MCP server) so it loads the new tools.")
+
+
+def recheck(startup: dict, current_version: Any, current_revision: Any, error: str | None) -> dict:
+    """`server_info`'s answer: the startup comparison plus a fresh one.
+
+    `startup` is the dict built at startup (compare_versions plus the std_* facts and
+    `checked_at`). With `error` set the current values are unknown and the answer uses
+    the startup values, labelled "as of startup <time>". Adds `startup`, `current`,
+    `restart_advised` (STD changed since this server started) and `update_advised`
+    (this script is older than STD); `advice` says both when they apply."""
+    started = {"std_version": startup.get("std_version"), "std_api_revision": startup.get("std_api_revision"),
+               "checked_at": startup.get("checked_at")}
+    info = {k: v for k, v in startup.items() if k != "checked_at"}
+    info["startup"] = started
+    if error is not None:
+        info["current"] = {"std_version": None, "std_api_revision": None, "checked": False, "error": error}
+        info["std_version_source"] = f"as of startup {started['checked_at'] or 'unknown'}"
+        info["restart_advised"] = False
+        info["update_advised"] = info.get("status") == "std_newer"
+        if info["update_advised"]:
+            info["advice"] = update_advice(info["mcp_version"], info["std_version"])
+        info["advice"] = (f"Could not re-check STD now ({error}); versions are as of startup "
+                          f"{started['checked_at'] or 'unknown'}. " + info["advice"])
+        return info
+    fresh = compare_versions(info["mcp_version"], current_version if isinstance(current_version, str) else None)
+    info.update(status=fresh["status"], std_version=fresh["std_version"], advice=fresh["advice"])
+    if current_revision is not None:
+        info["std_api_revision"] = current_revision
+    info["std_version_source"] = "current"
+    info["current"] = {"std_version": fresh["std_version"], "std_api_revision": current_revision,
+                       "checked": True, "error": None}
+    old, new = _parse_semver(started["std_version"]), _parse_semver(fresh["std_version"])
+    changed = (started["std_version"] != fresh["std_version"]
+               or (current_revision is not None and started["std_api_revision"] is not None
+                   and current_revision != started["std_api_revision"]))
+    info["restart_advised"] = bool(changed)
+    info["update_advised"] = fresh["status"] == "std_newer"
+    parts = []
+    if changed:
+        what = "upgraded" if (old and new and new > old) else "changed"
+        parts.append(f"STD was {what} from {started['std_version'] or 'unknown'} to {fresh['std_version']} "
+                     "since this MCP server started: restart the MCP server (restart or reconnect the MCP "
+                     "client) so the tool set and the version notice are current.")
+    if info["update_advised"]:
+        parts.append(update_advice(info["mcp_version"], fresh["std_version"]))
+    if parts:
+        info["advice"] = " ".join(parts)
+    return info
+
+
 def version_notice(info: dict) -> str | None:
     """The one stderr line for a version difference, or None when the versions are identical."""
     mine, theirs = info["mcp_version"], info["std_version"]
@@ -209,8 +290,10 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         mismatch = ""
     else:
         status = version_info["status"]
+        advice = (update_advice(version_info["mcp_version"], version_info["std_version"])
+                  if status == "std_newer" else version_info["advice"])
         mismatch = "" if status == "match" else (
-            " Version notice: " + version_info["advice"] + " If a tool seems missing or returns 404, "
+            " Version notice: " + advice + " If a tool seems missing or returns 404, "
             "tell the operator to update the MCP server (std_mcp.py); server_info shows the versions."
             if status != "unknown" else
             " Version notice: the STD version could not be compared with this MCP server "
@@ -238,13 +321,20 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     # ---- read tools ---------------------------------------------------------
 
+    startup_info = dict(version_info)
+    startup_info.setdefault("checked_at", None)
+
     @read_tool
     def server_info() -> dict:
         """Versions of this MCP server and of the STD it talks to, and whether they match. Call it when a tool seems missing or returns 404, or when the operator asks about versions.
 
-        Returns {mcp_version, std_version, status: match | std_newer | std_older | unknown, advice}, plus std_commit, std_channel (release | main | dev | pr | local) and std_update ({enabled, latest_version, update_available, release_url, checked_at}) and std_api_revision (the /api/v1 contract revision) when STD reports them. Answered from what was checked at startup; no request is made.
+        Re-checks STD's version on every call with GET /api/v1/meta (3 s timeout). Returns {mcp_version, std_version, std_api_revision, status: match | std_newer | std_older | unknown, advice, std_version_source ("current", or "as of startup <time>" when the re-check failed), startup: {std_version, std_api_revision, checked_at}, current: {std_version, std_api_revision, checked, error}, restart_advised (STD changed since this MCP server started: restart it), update_advised (this script is older than STD: update std_mcp.py, then restart the MCP client)}, plus std_commit, std_channel (release | main | dev | pr | local) and std_update ({enabled, latest_version, update_available, release_url, checked_at}) from startup when STD reported them.
         """
-        return dict(version_info)
+        try:
+            meta = client.meta()
+        except ToolError as exc:
+            return recheck(startup_info, None, None, str(exc))
+        return recheck(startup_info, meta.get("std_version"), meta.get("api_revision"), None)
 
     @read_tool
     def list_entries(status: str = "all", source: str = "all", host: str | None = None,
@@ -270,7 +360,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @read_tool
     def health_summary() -> dict:
-        """Counts (total, passing, failing, unknown, stale) and the failing entries with each failing check, its message and how long it has been failing. The quickest way to ask what is broken."""
+        """Counts (total, passing, failing, unknown, stale = Docker entries whose notifier stopped reporting, streams_stale) and the failing entries with each failing check, its message and how long it has been failing; `streams` (per inventory stream: status, stale, last_snapshot_at, last_item_count, effective_interval_seconds, last_error, last_rejected_at, last_rejection, entries_active, entries_missing) and `stale_streams` (one {stream_id, display_name, state: "down", message, since} per stale stream; its entries keep their own health). The quickest way to ask what is broken."""
         return client.request("GET", "/health/summary")
 
     @read_tool
@@ -315,12 +405,12 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @read_tool
     def list_streams(limit: int = 200, offset: int = 0) -> dict:
-        """List inventory streams: sidecars (e.g. a DHCP reservation reader) that push device lists into STD. Each has a status (pending = waiting for approval, enabled, disabled, ignored), producer and version, last counts, network filters, default_checks (Ping / TCP check a new entry starts with), entry counts and the last error. Returns {items, total, limit, offset, pending}; `pending` is how many streams are waiting for review (the operator sees the same count on the Settings link in the header)."""
+        """List inventory streams: sidecars (e.g. a DHCP reservation reader) that push device lists into STD. Use it to see whether a producer is alive. Each item has: status (pending = waiting for approval, enabled, disabled, ignored), producer and producer_version, first_seen_at, last_snapshot_at (last accepted snapshot), last_applied_at, last_item_count, last_counts (created/updated/unchanged/restored/missing/blocked/link_offers/filtered), last_error (last STD-side apply failure), last_rejected_at and last_rejection (the last snapshot STD refused, "<status>: <first error>") and rejecting (the latest attempt was refused), staleness: stale (enabled and no snapshot for 2 x the interval), stale_message, snapshot_age_seconds, stale_after_seconds, effective_interval_seconds with interval_source (operator | producer | default) plus expected_interval_seconds (operator) and producer_interval_seconds (advertised), missing_expiry_days, network filters, default_checks (Ping / TCP check a new entry starts with), entries {total, active, deleted, missing, linked}, blocks and link_offers counts. Returns {items, total, limit, offset, pending, stale}; `pending` is how many streams wait for review and `stale` how many are stale (the operator sees both on the Settings link in the header)."""
         return client.request("GET", "/streams", params=dict(limit=limit, offset=offset))
 
     @read_tool
     def get_stream(stream_id: str) -> dict:
-        """Get one inventory stream by its stream_id (the slug, e.g. "dhcp")."""
+        """Get one inventory stream by its stream_id (the slug, e.g. "dhcp"), with the same fields as a list_streams item: status, producer and version, last_snapshot_at, last_applied_at, last_item_count, last_counts, last_error, last_rejected_at / last_rejection / rejecting, stale / stale_message / snapshot_age_seconds / stale_after_seconds, effective_interval_seconds / interval_source / expected_interval_seconds / producer_interval_seconds, missing_expiry_days, filters, default_checks, entries {total, active, deleted, missing, linked}, blocks and link_offers."""
         return client.request("GET", f"/streams/{stream_id}")
 
     @read_tool
@@ -562,10 +652,11 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
     @write_tool
     def update_stream(stream_id: str, fields: dict) -> dict:
-        """Rename an inventory stream or change its network filters and default checks. `fields` names only what changes: display_name (1-32 characters), network_include and network_exclude (lists of network names; null or [] clears), default_checks ({"ping": bool, "tcp_port": 1-65535 or null}; null clears). Items outside the include list or inside the exclude list are dropped from the next snapshot on. default_checks make new stream entries start with an enabled Ping check on their IP and, when tcp_port is set, a TCP check on ip:port; existing entries are not touched until apply_stream_default_checks.
-        Example fields: {"network_exclude": ["Guest"]} or {"default_checks": {"ping": true, "tcp_port": null}}
+        """Rename an inventory stream or change its network filters, default checks, expected interval and missing-entry expiry. `fields` names only what changes: display_name (1-32 characters), network_include and network_exclude (lists of network names; null or [] clears), default_checks ({"ping": bool, "tcp_port": 1-65535 or null}; null clears), expected_interval_seconds (60-86400; null = the producer's advertised interval or 15 min; the stream is stale after 2 x this without a snapshot), missing_expiry_days (1-3650; null = off: soft-delete entries missing that long, daily, never ones a human edited). Items outside the include list or inside the exclude list are dropped from the next snapshot on. default_checks make new stream entries start with an enabled Ping check on their IP and, when tcp_port is set, a TCP check on ip:port; existing entries are not touched until apply_stream_default_checks.
+        Example fields: {"network_exclude": ["Guest"]}, {"default_checks": {"ping": true, "tcp_port": null}} or {"expected_interval_seconds": 300, "missing_expiry_days": 30}
         """
-        allowed = {"display_name", "network_include", "network_exclude", "default_checks"}
+        allowed = {"display_name", "network_include", "network_exclude", "default_checks",
+                   "expected_interval_seconds", "missing_expiry_days"}
         return client.request("PATCH", f"/streams/{stream_id}", json=_check_fields(fields, allowed, "stream"))
 
     @write_tool
@@ -639,6 +730,7 @@ def main() -> None:
         sys.exit(f"std-mcp: cannot use the API key at {url}: {exc}")
     std_version = who.get("version")
     info = compare_versions(MCP_VERSION, std_version)
+    info["checked_at"] = _now_iso()
     # Build facts and the update check are reported as-is; they never affect the comparison.
     for field, name in (("commit", "std_commit"), ("channel", "std_channel"), ("update", "std_update"),
                          ("api_revision", "std_api_revision")):

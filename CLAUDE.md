@@ -209,7 +209,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 ## Build Status
 
 Current shipped release: **v0.10.0** (latest tag on `main`).
-In flight: nothing scoped (parked ideas in `docs/FUTURE.md` and `docs/design/2026-11-17-network-inventory-and-profiles.md`).
+In flight: 0.11.0 on `dev` (stream observability, API revision 3: stale streams, rejected snapshots, missing-since + expiry, IP-following checks, MCP `server_info` re-check); sidecar must follow for `snapshot_interval_seconds`.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.

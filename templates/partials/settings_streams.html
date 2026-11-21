@@ -43,14 +43,20 @@
         </tr>
         {% for row in stream_rows %}
         {% set st = row.stream %}
+        {% set sh = row.health %}
         <tr class="border-t border-gray-700 {% if st.status == 'pending' %}bg-amber-900/30{% endif %}" id="stream-row-{{ st.stream_id }}" data-stream-status="{{ st.status }}">
           <td class="px-3 py-2"><strong>{{ st.display_name }}</strong><div class="text-xs text-gray-500"><code>{{ st.stream_id }}</code></div></td>
           <td class="px-3 py-2">{{ st.producer }} <span class="text-gray-500">{{ st.producer_version }}</span></td>
           <td class="px-3 py-2">
             <span class="px-2 py-0.5 rounded text-xs text-white {{ _status_cls.get(st.status, 'bg-gray-600') }}">{{ st.status }}</span>
-            {% if st.last_error %}<div class="text-xs text-red-400 mt-1" title="Last apply error">{{ st.last_error }}</div>{% endif %}
+            {% if sh.stale %}<span class="px-2 py-0.5 rounded text-xs text-white bg-red-700 stream-stale-badge" title="{{ sh.message }}">stale</span>{% endif %}
+            {% if st.last_error %}<div class="text-xs text-red-400 mt-1" title="Last apply error">Apply error: {{ st.last_error }}</div>{% endif %}
+            {% if st.last_rejected_at %}<div class="text-xs mt-1 stream-rejection {{ 'text-red-400' if sh.rejecting else 'text-gray-500' }}" title="Last rejected snapshot (the producer's payload was refused)">Rejected {{ st.last_rejected_at | time_since_utc }}: {{ st.last_rejection }}</div>{% endif %}
           </td>
-          <td class="px-3 py-2">{% if st.last_snapshot_at %}{{ st.last_snapshot_at | time_since_utc }}{% else %}never{% endif %}</td>
+          <td class="px-3 py-2">{% if st.last_snapshot_at %}{{ st.last_snapshot_at | time_since_utc }}{% else %}never{% endif %}
+            <div class="text-xs text-gray-500" title="Stale after {{ (sh.stale_after_seconds // 60) }} min without a snapshot">every {{ (sh.effective_interval_seconds // 60) }} min ({{ sh.interval_source }})</div>
+            {% if sh.stale %}<div class="text-xs text-red-400">{{ sh.message }}</div>{% endif %}
+          </td>
           <td class="px-3 py-2">{{ row.item_count if row.item_count is not none else (st.last_item_count if st.last_item_count is not none else '—') }}</td>
           <td class="px-3 py-2 text-xs">
             {% if st.status == 'enabled' and st.last_counts %}{% for k, v in st.last_counts.items() if v %}{{ k|replace('_', ' ') }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}no changes{% endfor %}
@@ -117,6 +123,23 @@
                   <span class="text-xs text-gray-500 ml-2">Filters apply at the next snapshot. Entries outside them are not removed.</span>
                 </div>
               </form>
+            </details>
+            <details class="mt-2" id="stream-monitoring-{{ st.stream_id }}">
+              <summary class="cursor-pointer text-xs text-gray-400">Staleness and missing entries
+                <span class="text-gray-500">(every {{ sh.effective_interval_seconds // 60 }} min{% if st.missing_expiry_days %}; missing entries soft-deleted after {{ st.missing_expiry_days }} days{% endif %})</span></summary>
+              <form method="POST" action="{{ url_for('dashboard.stream_monitoring', slug=st.stream_id) }}" class="mt-3 flex flex-wrap items-end gap-4" data-unsaved-guard>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="text-sm">Expected snapshot interval, minutes
+                  <span class="text-xs text-gray-500">(blank = {% if st.producer_interval_seconds %}the producer's {{ st.producer_interval_seconds // 60 }} min{% else %}15 min{% endif %})</span>
+                  <input type="number" name="expected_interval_minutes" min="1" max="1440" value="{{ (st.expected_interval_seconds // 60) if st.expected_interval_seconds else '' }}" class="form-input block mt-1 w-32">
+                </label>
+                <label class="text-sm">Soft-delete missing entries after, days
+                  <span class="text-xs text-gray-500">(blank = never)</span>
+                  <input type="number" name="missing_expiry_days" min="1" max="3650" value="{{ st.missing_expiry_days or '' }}" class="form-input block mt-1 w-32">
+                </label>
+                <button type="submit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">Save</button>
+              </form>
+              <p class="text-xs text-gray-500 mt-2">An enabled stream is <strong>stale</strong> after 2 × the interval without a snapshot: Settings is flagged, the health summary lists it and MQTT/Home Assistant report a problem. Its entries keep their own health. Missing entries are only soft-deleted (they come back if the item returns); entries you edited (linked, renamed, locked, grouped, described, icon, URLs, sort priority, widget, Home Assistant, or any check other than an untouched default check) are never removed.</p>
             </details>
             <details class="mt-2" id="stream-checks-{{ st.stream_id }}">
               <summary class="cursor-pointer text-xs text-gray-400">Default checks

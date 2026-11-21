@@ -283,7 +283,7 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
                             {% if entry.is_stream %}
                             <div class="drawer-row">
                                 <span class="drawer-label">Stream</span>
-                                <span class="drawer-value">{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.inventory_missing %} <span class="text-gray-400 text-xs">(missing from latest snapshot)</span>{% endif %}</span>
+                                <span class="drawer-value">{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.inventory_missing %} <span class="stream-missing-fact text-xs">(missing from latest snapshot{% if entry.inventory_missing_since %} since {{ entry.inventory_missing_since | time_since_utc }}{% endif %})</span>{% endif %}{% if entry.stream and stream_health(entry.stream).stale %} <span class="text-gray-400 text-xs">(stream stale)</span>{% endif %}</span>
                             </div>
                             <div class="drawer-row">
                                 <span class="drawer-label">Network</span>

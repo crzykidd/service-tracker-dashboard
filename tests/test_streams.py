@@ -1163,7 +1163,7 @@ def test_entry_api_carries_the_inventory_block(app, put, op, manual):
     assert e["source"] == "stream" and e["host"] is None
     assert e["inventory"] == {"stream_id": "dhcp", "stream": "DHCP", "key": "aa:bb:cc:00:00:01",
                               "mac": "aa:bb:cc:00:00:01", "ip": "10.0.40.21", "network": "CrzyIoT",
-                              "attributes": e["inventory"]["attributes"], "missing": False,
+                              "attributes": e["inventory"]["attributes"], "missing": False, "missing_since": None,
                               "name_source": "stream", "linked": False}
     assert e["inventory"]["attributes"]["scope"] == "CrzyIoT"
     mid = manual("plain")
@@ -1337,7 +1337,7 @@ def test_migration_on_an_empty_db_reaches_a_single_head(tmp_path):
     db_path = str(tmp_path / "empty.db")
     _alembic(tmp_path, db_path, "upgrade", "head")
     heads = _alembic(tmp_path, db_path, "heads").stdout
-    assert heads.count("(head)") == 1 and "b4e7a1c9d325" in heads
+    assert heads.count("(head)") == 1 and "c6f2a8d4e157" in heads
     tables, cols, _ = _schema(db_path)
     assert "inventory_stream" in tables and "name_source" in cols
     _alembic(tmp_path, db_path, "downgrade", "base")
