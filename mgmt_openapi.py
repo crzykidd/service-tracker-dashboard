@@ -539,7 +539,7 @@ def build_spec(version: str = "") -> dict:
             "x-api-revision": API_REVISION,
             "description": (
                 "Everything an operator can do in the UI, over JSON. Authenticate with an admin API key "
-                "(Settings -> API) sent as `Authorization: Bearer <key>`. A `read` key can read; a "
+                "(Settings -> API keys) sent as `Authorization: Bearer <key>`. A `read` key can read; a "
                 "`write` key can read and change; an `ingest` key (for inventory sidecars) can use only the two stream "
                 "ingest routes. Errors are `{\"error\": str, \"details\": ...}`; "
                 "validation `details` is a list of `{loc, msg, type}`. Lists are "

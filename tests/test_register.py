@@ -148,7 +148,7 @@ def test_clearing_url_in_ui_resets_source(app, register, admin_client):
 def _group_name(app):
     with app.app_context():
         e = _entry()
-        return Group.query.get(e.group_id).group_name if e.group_id else None
+        return db.session.get(Group, e.group_id).group_name if e.group_id else None
 
 
 def test_user_wins_preserves_existing_group_and_priority(app, register):

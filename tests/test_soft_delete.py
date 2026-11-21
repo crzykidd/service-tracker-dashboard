@@ -28,7 +28,7 @@ def test_delete_hides_from_dashboard_and_health_query(app, admin_client):
     resp = admin_client.post(f"/api/v1/entries/{gone_id}/delete")
     assert resp.status_code == 200
     with app.app_context():
-        assert ServiceEntry.query.get(gone_id).deleted_at is not None
+        assert db.session.get(ServiceEntry, gone_id).deleted_at is not None
         # The query the dashboards and the health loop use.
         assert _names(ServiceEntry.active()) == ["keep"]
     body = admin_client.get("/tiled_dash").get_data(as_text=True)
@@ -45,7 +45,7 @@ def test_edit_page_delete_is_soft(app, admin_client):
     )
     assert resp.status_code == 302
     with app.app_context():
-        assert ServiceEntry.query.get(eid).deleted_at is not None
+        assert db.session.get(ServiceEntry, eid).deleted_at is not None
 
 
 def test_delete_keeps_widget_attached(app, admin_client):
@@ -57,8 +57,8 @@ def test_delete_keeps_widget_attached(app, admin_client):
         eid, wid = e.id, w.id
     admin_client.post(f"/api/v1/entries/{eid}/delete")
     with app.app_context():
-        assert Widget.query.get(wid) is not None
-        assert ServiceEntry.query.get(eid).widget_id == wid
+        assert db.session.get(Widget, wid) is not None
+        assert db.session.get(ServiceEntry, eid).widget_id == wid
 
 
 def test_restore_brings_it_back(app, admin_client):
@@ -79,7 +79,7 @@ def test_delete_permanently_removes_row(app, admin_client):
         eid = e.id
     admin_client.post(f"/settings/deleted/{eid}/delete")
     with app.app_context():
-        assert ServiceEntry.query.get(eid) is None
+        assert db.session.get(ServiceEntry, eid) is None
 
 
 def test_permanent_delete_refuses_active_entry(app, admin_client):
@@ -87,7 +87,7 @@ def test_permanent_delete_refuses_active_entry(app, admin_client):
         eid = _make("svc1").id
     assert admin_client.post(f"/settings/deleted/{eid}/delete").status_code == 404
     with app.app_context():
-        assert ServiceEntry.query.get(eid) is not None
+        assert db.session.get(ServiceEntry, eid) is not None
 
 
 def test_purge_removes_expired_keeps_recent(app):
@@ -144,7 +144,7 @@ def test_hard_delete_detaches_widget(app):
         wid = w.id
         hard_delete_entry(e)
         db.session.commit()
-        assert Widget.query.get(wid) is not None
+        assert db.session.get(Widget, wid) is not None
         assert WidgetValue.query.filter_by(widget_id=wid).count() == 1
         assert [x.id for x in Widget.detached().all()] == [wid]
 
@@ -173,7 +173,7 @@ def test_attach_makes_widget_active_again(app, admin_client):
     resp = admin_client.post(f"/settings/widgets/{wid}/attach", data={"entry_id": eid})
     assert resp.status_code == 302
     with app.app_context():
-        assert ServiceEntry.query.get(eid).widget_id == wid
+        assert db.session.get(ServiceEntry, eid).widget_id == wid
         assert Widget.detached().count() == 0
 
 
@@ -185,7 +185,7 @@ def test_attach_rejects_entry_with_widget(app, admin_client):
         db.session.commit()
     admin_client.post(f"/settings/widgets/{wid}/attach", data={"entry_id": eid})
     with app.app_context():
-        assert ServiceEntry.query.get(eid).widget_id != wid
+        assert db.session.get(ServiceEntry, eid).widget_id != wid
         assert Widget.detached().count() == 1
 
 
@@ -195,7 +195,7 @@ def test_delete_detached_widget_removes_values(app, admin_client):
         db.session.commit()
     assert admin_client.post(f"/settings/widgets/{wid}/delete").status_code == 302
     with app.app_context():
-        assert Widget.query.get(wid) is None
+        assert db.session.get(Widget, wid) is None
         assert WidgetValue.query.filter_by(widget_id=wid).count() == 0
 
 
@@ -207,7 +207,7 @@ def test_delete_widget_refuses_attached(app, admin_client):
         db.session.commit()
     assert admin_client.post(f"/settings/widgets/{wid}/delete").status_code == 404
     with app.app_context():
-        assert Widget.query.get(wid) is not None
+        assert db.session.get(Widget, wid) is not None
 
 
 def test_register_resurrects_with_curated_state(app, register):
@@ -233,8 +233,8 @@ def test_register_prefers_active_row_over_deleted(app, register):
         did, aid = deleted.id, active.id
     assert register(docker_status="running").status_code == 200
     with app.app_context():
-        assert ServiceEntry.query.get(aid).docker_status == "running"
-        assert ServiceEntry.query.get(did).deleted_at is not None
+        assert db.session.get(ServiceEntry, aid).docker_status == "running"
+        assert db.session.get(ServiceEntry, did).deleted_at is not None
 
 
 def test_group_count_and_delete_ignore_deleted_entries(app, admin_client):
@@ -244,12 +244,12 @@ def test_group_count_and_delete_ignore_deleted_entries(app, admin_client):
         db.session.flush()
         _make("svc1", group_id=g.id, deleted_at=datetime.now())
         gid = g.id
-        assert Group.query.get(gid).services_count == 0
+        assert db.session.get(Group, gid).services_count == 0
     admin_client.post("/settings/groups/save", data={
         f"group-{gid}-name": "G", f"group-{gid}-icon": "", f"group-{gid}-priority": "",
         f"group-{gid}-delete": "1"})
     with app.app_context():
-        assert Group.query.get(gid) is None
+        assert db.session.get(Group, gid) is None
 
 
 def test_old_backup_with_deleted_at_imports_active_only_when_ticked(app, admin_client):

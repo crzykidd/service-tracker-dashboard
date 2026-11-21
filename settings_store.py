@@ -82,14 +82,14 @@ DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
 
 
 def _get_value(key: str, default):
-    row = Setting.query.get(key)
+    row = db.session.get(Setting, key)
     if row is None or row.value is None:
         return default
     return row.value
 
 
 def _set_value(key: str, value) -> None:
-    row = Setting.query.get(key)
+    row = db.session.get(Setting, key)
     if row is None:
         row = Setting(key=key, value=value)
         db.session.add(row)
@@ -265,7 +265,7 @@ def set_backup_value(key: str, value) -> None:
 
 def delete_backup_value(key: str) -> None:
     """Remove a backup setting row (Reset). Caller commits."""
-    row = Setting.query.get(key)
+    row = db.session.get(Setting, key)
     if row is not None:
         db.session.delete(row)
 

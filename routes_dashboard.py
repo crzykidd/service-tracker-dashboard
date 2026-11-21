@@ -1332,7 +1332,7 @@ def edit_entry(id):
     # Fetch current widget association
     selected_widget = None
     if entry.widget_id:
-        selected_widget = Widget.query.get(entry.widget_id)
+        selected_widget = db.session.get(Widget, entry.widget_id)
         if selected_widget:
             logger.debug(f"Selected widget: {selected_widget.widget_name}")
         else:
@@ -1449,7 +1449,7 @@ def edit_entry(id):
         if group_mode == 'existing':
             group_id = request.form.get('group_id_existing')
             if group_id:
-                group = Group.query.get(int(group_id))  # safely cast to int
+                group = db.session.get(Group, int(group_id))  # safely cast to int
 
         elif group_mode == 'new':
             group_name = request.form.get('group_name_new', '').strip()
@@ -1517,7 +1517,7 @@ def edit_entry(id):
                 entry.widget_id = None
         else:
             if entry.widget_id:
-                widget = Widget.query.get(entry.widget_id)
+                widget = db.session.get(Widget, entry.widget_id)
                 if widget:
                     widget.widget_name = widget_name
                     widget.widget_url = widget_url

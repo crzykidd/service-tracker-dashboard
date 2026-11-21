@@ -35,9 +35,6 @@ Say "read prompts/startnewsession.md and start".
 
 ## Known follow-ups
 
-- `mgmt_openapi.py` and `mcp/std_mcp.py` docstring still say "Settings -> API" (now
-  "API keys").
-- `settings_store.py` uses legacy `Query.get()`: many SQLAlchemy LegacyAPIWarnings in tests.
 - Settings follow-ups parked in `docs/FUTURE.md` ("Settings follow-ups (after 0.11.0)"),
   backup "Later" list in the backup design doc §15.
 - Older parked items: stream observability follow-ups, small gaps after v0.10.1,

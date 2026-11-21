@@ -131,7 +131,7 @@ def test_edit_bad_icon_flashes_and_writes_nothing(app, admin_client, fetched):
     assert fetched == []
     assert _outside_files(app.config["IMAGE_DIR"]) == []
     with app.app_context():
-        assert ServiceEntry.query.get(eid).image_icon == "keep.svg"
+        assert db.session.get(ServiceEntry, eid).image_icon == "keep.svg"
 
 
 # --- import / widget_config -------------------------------------------------

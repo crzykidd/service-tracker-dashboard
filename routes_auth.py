@@ -72,7 +72,7 @@ def _render_settings_for(**kwargs):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 def is_admin_required(f):
@@ -116,7 +116,7 @@ def logout():
 @is_admin_required
 def set_user_password(user_id):
     new_password = request.form.get("new_password", "").strip()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         flash("User not found", "danger")
         return redirect(url_for("dashboard.settings", section="users"))
@@ -163,7 +163,7 @@ def add_user():
 @is_admin_required
 def reset_user_password():
     user_id = request.form.get("user_id")
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user:
         user.set_password("changeme123")
         db.session.commit()
@@ -179,7 +179,7 @@ def reset_user_password():
 @is_admin_required
 def delete_user():
     user_id = request.form.get("user_id")
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if user and not user.is_admin:
         db.session.delete(user)
         db.session.commit()

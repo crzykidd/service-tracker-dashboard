@@ -12,7 +12,7 @@ operator's machine and is NOT part of the Docker image.
 
 Environment:
     STD_URL          base URL of the dashboard, e.g. http://std.lan:8815   (required)
-    STD_API_KEY      an admin API key from Settings -> API                  (required)
+    STD_API_KEY      an admin API key from Settings -> API keys             (required)
     STD_VERIFY_TLS   "false" to skip TLS verification (default true)
     STD_TIMEOUT      request timeout in seconds (default 15)
 
