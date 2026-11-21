@@ -108,6 +108,8 @@ One block per release, newest first. The [CHANGELOG](CHANGELOG.md) is the full r
   keeping the current database.
 - **Settings regrouped** into six groups with a link per section (`/settings#streams`),
   cards and dialogs throughout. API revision 4.
+- **Dashboard expanded row** shows the same details as the tile drawer, beside the
+  health history.
 
 [Full entry](CHANGELOG.md#unreleased)
 

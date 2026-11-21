@@ -1026,6 +1026,12 @@
 }
 /* The Dashboard table scrolls sideways on narrow screens; keep the panel in view. */
 .health-expand-inner { position: sticky; left: 0; width: min(720px, calc(100vw - 64px)); }
+/* Main dashboard expand row: entry facts (as in the tile drawer) beside the health detail. */
+.health-expand-inner.expand-two-col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 24px; }
+.expand-two-col .expand-facts, .expand-two-col .expand-health { min-width: 0; }
+@media (min-width: 768px) {
+  .health-expand-inner.expand-two-col { width: min(1400px, calc(100vw - 64px)); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
 
 /* Filter-bar health count chips (Total / Passing / Failing) */
 .hc-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; }

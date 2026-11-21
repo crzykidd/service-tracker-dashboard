@@ -252,7 +252,10 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
           <tr class="health-expand-row border-b border-gray-700{{ _tint }}" id="health-row-{{ entry.id }}"
               data-group-id="{{ group_index }}" hidden>
             <td colspan="13" class="px-4 py-3">
-              <div class="health-expand-inner">{% include "partials/health_detail.html" %}</div>
+              <div class="health-expand-inner expand-two-col">
+                <div class="expand-facts">{% include "partials/entry_facts.html" %}</div>
+                <div class="expand-health">{% with hide_facts=true %}{% include "partials/health_detail.html" %}{% endwith %}</div>
+              </div>
             </td>
           </tr>
           {% endfor %}

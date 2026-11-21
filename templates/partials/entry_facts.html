@@ -1,0 +1,172 @@
+{# Entry facts shared by the tile drawer and the main dashboard expand row (Host .. Widget).
+   Context: `entry`, `widget_values`, `widget_fields`, `stream_health`. #}
+                            {# Host #}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Host</span>
+                                <span class="drawer-value">{{ entry.host or "" }}</span>
+                            </div>
+
+                            {% if entry.description %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">About</span>
+                                <span class="drawer-value">{{ entry.description }}</span>
+                            </div>
+                            {% endif %}
+
+                            {# Stack #}
+                            {% if entry.stack_name %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Stack</span>
+                                <span class="drawer-value">{{ entry.stack_name }}</span>
+                            </div>
+                            {% endif %}
+
+                            {# Internal URL #}
+                            {% if entry.internalurl %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Internal</span>
+                                <span class="drawer-value">
+                                    <a href="{{ entry.internalurl }}" target="_blank"
+                                       class="text-blue-400 hover:underline break-all">{{ entry.internalurl }}</a>
+                                    {% with check=entry.url_check('internal') %}{% set _txt %}{% include "partials/check_result_text.html" %}{% endset %}
+                                    {% if _txt|trim %}<span class="ml-1 text-gray-400 text-xs">— {{ _txt|trim }}</span>{% endif %}{% endwith %}
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# External URL #}
+                            {% if entry.externalurl %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">External</span>
+                                <span class="drawer-value">
+                                    <a href="{{ entry.externalurl }}" target="_blank"
+                                       class="text-blue-400 hover:underline break-all">{{ entry.externalurl }}</a>
+                                    {% with check=entry.url_check('external') %}{% set _txt %}{% include "partials/check_result_text.html" %}{% endset %}
+                                    {% if _txt|trim %}<span class="ml-1 text-gray-400 text-xs">— {{ _txt|trim }}</span>{% endif %}{% endwith %}
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# Docker status (notifier entries only) #}
+                            {% if entry.is_docker %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Docker</span>
+                                <span class="drawer-value">
+                                    {{ entry.docker_status or 'Unknown' }}
+                                    {% if entry.last_api_update %}
+                                      <span class="text-gray-400 text-xs ml-1">({{ entry.last_api_update | time_since }})</span>
+                                    {% endif %}
+                                    {% if entry.image_tag %}
+                                      <span class="text-gray-400 text-xs ml-1">— <code>{{ entry.image_tag }}</code></span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# Inventory stream facts (stream entries only) #}
+                            {% if entry.is_stream %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Stream</span>
+                                <span class="drawer-value">{{ entry.stream.display_name if entry.stream else '—' }}{% if entry.inventory_missing %} <span class="stream-missing-fact text-xs">(missing from latest snapshot{% if entry.inventory_missing_since %} since {{ entry.inventory_missing_since | time_since_utc }}{% endif %})</span>{% endif %}{% if entry.stream and stream_health(entry.stream).stale %} <span class="text-gray-400 text-xs">(stream stale)</span>{% endif %}</span>
+                            </div>
+                            <div class="drawer-row">
+                                <span class="drawer-label">Network</span>
+                                <span class="drawer-value">{{ entry.ip or '—' }}{% if entry.mac %} <code class="text-gray-400 text-xs">{{ entry.mac }}</code>{% endif %}{% if entry.network %} <span class="text-gray-400 text-xs">— {{ entry.network }}</span>{% endif %}</span>
+                            </div>
+                            {% endif %}
+
+                            {# Networks #}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Networks</span>
+                                <span class="drawer-value">
+                                    {% if entry.networks %}
+                                        {% for net in entry.networks %}
+                                            <span>{{ net.name }}{% if net.aliases %} <span class="text-gray-400">[{{ net.aliases | join(', ') }}]</span>{% endif %}</span>{% if not loop.last %}, {% endif %}
+                                        {% endfor %}
+                                    {% else %}
+                                        <em class="text-gray-500">Not reported</em>
+                                    {% endif %}
+                                </span>
+                            </div>
+
+                            {# Ports #}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Ports</span>
+                                <span class="drawer-value">
+                                    {% set _has_ports = (entry.published_ports and entry.published_ports|length > 0) or (entry.exposed_ports and entry.exposed_ports|length > 0) %}
+                                    {% if _has_ports %}
+                                        {% set ns = namespace(pub_set=[]) %}
+                                        {% if entry.published_ports %}
+                                          <div class="space-y-0.5">
+                                          {% for p in entry.published_ports %}
+                                            {% set _host_part = (p.host_ip ~ ':' if p.host_ip and p.host_ip != '0.0.0.0' else '') ~ p.host_port|string %}
+                                            <div class="text-xs font-mono">{{ p.container_port }}/{{ p.protocol }} → {{ _host_part }}</div>
+                                            {% set ns.pub_set = ns.pub_set + [p.container_port|string ~ '/' ~ p.protocol] %}
+                                          {% endfor %}
+                                          </div>
+                                        {% endif %}
+                                        {% if entry.exposed_ports %}
+                                          {% set _extras = [] %}
+                                          {% for ep in entry.exposed_ports %}
+                                            {% if ep not in ns.pub_set %}
+                                              {% set _extras = _extras + [ep] %}
+                                            {% endif %}
+                                          {% endfor %}
+                                          {% if _extras %}
+                                            <div class="text-xs font-mono text-gray-400 mt-0.5">{{ _extras | join(', ') }} (exposed)</div>
+                                          {% endif %}
+                                        {% endif %}
+                                    {% else %}
+                                        <em class="text-gray-500">Not reported</em>
+                                    {% endif %}
+                                </span>
+                            </div>
+
+                            {# Exposure observations #}
+                            {% if entry.exposures %}
+                            <div class="drawer-row">
+                                <span class="drawer-label">Exposure</span>
+                                <span class="drawer-value">
+                                    <div class="space-y-1">
+                                    {% for ex in entry.exposures %}
+                                        <div class="text-xs">
+                                            <code class="text-blue-400 mr-1">{{ ex.layer }}</code>
+                                            {% if ex.hostname %}{{ ex.hostname }}{% endif %}
+                                            {% if ex.path_prefix %}<span class="text-gray-400">{{ ex.path_prefix }}</span>{% endif %}
+                                            {% if ex.tls %}<span class="ml-1 bg-gray-700 text-gray-300 px-1 rounded text-[0.65rem]"><i class="ti ti-lock" aria-hidden="true"></i> TLS</span>{% endif %}
+                                            {% if ex.auth and ex.auth not in ['none', ''] %}<span class="ml-1 bg-gray-700 text-gray-300 px-1 rounded text-[0.65rem]"><i class="ti ti-key" aria-hidden="true"></i> {{ ex.auth }}</span>{% endif %}
+                                        </div>
+                                    {% endfor %}
+                                    </div>
+                                </span>
+                            </div>
+                            {% endif %}
+
+                            {# Widget data #}
+                            {% if entry.widget_id %}
+                            <div class="drawer-row drawer-row-widget">
+                                <span class="drawer-label">Widget</span>
+                                <span class="drawer-value">
+                                    {% set widget_data = widget_values.get(entry.widget_id) %}
+                                    {% if widget_data %}
+                                        {% set allowed_fields = widget_fields.get(entry.widget_id, []) %}
+                                        <div class="drawer-widget-grid">
+                                            {% for field, value in widget_data.items() if field in allowed_fields %}
+                                                <div class="drawer-widget-card">
+                                                    <div class="drawer-widget-label">{{ field.replace('_', ' ') | title }}</div>
+                                                    <div class="drawer-widget-value">
+                                                        {% if value.lower().startswith('error:') %}
+                                                            <span class="text-red-500">Error</span>
+                                                        {% else %}
+                                                            {{ value }}
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <em class="text-gray-500">No widget data available yet.</em>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}

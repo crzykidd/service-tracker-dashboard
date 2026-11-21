@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The main dashboard's expanded row shows the same details as the tile drawer.**
+  The chevron on a Dashboard row now opens two columns: on the left the host,
+  description, stack, internal and external URLs with their last check, Docker status,
+  stream and network facts, networks, ports, exposure observations and widget data; on
+  the right the health history. On narrow screens the columns stack.
 - **One daily backup job became two.** The database snapshot runs at 00:05 and the
   export at 00:10 by default, each with its own keep days (old backups of each kind
   are pruned separately). The export now writes the new settings export

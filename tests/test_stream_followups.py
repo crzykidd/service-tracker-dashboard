@@ -225,7 +225,13 @@ def test_default_checks_api_audit_and_openapi(app, put, op):
 def test_detail_panel_shows_ip_mac_network(admin_client, app, put, op):
     enabled_stream(app, put, op)
     html = admin_client.get("/").get_data(as_text=True)
-    assert 'data-entry-facts' in html and "10.0.40.21" in html and "aa:bb:cc:00:00:01" in html
+    # The Dashboard expand row shows them in the shared facts column (the health
+    # column hides its own copy), the tile drawer in the same partial.
+    row = html[html.index('class="health-expand-row'):]
+    assert 'expand-facts' in row and "10.0.40.21" in row and "aa:bb:cc:00:00:01" in row
+    assert 'data-entry-facts' not in row
+    tiled = admin_client.get("/tiled_dash").get_data(as_text=True)
+    assert "10.0.40.21" in tiled and "aa:bb:cc:00:00:01" in tiled
 
 
 def test_ha_picker_groups_entries_by_source_and_the_search_matches_it(admin_client, app, put, op, manual):

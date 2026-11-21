@@ -99,6 +99,7 @@
 | 0.89    | 2026-11-20 | §20.3 delivered on `dev` (bak-04): the import UI (Settings → Backup & restore → Import card, `/settings/import/<token>` preview page with stream mapping, the fill / overwrite mode switch, grouped rows with tri-state and per-field ticks, sticky apply bar, summary with "Still to do"), users created without a password (a muted tag in Users), management API `POST /import/plan` and `POST /import/apply` and MCP `import_plan` / `import_apply`. The old Restore form, "Save backup to server" and the `action=backup\|restore` branches of `/settings` are removed (old YAML backups import through the new flow). **`API_REVISION` 4** row extended (§18.1), `import` feature added; no new revision. §3.1 module layout, §14.4 route list, §20.3, §20.4, §20.6 updated. No schema, register or stream-ingest wire-contract change. |
 | 0.90    | 2026-11-20 | §20.5 delivered on `dev` (bak-05), completing §20 (Backup, export and import; all five phases delivered, unreleased): staged database restore. `restore_staging.py` validates and stages a snapshot (⋯ → Restore… or an upload, ≤ 200 MB); `restore_swap.py`, run by `entrypoint.sh` before `alembic upgrade head`, keeps the current database as `pre-restore-<timestamp>.sqlite3` (`Connection.backup()`), swaps the file and never blocks startup; pending banner on every Settings section, last-result banner, `pre-restore-*` files listed with the snapshots and never pruned. §3 (startup sequence) and §3.1 updated. No schema, wire-contract or `/api/v1` change. |
 | 0.91    | 2026-11-21 | Docs-only, with the README revamp: §21 says the `Test` check is required (it is, in the "Require PR for Main" ruleset, with a code-scanning rule for CodeQL), no longer "pending operator action"; the §21.3 heading says inventory stream producers shipped in 0.10.0 instead of "planned". Operator reference material moved out of the README into `docs/register-api.md`, `docs/inventory-streams.md` and `docs/mqtt-home-assistant.md`. No code, schema or contract changes. |
+| 0.92    | 2026-11-21 | §13.7: the Dashboard expand row shows the shared entry facts (`partials/entry_facts.html`, the tile drawer's info rows) beside the health detail, two columns stacking below 768px. No schema, API or wire-contract change. |
 
 ---
 
@@ -1813,6 +1814,9 @@ on the 24h/7d toggle, renders with DOM calls (no innerHTML of server text),
 and drives the tooltip and Check now (`stdPost`, then re-fetch every 2 s until every shown check has a result newer than the request's `requested_at`, up to 75 s).
 Dashboard gets a leading chevron column and an expand row (group-header
 `colspan` is now 13); an open row pauses auto-refresh like an open drawer.
+Since 0.11.0 the Dashboard expand row has two columns: the shared entry facts
+(`partials/entry_facts.html`, also the tile drawer's info rows) on the left and the
+health detail (facts hidden) on the right; the columns stack below 768px.
 The Edit page panel is a "Health history" block after the form, above
 "Reported by notifier".
 

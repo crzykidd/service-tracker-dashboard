@@ -5,6 +5,18 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Dashboard expand row reuses the tile drawer's facts
+
+The Dashboard expand row showed only the health detail, while the tile drawer showed host,
+URLs, Docker, stream, networks, ports, exposure and widgets. The drawer's info rows moved
+into `partials/entry_facts.html`, included by both views (no wrapper, so the drawer's
+output is unchanged), rather than duplicating the markup. In the expand row the health
+panel renders with `hide_facts=true`, because the facts column already carries IP, MAC
+and network. A two-column label/value grid inside the facts column was considered and
+not used: for typical entries the facts are no taller than the health panel.
+
+---
+
 ## 2026-11-21 — README revamp: deep reference moves to docs/ pages
 
 Calls made while rewriting the README (`prompts/2026-11-21-readme-revamp.md`). Docs only.
