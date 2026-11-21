@@ -15,7 +15,7 @@ API_REVISION_HISTORY = (
     (2, "0.10.0",
      "meta, revision headers; update-check settings; notification channels, purge, cleanup, orphan scan; "
      "ha_publish; inventory streams and the ingest key scope"),
-    (3, "next after 0.10.0",
+    (3, "0.10.1",
      "stream observability: optional snapshot_interval_seconds on the snapshot PUT; stream staleness, "
      "rejections, expected interval and missing expiry; health summary streams; inventory.missing_since"),
 )

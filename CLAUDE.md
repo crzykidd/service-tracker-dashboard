@@ -208,8 +208,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.10.0** (latest tag on `main`).
-In flight: 0.11.0 on `dev` (stream observability, API revision 3: stale streams, rejected snapshots, missing-since + expiry, IP-following checks, MCP `server_info` re-check); sidecar must follow for `snapshot_interval_seconds`.
+Current shipped release: **v0.10.1** (latest tag on `main`).
+In flight: nothing scoped (std-source-technitium may now send `snapshot_interval_seconds`, API revision 3; parked ideas in `docs/FUTURE.md`).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.

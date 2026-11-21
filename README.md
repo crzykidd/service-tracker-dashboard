@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.10.0-blue)
+![Version](https://img.shields.io/badge/version-0.10.1-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -45,6 +45,29 @@ through the web UI or directly via API.
 ---
 
 ## What's New
+
+### v0.10.1 (2026-11-20)
+
+Inventory streams you can watch: a dead sidecar or a removed reservation no
+longer goes unnoticed. One database migration runs on startup (five stream
+columns and `inventory_missing_since` on entries); no notifier change is
+needed. API revision 3: sidecars may now advertise their snapshot interval.
+
+- **Stale streams:** an enabled stream with no snapshot for twice its expected
+  interval (yours, else the sidecar's, else 15 minutes) shows a red badge in
+  Settings → Streams and on the Settings link, a `down` line in the health
+  summary, `stale` on MQTT and a **Problem** sensor in Home Assistant. Its
+  entries keep their own health.
+- **Rejected snapshots:** the stream row shows when and why STD refused a
+  sidecar's snapshot.
+- **Missing since:** an entry that dropped out of its snapshot gets an amber
+  badge with how long ago; its checks still decide its health. Optionally,
+  soft delete entries missing for N days (off by default; entries you edited
+  are never removed).
+- **Checks follow a changed IP:** ping, TCP, DNS and HTTP checks on the old IP
+  move to the new one when the stream reports it.
+- **MCP `server_info`** re-checks STD's version on every call and tells you
+  when to restart or update the MCP server.
 
 ### v0.10.0 (2026-11-19)
 
@@ -985,7 +1008,7 @@ claude mcp add std -s user \
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script itself,
 so there is no virtualenv to set up. Without a checkout, point `uv run` at a
 release tag instead (updating means changing the tag):
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.10.1/mcp/std_mcp.py`.
 The server warns Claude when it is older or newer than your STD, and Claude can
 check with the `server_info` tool, which re-checks STD's version on every call
 and says when to restart the MCP server (STD was upgraded since it started) or to
