@@ -209,7 +209,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 ## Build Status
 
 Current shipped release: **v0.10.1** (latest tag on `main`).
-In flight: nothing scoped (std-source-technitium may now send `snapshot_interval_seconds`, API revision 3; parked ideas in `docs/FUTURE.md`).
+In flight: 0.11.0 on `dev`, not released (0.10.2 fixes, Settings modernization, backup/export/import + staged restore, API revision 4); awaiting operator browser test, then `/release-prep 0.11.0`.
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
