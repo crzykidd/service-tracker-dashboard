@@ -70,6 +70,37 @@ Design in `docs/design/2026-11-20-backup-export-import.md` (mockup alongside), b
 
 ---
 
+## 2026-11-20 — Settings modernization, set-03 (streams)
+
+Calls made while building phase 3 (`prompts/2026-11-20-set-03-streams.md`).
+
+- **The Docker (register) card stays in Streams this phase.** The operator wants it in the
+  Docker section, but that move is phase 4 (set-04); moving it now would break
+  `test_streams_ui.py` and half-build Docker.
+- **The Edit dialog's three blocks are three forms, not one.** Each posts to its existing
+  route (`update`, `monitoring`, `default-checks`), so no route, field or rule changed. The
+  cost is that a dialog holds up to three dirty forms: `ui.js` `guardedForm` now returns
+  the first dirty guarded form (else the first), and `streams.js` resets every form of an
+  Edit dialog on `std:modal-discard`.
+- **Only the three Edit routes re-render on error.** Typed values go in
+  `forms['stream:<slug>:name|monitoring|checks']` and reach the template as
+  `stream_forms`; the form is also marked `data-unsaved-start-dirty`. The lifecycle routes
+  (enable, ignore, disable, delete, unblock, offers, apply) stay on flash + redirect, as in
+  the design.
+- **Preview stays a GET link** (`?section=streams&preview=<slug>`). `_render_settings` sets
+  `open_modal='stream-preview-modal'` when a preview exists; `nav.js` drops `preview` from
+  the URL when that dialog closes (it did not before). An unknown slug still flashes, now
+  as a banner in Streams, because no modal opens.
+- **`menu_item` got an optional `cls` argument** so ⋯ items can carry `stream-dialog-open`
+  / `stream-notify-purge` for the delegated JS. The Preview item in the menu is a plain
+  `<a role="menuitem">` (a navigation, not an action).
+- **The open-offers badge reuses the amber badge style** with a ↔ prefix, so it reads
+  differently from the pending count beside it. `open_offers` comes from `_streams_context`.
+- **`test_settings_layout.py` (phase 1 test) was edited**: it asserted `id="stream-table"`,
+  which no longer exists; it now asserts `id="stream-list"`.
+
+---
+
 ## 2026-11-20 — Settings modernization, set-02 (notifications and Home Assistant)
 
 Calls made while building phase 2 (`prompts/2026-11-20-set-02-notifications-ha.md`).

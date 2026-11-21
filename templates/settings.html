@@ -12,6 +12,7 @@
    settings_sections.py; each one is partials/settings/<slug>.html. #}
 {% set _pending = pending_streams or 0 %}
 {% set _stale = stale_streams or 0 %}
+{% set _offers = open_offers or 0 %}
 {% set _deleted = deleted_rows|length if deleted_rows else 0 %}
 <div id="settings-root" class="settings-root max-w-screen-2xl mx-auto py-8 px-6"
      data-initial-section="{{ initial_section }}"
@@ -28,10 +29,11 @@
       {% for slug, label, group in settings_sections if group == gkey %}
       <a class="settings-nav-link" href="#{{ slug }}" data-section="{{ slug }}"{% if slug == (initial_section or settings_default_section) %} aria-current="page"{% endif %}>
         <span>{{ label }}</span>
-        {% if slug == 'streams' and (_pending or _stale) %}
+        {% if slug == 'streams' and (_pending or _stale or _offers) %}
         <span class="settings-nav-badges">
           {% if _pending %}<span class="settings-nav-badge settings-nav-badge--warn" title="{{ _pending }} pending">{{ _pending }}</span>{% endif %}
           {% if _stale %}<span class="settings-nav-badge settings-nav-badge--bad" title="{{ _stale }} stale">{{ _stale }}</span>{% endif %}
+          {% if _offers %}<span class="settings-nav-badge settings-nav-badge--warn" title="{{ _offers }} open link offer{{ '' if _offers == 1 else 's' }}">&#8596;{{ _offers }}</span>{% endif %}
         </span>
         {% elif slug == 'home-assistant' and ha_needs_channel %}
         <span class="settings-nav-badges"><span class="settings-nav-dot" title="Entries are ticked but no enabled channel publishes discovery"></span><span class="sr-only">No channel publishes discovery</span></span>
@@ -104,6 +106,7 @@
 <script src="{{ static_v('js/settings/nav.js') }}"></script>
 <script src="{{ static_v('js/settings/backup.js') }}"></script>
 <script src="{{ static_v('js/settings/groups.js') }}"></script>
+<script src="{{ static_v('js/settings/streams.js') }}"></script>
 <script src="{{ static_v('js/settings/notifications.js') }}"></script>
 <script src="{{ static_v('js/settings/home_assistant.js') }}"></script>
 <script src="{{ static_v('js/settings/access.js') }}"></script>

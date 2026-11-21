@@ -64,8 +64,8 @@ def test_streams_tab_empty_and_docker_row(admin_client, register):
     html = admin_client.get("/settings?section=streams").get_data(as_text=True)
     assert 'id="section-streams"' in html and "Docker (register)" in html
     assert 'id="stream-empty"' in html
-    row = re.search(r'id="stream-row-docker">(.*?)</tr>', html, re.S).group(1)
-    assert "<td class=\"px-3 py-2\">1</td>" in row and "never" not in row      # one entry, registered just now
+    card = html.split('id="stream-row-docker"', 1)[1].split('id="stream-empty"', 1)[0]
+    assert "1 entr" in card and "never" not in card      # one entry, registered just now
 
 
 def test_pending_stream_is_highlighted_with_item_count(admin_client, put):
@@ -203,8 +203,8 @@ def test_update_display_name_and_filters(admin_client, app, put, op):
     with app.app_context():
         s = InventoryStream.query.one()
         assert s.network_include is None and s.network_exclude is None
-    admin_client.post("/settings/streams/dhcp/update", data={"display_name": "  "})
-    assert any("display_name" in m for m in _flashes(admin_client))
+    r = admin_client.post("/settings/streams/dhcp/update", data={"display_name": "  "})
+    assert r.status_code == 400 and "display_name" in r.get_data(as_text=True)      # re-rendered, not flashed
     with app.app_context():
         assert InventoryStream.query.one().display_name == "Leases"
 
@@ -529,3 +529,54 @@ def test_docker_entry_edit_page_has_no_stream_ui(admin_client, register, app):
         eid = ServiceEntry.query.one().id
     html = admin_client.get(f"/edit/{eid}").get_data(as_text=True)
     assert 'id="stream-info"' not in html and 'id="stream-link"' not in html and 'name="host"' in html
+
+
+# --- Settings -> Streams: cards, Edit dialog, Preview dialog (settings modernization phase 3) ---
+
+
+def test_preview_opens_in_a_modal(admin_client, put):
+    put()
+    html = admin_client.get("/settings?section=streams&preview=dhcp").get_data(as_text=True)
+    assert 'data-open-modal="stream-preview-modal"' in html
+    assert re.search(r'<dialog id="stream-preview-modal".*id="stream-preview"', html, re.S)
+    plain = admin_client.get("/settings?section=streams").get_data(as_text=True)
+    assert 'data-open-modal=""' in plain and 'id="stream-preview-modal"' not in plain
+
+
+def test_pending_warning_holds_preview_enable_ignore(admin_client, put):
+    put()
+    html = admin_client.get("/settings?section=streams").get_data(as_text=True)
+    warning = html.split("data-pending-stream=", 1)[1].split("</div>", 1)[0]
+    assert ">Preview</a>" in warning and ">Enable</button>" in warning and ">Ignore</button>" in warning
+    assert "/settings/streams/dhcp/enable" in warning and "/settings/streams/dhcp/ignore" in warning
+
+
+def test_edit_dialog_has_three_forms_posting_to_the_three_routes(admin_client, put):
+    put()
+    html = admin_client.get("/settings?section=streams").get_data(as_text=True)
+    dialog = re.search(r'<dialog id="stream-edit-dhcp".*?</dialog>', html, re.S).group(0)
+    for route in ("update", "monitoring", "default-checks"):
+        assert f'action="/settings/streams/dhcp/{route}"' in dialog
+    assert dialog.count("data-unsaved-guard") == 3
+    assert 'id="stream-monitoring-dhcp"' in dialog and 'id="stream-checks-dhcp"' in dialog
+
+
+def test_bad_monitoring_value_reopens_the_edit_dialog_with_what_was_typed(admin_client, app, put):
+    put()
+    r = admin_client.post("/settings/streams/dhcp/monitoring", data={"expected_interval_minutes": "abc", "missing_expiry_days": "7"})
+    html = r.get_data(as_text=True)
+    assert r.status_code == 400
+    assert 'data-open-modal="stream-edit-dhcp"' in html and "must be a whole number" in html
+    assert 'name="expected_interval_minutes"' in html and 'value="abc"' in html
+    with app.app_context():
+        assert InventoryStream.query.one().missing_expiry_days is None      # nothing was saved
+
+
+def test_bad_default_checks_and_filters_reopen_the_dialog_too(admin_client, put):
+    put()
+    r = admin_client.post("/settings/streams/dhcp/default-checks", data={"tcp_port": "99999", "ping": "1"})
+    assert r.status_code == 400 and 'data-open-modal="stream-edit-dhcp"' in r.get_data(as_text=True)
+    assert 'value="99999"' in r.get_data(as_text=True)
+    r = admin_client.post("/settings/streams/dhcp/update", data={"display_name": "", "network_include": "CrzyIoT"})
+    assert r.status_code == 400 and 'data-open-modal="stream-edit-dhcp"' in r.get_data(as_text=True)
+    assert "CrzyIoT" in r.get_data(as_text=True)

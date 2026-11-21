@@ -286,7 +286,7 @@ def test_ha_entries_and_audit_log_live_in_their_own_sections(admin_client):
     assert "Audit log" not in _section_html(html, "api-keys")
     assert 'id="audit-filter-form"' in _section_html(html, "audit-log")
     assert 'name="section" value="audit-log"' in html
-    assert 'id="stream-table"' in _section_html(html, "streams")
+    assert 'id="stream-list"' in _section_html(html, "streams")
 
 
 def test_stream_badges_in_the_sidebar(app, admin_client):

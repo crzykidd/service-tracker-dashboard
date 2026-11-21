@@ -1435,3 +1435,21 @@ form[data-unsaved-dirty="false"] .settings-savebar { display: none; }
   .ha-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
   .ha-row .host { display: none; }
 }
+
+/* ── Settings: Streams cards (design 9.8) ────────────────── */
+.settings-card-summary--wrap { white-space: normal; }
+.settings-card-second { color: var(--color-text-secondary); font-size: 0.8125rem; margin-top: 0.125rem; }
+.settings-card-second:empty { display: none; }
+.settings-card-second--bad { color: #fca5a5; }
+.settings-muted { color: var(--color-text-muted); font-weight: 400; }
+.settings-tag--bad { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+.settings-count {
+  margin-left: 0.25rem; padding: 0 0.4rem; border-radius: 999px; font-size: 0.6875rem;
+  background: var(--color-bg-raised); color: var(--color-text-secondary);
+}
+.settings-card-row--compact { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+.inline-warning-actions { display: inline-flex; align-items: center; gap: 0.5rem; }
+.settings-hint-inline { color: var(--color-text-muted); font-size: 0.75rem; font-weight: 400; }
+.std-modal-block-actions { display: flex; justify-content: flex-end; margin: -0.5rem 0 1.5rem; }
+.input-narrow { width: 8rem; }
+a.kebab-item { display: block; text-decoration: none; }

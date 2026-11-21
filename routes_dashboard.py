@@ -746,7 +746,8 @@ def _ha_context(channels):
 def _render_settings(*, section=None, open_modal=None, forms=None, status=200, **extra):
     """Render the Settings page. `forms['group']` (a failed Groups save) is shown in
     place of the stored groups, with its per-row errors, on the Groups section;
-    `forms['notification']` keeps a failed channel save's typed values. `section` and
+    `forms['notification']` keeps a failed channel save's typed values;
+    `forms['stream:<slug>:<block>']` those of a failed Edit stream block. `section` and
     `open_modal` say where a validation re-render lands (design 5.2)."""
     forms = forms or {}
     group_form = forms.get('group')
@@ -819,6 +820,8 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
                                       'label': f'{kname} (revoked)' if revoked_at else kname})
 
     stream_ctx = _streams_context(request.args.get('preview'))
+    if stream_ctx['preview'] and not open_modal:
+        open_modal = 'stream-preview-modal'
     initial_section = _initial_section(section)
     notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
                                  NotificationChannel.query.order_by(NotificationChannel.id).all()]
@@ -861,6 +864,7 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
          api_key_rows=ApiKey.query.order_by(ApiKey.created_at.desc(), ApiKey.id.desc()).all(),
          notification_channels=notification_channels_out,
          notification_form=notification_form,
+         stream_forms={k: v for k, v in forms.items() if k.startswith('stream:')},
          **ha,
          notifications_enabled=any(c['enabled'] for c in notification_channels_out),
          exposure_layers=exposure_layers,
@@ -1975,7 +1979,16 @@ def _streams_context(preview_slug=None):
             except streams.StreamError as exc:
                 flash(exc.message, "danger")
     return {'stream_rows': rows, 'docker_row': docker_row, 'preview': preview,
-            'pending_streams': sum(1 for r in rows if r['stream'].status == 'pending')}
+            'pending_streams': sum(1 for r in rows if r['stream'].status == 'pending'),
+            'open_offers': sum(len(r['offers']) for r in rows)}
+
+
+def _stream_edit_error(slug, block, values, message):
+    """A failed Edit stream block: re-render Settings with that dialog open and the
+    typed values kept (design 9.8), instead of a flash and a redirect."""
+    flash(message, "danger")
+    return _render_settings(section='streams', open_modal=f'stream-edit-{slug}',
+                            forms={f'stream:{slug}:{block}': values}, status=400)
 
 
 def _streams_redirect():
@@ -2072,8 +2085,10 @@ def stream_update(slug):
             sent=('display_name', 'network_include', 'network_exclude'))
     except streams.StreamError as exc:
         db.session.rollback()
-        flash(exc.message, "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'name', {
+            'display_name': request.form.get('display_name') or '',
+            'network_include': request.form.get('network_include') or '',
+            'network_exclude': request.form.get('network_exclude') or ''}, exc.message)
     logger.info(f"Stream '{slug}' updated by {current_user.username}: {', '.join(changes) or 'no changes'}.")
     flash(f"Saved stream '{stream.display_name}'." if changes else "Nothing changed.", "success")
     return _streams_redirect()
@@ -2086,15 +2101,16 @@ def stream_monitoring(slug):
     """Expected snapshot interval (minutes in the form, seconds stored) and the
     missing-entry expiry (days). Blank clears either (PRD 18.9)."""
     stream = _stream_or_404(slug)
+    typed = {k: (request.form.get(k) or '').strip()
+             for k in ('expected_interval_minutes', 'missing_expiry_days')}
     values = {}
     for field_name, label in (('expected_interval_minutes', 'Expected interval'),
                               ('missing_expiry_days', 'Missing expiry')):
-        raw = (request.form.get(field_name) or '').strip()
+        raw = typed[field_name]
         try:
             values[field_name] = int(raw) if raw else None
         except ValueError:
-            flash(f"{label} must be a whole number.", "danger")
-            return _streams_redirect()
+            return _stream_edit_error(slug, 'monitoring', typed, f"{label} must be a whole number.")
     minutes = values['expected_interval_minutes']
     try:
         changes = streams.update(
@@ -2103,9 +2119,8 @@ def stream_monitoring(slug):
             missing_expiry_days=values['missing_expiry_days'])
     except streams.StreamError as exc:
         db.session.rollback()
-        flash(exc.message.replace('expected_interval_seconds must be 60-86400 seconds',
-                                  'Expected interval must be 1-1440 minutes'), "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'monitoring', typed, exc.message.replace(
+            'expected_interval_seconds must be 60-86400 seconds', 'Expected interval must be 1-1440 minutes'))
     logger.info(f"Stream '{slug}' monitoring saved by {current_user.username}: {', '.join(changes) or 'no changes'}.")
     flash(f"Saved staleness and missing-entry settings for '{stream.display_name}'." if changes
           else "Nothing changed.", "success")
@@ -2118,18 +2133,17 @@ def stream_monitoring(slug):
 def stream_default_checks(slug):
     stream = _stream_or_404(slug)
     raw_port = (request.form.get('tcp_port') or '').strip()
+    typed = {'ping': _truthy(request.form.get('ping')), 'tcp_port': raw_port}
     try:
         port = int(raw_port) if raw_port else None
     except ValueError:
-        flash("TCP port must be a number from 1 to 65535.", "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'checks', typed, "TCP port must be a number from 1 to 65535.")
     try:
         changes = streams.update(stream, sent=('default_checks',), default_checks={
-            'ping': _truthy(request.form.get('ping')), 'tcp_port': port})
+            'ping': typed['ping'], 'tcp_port': port})
     except streams.StreamError as exc:
         db.session.rollback()
-        flash(exc.message, "danger")
-        return _streams_redirect()
+        return _stream_edit_error(slug, 'checks', typed, exc.message)
     logger.info(f"Stream '{slug}' default checks saved by {current_user.username}: "
                 f"{'changed' if changes else 'no changes'}.")
     flash(f"Saved default checks for '{stream.display_name}'. New entries get them; use "

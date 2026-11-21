@@ -56,7 +56,7 @@
 </div>
 {% endmacro %}
 
-{% macro menu_item(label, attrs='', danger=False) %}<button type="button" class="kebab-item{% if danger %} kebab-item--danger{% endif %}" role="menuitem" tabindex="-1" {{ attrs|safe }}>{{ label }}</button>{% endmacro %}
+{% macro menu_item(label, attrs='', danger=False, cls='') %}<button type="button" class="kebab-item{% if danger %} kebab-item--danger{% endif %}{% if cls %} {{ cls }}{% endif %}" role="menuitem" tabindex="-1" {{ attrs|safe }}>{{ label }}</button>{% endmacro %}
 
 {% macro menu_form_item(action, label, danger=False, confirm=None) %}
 <form method="POST" action="{{ action }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>

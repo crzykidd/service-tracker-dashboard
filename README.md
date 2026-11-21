@@ -805,25 +805,27 @@ document.
 1. Settings → **API keys**: create a key with the scope **Ingest (sidecars)** and
    give it to the sidecar.
 2. The sidecar's first snapshot creates the stream as **pending**. The tab
-   shows "New stream waiting: enable it to import N items" and nothing appears
-   on the dashboard yet. **Preview** lists every item with what enabling would
-   do (create, link offer, filtered, ...) and writes nothing.
+   shows "New stream waiting: enable it to import N items" at the top, with
+   **Preview**, **Enable** and **Ignore** right there, and nothing appears
+   on the dashboard yet. **Preview** opens a dialog listing every item with what
+   enabling would do (create, link offer, filtered, ...) and writes nothing.
 3. **Enable** imports the items; later snapshots update them. **Ignore** drops
    a stream you don't want. The list also shows a read-only **Docker
    (register)** row with the number of notifier entries and the last register.
-   While a stream is pending or disabled, **Last counts** shows what enabling
+   While a stream is pending or disabled, its card shows what enabling
    would do ("would: created 5, link offers 2"), and the **Settings** link in
    the header carries an amber ring and count while any stream is pending
    review. A stream with no stored snapshot says "Waiting for the next
    snapshot" instead of Preview.
-4. Each stream row has an **Edit** panel for its display name and its network
-   include / exclude lists (applied from the next snapshot; entries already
-   imported are not removed), and a **Default checks** panel: a ping check on
+4. Each stream card has an **Edit** button that opens one dialog with its
+   display name and network include / exclude lists (applied from the next
+   snapshot; entries already imported are not removed), the staleness and
+   missing-entry settings, and **Default checks**: a ping check on
    each entry's IP and, optionally, a TCP check on a port. New entries of the
    stream start with them; **Apply to existing entries** adds the missing ones
    to every active entry (an entry that already has a ping or TCP check is
    skipped).
-5. **Disable…** and **Delete…** open a dialog that shows the counts first, then
+5. **Disable…** and **Delete…** (in the card's ⋯ menu) open a dialog that shows the counts first, then
    asks what happens to the entries: **keep** (disable: they stay but stop
    updating; delete: they become manual entries), **soft delete** (restorable
    from Settings → Deleted) or **purge** (gone for good). The stored snapshot is

@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unsaved changes. The "no channel publishes discovery" warning now ignores disabled
   channels, and the Home Assistant link shows an amber dot when entries are ticked
   but no enabled channel publishes.
+- **Settings → Streams shows a card per stream.** Each card has a status dot, the
+  producer, last snapshot, interval and counts, an **Edit** button and a ⋯ menu
+  (Preview, Enable, Ignore, Purge MQTT/HA, Disable…, Delete…). The name, network
+  filters, staleness and missing-entry settings, and default checks are edited in
+  one dialog; a bad value keeps the dialog open with what you typed. **Preview**
+  opens in a dialog. Pending and stale streams are flagged at the top, with
+  **Preview**, **Enable** and **Ignore** right there. Blocked items and link offers
+  are compact lists, and the Streams link shows an amber count while link offers
+  wait for an answer.
 
 ### Fixed
 

@@ -74,6 +74,19 @@
     }
   }
 
+  // Closing the stream Preview dialog drops ?preview= so a reload shows plain Settings.
+  document.addEventListener('close', function (event) {
+    if (!event.target || event.target.id !== 'stream-preview-modal') { return; }
+    try {
+      var params = new URLSearchParams(window.location.search);
+      if (!params.has('preview')) { return; }
+      params.delete('preview');
+      var query = params.toString();
+      window.history.replaceState(window.history.state, '',
+        window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+    } catch (e) { /* ignore */ }
+  }, true);
+
   window.addEventListener('hashchange', function () {
     var slug = resolve(window.location.hash);
     if (slug) { show(slug); }

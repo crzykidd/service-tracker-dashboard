@@ -24,9 +24,17 @@
     };
   }
 
+  // The dialog's guarded form: the first dirty one when it holds several (Edit stream
+  // has one per block), else the first.
   function guardedForm(dialog) {
-    var form = dialog.querySelector('form[data-unsaved-guard]');
-    return form && form._unsavedGuard ? form : null;
+    var first = null;
+    var forms = dialog.querySelectorAll('form[data-unsaved-guard]');
+    for (var i = 0; i < forms.length; i++) {
+      if (!forms[i]._unsavedGuard) { continue; }
+      if (!first) { first = forms[i]; }
+      if (forms[i]._unsavedGuard.isDirty()) { return forms[i]; }
+    }
+    return first;
   }
 
   function openModal(dialog, opener) {

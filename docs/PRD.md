@@ -91,6 +91,7 @@
 | 0.81    | 2026-11-20 | 0.10.2 fixes (unreleased): `service_entry.container_name` widened to `String(128)` (migration `d7a3e9b2c418`, §5.10) to match the 128-character stream item name; entry name limit 128 in `/add` and the management API (register `container_name` has no length cap, unchanged); notification **Send test message** bounded to about 5 s in total (§17.2). Register and stream contracts unchanged, API revision stays 3. |
 | 0.82    | 2026-11-20 | Added §19 (v0.11.0 — Settings modernization, planned; design in `docs/design/2026-11-20-settings-modernization.md`) and delivered its phase 1 on `dev`: section registry, grouped sidebar with deep links, flash policy, shared UI kit and restyle. Former §19–§21 renumbered §20–§22 and live cross-references updated (older revision rows keep the numbers of their day). §3.1 module layout updated. No schema, wire-contract or `/api/v1` change. |
 | 0.83    | 2026-11-20 | §19 phase 2 delivered on `dev` (set-02): Settings → Notifications channel cards with ⋯ menu and Enabled switch, Add/Edit channel dialog (Send test beside Save, validation errors reopen it), Settings → Home Assistant grouped by source with search and a sticky Save bar; §17.2/§17.4 UI text updated; the "no channel publishes discovery" warning counts enabled channels only. No schema, wire-contract or `/api/v1` change. |
+| 0.84    | 2026-11-20 | §19 phase 3 delivered on `dev` (set-03): Settings → Streams as cards (status dot, ⋯ menu, read-only Docker card), an Edit stream dialog with three independent blocks (name and networks, staleness and missing entries, default checks) that reopens with the typed values on a value or `StreamError` failure (400 re-render), Preview in a wide dialog, pending and stale inline warnings with Preview / Enable / Ignore, compact Blocked and Link offers lists, an amber open-offers badge on the Streams link. §18.8 UI text updated. Routes, `streams.py`, the wire contract and `/api/v1` are unchanged. |
 
 ---
 
@@ -3160,6 +3161,20 @@ audited.
 POST) read the form, call one function and flash the outcome (a `StreamError`
 becomes a flash, never a 500). Deviations and details:
 
+- **Settings UI (settings modernization phase 3, §19):** one card per stream (status
+  dot, producer, last snapshot, interval, counts, errors) with **Edit** and a ⋯ menu
+  (Preview, Enable, Ignore, Purge MQTT/HA, Disable…, Delete…); the read-only Docker
+  (register) card stays first. Pending and stale streams are flagged inline above the
+  list (pending carries Preview / Enable / Ignore). **Edit stream** is one dialog per
+  stream with three independent forms (`update`, `monitoring`, `default-checks`, plus
+  **Apply to existing entries**); a value error or `StreamError` from those three routes
+  re-renders Settings with the dialog open and the typed values (HTTP 400) instead of
+  flash + redirect; success still flashes (a toast) and redirects. Preview opens in a
+  wide dialog (`stream-preview-modal`, opened by the server; closing drops `?preview=`
+  from the URL). Blocked and Link offers are compact lists, and the Streams link shows
+  an amber count for open offers beside the pending and stale counts. The lifecycle
+  routes below keep flash + redirect. The notes below describe the original table
+  layout where they mention rows or panels.
 - **Routes:** `POST /settings/streams/<stream_id>/{enable,ignore,disable,delete,update}`,
   `.../blocks/<id>/unblock`, `.../offers/<id>/{accept,decline}` (takes a same-site
   `next`, so the edit page's banner returns to the edit page), and
@@ -3409,7 +3424,7 @@ previously undefined `bg-dashboard-info-box`).
 |---|---|---|
 | 1 | `prompts/2026-11-20-set-01-foundation.md`: registry, partial split, grouped sidebar, deep links, flash policy, shared kit, restyle of every section (no new layouts) | Delivered on `dev` |
 | 2 | `prompts/2026-11-20-set-02-notifications-ha.md`: Notifications cards and channel modal; Home Assistant groups | Delivered on `dev` |
-| 3 | `prompts/2026-11-20-set-03-streams.md`: Streams cards, Edit stream modal, Preview modal | Planned |
+| 3 | `prompts/2026-11-20-set-03-streams.md`: Streams cards, Edit stream modal, Preview modal | Delivered on `dev` |
 | 4 | `prompts/2026-11-20-set-04-remaining.md`: Groups, Users, API keys (show-once modal), Docker, Audit log, Backup, Deleted | Planned |
 
 ---
