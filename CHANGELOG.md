@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Backup settings are editable in Settings → Backup & restore.** Set the backup
+  folder, and for the **database snapshot** and the **export** separately: on or
+  off, the time of day, and how many days to keep. Each has a **Run now** button
+  and shows its next and last run. The page lists the backup files (newest first)
+  with **Download** and a ⋯ **Delete** that asks first. The folder is checked when
+  you save (it must be an absolute path and writable; a folder outside `/config`
+  gets a warning to make sure it is a mounted volume). A failed backup now shows a
+  warning on its card, and a red `!` on the Backup & restore link, until the next run
+  succeeds. A snapshot contains every secret, so the page says to keep it private.
+- **The README describes how to restore a database snapshot by hand.**
+
 ### Changed
+
+- **One daily backup job became two.** The database snapshot runs at 00:05 and the
+  export at 00:10 by default, each with its own keep days (old backups of each kind
+  are pruned separately). The export still writes the same YAML entry list.
+- **`backup_path` and `backup_days_to_keep` in `settings.yml` are now initial
+  values.** Settings can change them, and a value saved there wins over the file.
+  An environment variable (`BACKUP_PATH`, `BACKUP_DAYS_TO_KEEP`) still wins over
+  both and shows read-only in Settings. `backup_days_to_keep` is the starting value
+  of both keep-days settings.
 
 - **Settings is regrouped and every section has its own link.** The sidebar now
   has six labelled groups: General (About, Configuration), Dashboard (Groups,

@@ -3,7 +3,10 @@
 # Any ENV variables set will be used before the entry in this config file.
 
 # Backup file location.   Make sure this is mountable in from your container.  
-# Can be set with ENV BACKUP_PATH=/config/backups
+# Backup folder and keep days. These two are INITIAL values: Settings -> Backup & restore
+# can change them afterwards (the UI value then wins over this file). Environment
+# variables (BACKUP_PATH, BACKUP_DAYS_TO_KEEP) always win and show read-only in the UI.
+# backup_days_to_keep seeds both the database snapshot and the export keep days.
 backup_path: /config/backups
 backup_days_to_keep: 7
 

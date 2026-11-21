@@ -93,6 +93,7 @@
 | 0.83    | 2026-11-20 | §19 phase 2 delivered on `dev` (set-02): Settings → Notifications channel cards with ⋯ menu and Enabled switch, Add/Edit channel dialog (Send test beside Save, validation errors reopen it), Settings → Home Assistant grouped by source with search and a sticky Save bar; §17.2/§17.4 UI text updated; the "no channel publishes discovery" warning counts enabled channels only. No schema, wire-contract or `/api/v1` change. |
 | 0.84    | 2026-11-20 | §19 phase 3 delivered on `dev` (set-03): Settings → Streams as cards (status dot, ⋯ menu, read-only Docker card), an Edit stream dialog with three independent blocks (name and networks, staleness and missing entries, default checks) that reopens with the typed values on a value or `StreamError` failure (400 re-render), Preview in a wide dialog, pending and stale inline warnings with Preview / Enable / Ignore, compact Blocked and Link offers lists, an amber open-offers badge on the Streams link. §18.8 UI text updated. Routes, `streams.py`, the wire contract and `/api/v1` are unchanged. |
 | 0.85    | 2026-11-20 | §19 phase 4 delivered on `dev` (set-04), completing the Settings modernization except Backup & restore, which the separate backup project (`docs/design/2026-11-20-backup-export-import.md`) rebuilds: Groups as cards with a staging dialog inside the single form; Widgets as cards (⋯ Copy API key); Docker with a Layer directions card, collapsible per-host overrides and a sticky **Save & recompute URLs** bar, and the Docker (register) card moved there from Streams; Users as cards with Add user and Set password dialogs; API keys as cards with a Create key dialog and the key shown once in a dialog on the Settings page (`api_key_created.html` removed); About, Configuration, Deleted and detached widgets restyled. §12.5, §12.6, §14.2, §14.6, §15.3, §15.4, §16 and §18.8 UI text updated; §19 marked Delivered. No schema, wire-contract or `/api/v1` change. |
+| 0.86    | 2026-11-20 | Added §20 (v0.11.0 — Backup, export and import, planned; design in `docs/design/2026-11-20-backup-export-import.md`) and delivered its phase 1 (§20.1, bak-01) on `dev`: backup path, snapshot and export settings editable in Settings with env > UI > `settings.yml` > default precedence, two daily jobs (snapshot 00:05, export 00:10) replacing the single 00:05 job, per-kind retention and Run now, a backup file list with download and delete, last-run status with a failure warning and navigation badge, new `backups.py`. §3 job list, §3.1 module layout and §4 settings table updated. Former §20–§22 renumbered §21–§23 and live cross-references updated (older revision rows keep the numbers of their day); the §19 TOC entry now says Delivered. No schema (the existing `setting` table is used), wire-contract or `/api/v1` change. |
 
 ---
 
@@ -116,10 +117,11 @@
 16. [Next release — Version in the UI (Delivered on `dev`)](#16-next-release--version-in-the-ui-delivered-on-dev)
 17. [Next release — Notifications: MQTT and Home Assistant (Delivered on `dev`)](#17-next-release--notifications-mqtt-and-home-assistant-delivered-on-dev)
 18. [Next release — Inventory streams and API revision (Delivered on `dev`)](#18-next-release--inventory-streams-and-api-revision-delivered-on-dev)
-19. [v0.11.0 — Settings modernization (Planned)](#19-v0110--settings-modernization-planned)
-20. [Versioning, Branches, and Releases](#20-versioning-branches-and-releases)
-21. [Cross-Repo Coordination](#21-cross-repo-coordination)
-22. [Open Questions](#22-open-questions)
+19. [v0.11.0 — Settings modernization (Delivered on `dev`)](#19-v0110--settings-modernization-delivered-on-dev)
+20. [v0.11.0 — Backup, export and import (Planned)](#20-v0110--backup-export-and-import-planned)
+21. [Versioning, Branches, and Releases](#21-versioning-branches-and-releases)
+22. [Cross-Repo Coordination](#22-cross-repo-coordination)
+23. [Open Questions](#23-open-questions)
 
 ---
 
@@ -203,7 +205,7 @@ add/edit/delete as a fallback for non-Docker services or one-offs.
               │  │  Background jobs (APScheduler)    │  │
               │  │  ├─ URL health check loop         │  │
               │  │  ├─ widget refresh loop           │  │
-              │  │  └─ nightly backup + retention    │  │
+              │  │  └─ daily snapshot + export       │  │
               │  └───────────────────────────────────┘  │
               │  ┌───────────────────────────────────┐  │
               │  │  SQLite (WAL)                     │  │
@@ -247,7 +249,7 @@ routes_auth.py      ← /login, /logout, user mgmt; is_admin_required;
                       Flask-Login user_loader
 jobs.py             ← concurrent health-check scheduler, health-result
                       compaction/purge, widget refresh loop, daily
-                      backup, widget_value retention prune,
+                      snapshot and export jobs, widget_value retention prune,
                       verify-and-fetch-missing-icons startup sweep
 checker.py          ← health-check probes (http/tcp/ping/dns); network only, no DB
 check_form.py       ← Add/Edit health-check form parsing + validation
@@ -255,7 +257,9 @@ health_state.py     ← per-entry health rollup (up/degraded/down/unknown/none)
 health_history.py   ← history bars, uptime, recent failures for the detail panel
 health.py           ← /healthz (liveness). /readyz not implemented.
 settings_loader.py  ← file/ENV settings; loaded once at startup
-settings_store.py   ← DB-stored runtime settings (per-interpreter directions)
+settings_store.py   ← DB-stored runtime settings (per-interpreter directions, backup settings)
+backups.py          ← backup settings (env > UI > settings.yml > default), snapshot and export
+                      runs, retention, file list and confined file lookup (§20.1)
 settings_sections.py ← Settings section registry: groups, slugs, labels, legacy
                       `?section=` aliases, `resolve()` (§19)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
@@ -1082,7 +1086,7 @@ Old `.exposure-badge` CSS replaced with `.exposure-icons` /
 ## 11. v0.6.7–v0.6.8 — Registry move and engineering standards (Delivered)
 
 No schema, register-contract, or job changes. Reference for the resulting
-release mechanics is §20 (Versioning, Branches, and Releases); this section
+release mechanics is §21 (Versioning, Branches, and Releases); this section
 records what was delivered and why.
 
 ### 11.1 v0.6.7 — Registry move
@@ -1104,7 +1108,7 @@ records what was delivered and why.
 - CI checks (`Lint`, `Config validation`, `Migration check`,
   `Compose validation`) added in `ci.yml`; GHCR retention added in
   `retention.yml`; CodeQL and the image `build` job are the other required
-  checks (§20).
+  checks (§21).
 - Release commands `/release-prep` and `/release-cut` added in
   `.claude/commands/`.
 - Fixed: Add Entry (`/add`) raised a 500 on a non-numeric sort priority
@@ -1129,7 +1133,7 @@ archive step (decision: [`decisions.md`](./decisions.md), 2026-11-15).
 
 **Cross-repo:** no register-contract change. Nothing in this release
 adds, removes, or re-types a `RegisterPayload` field, so the
-consumer-leads ordering rule (§21) is not engaged and every notifier
+consumer-leads ordering rule (§22) is not engaged and every notifier
 version that works with v0.6.8 works with v0.6.9. The only
 register-path behavior change is §12.5's resurrect-on-register for
 soft-deleted rows, which is server-side only.
@@ -1315,7 +1319,7 @@ still deletes it deliberately).
 
 ### 12.8 Per-service health-check options [`v069-08-health-check-options`] — Delivered in v0.6.9
 
-Resolves the Open Question on health-check timeouts (§22).
+Resolves the Open Question on health-check timeouts (§23).
 
 - **Schema:** `service_entry.health_check_timeout` (Integer seconds,
   nullable → use the global default) and
@@ -1436,7 +1440,7 @@ it as `docs/CHANGELOG-0.N.x.md`.
 
 **Cross-repo:** **no register-contract change.** The notifier keeps
 sending exactly what it sends today; `schemas.py` is untouched, so the
-ordering rule (§21) is not engaged. Every notifier version that works
+ordering rule (§22) is not engaged. Every notifier version that works
 with v0.6.9 works with v0.7.0. `internal_health_check_enabled` /
 `external_health_check_enabled` keep their meaning: they enable or
 disable the entry's `internal_url` / `external_url` check rows. A
@@ -2146,7 +2150,7 @@ view of the log is not built yet.
 
 ### 14.8 Out of scope for v0.8.0
 
-- Per-host notifier tokens (§22), users and passwords through the API, and
+- Per-host notifier tokens (§23), users and passwords through the API, and
   rate limiting.
 - An HTTP-hosted MCP endpoint inside STD.
 - Editing `settings.yml` values through the API.
@@ -2832,7 +2836,7 @@ noted; 404/409/504): `POST /streams/{stream_id}/notifications/purge`,
 
 For **0.10.0** (every subsection is delivered on `dev`, unreleased), together with §16 and §17. The goal is an STD that is
 ready for the first inventory sidecar (`std-source-technitium`, a new repo,
-§21.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
+§22.3). The stream code ships in 0.10.0 before any sidecar exists. It isn't
 fully tested end to end yet, but nothing happens until an operator creates an
 `ingest` key and enables a stream, so general users never touch it. Fixes found
 while building the sidecar land in 0.10.x.
@@ -2876,7 +2880,7 @@ server supports and log it.
   It reveals no more than the response headers do.
 - `GET /api/v1/whoami` adds `api_revision`. The OpenAPI `info` adds
   `x-api-revision`. MCP `server_info` adds `std_api_revision`.
-- **Producers** (documented in §21): send `User-Agent: <producer>/<version>`;
+- **Producers** (documented in §22): send `User-Agent: <producer>/<version>`;
   log STD's version and API revision at startup and whenever the header value
   changes; when a feature they need is missing from `features`, log it clearly and
   keep retrying rather than exiting.
@@ -3471,7 +3475,123 @@ the backup, export and import project rebuilds it (`docs/design/2026-11-20-backu
 
 ---
 
-## 20. Versioning, Branches, and Releases
+## 20. v0.11.0 — Backup, export and import (Planned)
+
+Settings → Backup & restore becomes two features: **database backups** for disaster
+recovery and **export and import** of operator-set state. The full design (field
+ownership tables, matching rules, the import engine, API and UI) is
+[`docs/design/2026-11-20-backup-export-import.md`](design/2026-11-20-backup-export-import.md)
+(mockup alongside) and its operator decisions are in `docs/decisions.md`. It is built in
+five phases (`prompts/2026-11-20-bak-01` … `bak-05`); only §20.1 has shipped on `dev`.
+No change to the register or stream-ingest wire contracts.
+
+**Goals (design §1).** The scenario "new machine, empty `/config`, restore what the
+operator set" works with no hand edits. Import is safe by default (fill missing settings
+only, every write previewed, nothing that differs overwritten without an opt-in), can be
+re-run (idempotent), never deletes local data, and **an export never contains a secret**.
+Old YAML backups (today's entry list) stay importable. Not in scope: a live database swap,
+syncing two running installs, scheduled import, remote targets (S3, SFTP).
+
+### 20.1 Backup jobs (Delivered, unreleased; bak-01)
+
+- **Two daily jobs replace the single 00:05 job.** `backup_snapshot_job` (default 00:05)
+  writes a WAL-safe copy of the database (`sqlite3.Connection.backup()` through a `.tmp`
+  file and `os.replace`), and `backup_export_job` (default 00:10) writes the export. Each
+  has its own switch, time of day (container local time), keep days and **Run now**. In
+  this phase the export job still writes today's YAML entry list
+  (`<date>-std_backup.yml`); bak-02 swaps it for the versioned export.
+- **Settings are editable in the UI** (Settings → Backup & restore) and stored in the
+  `setting` table: `backup_path`, `backup_snapshot_enabled|time|keep_days`,
+  `backup_export_enabled|time|keep_days|format`, plus the observed `backup_last_runs`.
+  **Precedence is env > UI > `settings.yml` > default.** An environment variable
+  (`BACKUP_PATH`, `BACKUP_DAYS_TO_KEEP`) shows the field read-only; `settings.yml` only
+  seeds the value until the operator saves in the UI; **Reset** deletes the DB row.
+  `backup_days_to_keep` seeds both keep-days values. No new file or env keys.
+  `backups.effective_settings(app)` resolves them from the startup dict plus the DB and
+  never calls `load_settings()`.
+- **Scheduling.** The scheduler is kept in `jobs._SCHEDULER`; a settings save calls
+  `jobs.reschedule_backups(app)` (reschedule, then pause a disabled job; a disabled job is
+  registered and paused so the UI still shows its state). This relies on the single
+  gunicorn worker. `backups._RUN_LOCKS` allows one run per kind at a time.
+- **Files and retention.** Scheduled names are `YYYY-MM-DD-std_backup.sqlite3` and
+  `YYYY-MM-DD-std_backup.yml`; a manual run puts a time in the name
+  (`YYYY-MM-DD_HHMMSS-...`) so it never overwrites the day's scheduled file. Retention
+  runs at the end of each job for that kind only, by mtime and by suffix; legacy
+  `-std_backup.yml` files age out with the export retention; `backup.yml` and any other
+  file are never deleted.
+- **Path validation.** Absolute, created if missing, writable (a probe file); a folder
+  outside `CONFIG_DIR` is a warning, not an error. Changing the path does not move files.
+- **List, download, delete.** A list per kind (newest first, `manual` and `legacy` tags),
+  `GET /settings/backups/<name>/download`, `POST /settings/backups/<name>/delete`, both
+  through `backups.resolve_file` (bare filename, known suffix, real path inside the
+  folder). Snapshots are downloadable from the UI only, never through the API, because
+  they hold every secret.
+- **Failure surfacing.** Each run records `backup_last_runs[kind]` (ok or the error). A
+  failed run shows a persistent inline warning on its card and a red "!" on the Backup &
+  restore navigation link until a later run succeeds. A manual run is synchronous.
+- **Routes.** `POST /settings/backups/settings`, `/settings/backups/settings/reset`,
+  `/settings/backups/run`, plus the two file routes above; all admin + CSRF, and every
+  redirect lands on the Backup section.
+- **Manual database restore** (until the staged restore, §20.5, ships) is documented in
+  the README: stop the container, keep the current file, copy the snapshot over
+  `services.db`, delete the `-wal` and `-shm` files, start the container.
+
+### 20.2 Export format v1 (Planned; bak-02)
+
+A versioned `std-export` document, the same content as YAML or JSON, holding **only
+operator-set state** (design §5): groups, entry settings (group, sort priority,
+operator-owned URLs, description, lock, `ha_publish`, widget reference), health checks,
+stream filters, default checks and blocks, notification channels without passwords, users
+without password hashes and the runtime settings. Natural keys, never database ids.
+Anything that rebuilds itself (status, IPs, MACs, exposure observations, container ids,
+snapshots, timestamps) and every secret is left out; booleans such as `secret_set` and
+`api_key_set` say that something must be set again. Soft-deleted entries are not exported
+(the snapshot covers the trash). Adding an optional field keeps `format_version` 1; a newer
+version is rejected. Also adds the management API routes and `API_REVISION` 4.
+
+### 20.3 Import (Planned; bak-03, bak-04)
+
+Import matches the file's records against the database **now** and shows a dry-run
+preview; only ticked rows apply. A row is one of: matched with missing settings
+(default ticked), matched but different (applies only in the overwrite mode),
+identical, matched but deleted locally, ambiguous (the operator picks), not found
+("Import as new"), waiting (its stream is not mapped or enabled), conflict, or invalid.
+"Missing" means the local value is the value a freshly created row has. Matching is exact
+and case-sensitive, to agree with what register adoption does later. Import never creates
+streams or changes a stream's status, never modifies existing users, and creates new
+users with no usable password.
+
+### 20.4 Import engine and plan handoff (Planned; bak-03)
+
+`importer.plan()` and `apply()` mirror `streams.plan()` / `apply()`. The plan is never
+kept as an object: the UI stages the parsed upload as a JSON file in
+`CONFIG_DIR/import-staging/` (60 minute TTL, bound to the user) and `apply()` **re-plans
+under the register and stream locks** and compares a sha256 fingerprint of the selected
+rows with the one shown; a difference writes nothing (the UI asks for a re-review; the API
+answers 409). One transaction. The legacy entry-list YAML is read as format version 0.
+
+### 20.5 Staged database restore (Planned; bak-05)
+
+Pick or upload a `.sqlite3`, validate it read-only (`integrity_check`, an STD schema, a
+migration revision known to this code), then **stage** it: nothing is swapped live. A
+banner offers **Cancel restore** until the next start, when `restore_swap.py` (stdlib
+only, run by `entrypoint.sh` before `alembic upgrade head`) keeps the current database as
+`pre-restore-<timestamp>.sqlite3` through `Connection.backup()`, swaps the file, and never
+stops STD from starting if anything fails. No management API for it.
+
+### 20.6 Phases (design §16)
+
+| Phase | Prompt | Scope | Status |
+|---|---|---|---|
+| 1 | `bak-01-scheduled-backups` | Backup settings, two jobs, manual run, list, path validation, last-run status (§20.1) | Delivered (unreleased) |
+| 2 | `bak-02-export` | Export format v1, scheduled export, API revision 4, MCP | Planned |
+| 3 | `bak-03-import-engine` | `importer.py`, legacy v0 reader, tests; no UI | Planned |
+| 4 | `bak-04-import-ui` | Import flow, API `import/plan` and `import/apply`, removal of the old restore | Planned |
+| 5 | `bak-05-staged-restore` | Staged restore (§20.5) | Planned |
+
+---
+
+## 21. Versioning, Branches, and Releases
 
 - `main` is the default branch and the source of truth for releases.
 - All work happens on `dev`. PR `dev` → `main` when ready to release.
@@ -3510,7 +3630,7 @@ the backup, export and import project rebuilds it (`docs/design/2026-11-20-backu
 
 ---
 
-## 21. Cross-Repo Coordination
+## 22. Cross-Repo Coordination
 
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
@@ -3573,7 +3693,7 @@ image and release cadence. The same rules apply as for the notifier:
 
 ---
 
-## 22. Open Questions
+## 23. Open Questions
 
 - **Widget retention granularity.** A flat retention window
   (`widget_value_retention_days`, made actually configurable in §12.3)

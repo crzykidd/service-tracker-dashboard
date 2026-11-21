@@ -44,6 +44,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload, selectinload
 
 import api_keys
+import backups
 import check_form
 import entry_rules
 import health_history
@@ -89,7 +90,6 @@ from models import (
 )
 from notify_purge import PurgeError
 from routes_auth import is_admin_required
-from settings_loader import CONFIG_DIR
 from view_helpers import (
     DEFAULT_SORT_IN_GROUP,
     group_and_sort_services,
@@ -428,9 +428,12 @@ def _audit_change_lines(changes):
 @login_required
 @is_admin_required
 def settings():
-    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
+    BACKUP_DIR = backups.backup_dir(current_app)
     BACKUP_PATH = os.path.join(BACKUP_DIR, "backup.yml")
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+    except OSError:
+        logger.warning("Could not create the backup folder %s", BACKUP_DIR)
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -503,17 +506,16 @@ def settings():
                 elif restore_source == 'server':
                     selected_filename = request.form.get('server_backup_filename')
                     if selected_filename:
-                        # Confine to BACKUP_DIR: a bare filename with a backup
-                        # extension whose resolved path stays inside the folder.
-                        safe_name = os.path.basename(selected_filename)
-                        backup_root = os.path.realpath(BACKUP_DIR)
-                        file_path = os.path.realpath(os.path.join(backup_root, safe_name))
-                        if (
-                            safe_name != selected_filename
-                            or not safe_name.endswith(('.yaml', '.yml'))
-                            or not file_path.startswith(backup_root + os.sep)
-                        ):
-                            flash("Invalid server filename selected.", "danger")
+                        # Confined to the backup folder: a bare `.yml` / `.yaml` filename
+                        # whose real path stays inside it (backups.resolve_file).
+                        file_path = backups.resolve_file(
+                            selected_filename, directory=BACKUP_DIR, suffixes=('.yaml', '.yml'))
+                        if file_path is None:
+                            if (selected_filename != os.path.basename(selected_filename)
+                                    or not selected_filename.endswith(('.yaml', '.yml'))):
+                                flash("Invalid server filename selected.", "danger")
+                            else:
+                                flash(f"Selected server backup file '{selected_filename}' not found or is invalid.", "danger")
                             return _settings_redirect('backup')
 
                         if os.path.exists(file_path) and os.path.isfile(file_path):
@@ -752,9 +754,13 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
     forms = forms or {}
     group_form = forms.get('group')
     notification_form = forms.get('notification')
-    BACKUP_DIR = current_app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
+    backup_form = forms.get('backup')
+    BACKUP_DIR = backups.backup_dir(current_app)
     image_dir = current_app.config['IMAGE_DIR']
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+    except OSError:
+        logger.warning("Could not create the backup folder %s", BACKUP_DIR)
     groups = Group.query.order_by(Group.group_sort_priority.asc().nulls_last(), Group.group_name.asc()).all()
 
     if group_form:
@@ -763,6 +769,16 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
         group_rows = [{'id': g.id, 'name': g.group_name, 'icon': g.group_icon or '',
                        'priority': '' if g.group_sort_priority is None else g.group_sort_priority,
                        'services_count': g.services_count, 'delete': False} for g in groups]
+
+    backup_list_error = None
+    try:
+        backup_files = backups.list_files(BACKUP_DIR)
+    except OSError as e:
+        backup_files = {'snapshots': [], 'exports': []}
+        backup_list_error = f"Could not read the backup folder {BACKUP_DIR}: {e.strerror or e}."
+    backup_runs = backups.last_runs()
+    backup_next = {k: (v.strftime('%Y-%m-%d %H:%M') if v else None)
+                   for k, v in jobs.next_run_times().items()}
 
     # List backup files for the restore dropdown
     server_backup_files = []
@@ -773,9 +789,9 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
             # You might want to sort these files, e.g., by modification time or name
             all_files.sort(reverse=True) # Example: newest first if names are sortable by time
             server_backup_files = all_files
-        except Exception as e:
+        except Exception:
             logger.exception(f"Error listing backup files from {BACKUP_DIR}")
-            flash(f"Could not list server backup files: {str(e)}", "warning")
+
 
 # Check which icon files are missing
         missing_icons = []
@@ -832,6 +848,14 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
          config_from_env=current_app.config['CONFIG_FROM_ENV'],
          config_from_file=current_app.config['CONFIG_FROM_FILE'],
          server_backup_files=server_backup_files,
+         backup_settings=backups.effective_settings(current_app),
+         backup_form=backup_form,
+         backup_files=backup_files,
+         backup_last_runs=backup_runs,
+         backup_next_runs=backup_next,
+         backup_list_error=backup_list_error,
+         backup_outside_config=backups.outside_config(BACKUP_DIR),
+         backup_attention=backups.attention_needed(backup_runs),
          version_info=current_app.config['VERSION_INFO'],
          version_display=version_check.display_info(current_app.config['VERSION_INFO']),
          update_status=version_check.status(current_app.config['VERSION_INFO'].get('version', 'unknown')),
@@ -1167,6 +1191,108 @@ def save_update_check():
     version_check.reset()  # re-read the cache/interval; the next page load may refetch
     flash("✅ Update check settings saved.", "success")
     return _settings_redirect('about')
+
+
+# --- Settings -> Backup & restore (design 4) -----------------------------------------------
+
+
+def _backup_form_values(form):
+    """The backup settings form as `{setting key: submitted value}`; an unchecked switch
+    is False."""
+    values = {'path': form.get('path', '')}
+    for kind in backups.KINDS:
+        values[f'{kind}_enabled'] = form.get(f'{kind}_enabled') == '1'
+        values[f'{kind}_time'] = form.get(f'{kind}_time', '')
+        values[f'{kind}_keep_days'] = form.get(f'{kind}_keep_days', '')
+    values['export_format'] = form.get('export_format', '')
+    return values
+
+
+@dashboard_bp.route('/settings/backups/settings', methods=['POST'])
+@login_required
+@is_admin_required
+def save_backup_settings():
+    """Save the backup folder and the two daily jobs' settings, then reschedule. A
+    validation error re-renders the section (400) with what was typed."""
+    values = _backup_form_values(request.form)
+    old_path = backups.backup_dir(current_app)
+    errors, warnings = backups.save_settings(current_app, values)
+    if errors:
+        db.session.rollback()
+        flash("Nothing was saved. " + " ".join(errors.values()), "danger")
+        return _render_settings(section='backup', status=400,
+                                forms={'backup': {'values': values, 'errors': errors}})
+    db.session.commit()
+    jobs.reschedule_backups(current_app)
+    for message in warnings:
+        flash(message, "warning")
+    message = "Backup settings saved. Schedules updated."
+    if backups.backup_dir(current_app) != old_path:
+        message += " Existing backups stay in the old folder."
+    flash(message, "success")
+    return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/settings/reset', methods=['POST'])
+@login_required
+@is_admin_required
+def reset_backup_setting():
+    """Delete one saved backup setting so it falls back to settings.yml or the default."""
+    key = request.form.get('key', '')
+    if not backups.reset(key):
+        db.session.rollback()
+        flash("Unknown backup setting.", "danger")
+        return _settings_redirect('backup')
+    db.session.commit()
+    jobs.reschedule_backups(current_app)
+    flash("Setting reset to its default.", "success")
+    return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/run', methods=['POST'])
+@login_required
+@is_admin_required
+def run_backup_now():
+    """Run a snapshot or an export now (synchronously)."""
+    kind = request.form.get('kind', '')
+    if kind not in backups.KINDS:
+        flash("Unknown backup kind.", "danger")
+        return _settings_redirect('backup')
+    result = backups.run_snapshot(current_app, 'manual') if kind == 'snapshot' \
+        else backups.run_export(current_app, 'manual')
+    label = kind.capitalize()
+    if result['ok']:
+        flash(f"{label} saved: {result['file']}, {backups.human_size(result['size'])}", "success")
+    else:
+        flash(f"{label} failed: {result['error']}", "danger")
+    return _settings_redirect('backup')
+
+
+@dashboard_bp.route('/settings/backups/<name>/download', methods=['GET'])
+@login_required
+@is_admin_required
+def download_backup_file(name):
+    path = backups.resolve_file(name)
+    if path is None:
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+
+
+@dashboard_bp.route('/settings/backups/<name>/delete', methods=['POST'])
+@login_required
+@is_admin_required
+def delete_backup_file(name):
+    path = backups.resolve_file(name)
+    if path is None:
+        abort(404)
+    try:
+        os.remove(path)
+    except OSError as e:
+        flash(f"Could not delete {name}: {e.strerror or e}", "danger")
+        return _settings_redirect('backup')
+    logger.info("Backup file deleted from Settings: %s", name)
+    flash(f"Deleted {name}.", "success")
+    return _settings_redirect('backup')
 
 
 def _parse_group_form(form, groups):

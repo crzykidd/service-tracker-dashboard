@@ -343,8 +343,8 @@ credentials or personal data. Change it in **Settings → About** (or
 |----------------------------|--------|------------------------------|--------------------|--------------|
 | `api_token`                | string | `API_TOKEN`                  | —                  | Bearer token required by `/api/v1/register`. If unset, register returns 503 until it is set. The token is masked in logs. |
 | `std_dozzle_url`           | string | `STD_DOZZLE_URL`             | —                  | Optional link to a Dozzle instance; enables a Tools section in the UI. |
-| `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Where backups (YAML and SQLite snapshots) are written. |
-| `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Backup retention. |
+| `backup_path`              | string | `BACKUP_PATH`                | `/config/backups`  | Initial backup folder. Settings → Backup & restore can change it; an environment variable wins and shows read-only there. |
+| `backup_days_to_keep`      | int    | `BACKUP_DAYS_TO_KEEP`        | `7`                | Initial keep days for both the snapshot and the export. Settings → Backup & restore can change each; an environment variable wins and shows read-only there. |
 | `url_healthcheck_interval` | int    | `URL_HEALTHCHECK_INTERVAL`   | `300`              | Seconds between health check passes. |
 | `health_check_timeout`     | int    | `HEALTH_CHECK_TIMEOUT`       | `5`                | Seconds a URL health check waits before failing. Each service can override it on its edit page (1-60). |
 | `health_check_workers`     | int    | `HEALTH_CHECK_WORKERS`       | `8`                | How many health checks run at the same time. |
@@ -1270,7 +1270,7 @@ Notifier v0.3.0+ emits canonical keys to `/api/v1/register` automatically.
 | `/config/services.db`    | SQLite database (WAL mode).      |
 | `/config/std.log`        | Main app log (rotated).          |
 | `/config/images/`        | Cached service icons.            |
-| `/config/backups/`       | YAML backups (manual + nightly) and nightly SQLite snapshots. |
+| `/config/backups/`       | Daily and manual snapshots (`*-std_backup.sqlite3`) and exports (`*-std_backup.yml`). The folder is editable in Settings → Backup & restore. |
 | `/config/settings.yml`   | Optional config file.            |
 
 ---
@@ -1479,14 +1479,31 @@ restored.
 - Entries with **Lock (ignore notifier updates)** ticked are not touched by API register calls. An unlocked manual entry that matches a register call (same host and name) is adopted by the notifier and becomes a notifier entry.
 - Icon fetch falls back to a lowercased, hyphenated container name when
   no explicit icon is provided.
-- Nightly backups run shortly after midnight and write two files to
-  `backup_path`: `<date>-std_backup.yml` and `<date>-std_backup.sqlite3` (a
-  full database snapshot). Old files of both kinds are pruned per
-  `backup_days_to_keep`; nothing else in the folder is touched.
-- To restore from a snapshot: stop the container, replace
-  `/config/services.db` in the config volume with the snapshot (delete any
-  `services.db-wal` / `services.db-shm` beside it), and start the container.
-  The YAML backup is restored from Settings as before.
+- Two backup jobs run every day, each with its own time, keep days and **Run
+  now** button in Settings → Backup & restore: a **database snapshot**
+  (`<date>-std_backup.sqlite3`, a full WAL-safe copy, default 00:05) and an
+  **export** (`<date>-std_backup.yml`, your entries, default 00:10). A manual run
+  puts the time in the file name. Old files of each kind are pruned after its
+  keep days; nothing else in the folder is touched. The folder, the times and the
+  keep days are edited in Settings (an environment variable such as `BACKUP_PATH`
+  wins and shows read-only; `settings.yml` only gives the initial value). The page
+  lists the files with Download and Delete, shows each kind's last run, and warns
+  (with a red `!` on the Backup & restore link) when a run failed. A snapshot
+  contains every secret (password hashes, API key hashes, the MQTT password), so
+  keep it private. If the folder is outside `/config`, make sure it is a mounted
+  volume.
+- To restore from a snapshot (manual steps; the YAML export is restored from
+  Settings as before):
+  1. Stop the container: `docker compose stop std`.
+  2. Keep the current database: copy `/config/services.db` (and
+     `services.db-wal` if present) to a safe name, for example
+     `/config/backups/pre-restore-manual.sqlite3`. The container is stopped, so a
+     plain copy is consistent.
+  3. Copy the snapshot over `/config/services.db` and **delete**
+     `services.db-wal` and `services.db-shm`. A stale WAL from the old database
+     must not be replayed over the restored one.
+  4. Start the container: `docker compose start std`. The migrations bring an
+     older snapshot up to date.
 - Version metadata is shown in `/settings`.
 - All UI forms and in-page delete requests are CSRF-protected. If a form
   was left open past a session expiry, submitting it shows a "please retry"

@@ -8,7 +8,7 @@ reference here.
 
 Public entry points:
 - `start_background_workers(app)` — registers the APScheduler jobs
-  (widget refresh, daily backup, widget_value retention prune, soft-delete
+  (widget refresh, daily snapshot and export, widget_value retention prune, soft-delete
   purge, daily API audit purge, hourly health-history purge and compaction) and starts the
   concurrent health-check scheduler thread (probes live in checker.py). Called once, via app.run_startup_tasks(),
   after migrations.
@@ -20,19 +20,17 @@ import importlib
 import json
 import logging
 import os
-import sqlite3
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import partial
 
-import yaml
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func
 
+import backups
 import checker
 import notify
 import streams
@@ -54,7 +52,6 @@ from models import (
     evaluate_container,
     hard_delete_entry,
 )
-from settings_loader import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -550,76 +547,79 @@ def purge_api_audit(app, now_utc=None):
     return deleted
 
 
-BACKUP_SUFFIXES = ("-std_backup.yml", "-std_backup.sqlite3")
+BACKUP_SNAPSHOT_JOB = 'backup_snapshot_job'
+BACKUP_EXPORT_JOB = 'backup_export_job'
+_BACKUP_JOB_IDS = {'snapshot': BACKUP_SNAPSHOT_JOB, 'export': BACKUP_EXPORT_JOB}
+_SCHEDULER = None
 
 
-def _write_sqlite_snapshot(backup_dir):
-    """Consistent copy of the live database via sqlite3's online backup API
-    (WAL-safe; never a file copy). Failures are logged, never raised."""
-    path = os.path.join(backup_dir, datetime.now().strftime("%Y-%m-%d-std_backup.sqlite3"))
-    tmp = path + ".tmp"
-    src = dst = None
+def backup_snapshot_job(app):
+    """Scheduled database snapshot (the work lives in `backups.py`)."""
+    backups.run_snapshot(app, 'schedule')
+
+
+def backup_export_job(app):
+    """Scheduled export."""
+    backups.run_export(app, 'schedule')
+
+
+def _backup_schedule(app):
+    """`{kind: (hour, minute, enabled)}` from the effective settings; the defaults when
+    the settings cannot be read (a fresh database during startup)."""
     try:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raw = db.engine.raw_connection()
-        try:
-            src = raw.driver_connection
-            dst = sqlite3.connect(tmp)
-            src.backup(dst)
-        finally:
-            if dst is not None:
-                dst.close()
-            raw.close()
-        os.replace(tmp, path)
-        logger.info(f"🌙 Scheduled database snapshot saved to {path}")
-    except Exception as e:
-        logger.error(f"❌ Scheduled database snapshot failed: {e}")
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except OSError:
-            pass
+        with app.app_context():
+            eff = backups.effective_settings(app)
+        out = {}
+        for kind in backups.KINDS:
+            hour, minute = eff[kind]['time']['value'].split(':')
+            out[kind] = (int(hour), int(minute), bool(eff[kind]['enabled']['value']))
+        return out
+    except Exception:
+        logger.exception("Could not read the backup schedule; using the defaults")
+        return {kind: (int(t.split(':')[0]), int(t.split(':')[1]), True)
+                for kind, t in backups.DEFAULT_TIMES.items()}
 
 
-def run_scheduled_backup(app):
-    with app.app_context():
-        backup_dir = app.config.get("backup_path", os.path.join(CONFIG_DIR, "backups"))
-        days_to_keep = int(app.config.get("backup_days_to_keep", 7))
+def _add_backup_jobs(app, scheduler):
+    funcs = {'snapshot': backup_snapshot_job, 'export': backup_export_job}
+    names = {'snapshot': 'Run daily database snapshot', 'export': 'Run daily export'}
+    for kind, (hour, minute, enabled) in _backup_schedule(app).items():
+        job_id = _BACKUP_JOB_IDS[kind]
+        scheduler.add_job(
+            partial(funcs[kind], app),
+            CronTrigger(hour=hour, minute=minute),
+            id=job_id,
+            name=names[kind],
+            replace_existing=True,
+        )
+        if not enabled:
+            scheduler.pause_job(job_id)
 
-        os.makedirs(backup_dir, exist_ok=True)
 
-        filename = datetime.now().strftime("%Y-%m-%d-std_backup.yml")
-        full_path = os.path.join(backup_dir, filename)
+def reschedule_backups(app, scheduler=None):
+    """Apply the saved backup times and switches to the running jobs: reschedule, then
+    pause a disabled job (rescheduling alone would resume it). Called after a settings
+    save or reset; there is exactly one gunicorn worker, so this process owns the jobs."""
+    scheduler = scheduler or _SCHEDULER
+    if scheduler is None:
+        return
+    for kind, (hour, minute, enabled) in _backup_schedule(app).items():
+        job_id = _BACKUP_JOB_IDS[kind]
+        if scheduler.get_job(job_id) is None:
+            continue
+        scheduler.reschedule_job(job_id, trigger=CronTrigger(hour=hour, minute=minute))
+        if not enabled:
+            scheduler.pause_job(job_id)
 
-        try:
-            # All rows, soft-deleted included: the backup carries deleted_at.
-            entries = ServiceEntry.query.all()
-            data = [e.to_dict() for e in entries]
-            with open(full_path, 'w') as f:
-                yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-            logger.info(f"🌙 Scheduled backup saved to {full_path}")
-        except Exception as e:
-            logger.error(f"❌ Scheduled backup failed: {e}")
 
-        _write_sqlite_snapshot(backup_dir)
-
-        # Cleanup
-        now = time.time()
-        cutoff = now - (days_to_keep * 86400)
-        removed = 0
-        for fname in os.listdir(backup_dir):
-            if fname.endswith(BACKUP_SUFFIXES):
-                fpath = os.path.join(backup_dir, fname)
-                if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
-                    try:
-                        os.remove(fpath)
-                        logger.info(f"🧹 Removed old backup: {fname}")
-                        removed += 1
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not remove old backup {fname}: {e}")
-        if removed:
-            logger.info(f"🧹 Removed {removed} expired backup(s) from {backup_dir}")
+def next_run_times(scheduler=None):
+    """`{kind: datetime | None}` for the two backup jobs (None = paused or unknown)."""
+    scheduler = scheduler or _SCHEDULER
+    out = {}
+    for kind, job_id in _BACKUP_JOB_IDS.items():
+        job = scheduler.get_job(job_id) if scheduler is not None else None
+        out[kind] = getattr(job, 'next_run_time', None) if job is not None else None
+    return out
 
 
 def prune_widget_values(app):
@@ -735,13 +735,7 @@ def start_background_workers(app):
         name='Update widget values periodically',
         replace_existing=True
     )
-    scheduler.add_job(
-        partial(run_scheduled_backup, app),
-        CronTrigger(hour=0, minute=5),
-        id='scheduled_backup_job',
-        name='Run daily backup',
-        replace_existing=True
-    )
+    _add_backup_jobs(app, scheduler)
     scheduler.add_job(
         partial(prune_widget_values, app),
         CronTrigger(hour=0, minute=15),
@@ -785,6 +779,8 @@ def start_background_workers(app):
         replace_existing=True
     )
     scheduler.start()
+    global _SCHEDULER
+    _SCHEDULER = scheduler
 
     # Notification publisher: its own thread and queue; it loads the enabled
     # channels itself and never blocks the checker (PRD 17.2).

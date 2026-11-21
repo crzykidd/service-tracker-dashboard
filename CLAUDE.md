@@ -412,6 +412,9 @@ notify_mqtt.py      ← MQTT channel type (paho 2.x threaded, LWT/availability, 
 streams.py          ← inventory streams (PRD 18): ingest value rules (`normalize_mac`), `plan()` /
                       `apply()` engine under a module lock, lifecycle, blocks, link offers; plain
                       functions raising `StreamError`, shared by the management API and the UI
+backups.py          ← backup settings (env > UI > settings.yml > default), snapshot/export runs,
+                      per-kind retention, file list + confined `resolve_file`; run functions record
+                      `backup_last_runs`
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API

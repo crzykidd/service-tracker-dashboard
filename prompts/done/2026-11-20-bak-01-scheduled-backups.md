@@ -1,10 +1,10 @@
 ---
 name: 2026-11-20-bak-01-scheduled-backups
-status: pending          # pending | completed | failed
+status: completed        # pending | completed | failed
 created: 2026-11-20
 model: sonnet
-completed:
-result:
+completed: 2026-11-20
+result: backups.py, DB-stored backup settings (env > UI > file > default), snapshot + export jobs with Run now, file list/download/delete, last-run status + nav badge, docs; 1442 tests pass
 ---
 
 # Task: Backup phase 1: UI-editable backup settings, two daily jobs, manual run, backup list

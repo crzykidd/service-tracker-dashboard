@@ -5,6 +5,43 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Backup, export and import, bak-01 (scheduled backups)
+
+Calls made while building phase 1 (`prompts/2026-11-20-bak-01-scheduled-backups.md`).
+
+- **A save only writes values that changed.** Saving the form with a keep-days value equal
+  to the current effective one (for example the `settings.yml` value) writes no row, so an
+  unrelated save never turns a file value into a "set in the UI" value. Reset is only
+  offered when the origin is `ui`. An env-pinned field submits its read-only value and is
+  accepted if unchanged, refused if different.
+- **No schema change.** The settings use the existing `setting` key-value table, so there
+  is no migration. `backup_last_runs` is one JSON row holding both kinds.
+- **Run now, Reset and Delete are separate forms outside the settings form.** HTML forms
+  cannot nest, and the design wants one guarded settings form with a sticky save bar. The
+  buttons point at hidden forms with `form="..."`, so `data-confirm` and the CSRF token
+  work as in the other sections. Run now with unsaved edits does not save them.
+- **Manual and scheduled exports both use the legacy name in this phase.** The export job
+  still writes the entry list as `YYYY-MM-DD[_HHMMSS]-std_backup.yml` (the spec'd content
+  and name), so new files carry the "legacy" tag until bak-02 writes `-std_export.*`. The
+  export **format** setting is stored and shown, but the file stays YAML until bak-02
+  (the card says so).
+- **A run records its result in `setting`, so the snapshot of a fresh database contains
+  that row.** `tests/test_db_snapshot.py` now runs the export before the snapshot so the
+  live and snapshot row counts match (both runs update the same single row).
+- **`resolve_file` serves both the new routes and the legacy restore form.** The restore
+  branch passes `suffixes=('.yml', '.yaml')` and keeps its old messages; the new routes
+  accept only the known backup suffixes plus `backup.yml`. A symlink pointing out of the
+  folder is refused because the real path is checked.
+- **`jobs.run_scheduled_backup`, `_write_sqlite_snapshot` and `BACKUP_SUFFIXES` were
+  removed** (no alias kept; only `tests/test_db_snapshot.py` used them and it now calls
+  `backups`). `jobs.reschedule_backups` pauses a disabled job after `reschedule_job`,
+  because APScheduler's `reschedule_job` resumes a paused job.
+- **PRD numbering.** The new planned section is §20 (renumbering Versioning, Cross-Repo and
+  Open Questions to §21 to §23 and their live cross-references), as the settings section
+  did for §19. The §19 TOC line now says Delivered to match its heading.
+
+---
+
 ## 2026-11-20 — Settings modernization, set-04 (the remaining sections)
 
 Calls made while building phase 4 (`prompts/2026-11-20-set-04-remaining.md`).

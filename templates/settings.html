@@ -37,6 +37,8 @@
         </span>
         {% elif slug == 'home-assistant' and ha_needs_channel %}
         <span class="settings-nav-badges"><span class="settings-nav-dot" title="Entries are ticked but no enabled channel publishes discovery"></span><span class="sr-only">No channel publishes discovery</span></span>
+        {% elif slug == 'backup' and backup_attention %}
+        <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--bad" title="The last backup run failed">!</span></span>
         {% elif slug == 'deleted' and _deleted %}
         <span class="settings-nav-badges"><span class="settings-nav-badge settings-nav-badge--muted">{{ _deleted }}</span></span>
         {% endif %}
