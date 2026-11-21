@@ -45,7 +45,7 @@ def test_registry_order_and_groups():
     assert [g for g, _ in settings_sections.GROUPS] == [
         "general", "dashboard", "sources", "integrations", "access", "data"]
     assert [s for s, _, _ in settings_sections.SECTIONS] == [
-        "about", "configuration", "groups", "widgets", "docker", "streams", "notifications",
+        "about", "configuration", "groups", "widgets", "docker", "streams", "image-updates", "notifications",
         "home-assistant", "users", "api-keys", "audit-log", "backup", "deleted"]
     group_keys = {g for g, _ in settings_sections.GROUPS}
     assert {g for _, _, g in settings_sections.SECTIONS} <= group_keys
@@ -84,7 +84,7 @@ def test_each_section_once_and_no_bare_slug_ids(admin_client):
     for slug, _, _ in settings_sections.SECTIONS:
         assert html.count(f'id="section-{slug}"') == 1, slug
         assert f'id="{slug}"' not in html, slug
-    assert html.count('<section id="section-') == 13
+    assert html.count('<section id="section-') == 14
 
 
 def test_non_current_sections_are_hidden_by_the_server(admin_client):

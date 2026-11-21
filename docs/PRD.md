@@ -106,6 +106,7 @@
 | 0.96    | 2026-11-21 | Docs-only: the subsections under §22 (Cross-Repo Coordination) are renumbered 22.1–22.3; they were numbered 21.1–21.3. The existing §22.3 cross-reference in §18 now resolves. No content changes. |
 | 0.97    | 2026-11-21 | Image reference parser (img-01, phase 1 of the image update check; design `docs/design/2026-11-21-image-update-check.md`): new pure `image_ref.py` (distribution reference grammar: ports, nested paths, digests, Docker Hub normalisation) replaces the naive split in `image_utils.resolve_image_metadata`; new observed column `service_entry.image_ref` (migration `a2c6e8f1b345`, indexed, backfilled where the old columns are sound), written by register from the raw `image_name`, shown in the entry facts and returned read-only as `notifier.image_ref` by the management API (**`API_REVISION` 5** row extended, §18.1); `image_repo.py` derives links from it (correct nested GHCR paths). §3.1 module layout, §5.12, §13.7 updated. `schemas.py` and the register wire contract unchanged; not exported. |
 | 0.98    | 2026-11-21 | Image update check engine (img-02, phase 2; design `docs/design/2026-11-21-image-update-check.md`), on `dev`, unreleased: new §24 (architecture, provider seam, tag and digest models, the daily job, data model, the `image_info` register field, management API and MCP), new §5.13 (migration `b5d9a3f1c7e2`: `image_reference` table and the `service_entry` image update columns), §3.1 module layout (`registry_client.py`, `image_tags.py`, `image_update.py`), §18.1 revision 5 row extended (register `image_info`, `image_update` block, the new routes, features `image_updates` and `image_info`), §20.2 ownership table (the three operator columns round-trip), §22 cross-repo notes (notifier 0.5.0 will send `image_info`, gated on `/api/v1/meta`). Off by default (`STD_IMAGE_UPDATE_ENABLED`); no UI yet (img-03), no MQTT/Home Assistant yet (img-04). Register contract: additive optional field, so STD ships first per the ordering rule. |
+| 0.99    | 2026-11-21 | Image update UI (img-03, phase 3), on `dev`, unreleased: new §24.8 (dashboard badge and `?updates=true` filter, entry-details lines, Check now, the edit-page block, Settings → Sources → Image updates, the Docker hint); the old §24.8 "Not built yet" becomes §24.9 and now lists only MQTT / Home Assistant (img-04), credentials and other providers. §13.7 (badge, details line, Check now in the entry facts), §19.1 (fourteen sections, `image-updates` under Sources), §3.1 module layout (`image_update_ui.py`, `static/js/image_update.js`). New session routes `POST /service/<id>/image-update/check`, `POST /settings/image-updates`, `POST /settings/image-updates/check`. No schema, API revision or wire-contract change (the UI reads the state img-02 stores). |
 
 ---
 
@@ -302,6 +303,8 @@ image_tags.py       ← pure tag model, digest model and `evaluate()` (the state
 image_update.py     ← the update provider seam and the registry provider, settings (off by default,
                       `STD_IMAGE_UPDATE_ENABLED`), the run engine, Check now throttles, register-time
                       recompute (`apply_register`), retention (§24)
+image_update_ui.py  ← read-only view helpers for §24.8 (`image_update_info`, `image_updates_enabled`,
+                      GitHub release-notes URL); Jinja globals; no registry call
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
                       lscr.io; None for anything else; reads `image_ref`) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views
@@ -1907,6 +1910,8 @@ from `image_ref` (§5.12) when set, so a nested GHCR path (`ghcr.io/org/team/app
 package `team/app` under `org`; a registry with a port or a `localhost` registry still gets no
 link. Entries without `image_ref` yet fall back to the split columns.
 
+**Image update (img-03).** The facts gain an "Image update" row under the Docker line, the three views a badge next to the name, and the filter bar an "Updates available (N)" toggle; see §24.8. Read-only: they show the state the image update check stored.
+
 Since 0.11.0 the Dashboard expand row has two columns: the shared entry facts
 (`partials/entry_facts.html`, also the tile drawer's info rows) on the left and the
 health detail (facts hidden) on the right; the columns stack below 768px.
@@ -3499,7 +3504,7 @@ few validation errors that re-render instead of redirecting.
 
 ### 19.1 Information architecture
 
-Thirteen sections in six labelled groups, from `settings_sections.py`:
+Fourteen sections in six labelled groups, from `settings_sections.py` (`image-updates` was added by the image update check, §24.8):
 
 | Group | Section | Slug | Legacy `?section=` |
 |---|---|---|---|
@@ -3509,6 +3514,7 @@ Thirteen sections in six labelled groups, from `settings_sections.py`:
 | Dashboard | Widgets | `widgets` | |
 | Sources | Docker (exposure interpreter) | `docker` | `exposure` |
 | Sources | Streams (incl. Blocked, Link offers) | `streams` | |
+| Sources | Image updates | `image-updates` | |
 | Integrations | Notifications | `notifications` | |
 | Integrations | Home Assistant | `home-assistant` | |
 | Access | Users | `users` | |
@@ -3979,9 +3985,9 @@ image and release cadence. The same rules apply as for the notifier:
 
 ## 24. v0.12.0 — Image update check
 
-**Status:** the engine, data model, register field, management API and MCP are built on `dev`
-(img-02, unreleased). There is no dashboard badge, filter or Settings page yet (img-03), and no
-MQTT / Home Assistant output yet (img-04). Design: `docs/design/2026-11-21-image-update-check.md`
+**Status:** the engine, data model, register field, management API and MCP (img-02) and the UI
+(img-03: badges, filter, entry details, edit block, Settings section, §24.8) are built on `dev`,
+unreleased. There is no MQTT / Home Assistant output yet (img-04). Design: `docs/design/2026-11-21-image-update-check.md`
 (its section 14 decisions are final). Decisions made while building are in `docs/decisions.md`.
 
 ### 24.1 What it does
@@ -4094,8 +4100,53 @@ three fields. Export format v1 (§20.2): `image_update_policy` (omitted when `au
 `image_tag_pattern` are operator-owned and round-trip for Docker entries; the observed digest and the computed
 state are not exported.
 
-### 24.8 Not built yet
+### 24.8 UI (img-03)
 
-The dashboard badge and filter, entry-details lines, the edit-page block and the Settings section (img-03);
-the MQTT `image` topic and Home Assistant `update` entity (img-04); registry credentials and insecure
+Everything here reads the stored state; no page makes a registry call, and the update state is not part of
+the health roll-up (no row tint, no status change). `image_update_ui.py` holds the read-only helpers
+(`image_update_info(entry)`, `image_updates_enabled()`, the GitHub `release_notes_url`), registered as Jinja
+globals; the enabled flag is read once per request (`g`), because a missing settings row is not cached by the
+session. The state shown is `image_update.effective_state()`, so everything is hidden while the check is off.
+
+- **Badge** (`partials/image_update_badge.html`): a Tabler `arrow-big-up-line` next to the name on the
+  Dashboard row, the Tiled tile and the Compact card (and in the Compact details dialog header), only for
+  `update`, with `role="img"`, an `aria-label` and a title: "Newer image: 1.5.0 (minor)" (tag model) or
+  "Image updated upstream (latest, pushed 2 days ago)" (digest model). The provider is not shown.
+- **Filter:** `?updates=true` ("Updates available (N)" checkbox beside Status and Source, a `view-control`
+  like the others). `view_helpers.normalize_updates_filter` / `matches_updates` (a plain predicate on
+  `image_update_state`) / `updates_count` (N counts what the Source, Status and Show URL-less filters leave).
+  While the check is off the toggle is hidden and the parameter is ignored. The view tabs carry
+  `?updates=true` while it is set. The view query loads `image_reference` with `selectinload`, so the page cost
+  stays flat as entries grow.
+- **Entry details** (`partials/entry_facts.html`, a row under the Docker line, shared by the Dashboard expand
+  row, the Compact dialog and the Tiled drawer): `update` tag model "Update: **1.5.0** available (minor) ·
+  checked 2 hours ago"; `update` digest model "Update: newer `latest` pushed 2 days ago (running 1.27.2) ·
+  checked ..."; `current` "Image up to date · checked ..."; `unknown` the stored reason; `error` "Could not
+  check: <short error>" (muted); `pinned` "Pinned by digest"; `off` nothing. The muted "rebuilt upstream" note
+  comes from `image_update_detail.rebuilt`. **Release notes** (`<source>/releases`, `target="_blank"
+  rel="noopener noreferrer"`) appears when `image_info.source` is a GitHub repository URL.
+- **Check now:** an admin-only link per entry and a button in Settings. Both POST via `static/js/image_update.js`
+  (CSRF from the page meta tag, delegated so it also works in the Compact dialog) to
+  `POST /service/<id>/image-update/check` and `POST /settings/image-updates/check` (admin only), which call
+  `image_update.request_check` and answer JSON: 202 when queued, 409 when the check is off or the entry has
+  nothing to check, 429 with `Retry-After` when throttled; the script shows the message as a toast
+  ("Checked recently; try again in about N min.").
+- **Edit page** (Docker entries): an "Image updates" block with Policy (Auto / Newer tags / Digest / Off), Scope
+  (Default / Any / Same major / Same minor) and Tag pattern, validated with `image_tags.validate_tag_pattern`
+  before anything is changed (an invalid value is a banner and the form is re-rendered). Saving recomputes the
+  entry with `image_update.recompute_entry` (no network). The "matches" line is read from the candidates stored
+  at the last check (the saved pattern's pool, or the newer tags of the running shape); there is no live
+  preview of an unsaved pattern, which would need the registry: it says "A changed pattern applies at the next
+  check".
+- **Settings → Sources → Image updates** (slug `image-updates`, `partials/settings/image_updates.html`): the
+  Enabled switch (default off; locked, with "Set by environment (STD_IMAGE_UPDATE_ENABLED)", while the env var
+  is set) and the Default scope in one guarded form (`POST /settings/image-updates`; saving the switch calls
+  `image_update.on_settings_changed`, a changed scope recomputes the entries locally); a status card (last run:
+  when, references checked, updates found, errors; next run; Check now, once an hour); a problems list
+  (references in `error` with the error and the entries that use them). No interval field: the text says
+  "Checks once a day". The Docker section shows a one-line hint pointing here while the check is off.
+
+### 24.9 Not built yet
+
+The MQTT `image topic and Home Assistant `update` entity (img-04); registry credentials and insecure
 registries (img-05, out of the MVP: no private registries); a What's Up Docker or Komodo provider.

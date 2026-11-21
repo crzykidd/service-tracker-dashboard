@@ -91,7 +91,7 @@
 
                             {# Name (full width) with the host underneath when shown #}
                             <div class="tile-details">
-                                <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>
+                                <strong class="container-name" title="{{ entry.container_name }}">{{ entry.container_name }}</strong>{% with variant='icon' %}{% include "partials/image_update_badge.html" %}{% endwith %}
                                 {% if entry.id in host_label_ids %}<span class="tile-host" title="{{ entry.host }}">{{ entry.host }}</span>{% endif %}
                             </div>
 

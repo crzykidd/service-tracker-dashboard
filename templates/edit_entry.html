@@ -138,6 +138,48 @@
           <p class="edit-helper">Optional. Overrides the repository link derived from the Docker image (Docker Hub, GHCR, Quay, LinuxServer); needed for any other registry. Clear it to go back to the derived link.</p>
         </div>
 
+        {% if image_update_edit %}
+        {% set _iue = image_update_edit %}
+        <fieldset class="border border-gray-700 rounded p-3" id="image-updates-block" data-image-updates-block>
+          <legend class="text-sm font-medium text-dashboard-secondary px-1">Image updates</legend>
+          <input type="hidden" name="image_update_form" value="1">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="image_update_policy" class="block text-sm font-medium text-dashboard-secondary mb-1">Policy</label>
+              <select name="image_update_policy" id="image_update_policy" class="form-input">
+                {% set _pol = fv('image_update_policy', entry.image_update_policy or 'auto') %}
+                {% for val, lbl in _iue.policies %}<option value="{{ val }}" {% if _pol == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="image_update_scope" class="block text-sm font-medium text-dashboard-secondary mb-1">Scope</label>
+              <select name="image_update_scope" id="image_update_scope" class="form-input">
+                {% set _sc = fv('image_update_scope', entry.image_update_scope or '') %}
+                {% for val, lbl in _iue.scopes %}<option value="{{ val }}" {% if _sc == val %}selected{% endif %}>{{ lbl }}{% if val == '' %} ({{ _iue.default_scope }}){% endif %}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mt-3">
+            <label for="image_tag_pattern" class="block text-sm font-medium text-dashboard-secondary mb-1">Tag pattern</label>
+            <input type="text" name="image_tag_pattern" id="image_tag_pattern" maxlength="200" class="form-input font-mono" placeholder="e.g. \d+\.\d+\.\d+-alpine" value="{{ fv('image_tag_pattern', entry.image_tag_pattern or '') }}">
+            <p class="edit-helper">Optional regular expression; a tag must match it in full to count as newer. Leave empty to follow the running tag's own shape.</p>
+            <p class="edit-helper" data-image-update-matches>
+              {% if _iue.matches_known %}
+                {% if _iue.matches %}Matches at the last check{% if entry.image_tag_pattern %} (saved pattern){% endif %}: {{ _iue.matches | join(', ') }}.{% else %}No newer tag matched at the last check.{% endif %}
+                A changed pattern applies at the next check.
+              {% elif entry.image_tag_pattern %}
+                The saved pattern applies at the next check.
+              {% else %}
+                Newer tags show here once the image has been checked.
+              {% endif %}
+            </p>
+          </div>
+          <p class="edit-helper">Saving recomputes this entry from what was stored at the last check; it does not contact a registry.
+            {% if not _iue.enabled %}The image update check is off: turn it on in <a href="{{ url_for('dashboard.settings', section='image-updates') }}" class="text-blue-400 hover:underline">Settings → Image updates</a>.{% endif %}
+          </p>
+        </fieldset>
+        {% endif %}
+
         <div class="flex items-center">
           <input type="checkbox" name="is_static" id="locked" class="form-checkbox h-4 w-4" {% if (form is not none and 'is_static' in form) or (form is none and entry.is_static) %}checked{% endif %}>
           <label for="locked" class="ml-2 text-sm text-dashboard-secondary">Lock (ignore notifier updates)</label>

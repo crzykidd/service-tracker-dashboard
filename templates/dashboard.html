@@ -93,9 +93,10 @@
               {% if target_url %}
                 <div>
                   <a href="{{ target_url }}" target="_blank" class="text-blue-400 hover:underline">{{ entry.container_name }}</a>
+                  {% with variant='pill' %}{% include "partials/image_update_badge.html" %}{% endwith %}
                 </div>
               {% else %}
-                <div>{{ entry.container_name }}</div>
+                <div>{{ entry.container_name }}{% with variant='pill' %}{% include "partials/image_update_badge.html" %}{% endwith %}</div>
               {% endif %}
 
               {% if entry.container_id %}

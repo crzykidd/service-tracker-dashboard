@@ -436,6 +436,8 @@ routes_import.py    ← Settings import routes on `dashboard_bp` (upload, previe
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot/export runs,
                       per-kind retention, file list + confined `resolve_file`; run functions record
                       `backup_last_runs`
+image_update_ui.py  ← read-only view helpers for the image update badge, details line and Check now
+                      (Jinja globals `image_update_info`, `image_updates_enabled`); reads stored state only
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API

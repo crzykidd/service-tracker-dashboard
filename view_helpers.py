@@ -82,6 +82,22 @@ def normalize_source_filter(value):
     return "all"
 
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def normalize_updates_filter(value):
+    """Query-string value -> bool: only an explicit true value turns the Updates filter on."""
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.strip().lower() in _TRUE_VALUES
+
+
+def matches_updates(entry):
+    """A plain predicate on the stored state column. The caller drops the filter while the
+    check is switched off (the stored state outlives the switch), so no overlay is needed here."""
+    return entry.image_update_state == "update"
+
+
 def matches_status(entry, status):
     if status == "all":
         return True
@@ -123,6 +139,18 @@ def health_counts(services, show_urlless=True, source="all"):
     return {"total": total, "passing": passing, "failing": failing}
 
 
+def updates_count(services, show_urlless=True, source="all", status="all"):
+    """The N of "Updates available (N)": entries with a newer image among those the other
+    filters (Source, Status, Show URL-less) leave, so it equals what the toggle shows."""
+    source = normalize_source_filter(source)
+    status = normalize_status_filter(status)
+    return sum(
+        1 for e in services
+        if matches_updates(e)
+        and (show_urlless or entry_has_url(e))
+        and matches_source(e, source) and matches_status(e, status))
+
+
 def entry_has_url(entry):
     return bool((entry.internalurl or "").strip()) or bool((entry.externalurl or "").strip())
 
@@ -142,6 +170,7 @@ def group_and_sort_services(
     sort_in_group=DEFAULT_SORT_IN_GROUP,
     status="all",
     source="all",
+    updates=False,
 ):
     """Group and sort services for rendering.
 
@@ -164,6 +193,8 @@ def group_and_sort_services(
     source = normalize_source_filter(source)
     if status != "all" or source != "all":
         services = [e for e in services if matches_source(e, source) and matches_status(e, status)]
+    if updates:
+        services = [e for e in services if matches_updates(e)]
 
     buckets = defaultdict(list)
     for entry in services:

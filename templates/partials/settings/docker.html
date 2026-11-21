@@ -24,6 +24,11 @@
     </div>
   </div>
 
+  {% if not image_update_enabled %}
+  <p class="image-update-hint" id="docker-image-update-hint">Want to know when a newer image exists for these containers?
+    Turn on <a href="#image-updates" class="text-blue-400 hover:underline">Image updates</a>.</p>
+  {% endif %}
+
   <form method="POST" action="{{ url_for('dashboard.save_exposure_settings') }}" id="exposure-form" data-unsaved-guard>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="settings-card">

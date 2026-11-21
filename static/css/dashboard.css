@@ -1594,3 +1594,10 @@ a.kebab-item { display: block; text-decoration: none; }
   .imp-row .imp-ctl { grid-column: 2 / -1; }
   .imp-detail { margin-left: 0; }
 }
+
+/* Image update badge (PRD 24): information, not health, so it never tints a row. */
+.image-update-badge { display: inline-flex; align-items: center; margin-left: 0.35rem; vertical-align: middle;
+  color: var(--color-status-blue); font-size: 15px; line-height: 1; cursor: help; }
+.image-update-badge i { font-size: inherit; line-height: 1; }
+.image-update-row .drawer-value a[data-image-check][aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+.image-update-hint { color: var(--color-text-secondary, #9ca3af); font-size: 0.8rem; }

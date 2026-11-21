@@ -68,6 +68,38 @@
                             </div>
                             {% endif %}
 
+                            {# Image update line (PRD 24): read from the stored state, never a registry call #}
+                            {% if entry.is_docker %}{% set _iu = image_update_info(entry) %}{% endif %}
+                            {% if entry.is_docker and _iu %}
+                            <div class="drawer-row image-update-row" data-image-update="{{ _iu.state }}">
+                                <span class="drawer-label">Image update</span>
+                                <span class="drawer-value">
+                                    {% if _iu.state == 'update' %}
+                                        {% if _iu.model == 'digest' %}
+                                          Update: newer <code>{{ _iu.tag or 'tag' }}</code>{% if _iu.pushed_at %} pushed {{ _iu.pushed_at | time_since_utc }}{% endif %}{% if _iu.running_version %} (running {{ _iu.running_version }}){% endif %}
+                                        {% else %}
+                                          Update: <strong>{{ _iu.latest }}</strong> available{% if _iu.kind %} ({{ _iu.kind }}){% endif %}
+                                        {% endif %}
+                                        {% if _iu.checked_at %}<span class="text-gray-400 text-xs">· checked {{ _iu.checked_at | time_since_utc }}</span>{% endif %}
+                                    {% elif _iu.state == 'current' %}
+                                        Image up to date{% if _iu.checked_at %} <span class="text-gray-400 text-xs">· checked {{ _iu.checked_at | time_since_utc }}</span>{% endif %}
+                                    {% elif _iu.state == 'unknown' %}
+                                        <span class="text-gray-400">{{ _iu.reason or 'Cannot tell yet' }}</span>
+                                    {% elif _iu.state == 'error' %}
+                                        <span class="text-gray-400 text-xs">Could not check: {{ _iu.error or _iu.reason or 'unknown error' }}</span>
+                                    {% elif _iu.state == 'pinned' %}
+                                        Pinned by digest
+                                    {% endif %}
+                                    {% if _iu.rebuilt %}<span class="text-gray-500 text-xs">· rebuilt upstream</span>{% endif %}
+                                    {% if _iu.release_url and _iu.state == 'update' %}<a href="{{ _iu.release_url }}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline text-xs ml-1">Release notes</a>{% endif %}
+                                    {% if _iu.checkable and current_user.is_authenticated and current_user.is_admin %}
+                                    <a href="#" class="text-blue-400 hover:underline text-xs ml-1" data-image-check
+                                       data-url="{{ url_for('dashboard.check_image_update_now', id=entry.id) }}">Check now</a>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}
+
                             {# Operator-set image repo link on entries without a Docker image line #}
                             {% if not entry.is_docker and entry.image_repo_url %}
                             <div class="drawer-row">

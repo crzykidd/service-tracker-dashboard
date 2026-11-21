@@ -256,7 +256,7 @@ The MCP server has its own variables (`STD_URL`, `STD_API_KEY`, `STD_VERIFY_TLS`
 | Snapshot: on/off, time, keep days | same | on, 00:05, `backup_days_to_keep` |
 | Export: on/off, time, keep days, format (YAML or JSON) | same | on, 00:10, `backup_days_to_keep`, YAML |
 | Update check: on/off, interval in hours (min 1) | Settings → About, `PUT /api/v1/settings/update-check` | on, 6 |
-| Image update check: on/off, default scope | `PUT /api/v1/settings/image-updates` (a Settings page follows) | off, `any` |
+| Image update check: on/off, default scope | Settings → Sources → Image updates, `PUT /api/v1/settings/image-updates` | off, `any` |
 | Layer directions and per-host overrides | Settings → Docker, `PUT /api/v1/settings/exposure` | `neither` |
 | Stream name, network filters, default checks, expected interval, missing-entry expiry | Settings → Streams, `PATCH /api/v1/streams/<id>` | per stream |
 | Notification channels, Home Assistant picks | Settings → Notifications, Settings → Home Assistant | none |
@@ -348,9 +348,17 @@ The full payload, the validation rules, URL provenance and exposure semantics ar
 STD can check the image registries once a day and tell you when a newer image exists
 than the one a container runs. **It is off by default**: it sends the names of the
 images you run to their registries (Docker Hub, GHCR, quay.io, lscr.io and any other
-registry that speaks the standard v2 API), anonymously over HTTPS. Turn it on with
-`STD_IMAGE_UPDATE_ENABLED=true` or `PUT /api/v1/settings/image-updates`
-(`{"enabled": true}`); there is no Settings page for it yet.
+registry that speaks the standard v2 API), anonymously over HTTPS. Turn it on in
+Settings → Sources → **Image updates**, with `STD_IMAGE_UPDATE_ENABLED=true` (the switch
+then shows as locked), or with `PUT /api/v1/settings/image-updates`
+(`{"enabled": true}`).
+
+A container with a newer image gets a small up-arrow badge on the Dashboard, Tiled and
+Compact views, an **Updates available** filter appears beside the status and source
+filters, and the entry details say what is available and link to the release notes when
+the image names a GitHub source. The Edit page has an **Image updates** block per entry,
+and the Settings section shows the last and next run, a **Check now** button and any
+image that could not be checked.
 
 - **Pinned versions** (`1.4.2`, `v2.3`, `16.4-alpine`) are compared by tag: STD lists
   the registry's tags and finds a higher one of the same shape, reported as a `major`,

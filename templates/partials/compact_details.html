@@ -11,6 +11,7 @@
     {% endif %}
     <h3 id="compact-details-title" title="{{ entry.container_name }}">{{ entry.container_name }}</h3>
     {% with variant='pill' %}{% include "partials/health_badge.html" %}{% endwith %}
+    {% with variant='pill' %}{% include "partials/image_update_badge.html" %}{% endwith %}
     {% include "partials/source_icon.html" %}
   </div>
   <button type="button" class="std-modal-close" aria-label="Close" data-modal-close>&#10005;</button>

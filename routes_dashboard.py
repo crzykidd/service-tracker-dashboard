@@ -49,6 +49,8 @@ import check_form
 import entry_rules
 import export_format
 import health_history
+import image_tags
+import image_update
 import jobs
 import mgmt_serializers
 import notify
@@ -59,6 +61,7 @@ import streams
 import synthesizer
 import version_check
 from extensions import db
+from image_update_ui import image_updates_enabled
 from image_utils import fetch_icon_if_missing, icon_path_in_dir, safe_icon_filename
 from models import (
     NAME_SOURCE_UI_EDIT,
@@ -90,7 +93,9 @@ from view_helpers import (
     normalize_show_urlless,
     normalize_source_filter,
     normalize_status_filter,
+    normalize_updates_filter,
     safe_redirect_target,
+    updates_count,
 )
 
 logger = logging.getLogger(__name__)
@@ -216,6 +221,22 @@ def _read_filters():
     )
 
 
+def _read_updates_filter():
+    """The `?updates=1` filter. Ignored while the image update check is switched off: the
+    toggle is hidden then, and stored results must not filter the views."""
+    return image_updates_enabled() and normalize_updates_filter(request.args.get("updates"))
+
+
+def _image_update_filter_context(entries, show_urlless, source, status, updates):
+    """Filter bar context for the Updates toggle (hidden while the check is off)."""
+    enabled = image_updates_enabled()
+    return {
+        "image_updates_on": enabled,
+        "updates_filter": updates,
+        "updates_available": updates_count(entries, show_urlless, source, status) if enabled else 0,
+    }
+
+
 def _health_count_context(entries, show_urlless, source, status):
     """Counts and server-built chip links for the filter bar. Each link
     keeps every other current query param and swaps only `status`."""
@@ -238,6 +259,7 @@ def _load_view_entries():
         .options(joinedload(ServiceEntry.stream))
         .options(selectinload(ServiceEntry.exposures))
         .options(selectinload(ServiceEntry.checks))
+        .options(selectinload(ServiceEntry.image_reference))
         .all()
     )
 
@@ -256,6 +278,7 @@ def dashboard():
 
     entries = _load_view_entries()
     status, source = _read_filters()
+    updates = _read_updates_filter()
 
     grouped_entries = group_and_sort_services(
         entries,
@@ -264,6 +287,7 @@ def dashboard():
         sort_in_group=sort_in_group,
         status=status,
         source=source,
+        updates=updates,
     )
 
     visible_total = sum(len(es) for _, es in grouped_entries)
@@ -275,6 +299,7 @@ def dashboard():
         total_entries=visible_total,
         all_entries_count=len(entries),
         **_health_count_context(entries, show_urlless, source, status),
+        **_image_update_filter_context(entries, show_urlless, source, status, updates),
         status_filter=status,
         source_filter=source,
         group_by=axis,
@@ -296,6 +321,7 @@ def tiled_dashboard():
 
     entries = _load_view_entries()
     status, source = _read_filters()
+    updates = _read_updates_filter()
 
     grouped_entries = group_and_sort_services(
         entries,
@@ -304,6 +330,7 @@ def tiled_dashboard():
         sort_in_group=sort_in_group,
         status=status,
         source=source,
+        updates=updates,
     )
 
     visible_total = sum(len(es) for _, es in grouped_entries)
@@ -319,6 +346,7 @@ def tiled_dashboard():
         total_entries=visible_total,
         all_entries_count=len(entries),
         **_health_count_context(entries, show_urlless, source, status),
+        **_image_update_filter_context(entries, show_urlless, source, status, updates),
         status_filter=status,
         source_filter=source,
         host_label_ids=_host_label_ids(entries),
@@ -336,6 +364,7 @@ def compact_dash():
 
     entries = _load_view_entries()
     status, source = _read_filters()
+    updates = _read_updates_filter()
 
     grouped_entries = group_and_sort_services(
         entries,
@@ -344,6 +373,7 @@ def compact_dash():
         sort_in_group=sort_in_group,
         status=status,
         source=source,
+        updates=updates,
     )
 
     flattened_entries = []
@@ -360,6 +390,7 @@ def compact_dash():
         total_entries=visible_total,
         all_entries_count=len(entries),
         **_health_count_context(entries, show_urlless, source, status),
+        **_image_update_filter_context(entries, show_urlless, source, status, updates),
         status_filter=status,
         source_filter=source,
         host_label_ids=_host_label_ids(entries),
@@ -551,6 +582,7 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
     notification_channels_out = [mgmt_serializers.notification_channel_out(c) for c in
                                  NotificationChannel.query.order_by(NotificationChannel.id).all()]
     ha = _ha_context(notification_channels_out)
+    image_update_ctx = _image_update_settings_context()
     return render_template(
         'settings.html',
          current_config=current_app.config['LOADED_SETTINGS'],
@@ -600,6 +632,7 @@ def _render_settings(*, section=None, open_modal=None, forms=None, status=200, *
          notification_form=notification_form,
          stream_forms={k: v for k, v in forms.items() if k.startswith('stream:')},
          **ha,
+         **image_update_ctx,
          notifications_enabled=any(c['enabled'] for c in notification_channels_out),
          exposure_layers=exposure_layers,
          exposure_layer_directions=exposure_layer_directions,
@@ -1362,6 +1395,7 @@ def edit_entry(id):
                                svc_rows=svc_rows,
                                container_row=container_row,
                                **_edit_stream_context(entry),
+                               **_image_update_edit_context(entry),
                                notifications_enabled=NotificationChannel.query.filter_by(
                                    enabled=True).first() is not None)
 
@@ -1410,6 +1444,15 @@ def edit_entry(id):
         if repo_errors:
             flash(f"Image repo URL: {repo_errors[0]['message'].split(' ', 1)[1]}.", 'danger')
             return render_edit(form=request.form)
+
+        # === IMAGE UPDATES: validate first, change nothing on error ===
+        image_update_values = None
+        if entry.is_docker and 'image_update_form' in request.form:
+            image_update_values, iu_errors = _parse_image_update_form(request.form)
+            if iu_errors:
+                for message in iu_errors:
+                    flash(message, 'danger')
+                return render_edit(form=request.form)
 
         # === BASIC FIELDS ===
         new_host = request.form.get('host', '').strip()
@@ -1552,6 +1595,10 @@ def edit_entry(id):
                 db.session.flush()
                 entry.widget_id = widget.id
 
+        if image_update_values is not None:
+            entry.image_update_policy, entry.image_update_scope, entry.image_tag_pattern = image_update_values
+            image_update.recompute_entry(entry)      # from the stored reference row: no network
+
         entry.last_updated = datetime.now()
 
         # If the operator cleared a URL its source is now NULL and the
@@ -1572,6 +1619,140 @@ def edit_entry(id):
         return redirect(safe_redirect_target(referrer))
 
     return render_edit()
+
+
+# --- Image updates (PRD 24): entry edit block, Check now, Settings section -----------------
+
+_POLICY_LABELS = (('auto', 'Auto'), ('tags', 'Newer tags'), ('digest', 'Digest'), ('off', 'Off'))
+_SCOPE_LABELS = (('', 'Default'), ('any', 'Any'), ('minor', 'Same major'), ('patch', 'Same minor'))
+
+
+def _parse_image_update_form(form):
+    """`((policy, scope, pattern), errors)` from the entry edit block. The tag pattern is
+    checked with the same validator as the management API."""
+    errors = []
+    policy = (form.get('image_update_policy') or 'auto').strip().lower()
+    if policy not in image_tags.POLICIES:
+        errors.append("Image update policy must be one of: " + ", ".join(image_tags.POLICIES) + ".")
+    scope = (form.get('image_update_scope') or '').strip().lower() or None
+    if scope is not None and scope not in image_tags.SCOPES:
+        errors.append("Image update scope must be Default, Any, Same major or Same minor.")
+    pattern = (form.get('image_tag_pattern') or '').strip() or None
+    problem = image_tags.validate_tag_pattern(pattern)
+    if problem:
+        errors.append(f"Image tag pattern: {problem}")
+    return (policy, scope, pattern), errors
+
+
+def _image_update_edit_context(entry):
+    """Edit page context for the Image updates block (Docker entries only): the choices and
+    the "matches" preview from the candidates stored at the last check (no registry call)."""
+    if not entry.is_docker:
+        return {'image_update_edit': None}
+    row = entry.image_reference if entry.image_ref else None
+    candidates = (row.candidates or {}) if row else {}
+    pattern = entry.image_tag_pattern or None
+    if pattern:
+        pool = (candidates.get('patterns') or {}).get(pattern)
+    else:
+        pool = candidates.get('tags') if row and row.checked_at else None
+    return {'image_update_edit': {
+        'policies': _POLICY_LABELS, 'scopes': _SCOPE_LABELS,
+        'default_scope': image_update.default_scope(),
+        'enabled': image_updates_enabled(),
+        'matches': list(reversed(pool))[:10] if pool else [],
+        'matches_known': pool is not None,
+        'can_check': bool(entry.image_ref),
+    }}
+
+
+def _check_now_json(entry=None):
+    """Run Check now (throttled, never blocks) and answer JSON for the page script."""
+    try:
+        queued = image_update.request_check(current_app._get_current_object(), entry)
+    except image_update.CheckRequestError as exc:
+        message = exc.message
+        if exc.status == 429 and exc.retry_after:
+            message = f"Checked recently; try again in about {max(1, -(-exc.retry_after // 60))} min."
+        response = jsonify({'ok': False, 'message': message, 'retry_after': exc.retry_after})
+        response.status_code = exc.status
+        if exc.retry_after:
+            response.headers['Retry-After'] = str(exc.retry_after)
+        return response
+    what = 'this image' if entry is not None else f"{queued} image{'s' if queued != 1 else ''}"
+    response = jsonify({'ok': True, 'queued': queued,
+                        'message': f"Checking {what} now; the result shows here when the check ends."})
+    response.status_code = 202
+    return response
+
+
+@dashboard_bp.route('/service/<int:id>/image-update/check', methods=['POST'])
+@login_required
+@is_admin_required
+def check_image_update_now(id):
+    """Per-entry Check now (throttled per reference). A request, not a registry call here."""
+    entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
+    return _check_now_json(entry)
+
+
+@dashboard_bp.route('/settings/image-updates/check', methods=['POST'])
+@login_required
+@is_admin_required
+def check_image_updates_now():
+    """Settings -> Image updates -> Check now (every reference, once an hour)."""
+    return _check_now_json(None)
+
+
+@dashboard_bp.route('/settings/image-updates', methods=['POST'])
+@login_required
+@is_admin_required
+def save_image_update_settings():
+    """Save the switch and the default scope. With the switch set by the environment, the
+    submitted switch is ignored."""
+    was_enabled, origin = image_update.effective_enabled()
+    scope = (request.form.get('image_update_scope') or '').strip().lower()
+    if scope not in image_tags.SCOPES:
+        flash("Default scope must be Any, Same major or Same minor.", 'danger')
+        return _settings_redirect('image-updates')
+    enabled = None if origin == 'env' else request.form.get('image_update_enabled') == '1'
+    scope_changed = scope != image_update.default_scope()
+    image_update.save_settings(enabled, scope)
+    db.session.commit()
+    image_update.on_settings_changed(current_app._get_current_object(), was_enabled)
+    if scope_changed:
+        # A new default scope changes what is "newer": recompute locally, no registry call.
+        for e in ServiceEntry.active().filter(ServiceEntry.image_ref.isnot(None)).all():
+            image_update.recompute_entry(e, scope=scope)
+        db.session.commit()
+    flash("✅ Image update settings saved.", 'success')
+    return _settings_redirect('image-updates')
+
+
+def _image_update_settings_context():
+    """Settings -> Image updates: the switch (and what locks it), the last and next run and
+    the references in error. All read from stored state."""
+    enabled, origin = image_update.effective_enabled()
+    last = image_update.last_run()
+    last_at = image_update._parse_iso((last or {}).get('at'))
+    next_run = jobs.image_update_next_run() if enabled else None
+    problems = []
+    if enabled:
+        for item in image_update.reference_report('error'):
+            members = [m for m in item['entries'] if m['state'] == 'error']
+            problems.append({'ref': item['ref'], 'error': item['error'],
+                             'error_at': item['error_at'], 'next_check_at': item['next_check_at'],
+                             'entries': members})
+    return {
+        'image_update_enabled': enabled,
+        'image_update_origin': origin,
+        'image_update_env_name': image_update.ENV_ENABLED,
+        'image_update_scope': image_update.default_scope(),
+        'image_update_scopes': _SCOPE_LABELS[1:],
+        'image_update_last': last,
+        'image_update_last_at': last_at,
+        'image_update_next': next_run.astimezone().strftime('%Y-%m-%d %H:%M') if next_run else None,
+        'image_update_problems': problems,
+    }
 
 
 @dashboard_bp.route('/service/<int:id>/checks/run', methods=['POST'])

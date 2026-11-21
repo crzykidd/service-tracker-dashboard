@@ -24,6 +24,7 @@ SECTIONS = (
     ('widgets', 'Widgets', 'dashboard'),
     ('docker', 'Docker', 'sources'),
     ('streams', 'Streams', 'sources'),
+    ('image-updates', 'Image updates', 'sources'),
     ('notifications', 'Notifications', 'integrations'),
     ('home-assistant', 'Home Assistant', 'integrations'),
     ('users', 'Users', 'access'),

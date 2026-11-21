@@ -1,0 +1,81 @@
+{# Settings -> Image updates (PRD 24, design 7.2). Server-rendered; Check now is a fetch POST handled
+   by static/js/image_update.js (CSRF from the page meta tag). The switch and the scope save through one
+   guarded form. Everything shown here is read from stored state: no registry call is made by this page. #}
+{% from "partials/settings/_macros.html" import section_header, flash_slot, inline_warning, switch, save_bar, status_dot, empty_state with context %}
+<section id="section-image-updates" class="settings-section{% if (initial_section or settings_default_section) != 'image-updates' %} hidden{% endif %}">
+  {% call section_header('Image updates', 'Tell me when a newer image exists for a running container.') %}
+    <p>
+      Once a day STD asks each image&#39;s public registry (Docker Hub, GHCR, Quay, ...) whether a newer tag, or for a
+      moving tag like <code class="text-xs bg-gray-700 px-1 rounded">latest</code> a newer build, exists. It sends the
+      image names, no credentials, and never changes or restarts a container. An available update is information, not a
+      fault: it does not affect health, row colours or the Home Assistant state sensors.
+    </p>
+    <p>
+      The tag model needs only the notifier&#39;s existing data; the digest model (moving tags) needs docker-api-notifier
+      0.5.0 or later to report the running digest.
+    </p>
+  {% endcall %}
+  {{ flash_slot('image-updates') }}
+
+  <form method="POST" action="{{ url_for('dashboard.save_image_update_settings') }}" id="image-updates-form" data-unsaved-guard>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="settings-card">
+      <h3 class="settings-card-heading">Settings</h3>
+      {{ switch('image_update_enabled', image_update_enabled, 'Check for newer images', id='image-update-enabled', attrs=('disabled' if image_update_origin == 'env' else '')) }}
+      <p class="settings-hint text-xs text-gray-400 mt-1">
+        Off by default. When on, the image names of your Docker entries go to their public registries. Checks once a day.
+        {% if image_update_origin == 'env' %}
+        <span class="backup-origin" data-image-update-env-lock>Set by environment (<code>{{ image_update_env_name }}</code>); change it there.</span>
+        {% endif %}
+      </p>
+      <div class="mt-3">
+        <label class="settings-label" for="image-update-scope">Default scope</label>
+        <select id="image-update-scope" name="image_update_scope" class="input-clean" style="width:auto">
+          {% for val, lbl in image_update_scopes %}<option value="{{ val }}" {% if image_update_scope == val %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+        </select>
+        <p class="settings-hint text-xs text-gray-400 mt-1">Which newer tags count: Any, only within the same major version, or only within the same minor version. An entry can override it.</p>
+      </div>
+    </div>
+    {{ save_bar() }}
+  </form>
+
+  <div class="settings-card" id="image-update-status">
+    <h3 class="settings-card-heading">Status</h3>
+    {% if not image_update_enabled %}
+      <p class="text-sm text-gray-400">The check is off. Stored results are kept and show again when you turn it on.</p>
+    {% endif %}
+    <dl class="text-sm space-y-1">
+      <div><dt class="inline text-gray-400">Last run:</dt>
+        <dd class="inline" data-image-update-last>
+          {% if image_update_last %}{% if image_update_last_at %}{{ image_update_last_at | time_since_utc }}{% else %}{{ image_update_last.at }}{% endif %}
+            &middot; {{ image_update_last.checked or 0 }} of {{ image_update_last.refs or 0 }} reference{{ '' if (image_update_last.refs or 0) == 1 else 's' }} checked,
+            {{ image_update_last.updates or 0 }} update{{ '' if (image_update_last.updates or 0) == 1 else 's' }} found,
+            {{ image_update_last.errors or 0 }} error{{ '' if (image_update_last.errors or 0) == 1 else 's' }}
+          {% else %}never{% endif %}</dd></div>
+      <div><dt class="inline text-gray-400">Next run:</dt>
+        <dd class="inline" data-image-update-next>{{ image_update_next or ('not scheduled' if not image_update_enabled else 'soon') }}</dd></div>
+    </dl>
+    <div class="mt-3">
+      <button type="button" class="btn-secondary btn-sm" data-image-check
+              data-url="{{ url_for('dashboard.check_image_updates_now') }}"{% if not image_update_enabled %} disabled title="Turn the check on first"{% endif %}>Check now</button>
+      <span class="text-xs text-gray-400 ml-2">Once an hour at most.</span>
+    </div>
+  </div>
+
+  {% if image_update_enabled %}
+  <div class="settings-card" id="image-update-problems">
+    <h3 class="settings-card-heading">Problems</h3>
+    {% for p in image_update_problems %}
+    <div class="settings-card-row" data-image-update-problem="{{ p.ref }}">
+      <div class="settings-card-main">
+        <div class="settings-card-title"><code>{{ p.ref }}</code></div>
+        <div class="settings-card-summary settings-card-summary--wrap">{{ p.error }}
+          &middot; used by {% for m in p.entries %}{{ m.name }}{% if m.host %} ({{ m.host }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+      </div>
+    </div>
+    {% else %}
+    {{ empty_state('No problems: every image checked so far answered.') }}
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>

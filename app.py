@@ -30,6 +30,7 @@ from api_version import API_REVISION
 from extensions import csrf, db, login_manager
 from health import health_bp
 from health_state import entry_health
+from image_update_ui import image_update_info, image_updates_enabled
 from jobs import start_background_workers, verify_and_fetch_missing_icons
 from models import STREAM_PENDING, InventoryStream, User
 from routes_api import api_bp
@@ -201,6 +202,8 @@ def create_app():
         }
 
     app.add_template_filter(exposure_layers, 'exposure_layers')
+    app.add_template_global(image_update_info, 'image_update_info')
+    app.add_template_global(image_updates_enabled, 'image_updates_enabled')
 
     @app.template_filter('time_since')
     def time_since(dt):

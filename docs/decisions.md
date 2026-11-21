@@ -5,6 +5,36 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Image update UI (img-03)
+
+- **Check now is a fetch POST with a toast, not a form redirect.** The three dashboard views
+  render no flash messages (only Settings and Add/Edit do), so a redirect would lose the
+  throttle message. `static/js/image_update.js` (delegated, so it also works in the
+  fetched Compact dialog) posts with the meta CSRF token and builds a toast. The routes
+  answer JSON: 202, 409 (off or nothing to check), 429 with `Retry-After`.
+- **The `?updates=true` filter is ignored while the check is off**, as well as the toggle
+  being hidden. The stored `image_update_state` outlives the switch (img-02), so honouring
+  a bookmarked `?updates=true` would filter on stale answers. The predicate itself stays a
+  plain test on the stored column; the route drops it when off.
+- **The view tabs carry only `?updates=true`**, not the status/source/group filters (those
+  have never followed the tabs). Widening that to every filter is a separate change.
+- **No live "matches" preview.** The page shows what matched at the last check (the saved
+  pattern's stored pool, or the newer tags of the running shape) and says a changed pattern
+  applies at the next check. A preview of unsaved text would need the registry.
+- **Edit block only saves when `image_update_form` is posted**, so a client posting the
+  older edit form never resets policy, scope or pattern. Validation runs before any field is
+  changed, like the image repo URL.
+- **The badge tooltip is built in Python (`image_update_ui`)**, not the template, so the
+  tag and digest wording lives once and is the `aria-label` too.
+- **Rendering N+1:** the view query `selectinload`s `ServiceEntry.image_reference`
+  (the digest tooltip and the details read its times), and the enabled flag is cached in `g`.
+  `test_view_query_count_stays_flat` guards all three views.
+- **The Settings page needs no new settings helper:** save goes through `image_update.save_settings`
+  and `on_settings_changed`, as the API does; with the env var set the submitted switch is
+  ignored and the control renders disabled with the env lock text.
+
+---
+
 ## 2026-11-21 — Image update check engine (img-02)
 
 - **Where the columns live.** Observed (`image_running_digest`, `image_info`), operator

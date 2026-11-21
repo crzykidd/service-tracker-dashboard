@@ -22,15 +22,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Image update check: STD can tell you when a container's image has a newer version
-  (off by default; no screen yet, this release adds the engine and the API).** Once a day
+  (off by default).** Once a day
   STD asks the image registries (Docker Hub, GHCR, quay.io, lscr.io and any other
   standard registry, anonymously over HTTPS) whether a newer image exists than the one
   each Docker entry runs. It sends the names of the images you run to those registries,
-  so it is **off until you turn it on**: set `STD_IMAGE_UPDATE_ENABLED=true`, or
-  `PUT /api/v1/settings/image-updates` with `{"enabled": true}`. A page in Settings and
-  badges on the dashboards follow in a later release; for now read the result in each
-  entry's `image_update` block, in `GET /api/v1/image-updates`, or through the MCP
-  server (`list_image_updates`, `run_image_update_check`).
+  so it is **off until you turn it on**: Settings → Sources → **Image updates** (a switch and
+  a default scope), `STD_IMAGE_UPDATE_ENABLED=true`, or `PUT /api/v1/settings/image-updates`
+  with `{"enabled": true}`. When the environment variable is set, the switch shows as locked.
+  - **On the dashboards:** a small up-arrow badge next to the name of any container with a
+    newer image, on the Dashboard, Tiled and Compact views ("Newer image: 1.5.0 (minor)", or
+    "Image updated upstream (latest, pushed 2 days ago)" for a moving tag), and an **Updates
+    available (N)** filter beside the status and source filters (it combines with them and
+    follows you between the three views). Both are hidden while the check is off. An update is
+    information, not a fault: rows are not tinted and health does not change.
+  - **In an entry's details** (under the Docker image): "Update: **1.5.0** available (minor)",
+    "Image up to date", why an image cannot be compared yet, the last error, "Pinned by
+    digest", a muted "rebuilt upstream" note, a **Release notes** link when the image says
+    its source is on GitHub, and, for admins, a **Check now** link for that image.
+  - **On an entry's Edit page** (Docker entries): an **Image updates** block with the
+    policy (Auto, Newer tags, Digest, Off), the scope (Default, Any, Same major, Same minor)
+    and the tag pattern, with the tags that matched at the last check. A bad pattern is
+    refused and nothing is saved; saving recomputes the entry from the stored results
+    without contacting a registry.
+  - **Settings → Sources → Image updates:** the switch, the default scope, the last run
+    (when, images checked, updates found, errors), the next run, **Check now** (once an
+    hour, with the "try again" message when throttled) and a list of images that could not
+    be checked, with the error and the entries that use them. The Docker section points
+    there while the check is off. Read the same results through each entry's
+    `image_update` block, `GET /api/v1/image-updates`, or the MCP server
+    (`list_image_updates`, `run_image_update_check`).
   - **Pinned versions** (`1.4.2`, `v2.3`, `16.4-alpine`, `4.0.14.2939-ls263`) are compared
     by tag and reported as a `major`, `minor`, `patch` or `build` update; a newer tag of
     another flavour (`-bookworm` for `-alpine`) or a pre-release is not offered. The
