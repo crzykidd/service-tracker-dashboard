@@ -473,6 +473,39 @@ sidecar.
 
 ---
 
+## Small gaps parked after v0.10.1
+
+**Parked:** 2026-11-20, during the post-v0.10.1 gap triage (all browser checks
+passed on 0.10.1).
+
+### Context
+
+Two known limits from notif-05 and inv-04 were judged too minor to fix now. Both
+work as designed and are recorded in `docs/decisions.md`; they are parked here so
+they don't keep coming back as open gaps.
+
+### Sketched shape
+
+- **Persist the "republish: false" purge hold.** `PublishState.held` is in memory
+  only, so a restart ends the hold and the channel republishes on connect
+  (decisions.md, 2026-11-17 notif-05). It could be stored with the published set in
+  the `notify_publish_state` setting and released by the same triggers. It only
+  matters if STD restarts between a purge and the operator's next change.
+- **Rename a stream.** `display_name` is set when the stream is created and
+  snapshots never change it (decisions.md, inv-04). A rename field in Settings →
+  Streams (and on the management API) would set it; snapshots would keep ignoring
+  the producer's value. Needs the MQTT/HA stream device to be republished with the
+  new name.
+
+### Why parked
+
+Neither has come up in real use: a restart during a purge hold is rare and the
+outcome (republish) is the unsurprising one, and current stream names come from
+the sidecar and are fine.
+
+
+---
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

@@ -54,32 +54,23 @@ prompts/startnewsession.md and start".
    here first. A new optional field needs an `API_REVISION` bump + PRD §18.1 row.
 3. **Then pick the next work** from the parked list below with the operator.
 
-## Known gaps (decide: fix, park in FUTURE.md, or accept)
+## Known gaps (open, to fix)
 
-From notifications:
-- The test button can block up to about 13 s against a broker that doesn't
-  answer.
-- The "republish: false" purge hold is in memory only, so a restart ends it.
-- The published-state set is shared across channels (see `docs/decisions.md`).
+Accepted and parked gaps were triaged on 2026-11-20 (see `docs/decisions.md`,
+"Known-gap triage after v0.10.1"); only these remain:
 
-From streams (PRD §18 / §18.9 "As built", `docs/decisions.md`):
-- Deleting a stream drops its blocks and offers; `clear_blocks` only matters
-  for disable + purge.
-- A stream's display name is set at creation; snapshots never change it.
-- UI stream actions go to the app log, not `api_audit` (API actions audit).
-- `container_name` is `String(100)` while the contract allows 128-char names.
-- Entries linked before migration `b4e7a1c9d325` were detected by id order and
-  have no `pre_link_host`.
-- `find_duplicate` sees stream entries on purpose (one device, one entry).
-- With `deleted_retention_days: 0`, auto-expired missing entries are hard
-  deleted in the same job run and can't be restored by the item returning
-  (parked in `docs/FUTURE.md`).
+- Notifications: the test button can block up to about 13 s against a broker
+  that doesn't answer.
+- Streams: `container_name` is `String(100)` while the contract allows
+  128-char names.
 
 ## Later (parked, `docs/FUTURE.md`)
 
 - Stream observability follow-ups: templated check targets (with monitor
   profiles), `stale` + interval on the ingest status route (needs a revision
-  bump), push notifications on transitions.
+  bump), push notifications on transitions, expiry vs.
+  `deleted_retention_days: 0`.
+- Small gaps parked after v0.10.1: persist the purge hold, rename a stream.
 - docker-api-notifier: send its own `User-Agent`, log STD's API revision,
   optional `meta` at startup ("Notifier: log STD's API revision").
 - The rest of the network-inventory design (tags/views, thresholds, monitor

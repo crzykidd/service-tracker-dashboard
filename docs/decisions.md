@@ -5,6 +5,26 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-20 — Known-gap triage after v0.10.1
+
+All of 0.10.1 passed the operator's browser checks. The known gaps from the
+handoff were sorted so they stop coming back as open items:
+
+- **Accepted (works as designed, already recorded below):** the published-state
+  set is shared across channels (notif-05); deleting a stream drops its blocks and
+  offers, so `clear_blocks` only matters for disable + purge (inv-04); UI stream
+  actions go to the app log, not `api_audit` (inv-04); entries linked before
+  migration `b4e7a1c9d325` have no `pre_link_host` (inv-07); `find_duplicate` sees
+  stream entries (one device, one entry).
+- **Parked in `docs/FUTURE.md`:** persisting the "republish: false" purge hold, and
+  renaming a stream ("Small gaps parked after v0.10.1"); expiry vs.
+  `deleted_retention_days: 0` ("Stream observability follow-ups").
+- **Still open, to fix:** the MQTT test button blocking about 13 s against a
+  broker that doesn't answer, and `container_name` being `String(100)` while the
+  contract allows 128 characters.
+
+---
+
 ## 2026-11-20 — inv-08 stream observability
 
 - **Check targets follow the IP by rewrite, not by template (decided before code).**
