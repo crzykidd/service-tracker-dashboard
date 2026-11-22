@@ -47,6 +47,7 @@
           <a href="/{{ updates_qs }}" class="px-3 py-2 text-sm font-medium {% if active_tab == 'dashboard' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Dashboard</a>
           <a href="/tiled_dash{{ updates_qs }}" class="px-3 py-2 text-sm font-medium {% if active_tab == 'tiled' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Tiled</a>
           <a href="/compact_dash{{ updates_qs }}" class="px-3 py-2 text-sm font-medium {% if active_tab == 'compact' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Compact</a>
+          <a href="/ports" class="px-3 py-2 text-sm font-medium {% if active_tab == 'ports' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Ports</a>
           <a href="/add" class="px-3 py-2 text-sm font-medium {% if active_tab == 'add' %}text-white bg-gray-800{% else %}text-gray-400 hover:bg-gray-700{% endif %} rounded-t">Add</a>
           {% if (pending_streams and pending_streams > 0) or (stale_streams and stale_streams > 0) %}
           {% set _labels = [] %}

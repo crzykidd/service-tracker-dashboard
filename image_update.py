@@ -61,7 +61,7 @@ RETENTION_DAYS = 30
 _RUN_LOCK = threading.Lock()
 _STATE_LOCK = threading.Lock()
 _PENDING = {"everything": False, "new": False, "refs": set()}
-_THROTTLE = {"global": None, "refs": {}, "nudge": None}      # monotonic timestamps
+_THROTTLE = {"global": None, "refs": {}, "nudge": None}      # global/refs: UTC datetimes; nudge: monotonic
 
 
 def reset_state():
@@ -543,7 +543,9 @@ def execute(app, plan):
         return None
     summaries = []
     try:
-        providers = enabled_providers()
+        # The scheduler calls this with no app context; reading the switch needs one.
+        with app.app_context():
+            providers = enabled_providers()
         if not providers:
             _drain_pending()                      # asked while the check is off: dropped
             return None
@@ -606,11 +608,43 @@ def _schedule(app, delay_seconds):
 # --- requests: Check now, nudge, first enable ---------------------------------------------
 
 class CheckRequestError(Exception):
-    """A refused Check now. `status` is the HTTP status the API answers."""
+    """A refused Check now. `status` is the HTTP status the API answers. `confirm_required` marks
+    a request inside the cooldown that the UI may repeat with `force=True` (`ago_seconds` is how
+    long ago the last check was); the management API has no one to ask and keeps the 429."""
 
-    def __init__(self, status, message, retry_after=None):
+    def __init__(self, status, message, retry_after=None, confirm_required=False, ago_seconds=None):
         super().__init__(message)
         self.status, self.message, self.retry_after = status, message, retry_after
+        self.confirm_required, self.ago_seconds = confirm_required, ago_seconds
+
+
+class CheckQueued(int):
+    """The number of references queued; `already_running` when a run was already pending or
+    in progress, so nothing new was queued."""
+
+    already_running = False
+
+
+def _already_running():
+    result = CheckQueued(0)
+    result.already_running = True
+    return result
+
+
+def ago_text(seconds):
+    """Plain words for how long ago: 'less than a minute ago', '1 minute ago', '27 minutes ago'."""
+    minutes = int(max(0, seconds) // 60)
+    if minutes < 1:
+        return "less than a minute ago"
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    hours = minutes // 60
+    return f"{hours} hour{'s' if hours != 1 else ''} ago"
+
+
+def _later(*times):
+    times = [t for t in times if t is not None]
+    return max(times) if times else None
 
 
 def checkable_refs():
@@ -625,38 +659,52 @@ def checkable_refs():
     return refs
 
 
-def request_check(app, entry=None):
-    """Check now: everything (throttled to once an hour) or one entry's reference
-    (once per 15 minutes per reference; ignores backoff). Records the request and asks for a
-    one-shot run. Returns the number of references queued. Raises CheckRequestError."""
+def request_check(app, entry=None, force=False):
+    """Check now: everything (cooldown an hour) or one entry's reference (15 minutes per
+    reference; ignores backoff). Inside the cooldown it raises a `confirm_required`
+    CheckRequestError unless `force`. A run already pending or in progress is not doubled: the
+    result has `already_running`. Otherwise records the request and asks for a one-shot run.
+    Returns the number of references queued. Raises CheckRequestError."""
     if not is_enabled():
         raise CheckRequestError(409, "The image update check is off; turn it on first.")
-    now = time.monotonic()
+    now = _now()
     if entry is None:
         queued = len(checkable_refs())
-        with _STATE_LOCK:
-            last = _THROTTLE["global"]
-            if last is not None and now - last < GLOBAL_COOLDOWN_SECONDS:
-                wait = math.ceil(GLOBAL_COOLDOWN_SECONDS - (now - last))
-                raise CheckRequestError(
-                    429, "Checked for every image a moment ago; try again later.", wait)
-            _THROTTLE["global"] = now
-            _PENDING["everything"] = True
+        last_check = _later(_parse_iso((last_run() or {}).get("at")))
+        cooldown, what = GLOBAL_COOLDOWN_SECONDS, "Checked for every image"
     else:
         parsed = parse_image_ref(entry.image_ref) if entry.image_ref else None
         if (entry.source != SOURCE_NOTIFIER or entry.deleted_at is not None or parsed is None
                 or not parsed.tag or (entry.image_update_policy or "auto") == "off"):
             raise CheckRequestError(409, "This entry has no image reference to check.")
         queued = 1
-        with _STATE_LOCK:
-            last = _THROTTLE["refs"].get(entry.image_ref)
-            if last is not None and now - last < REF_COOLDOWN_SECONDS:
-                wait = math.ceil(REF_COOLDOWN_SECONDS - (now - last))
-                raise CheckRequestError(429, "This image was checked a moment ago; try again later.", wait)
+        row = ImageReference.query.filter_by(ref=entry.image_ref).first()
+        last_check = row.checked_at if row is not None else None
+        cooldown, what = REF_COOLDOWN_SECONDS, "This image was checked"
+    with _STATE_LOCK:
+        if entry is None:
+            last_check = _later(last_check, _THROTTLE["global"])
+        else:
+            last_check = _later(last_check, _THROTTLE["refs"].get(entry.image_ref))
+        if last_check is not None and not force:
+            ago = (now - last_check).total_seconds()
+            if 0 <= ago < cooldown:
+                raise CheckRequestError(
+                    429, f"{what} a moment ago; try again later.", math.ceil(cooldown - ago),
+                    confirm_required=True, ago_seconds=int(ago))
+        if entry is None:
+            if _PENDING["everything"] or _RUN_LOCK.locked():
+                return _already_running()
+            _THROTTLE["global"] = now
+            _PENDING["everything"] = True
+        else:
+            if (_PENDING["everything"] or entry.image_ref in _PENDING["refs"]
+                    or _RUN_LOCK.locked()):
+                return _already_running()
             _THROTTLE["refs"][entry.image_ref] = now
             _PENDING["refs"].add(entry.image_ref)
     _schedule(app, 0)
-    return queued
+    return CheckQueued(queued)
 
 
 def maybe_nudge(app):

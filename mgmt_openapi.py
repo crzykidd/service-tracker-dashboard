@@ -23,6 +23,7 @@ from api_version import API_REVISION
 from export_format import ExportDoc
 from image_tags import STATES as IMAGE_UPDATE_STATES
 from models import VALID_SOURCES
+from ports import KINDS as PORT_KINDS
 from view_helpers import VALID_STATUS_FILTERS
 
 API_PREFIX = "/api/v1"
@@ -214,6 +215,23 @@ OPERATIONS: tuple = (
        description="One item per image reference that an active Docker entry runs, with the entries using it. "
                    "While the check is switched off every entry shows `off`; the stored results come back "
                    "when it is turned on."),
+    Op("GET", "/ports", "read", "Container ports in use across all hosts", S.PortsOut,
+       params=(Param("kind", {"type": "string", "enum": list(PORT_KINDS)},
+                     "`published` (bound on the host), `host_network` (bound on the host by a host-network container), `direct` (reachable at a macvlan/ipvlan container's own address), `exposed` (declared by the image only) or `all` (default)."),
+               Param("host", {"type": "string"}, "Only this host (exact match)."),
+               Param("q", {"type": "string"}, "Text in the name, container name, stack or port."),
+               Param("conflicts", {"type": "boolean"}, "`true`: only conflicting rows.")),
+       description="Ports the notifier reported for running Docker entries. `summary` counts all ports "
+                   "(not only the filtered ones). A row is `published` (bound on the host), `host_network` "
+                   "(a host-network container's port, bound on the host: `host_port` is the container port, "
+                   "`host_ips` the wildcard; the network name `host` counts even without a reported driver), "
+                   "`direct` (a macvlan/ipvlan container with an address: `host_ips` are its addresses, "
+                   "`host_port` the container port, `network` and `driver` name the network) or `exposed` "
+                   "(declared by the image, not bound). A conflict is two different entries on the same host "
+                   "publishing or binding the same protocol and host port on overlapping addresses (a "
+                   "wildcard address overlaps any other), or two `direct` rows with the same address, protocol "
+                   "and port; `direct` never conflicts with host ports. Stopped containers report no ports "
+                   "and are left out."),
     Op("POST", "/image-updates/run", "write", "Check for newer images now", S.RunRequestedOut,
        request=S.ImageUpdateRunRequest, status=202, errors=(404, 409, 429),
        description="Asks for a run and returns at once (the check runs in the background). The body is "

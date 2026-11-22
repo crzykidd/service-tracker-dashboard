@@ -6,7 +6,7 @@ the release that ships it, plus one row in `API_REVISION_HISTORY` and in the PRD
 18.1 table. Breaking changes need `/api/v2`.
 """
 
-API_REVISION = 5
+API_REVISION = 6
 
 # (revision, STD release, what it adds): the PRD 18.1 table as data.
 API_REVISION_HISTORY = (
@@ -27,9 +27,13 @@ API_REVISION_HISTORY = (
      "image_update in the entry responses and image_update_policy / image_update_scope / "
      "image_tag_pattern on PATCH /entries/{id}, GET /image-updates, GET and PUT "
      "/settings/image-updates, POST /image-updates/run, features image_updates and image_info"),
+    (6, "0.13.0",
+     "GET /ports (container ports in use across all hosts, with conflicts; kinds published, exposed, "
+     "host_network and direct), feature ports; register: optional driver, ip_address, ipv6_address and "
+     "mac_address on each networks item, feature network_details"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later
 # prompt (inv-04) of the same release.
 FEATURES = ("register", "management", "notifications", "streams", "backup", "import",
-            "image_updates", "image_info")
+            "image_updates", "image_info", "ports", "network_details")

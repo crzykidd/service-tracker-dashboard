@@ -40,6 +40,7 @@ import importer
 import jobs
 import mgmt_openapi
 import notify
+import ports
 import routes_api
 import settings_loader
 import settings_store
@@ -1475,6 +1476,24 @@ def list_image_updates():
         abort(400, f"'state' must be one of: {', '.join(image_tags.STATES)}.")
     items = image_update.reference_report(state)
     return _page(items[offset:offset + limit], len(items), limit, offset)
+
+
+# --- ports in use (PRD 25) ---------------------------------------------------------------
+
+
+@mgmt_bp.route("/ports", methods=["GET"])
+@require_api_key("read")
+def list_ports():
+    kind = (request.args.get("kind") or "all").strip().lower()
+    if kind not in ports.KINDS:
+        abort(400, f"'kind' must be one of: {', '.join(ports.KINDS)}.")
+    raw = (request.args.get("conflicts") or "false").strip().lower()
+    if raw not in ("true", "false", "1", "0"):
+        abort(400, "'conflicts' must be true or false.")
+    rows = ports.build_rows(ServiceEntry.active().all())
+    filtered = ports.filter_rows(rows, kind=kind, host=(request.args.get("host") or "").strip() or None,
+                                 q=request.args.get("q"), conflicts_only=raw in ("true", "1"))
+    return jsonify({"summary": ports.summarize(rows), "ports": filtered})
 
 
 @mgmt_bp.route("/image-updates/run", methods=["POST"])

@@ -5,6 +5,71 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-22 — Network details on register: "names only" reversed
+
+- **Why.** The first design captured network names only ("IPs are SSH territory"). The Ports page
+  cannot be right for macvlan/ipvlan without addresses: those containers have their own LAN IP,
+  Docker ignores their published ports, and a host-network container binds on the host. The STD
+  install is the operator's own network, so a container's address on it is not sensitive. So
+  `networks[]` gains optional `driver`, `ip_address`, `ipv6_address`, `mac_address`.
+- **No migration, extended revision 6.** The values live inside the existing `networks` JSON items;
+  unreported ones are dropped from the stored item (a model serializer), so an older notifier's data is
+  byte-identical to before. Revision 6 is unreleased, so its row grew (feature `network_details`) instead
+  of adding a 7, as revision 5 did within 0.12.0.
+- **Not exported.** `networks` stays out of the export (§20.2): it is observation the notifier rewrites
+  on the next register, and the new keys carry addresses and MACs. No change to `export_format.py`.
+- **The network named `host` is the host network even without a driver.** Docker reserves the name, and
+  the notifier's driver lookup (a network inspect) is optional, so an older or driverless report must not
+  hide a host-network container. Any other network needs a `macvlan` / `ipvlan` driver *and* an address to
+  produce direct rows; an unknown address means nothing is claimed.
+- **Published ports are dropped only when nothing else publishes.** An entry only on host / macvlan /
+  ipvlan has no published rows (Docker ignores them, so they would be false); an entry also on a bridge
+  keeps them. Those container ports still become direct or host-network rows.
+- **Direct conflicts ignore the host.** The address is the identity on a LAN, so two direct rows clash on
+  the same address, protocol and port regardless of host, and never with host ports.
+
+---
+
+## 2026-11-22 — Image Check now: confirm in the UI, 429 in the API
+
+- **The confirmation is UI-only.** The session routes answer 409 `confirm_required` inside the
+  cooldown and accept `force`; the management API and MCP tool get no `force` and keep 429 with
+  `Retry-After`. The API has no human to confirm, and a script hammering the registries is the
+  case the cooldown exists for. No `API_REVISION` change.
+- **The cooldown clock is wall-clock UTC**, the later of the persisted last run / reference
+  `checked_at` and the last accepted request, so it survives a restart and compares with stored
+  times. The old monotonic in-memory clock forgot a check on restart.
+- **Double clicks are stopped by "already running"**, not by the throttle: a pending or in-progress
+  run is never queued twice, even with `force`.
+
+---
+
+## 2026-11-21 — Ports in use page (GitHub #58)
+
+- **Stopped containers are excluded.** Docker clears `NetworkSettings.Ports` on stop, so a
+  stopped container reports no published ports; its `exposed_ports` (image config) survive, and
+  listing them would show a stopped service as using ports. Excluded: an entry whose
+  `docker_status` is set and not running. `start` counts as running, as it does on the dashboards
+  (`dashboard.html` treats `start` and `running` alike); a NULL status (older notifier, manual) is
+  included. Remembering last-known ports is parked in FUTURE.md.
+- **Any wildcard address overlaps everything.** `""`, `0.0.0.0` and `::` conflict with any other
+  address on the same host, protocol and port, without a per-family check. A `0.0.0.0` vs `::`
+  split across two entries would strictly not clash on some stacks; it is rare, and a false
+  positive is cheaper than a missed clash. Two different specific IPs never conflict.
+- **`0.0.0.0` and `::` collapse into one row.** Docker publishes both for a plain `-p 8080:80`;
+  to the operator it is one binding. One entry's bindings sharing (host port, container port,
+  protocol) become one row with all its `host_ips`.
+- **The conflict count is the number of conflicting rows** (both sides of a clash count, so one
+  clash of two entries is 2), computed over all ports, not the filtered ones. The page and
+  `GET /api/v1/ports` use the same `ports.summarize`, so the summary bar and the API summary match
+  and the count stays visible while filtering (its link applies `conflicts=true`).
+- **Display name is `container_name`**, which is what all three dashboard views show; rows link to
+  `/edit/<id>`, the dashboards' edit target (they have no entry detail page).
+- **An exposed-only row** is an exposed `port/proto` with no published binding of the same
+  container port and protocol on that entry. Exposed rows never conflict.
+
+---
+
 ## 2026-11-21 — Image update over MQTT and Home Assistant (img-04)
 
 - **Sync trigger: add the computed columns to `notify_state._ENTRY_ATTRS`** (`image_ref`,

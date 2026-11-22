@@ -42,7 +42,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # The release this script belongs to. `/release-prep` sets it with VERSION; a test
 # keeps the two from drifting.
-MCP_VERSION = "0.12.0"
+MCP_VERSION = "0.13.0"
 
 API = "/api/v1"
 DEFAULT_TIMEOUT = 15.0
@@ -445,6 +445,18 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         Returns {items, total, limit, offset}; each item has ref, remote_digest, checked_at, error, next_check_at and entries [{id, name, host, state, latest, kind, since, policy}].
         """
         return client.request("GET", "/image-updates", params=dict(state=state, limit=limit, offset=offset))
+
+    @read_tool
+    def list_ports(kind: str = "all", host: str | None = None, query: str | None = None,
+                   conflicts_only: bool = False) -> dict:
+        """List the container ports in use across all hosts: answer "what is on port 8080 on host X" or "is this port free". Ports come from the Docker notifier and only for running containers.
+
+        kind: published (bound on the host: reachable at host:host_port) | host_network (a network_mode host container: its port is bound directly on the host, host_port = container port) | direct (a macvlan/ipvlan container with its own LAN address: reachable at host_ips[0]:container_port, not through the host; network names the network) | exposed (declared by the image but NOT bound on the host, so it takes no host port) | all (default). host: exact host name. query: text in the name, container name, stack or a port number. conflicts_only: only rows in conflict.
+        A conflict means two different entries on the same host publish the same protocol and host port on overlapping addresses (a wildcard address such as 0.0.0.0 or :: overlaps any other), so one of them cannot bind. host_network rows take part in that rule; direct rows conflict only with another direct row on the same address, protocol and port.
+        Returns {summary: {hosts, published, host_network, direct, exposed, conflicts}, ports: [{entry_id, name, host, container_name, stack_name, docker_status, kind, host_ips, host_port (null when exposed), container_port, protocol, network and driver (direct rows, else null), conflict, conflict_with: [entry ids]}]}; summary counts all ports, not only the filtered ones.
+        """
+        return client.request("GET", "/ports", params=dict(
+            kind=kind, host=host, q=query, conflicts="true" if conflicts_only else None))
 
     @read_tool
     def backup_settings() -> dict:

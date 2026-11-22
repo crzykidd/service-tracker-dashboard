@@ -379,6 +379,8 @@ data-stream="{{ 1 if entry.is_stream else 0 }}"
             {% for net in entry.networks %}
               <li>
                 <span class="font-mono">{{ net.name }}</span>
+                {% if net.driver %}<span class="text-gray-400 text-xs">({{ net.driver }})</span>{% endif %}
+                {% for _v in [net.ip_address, net.ipv6_address, net.mac_address] if _v %}<span class="font-mono text-xs text-gray-300">{{ _v }}</span>{% endfor %}
                 {% if net.aliases %}
                   <span class="text-gray-400 text-xs">
                     [{{ net.aliases | join(', ') }}]

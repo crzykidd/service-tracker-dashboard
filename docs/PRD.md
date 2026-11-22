@@ -109,6 +109,12 @@
 | 0.99    | 2026-11-21 | Image update UI (img-03, phase 3), on `dev`, unreleased: new §24.8 (dashboard badge and `?updates=true` filter, entry-details lines, Check now, the edit-page block, Settings → Sources → Image updates, the Docker hint); the old §24.8 "Not built yet" becomes §24.9 and now lists only MQTT / Home Assistant (img-04), credentials and other providers. §13.7 (badge, details line, Check now in the entry facts), §19.1 (fourteen sections, `image-updates` under Sources), §3.1 module layout (`image_update_ui.py`, `static/js/image_update.js`). New session routes `POST /service/<id>/image-update/check`, `POST /settings/image-updates`, `POST /settings/image-updates/check`. No schema, API revision or wire-contract change (the UI reads the state img-02 stores). |
 | 0.100   | 2026-11-21 | Image update MQTT and Home Assistant (img-04, phase 4), on `dev`, unreleased: new §24.10; §17.3 (`entry/<id>/image` topic, `summary.updates`, `entry/<id>/state.image_update_state`, the new sync triggers), §17.4 (the read-only `update` entity and the hub "Updates available" sensor), §24.9 now lists only credentials and other providers. `notify_state.py`, `notify_ha.py`, `notify_purge.py`, `image_update.on_settings_changed`. No schema, API revision or register wire-contract change. |
 | 0.101   | 2026-11-21 | v0.12.0 released: §24 Image update check (registry provider, daily job, `image_info` register field, UI, MQTT/HA `update` entities) and the image repository link (GitHub #6) marked delivered; API revision 5 assigned to 0.12.0 in §18.1. |
+| 0.102   | 2026-11-21 | Ports in use (GitHub #58), on `dev`, unreleased: new §25 (the Ports tab and `/ports` page, `GET /api/v1/ports`, the `list_ports` MCP tool, inclusion and conflict rules), §18.1 revision 6 row, §3.1 module layout (`ports.py`). Reads the existing `exposed_ports` / `published_ports` columns; no schema, register or stream-ingest wire-contract change. |
+| 0.103   | 2026-11-22 | §25.4: the Ports page filters apply on change and the whole page state (view, sort and every filter) is remembered per browser until Reset (`static/js/ports.js`, `localStorage`). No API, schema or wire-contract change. |
+| 0.104   | 2026-11-22 | §24 Check now: inside the cooldown the UI asks for confirmation (409 `confirm_required`, repeat with `force`) instead of refusing; the management API keeps 429; the last-check time uses the persisted last run and wall-clock request times; a pending run is not doubled. Scheduler fix (the run reads the enable switch in an app context). No API revision, schema or wire-contract change. |
+| 0.105   | 2026-11-22 | §25.4: the Ports page sorts by state first (published, then not published) and then by container name (new default), port, protocol or host (flat only); the sort control shows in both views; `host_port` stays an alias of `port`. The UI relabels "exposed" as "not published"; the API keeps `kind: "exposed"` and `summary.exposed` (label/value split documented). No API, schema or wire-contract change. |
+| 0.106   | 2026-11-22 | Network details on register, on `dev`, unreleased: §5.3 `networks` items gain optional `driver`, `ip_address`, `ipv6_address`, `mac_address` ("names only" reversed; no migration), §18.1 revision 6 row extended (feature `network_details`, ports `kind` `host_network` / `direct`), §22.2 item 6 (notifier 0.5.x will send them), §25 macvlan / ipvlan (direct) and host-network rows, conflict rules, the reserved `host` network name. Register contract: additive optional fields, so STD ships first. |
+| 0.107   | 2026-11-22 | v0.13.0 released: §25 Ports in use (GitHub #58: the Ports tab, `GET /api/v1/ports`, the `list_ports` MCP tool, host-network and macvlan/ipvlan rows) marked delivered; network details on register (§5.3); API revision 6 assigned to 0.13.0 in §18.1; §24 Check now confirmation and the scheduler fix. |
 
 ---
 
@@ -138,6 +144,7 @@
 22. [Cross-Repo Coordination](#22-cross-repo-coordination)
 23. [Open Questions](#23-open-questions)
 24. [v0.12.0 — Image update check (Delivered)](#24-v0120--image-update-check-delivered)
+25. [Ports in use (Unreleased)](#25-ports-in-use-unreleased)
 
 ---
 
@@ -307,6 +314,8 @@ image_update.py     ← the update provider seam and the registry provider, sett
                       recompute (`apply_register`), retention (§24)
 image_update_ui.py  ← read-only view helpers for §24.8 (`image_update_info`, `image_updates_enabled`,
                       GitHub release-notes URL); Jinja globals; no registry call
+ports.py            ← pure: container ports in use across hosts and their conflicts (§25); `build_rows`,
+                      `summarize`, `filter_rows`; shared by the `/ports` page and `GET /api/v1/ports`
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
                       lscr.io; None for anything else; reads `image_ref`) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views
@@ -442,7 +451,7 @@ backup leaves them NULL; the next register call fills them in.
 
 | Change | Detail |
 |--------|--------|
-| Column | `service_entry.networks` (`JSON`, nullable). List of `{"name": str, "aliases": [str]}` capturing Docker network membership as reported by the notifier. Pure observation; overwritten on every register. Names only — IPs/gateways are intentionally not captured. |
+| Column | `service_entry.networks` (`JSON`, nullable). List of `{"name": str, "aliases": [str]}` capturing Docker network membership as reported by the notifier. Since API revision 6 an item may also carry `driver` (lowercase, at most 32 characters), `ip_address` (IPv4), `ipv6_address` and `mac_address` (canonical lowercase colon form); each key is absent, not null, when unreported (an older notifier, or Docker sent `""`). Pure observation; overwritten on every register, no UI editing, no migration (the JSON column holds the new keys). Gateways stay uncaptured. The first design was "names only"; it was reversed because the Ports page needs the addresses (§25, `docs/decisions.md`). The column is not exported (§20.2). |
 | Column | `service_entry.exposed_ports` (`JSON`, nullable). List of `"<port>/<proto>"` strings (e.g. `"5173/tcp"`). The container's `EXPOSE` declarations / compose `expose:` entries. |
 | Column | `service_entry.published_ports` (`JSON`, nullable). List of `{"container_port", "protocol", "host_ip", "host_port"}` objects — the host-to-container port mappings from compose `ports:`. Distinct from `exposed_ports`: published is what reaches the host, exposed is what the container declares it listens on. |
 
@@ -3032,6 +3041,7 @@ server supports and log it.
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
 | 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
+| 6 | 0.13.0 | `GET /ports` (container ports in use across all hosts, with conflicts; §25; `kind` also accepts `host_network` and `direct`, rows carry `network` and `driver`, the summary has `host_network` and `direct`), feature `ports` Register: optional `driver`, `ip_address`, `ipv6_address` and `mac_address` on each `networks` item (§5.3, §22), feature `network_details` |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3945,6 +3955,13 @@ not lead.
    before STD omits it instead of getting a 400 on every register. Consumer leads, producer
    follows: STD ships the schema first. An older notifier keeps working: no `image_info`
    means "keep the stored values", and moving tags show `unknown` until it reports.
+6. STD (unreleased, API revision 6) accepts the optional `networks[].driver`, `ip_address`,
+   `ipv6_address` and `mac_address` and advertises the `network_details` feature in
+   `GET /api/v1/meta`. **A notifier 0.5.x will send them**, only when `/api/v1/meta` lists
+   `network_details`. The driver is not in the container's own network settings: the notifier needs a
+   network inspect, cached per network id (a network's driver does not change). Consumer leads,
+   producer follows. An older notifier keeps working: the keys are absent and the Ports page
+   behaves as before (except that a network named `host` is always the host network, §25.2).
 
 ---
 
@@ -4085,9 +4102,13 @@ Wire contract: `docs/register-api.md`; cross-repo plan: §22.2 item 5.
   recomputed.
 - Per-reference backoff: after a failure the reference is skipped for 1, 2, 4 days, capped at 7; success
   resets; a 429 sets the next attempt to `max(Retry-After, backoff)`.
-- **Check now:** `POST /api/v1/image-updates/run`, throttled to once per hour for everything and once per
-  15 minutes per reference (a single entry's Check now ignores backoff). Not a schedule: it records a request
-  and asks for a one-shot run on the scheduler.
+- **Check now:** `POST /api/v1/image-updates/run`, with a cooldown of one hour for everything and
+  15 minutes per reference (a single entry's Check now ignores backoff). The management API answers 429 with
+  `Retry-After` inside it. The session routes (below) answer 409 `confirm_required` instead and accept a
+  repeat with `force`; the UI asks the operator first. The time since the last check is the later of the
+  stored one (`last_run.at`, or the reference's `checked_at`) and the last accepted request (wall-clock UTC),
+  so it survives a restart. A run already pending or in progress is not queued twice. Not a schedule: it
+  records a request and asks for a one-shot run on the scheduler.
 - **Retention:** the nightly retention job deletes `image_reference` rows no active entry has wanted for 30
   days (skipped while the check is off, so stored results survive).
 - Not part of the health roll-up: an available update is information, not a fault.
@@ -4135,8 +4156,9 @@ session. The state shown is `image_update.effective_state()`, so everything is h
   (CSRF from the page meta tag, delegated so it also works in the Compact dialog) to
   `POST /service/<id>/image-update/check` and `POST /settings/image-updates/check` (admin only), which call
   `image_update.request_check` and answer JSON: 202 when queued, 409 when the check is off or the entry has
-  nothing to check, 429 with `Retry-After` when throttled; the script shows the message as a toast
-  ("Checked recently; try again in about N min.").
+  nothing to check, 409 with `confirm_required`, `ago_seconds`, `ago_text` and a message inside the cooldown
+  (repeat with `force=1`, form, JSON or query, to run anyway). The script asks (the Settings confirm dialog,
+  else `window.confirm`), repeats with `force` on OK and shows the answer as a toast.
 - **Edit page** (Docker entries): an "Image updates" block with Policy (Auto / Newer tags / Digest / Off), Scope
   (Default / Any / Same major / Same minor) and Tag pattern, validated with `image_tags.validate_tag_pattern`
   before anything is changed (an invalid value is a banner and the form is re-rendered). Saving recomputes the
@@ -4148,7 +4170,7 @@ session. The state shown is `image_update.effective_state()`, so everything is h
   Enabled switch (default off; locked, with "Set by environment (STD_IMAGE_UPDATE_ENABLED)", while the env var
   is set) and the Default scope in one guarded form (`POST /settings/image-updates`; saving the switch calls
   `image_update.on_settings_changed`, a changed scope recomputes the entries locally); a status card (last run:
-  when, references checked, updates found, errors; next run; Check now, once an hour); a problems list
+  when, references checked, updates found, errors; next run; Check now, which asks to confirm within an hour of the last check); a problems list
   (references in `error` with the error and the entries that use them). No interval field: the text says
   "Checks once a day". The Docker section shows a one-line hint pointing here while the check is off.
 
@@ -4182,3 +4204,97 @@ Reconciled by `notify_state.full_sync()` like every other topic (§17.3); no sec
   requests a forced sync when the switch flips. The job never touches the broker.
 - `checked_at` in the payload is the reference row's last check; it refreshes with the next sync
   that republishes the topic (any state change, the 10-minute safety net compares payloads).
+
+---
+
+## 25. v0.13.0 — Ports in use (Delivered)
+
+One page, one API route and one MCP tool that list the container ports in use across all
+hosts, to answer "what is on 8080 on host X" and "which ports are free" (GitHub #58).
+Read-only: ports are pure observation (§22) and are never edited in the UI.
+
+### 25.1 Data source
+
+`service_entry.exposed_ports` (`["5173/tcp"]`, from the image config) and
+`service_entry.published_ports` (`[{"container_port", "protocol", "host_ip", "host_port"}]`), both
+sent by docker-api-notifier 0.4.0+ on every register. Both can be NULL (an older notifier, manual
+and stream entries); malformed items are skipped, never an error. No migration, no register
+change. All of it lives in the pure module `ports.py`, which the UI and the API share.
+
+### 25.2 Rows and inclusion
+
+- Only active (not soft-deleted) entries, and only entries whose `docker_status` is unset or
+  running (`running` or `start`). Docker clears published ports when a container stops, so a
+  stopped container reports none; remembering them is parked in `docs/FUTURE.md`.
+- A **published** row per binding. One entry's bindings with the same host port, container port
+  and protocol collapse into one row with all its `host_ips` (Docker publishes `0.0.0.0` and `::`
+  together; that is one binding).
+- An **exposed-only** row (labelled **not published** in the UI) per exposed `port/proto` with no published binding for the same
+  container port and protocol on that entry. It is not bound on the host and takes no host port.
+- A **host network** row (kind `host_network`) per listening port of an entry on the `host`
+  network: `host_port` is the container port (bound directly on the host), `host_ips` is
+  `["0.0.0.0"]`. An entry is on the host network when a network is **named `host`** (Docker reserves
+  the name), with or without a reported driver, or has driver `host`. The listening ports are the
+  exposed ports plus the container side of any published binding (Docker ignores those here).
+- A **direct** row (kind `direct`) per listening port, per network, of an entry on a `macvlan` or
+  `ipvlan` network that has an address: the container has its own LAN address, so the port is
+  reachable at `<address>:<port>` without being published. `host_ips` are the network's IPv4 and
+  IPv6 addresses, `host_port` is the container port, `network` the network name and `driver` the driver. A
+  macvlan network without an address, or an address with no reported driver, gives no direct rows.
+- Docker ignores published ports on the host network and on macvlan/ipvlan, so an entry attached
+  only to those has no published rows; with an ordinary network too (bridge, unknown), they stay.
+  Ports covered by a host-network or direct row get no exposed-only row.
+- Entries without `driver` data (an older notifier) behave exactly as before, apart from the
+  reserved `host` name rule above. Ports in manual and stream entry URLs are not read.
+- Row keys: `entry_id`, `name` (the container name, as on the dashboards), `host`,
+  `container_name`, `stack_name`, `docker_status`, `kind` (`published` | `host_network` | `direct` |
+  `exposed`), `host_ips`, `host_port` (null for exposed), `container_port`, `protocol`, `network`
+  and `driver` (direct rows, else null), `conflict`, `conflict_with` (entry ids).
+
+### 25.3 Conflicts
+
+Two published or host-network rows of **different entries** conflict when they have the same
+non-empty `host`, the same protocol and host port, and overlapping addresses. Any wildcard address (empty,
+`0.0.0.0`, `::`) overlaps every address (no per-family check); two different specific addresses
+do not. Direct rows never conflict with host ports; two direct rows of different entries conflict
+only with the same address, protocol and port (any host). Exposed-only rows never conflict. The **conflict count** is the number of conflicting
+rows (both sides count), over all ports, not only the filtered ones.
+
+### 25.4 The page
+
+`GET /ports` (login required), the **Ports** tab between Compact and Add. Query parameters, all
+falling back to their default when unknown: `view=grouped|flat` (default `grouped`),
+`kind=all|published|host_network|direct|exposed`, `host`, `q` (name, container, stack, port), `conflicts=true`, and
+`sort=name|port|protocol` (the flat table also accepts `host`; in the grouped view `host` falls
+back to the default; `host_port` is kept as an alias of `port`). The default is `name`, the
+container name A to Z. Every sort puts published rows first, then host network, direct and not-published rows, and
+breaks ties by host, port, protocol, entry id; `port` is the host port for published rows (the container port for host-network and direct rows, which
+are the same number) and the container port for not-published ones. The sort control shows in both views and each host
+section uses the same order. Server-rendered; `static/js/ports.js` applies
+the filters as soon as a dropdown or the checkbox changes (the search on Enter or blur; the Apply
+button is hidden then) and remembers the whole page state (view, sort, kind, host, search,
+conflicts only) in the browser's `localStorage` (`ports:state`, the query string): a bare `/ports`
+(the nav tab) opens the remembered state, and **Reset** forgets it and loads the defaults. Without JS the page works with the Apply button. The
+summary bar reads "N hosts · N published · N not published · N conflicts" (plus "N host network" and "N direct" when there are any) (the last is a link applying
+`conflicts=true`). Grouped: a section per host (alphabetical) with its port count, rows in the chosen sort. Conflict rows are red with a tooltip naming the other entries; not-published
+rows are dimmed.
+
+**Label versus value.** The UI says "not published" (State column, Show filter, summary bar,
+tooltips): an exposed-only port is not reachable from outside on that host. The wire keeps
+Docker's term: the API's `kind: "exposed"` and `summary.exposed`, the `kind=exposed` query
+value (also on the page) and the `data-kind` attributes are unchanged. The new kinds follow the same pattern: the labels are "host network" and "direct (macvlan)" / "direct (ipvlan)" (State column, Show filter), the wire values are `host_network` and `direct`. Each row links to `/edit/<id>`. The empty state says ports come from
+docker-api-notifier 0.4.0+. One query for the entries regardless of their number.
+
+### 25.5 API and MCP
+
+`GET /api/v1/ports` (read scope; **API revision 6**, feature `ports`): query `kind`, `host`, `q`,
+`conflicts` (`true`/`false`); an invalid `kind` or `conflicts` is a 400. Response:
+`{"summary": {"hosts", "published", "host_network", "direct", "exposed", "conflicts"}, "ports": [rows]}`. The MCP read tool
+`list_ports(kind, host, query, conflicts_only)` calls it; its description explains what a
+conflict is and that exposed-only ports are not bound on the host.
+
+### 25.6 Out of scope
+
+Ports parsed from manual or stream entry URLs; remembering the last-known ports of stopped
+containers (both in `docs/FUTURE.md`); the real listening ports of host-network and macvlan/ipvlan containers
+(only the image's declared ports are known).

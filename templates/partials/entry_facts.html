@@ -126,7 +126,7 @@
                                 <span class="drawer-value">
                                     {% if entry.networks %}
                                         {% for net in entry.networks %}
-                                            <span>{{ net.name }}{% if net.aliases %} <span class="text-gray-400">[{{ net.aliases | join(', ') }}]</span>{% endif %}</span>{% if not loop.last %}, {% endif %}
+                                            <span>{{ net.name }}{% if net.driver %} <span class="text-gray-400">({{ net.driver }})</span>{% endif %}{% for _v in [net.ip_address, net.ipv6_address, net.mac_address] if _v %} <span class="font-mono text-gray-300">{{ _v }}</span>{% endfor %}{% if net.aliases %} <span class="text-gray-400">[{{ net.aliases | join(', ') }}]</span>{% endif %}</span>{% if not loop.last %}, {% endif %}
                                         {% endfor %}
                                     {% else %}
                                         <em class="text-gray-500">Not reported</em>

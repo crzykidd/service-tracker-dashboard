@@ -85,3 +85,16 @@ def test_docker_line_shows_the_full_image(app, admin_client):
         html = admin_client.get(path).get_data(as_text=True)
         assert "<code>ghcr.io/crzykidd/service-tracker-dashboard:dev</code>" in html, path
         assert "<code>nginx</code>" in html, path
+
+
+def test_network_details_render_in_the_facts(app, admin_client):
+    with app.app_context():
+        db.session.add(ServiceEntry(
+            host="nd-host", container_name="nd-svc", source="notifier", last_updated=datetime.now(),
+            networks=[{"name": "lan_macvlan", "aliases": [], "driver": "macvlan", "ip_address": "192.168.1.50",
+                       "mac_address": "02:42:ac:11:00:02"}, {"name": "old", "aliases": []}]))
+        db.session.commit()
+    html = admin_client.get("/").get_data(as_text=True)
+    for text in ("lan_macvlan", "(macvlan)", "192.168.1.50", "02:42:ac:11:00:02"):
+        assert text in html, text
+    assert "old" in html

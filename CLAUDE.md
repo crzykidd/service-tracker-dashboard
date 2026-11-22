@@ -210,8 +210,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.12.0** (latest tag on `main`).
-In flight: nothing scoped (the notifier 0.5.0 `image_info` sender is on hold in its own repo).
+Current shipped release: **v0.13.0** (latest tag on `main`).
+In flight: nothing scoped (notifier 0.5.x — `image_info` and `network_details` senders — is next, in its own repo).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -308,6 +308,10 @@ A newer STD with an older notifier must keep working:
   synthesized URLs into `internalurl` / `externalurl`. (A v0.3.2 was
   developed for the capture fields but never cut as a tag — it shipped
   inside v0.4.0. Do not reference v0.3.2 as a release boundary.)
+- STD (API revision 6, next release) accepts the optional
+  `networks[].driver` / `ip_address` / `ipv6_address` / `mac_address` and
+  advertises the `network_details` feature in `/api/v1/meta`; the notifier
+  sends them from 0.5.x, gated on that feature. They are never required.
 
 ## Inventory Stream Ingest Rules (v0.10.0+)
 
@@ -457,6 +461,8 @@ synthesizer.py      ← exposure → internalurl/externalurl translation + prove
 image_utils.py      ← icon fetch + cache; `resolve_image_metadata` (image string -> registry/owner/name/tag/ref)
 image_ref.py        ← pure stdlib image reference parser (`parse()`); the one place an image string is split;
                       feeds `resolve_image_metadata`, `image_repo.py` and `service_entry.image_ref`
+ports.py            ← pure: container ports in use across hosts + conflicts (PRD 25); shared by the
+                      `/ports` page and `GET /api/v1/ports`; no Flask, no DB queries
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
                       lscr.io; None for anything else) + the `image_repo_url` override rule
 registry_client.py  ← OCI distribution v2 client for the image update check (PRD 24): anonymous Bearer

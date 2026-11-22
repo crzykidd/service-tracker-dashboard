@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-22
+
+### Added
+
+- **Network driver, addresses and MAC from the notifier.** STD now accepts the network
+  driver (`bridge`, `macvlan`, `ipvlan`, `host`, ...), the IPv4 and IPv6 address and the MAC
+  address of each Docker network a container is on. The entry details show them next to the
+  network name (for example `lan_macvlan (macvlan) 192.168.1.50`) and the Ports page uses
+  them. An invalid address or MAC is rejected with a 400; an empty value counts as not
+  reported. STD advertises the new `network_details` feature (API revision 6). This needs a
+  docker-api-notifier version that sends the fields, coming in 0.5.x; until then nothing
+  changes for existing entries.
+- **Ports page: which container ports are in use on which host.** A new **Ports** tab
+  (between Compact and Add) lists the ports your containers publish across all hosts, so
+  you can answer "what is on 8080 on host X" and "which ports are free". It shows each
+  published port (host port, container port, the address it is bound to, the container),
+  and, dimmed, ports a container's image declares but does not publish on the host (shown
+  as **not published**). Two views: **grouped by host** (default) and a **flat table**.
+  Published ports always come first, then the not-published ones, and each group is
+  sorted by container name (the default), port or protocol (the flat table can also sort
+  by host). There are filters for published / not published / all, host, a text search
+  and conflicts only. The filters apply as soon as you change one, and the page remembers
+  your view and filters in your browser until you press **Reset**. Two different containers on the same host that publish the same
+  protocol and host port are marked **conflict** (red, with the other container named) and
+  counted at the top of the page. The ports come from docker-api-notifier 0.4.0 or later;
+  stopped containers report none and are left out. Containers on a **macvlan or ipvlan**
+  network (they have their own LAN address, so every port they listen on is reachable there
+  without being published) show as **direct (macvlan)** / **direct (ipvlan)**, and containers
+  on the **host network** (a network named `host`) show as **host network**: their ports are
+  bound on the host and can clash with published ports of other containers on the same host.
+  Direct rows clash only with another direct row on the same address. Both kinds have their
+  own Show filter entry and summary count; they need the network details above. The same data
+  is available as `GET /api/v1/ports` (read key; **API revision 6**, new `ports` feature; `kind`
+  also accepts `host_network` and `direct`) and as the `list_ports` tool of the MCP server.
+
+### Changed
+
+- **Check now always works.** Within an hour of the last check (15 minutes for one image) it
+  now asks you to confirm instead of refusing, because image registries limit anonymous
+  requests. The management API and MCP tool still answer 429 with `Retry-After`.
+
+### Fixed
+
+- **The image update check never actually ran.** Check now, the daily run and the first run
+  after turning the check on all failed before checking anything (an error in the log:
+  "Image update run failed"). Settings → Sources → Image updates kept showing **Last run:
+  never**, while a second Check now was refused as "checked recently". The check now runs and
+  records its last run; no setting needs to change.
+
 ## [0.12.0] — 2026-11-21
 
 ### Added
@@ -1562,7 +1611,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...v0.10.1

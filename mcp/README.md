@@ -111,7 +111,8 @@ Read (any key): `list_entries`, `get_entry`, `health_summary`,
 `backup_settings`, `list_backups`, `export_config` (the export of your settings as
 JSON, never any secret; STD API revision 4), `list_image_updates` (which image references
 have a newer image available; the image update check is off by default; STD API revision 5),
-`get_config` (secrets are masked), `server_info` (the
+`list_ports` (container ports in use across all hosts, with
+conflicts; STD API revision 6), `get_config` (secrets are masked), `server_info` (the
 versions of this script and of your STD, and whether they match).
 
 Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`

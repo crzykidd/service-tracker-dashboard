@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.12.0-blue)
+![Version](https://img.shields.io/badge/version-0.13.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -74,6 +74,7 @@ Reference pages: [register API](docs/register-api.md) ·
 
 ### On top of that
 
+- **Ports view:** every container port in use across your hosts, with port conflicts flagged.
 - **Views:** Dashboard (table), Tiled and Compact, all usable on a phone. Group by
   group, stack or host; filter by health status and source; per-entry sort priority.
 - **Health checks:** internal and external URL checks, a Docker container check, and
@@ -96,6 +97,18 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.13.0 (2026-11-22)
+
+- **Ports page:** a new **Ports** tab lists the container ports in use on every host,
+  grouped by host or as a flat table, with clashing ports marked and counted. Host-network
+  and macvlan/ipvlan containers are shown for what they are. Also in the API and MCP.
+- **Network details:** STD accepts each network's driver, addresses and MAC from the
+  notifier (sent by docker-api-notifier 0.5.x) and shows them in the entry details.
+- **The image update check now really runs,** and Check now always works: within the hour
+  it asks you to confirm, because registries limit anonymous requests.
+
+[Full entry](CHANGELOG.md#0130--2026-11-22)
+
 ### v0.12.0 (2026-11-21)
 
 - **Image update check (off by default):** once a day STD asks the image registries whether
@@ -105,17 +118,6 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
 - **Image names parse correctly** for registries with a port, nested paths and digests.
 
 [Full entry](CHANGELOG.md#0120--2026-11-21)
-
-### v0.11.0 (2026-11-21)
-
-- **Backup, export and import:** scheduled database snapshots and settings exports, and
-  an import that previews what it will fill in before you apply it.
-- **Staged restore** of a database snapshot on the next container start.
-- **Redesigned Settings** with grouped sections, cards and dialogs.
-- **More detail everywhere:** the Dashboard row and Compact tiles expand to the full entry
-  details and health history.
-
-[Full entry](CHANGELOG.md#0110--2026-11-21)
 
 ---
 
@@ -376,7 +378,8 @@ image that could not be checked.
 - **Load:** one request per distinct image, `HEAD` for manifests (which Docker Hub does
   not count as a pull), a few requests at a time, backoff after a failure and a pause
   when a registry answers 429. **Check now** (`POST /api/v1/image-updates/run`) is
-  throttled to once an hour, or once per 15 minutes for one image.
+  always allowed; within an hour of the last check (15 minutes for one image) the page asks
+  you to confirm, since registries limit anonymous requests. The API answers 429 instead.
 - STD never pulls or recreates a container, and an available update does not change an
   entry's health.
 
@@ -438,6 +441,7 @@ their Edit page.
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
 | `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
+| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.5.x sends. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:
@@ -569,6 +573,7 @@ needs no CSRF token.
 | 3 | 0.10.1 | stream staleness, rejections, expected interval, missing expiry; optional `snapshot_interval_seconds` on the snapshot |
 | 4 | 0.11.0 | backup settings, backup list and run, export, import plan and apply |
 | 5 | 0.12.0 | `image_info` on register; image repository link and override; image update block, settings, list and run |
+| 6 | 0.13.0 | `GET /ports` (ports in use, conflicts, host-network and direct rows); network `driver`, `ip_address`, `ipv6_address`, `mac_address` on register; features `ports` and `network_details` |
 
 ### API keys
 
@@ -629,6 +634,7 @@ curl -s -H "Authorization: Bearer $KEY" "$STD/api/v1/whoami"
 | PUT | `/api/v1/settings/image-updates` | write | Change the image update check settings |
 | GET | `/api/v1/image-updates` | read | Image references and their update state |
 | POST | `/api/v1/image-updates/run` | write | Check for newer images now |
+| GET | `/api/v1/ports` | read | Container ports in use across all hosts |
 | GET | `/api/v1/settings/backup` | read | Backup settings, with each value's origin |
 | PUT | `/api/v1/settings/backup` | write | Change the backup settings |
 | GET | `/api/v1/backups` | read | List backup files |
@@ -750,7 +756,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.12.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.0/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -861,6 +867,7 @@ Other pages and endpoints:
 | Route | What it is |
 |---|---|
 | `/`, `/tiled_dash`, `/compact_dash` | The three views |
+| `/ports` | Ports in use across all hosts, with conflicts |
 | `/add`, `/edit/<id>` | Add a manual entry; edit, lock or delete an entry |
 | `/settings/import/<token>` | The import preview page |
 | `/login`, `/logout` | Local user sign-in |

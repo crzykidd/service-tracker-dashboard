@@ -40,21 +40,47 @@
     if (window.STDFlash) { window.STDFlash.arm(el); }
   }
 
+  function ask(message) {
+    var ui = window.STDSettings && window.STDSettings.ui;
+    if (ui && typeof ui.confirm === 'function') {
+      return ui.confirm({ title: 'Check again?', body: message, confirmLabel: 'Check again' });
+    }
+    return Promise.resolve(window.confirm(message));
+  }
+
+  function post(url, force) {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return fetch(url + (force ? (url.indexOf('?') < 0 ? '?' : '&') + 'force=1' : ''), {
+      method: 'POST',
+      headers: { 'X-CSRFToken': meta ? meta.content : '', 'Accept': 'application/json' },
+      credentials: 'same-origin'
+    }).then(function (resp) {
+      return resp.json().catch(function () { return {}; }).then(function (body) {
+        return { resp: resp, body: body };
+      });
+    });
+  }
+
+  function show(answer) {
+    var body = answer.body, ok = answer.resp.ok;
+    toast(ok ? 'success' : 'info', body.message || (ok ? 'Check requested.' : 'Could not start the check.'));
+  }
+
   document.addEventListener('click', function (event) {
     var trigger = event.target.closest('[data-image-check]');
     if (!trigger) { return; }
     event.preventDefault();
     if (trigger.getAttribute('aria-disabled') === 'true') { return; }
     trigger.setAttribute('aria-disabled', 'true');
-    var meta = document.querySelector('meta[name="csrf-token"]');
-    fetch(trigger.getAttribute('data-url'), {
-      method: 'POST',
-      headers: { 'X-CSRFToken': meta ? meta.content : '', 'Accept': 'application/json' },
-      credentials: 'same-origin'
-    }).then(function (resp) {
-      return resp.json().catch(function () { return {}; }).then(function (body) {
-        toast(resp.ok ? 'success' : 'info', body.message || (resp.ok ? 'Check requested.' : 'Could not start the check.'));
-      });
+    var url = trigger.getAttribute('data-url');
+    post(url, false).then(function (answer) {
+      if (answer.resp.status === 409 && answer.body.confirm_required) {
+        return ask(answer.body.message).then(function (yes) {
+          if (!yes) { return; }
+          return post(url, true).then(show);
+        });
+      }
+      show(answer);
     }).catch(function () {
       toast('info', 'Could not reach STD; try again.');
     }).then(function () {

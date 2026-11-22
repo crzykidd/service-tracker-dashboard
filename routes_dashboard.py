@@ -54,6 +54,7 @@ import image_update
 import jobs
 import mgmt_serializers
 import notify
+import ports
 import restore_staging
 import settings_sections
 import settings_store
@@ -398,6 +399,37 @@ def compact_dash():
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
         active_tab="compact"
+    )
+
+
+@dashboard_bp.route('/ports')
+@login_required
+def ports_page():
+    """Ports in use across all hosts (PRD 25). One query; unknown params fall back."""
+    args = request.args
+    view = args.get('view') if args.get('view') in ('grouped', 'flat') else 'grouped'
+    kind = ports.normalize_kind(args.get('kind'))
+    sort = ports.normalize_sort(args.get('sort'), ports.SORTS if view == 'flat' else ports.GROUPED_SORTS)
+    host = (args.get('host') or '').strip() or None
+    q = (args.get('q') or '').strip()
+    conflicts_only = (args.get('conflicts') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    all_rows = ports.build_rows(ServiceEntry.active().all())
+    summary = ports.summarize(all_rows)
+    hosts = sorted({r['host'] for r in all_rows if r['host']}, key=str.lower)
+    if host not in hosts:
+        host = None
+    rows = ports.filter_rows(all_rows, kind=kind, host=host, q=q, conflicts_only=conflicts_only)
+    by_id = {r['entry_id']: r['name'] for r in all_rows}
+
+    return render_template(
+        'ports.html',
+        view=view, kind=kind, sort=sort, host=host, q=q, conflicts_only=conflicts_only,
+        hosts=hosts, summary=summary, total_rows=len(all_rows), visible=len(rows),
+        grouped=ports.group_by_host(rows, sort) if view == 'grouped' else [],
+        flat=ports.sort_rows(rows, sort) if view == 'flat' else [],
+        names=by_id,
+        active_tab='ports',
     )
 
 
@@ -1666,18 +1698,41 @@ def _image_update_edit_context(entry):
     }}
 
 
+def _wants_force():
+    """`force` from the form, a JSON body or the query string: the operator confirmed."""
+    body = request.get_json(silent=True)
+    raw = request.values.get('force')
+    if raw is None and isinstance(body, dict):
+        raw = body.get('force')
+    return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def _check_now_json(entry=None):
-    """Run Check now (throttled, never blocks) and answer JSON for the page script."""
+    """Run Check now (never blocks) and answer JSON for the page script. Inside the cooldown
+    it answers 409 `confirm_required`; the page asks and repeats the request with `force`."""
     try:
-        queued = image_update.request_check(current_app._get_current_object(), entry)
+        queued = image_update.request_check(current_app._get_current_object(), entry,
+                                            force=_wants_force())
     except image_update.CheckRequestError as exc:
-        message = exc.message
-        if exc.status == 429 and exc.retry_after:
-            message = f"Checked recently; try again in about {max(1, -(-exc.retry_after // 60))} min."
-        response = jsonify({'ok': False, 'message': message, 'retry_after': exc.retry_after})
+        if exc.confirm_required:
+            ago = image_update.ago_text(exc.ago_seconds or 0)
+            response = jsonify({
+                'ok': False, 'confirm_required': True, 'ago_seconds': exc.ago_seconds,
+                'ago_text': ago, 'retry_after': exc.retry_after,
+                'message': (f"The last image check ran {ago}. Image registries (Docker Hub, "
+                            "GitHub's GHCR) limit how many anonymous requests STD can make per "
+                            "day, and every check uses part of that allowance. Check again anyway?")})
+            response.status_code = 409
+            return response
+        response = jsonify({'ok': False, 'message': exc.message, 'retry_after': exc.retry_after})
         response.status_code = exc.status
         if exc.retry_after:
             response.headers['Retry-After'] = str(exc.retry_after)
+        return response
+    if getattr(queued, 'already_running', False):
+        response = jsonify({'ok': True, 'queued': 0, 'already_running': True,
+                            'message': 'A check is already running; the result shows here when it ends.'})
+        response.status_code = 202
         return response
     what = 'this image' if entry is not None else f"{queued} image{'s' if queued != 1 else ''}"
     response = jsonify({'ok': True, 'queued': queued,
@@ -1690,7 +1745,7 @@ def _check_now_json(entry=None):
 @login_required
 @is_admin_required
 def check_image_update_now(id):
-    """Per-entry Check now (throttled per reference). A request, not a registry call here."""
+    """Per-entry Check now (asks to confirm within 15 minutes). A request, not a registry call here."""
     entry = ServiceEntry.active().filter(ServiceEntry.id == id).first_or_404()
     return _check_now_json(entry)
 
@@ -1699,7 +1754,7 @@ def check_image_update_now(id):
 @login_required
 @is_admin_required
 def check_image_updates_now():
-    """Settings -> Image updates -> Check now (every reference, once an hour)."""
+    """Settings -> Image updates -> Check now (every reference; asks to confirm within an hour)."""
     return _check_now_json(None)
 
 
