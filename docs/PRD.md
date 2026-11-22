@@ -114,6 +114,7 @@
 | 0.104   | 2026-11-22 | §24 Check now: inside the cooldown the UI asks for confirmation (409 `confirm_required`, repeat with `force`) instead of refusing; the management API keeps 429; the last-check time uses the persisted last run and wall-clock request times; a pending run is not doubled. Scheduler fix (the run reads the enable switch in an app context). No API revision, schema or wire-contract change. |
 | 0.105   | 2026-11-22 | §25.4: the Ports page sorts by state first (published, then not published) and then by container name (new default), port, protocol or host (flat only); the sort control shows in both views; `host_port` stays an alias of `port`. The UI relabels "exposed" as "not published"; the API keeps `kind: "exposed"` and `summary.exposed` (label/value split documented). No API, schema or wire-contract change. |
 | 0.106   | 2026-11-22 | Network details on register, on `dev`, unreleased: §5.3 `networks` items gain optional `driver`, `ip_address`, `ipv6_address`, `mac_address` ("names only" reversed; no migration), §18.1 revision 6 row extended (feature `network_details`, ports `kind` `host_network` / `direct`), §22.2 item 6 (notifier 0.5.x will send them), §25 macvlan / ipvlan (direct) and host-network rows, conflict rules, the reserved `host` network name. Register contract: additive optional fields, so STD ships first. |
+| 0.107   | 2026-11-22 | v0.13.0 released: §25 Ports in use (GitHub #58: the Ports tab, `GET /api/v1/ports`, the `list_ports` MCP tool, host-network and macvlan/ipvlan rows) marked delivered; network details on register (§5.3); API revision 6 assigned to 0.13.0 in §18.1; §24 Check now confirmation and the scheduler fix. |
 
 ---
 
@@ -3040,7 +3041,7 @@ server supports and log it.
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
 | 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
-| 6 | unreleased | `GET /ports` (container ports in use across all hosts, with conflicts; §25; `kind` also accepts `host_network` and `direct`, rows carry `network` and `driver`, the summary has `host_network` and `direct`), feature `ports` Register: optional `driver`, `ip_address`, `ipv6_address` and `mac_address` on each `networks` item (§5.3, §22), feature `network_details` |
+| 6 | 0.13.0 | `GET /ports` (container ports in use across all hosts, with conflicts; §25; `kind` also accepts `host_network` and `direct`, rows carry `network` and `driver`, the summary has `host_network` and `direct`), feature `ports` Register: optional `driver`, `ip_address`, `ipv6_address` and `mac_address` on each `networks` item (§5.3, §22), feature `network_details` |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -4206,7 +4207,7 @@ Reconciled by `notify_state.full_sync()` like every other topic (§17.3); no sec
 
 ---
 
-## 25. Ports in use (Unreleased)
+## 25. v0.13.0 — Ports in use (Delivered)
 
 One page, one API route and one MCP tool that list the container ports in use across all
 hosts, to answer "what is on 8080 on host X" and "which ports are free" (GitHub #58).

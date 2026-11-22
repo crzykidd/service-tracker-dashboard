@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.12.0-blue)
+![Version](https://img.shields.io/badge/version-0.13.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -97,6 +97,18 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.13.0 (2026-11-22)
+
+- **Ports page:** a new **Ports** tab lists the container ports in use on every host,
+  grouped by host or as a flat table, with clashing ports marked and counted. Host-network
+  and macvlan/ipvlan containers are shown for what they are. Also in the API and MCP.
+- **Network details:** STD accepts each network's driver, addresses and MAC from the
+  notifier (sent by docker-api-notifier 0.5.x) and shows them in the entry details.
+- **The image update check now really runs,** and Check now always works: within the hour
+  it asks you to confirm, because registries limit anonymous requests.
+
+[Full entry](CHANGELOG.md#0130--2026-11-22)
+
 ### v0.12.0 (2026-11-21)
 
 - **Image update check (off by default):** once a day STD asks the image registries whether
@@ -106,17 +118,6 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
 - **Image names parse correctly** for registries with a port, nested paths and digests.
 
 [Full entry](CHANGELOG.md#0120--2026-11-21)
-
-### v0.11.0 (2026-11-21)
-
-- **Backup, export and import:** scheduled database snapshots and settings exports, and
-  an import that previews what it will fill in before you apply it.
-- **Staged restore** of a database snapshot on the next container start.
-- **Redesigned Settings** with grouped sections, cards and dialogs.
-- **More detail everywhere:** the Dashboard row and Compact tiles expand to the full entry
-  details and health history.
-
-[Full entry](CHANGELOG.md#0110--2026-11-21)
 
 ---
 
@@ -572,6 +573,7 @@ needs no CSRF token.
 | 3 | 0.10.1 | stream staleness, rejections, expected interval, missing expiry; optional `snapshot_interval_seconds` on the snapshot |
 | 4 | 0.11.0 | backup settings, backup list and run, export, import plan and apply |
 | 5 | 0.12.0 | `image_info` on register; image repository link and override; image update block, settings, list and run |
+| 6 | 0.13.0 | `GET /ports` (ports in use, conflicts, host-network and direct rows); network `driver`, `ip_address`, `ipv6_address`, `mac_address` on register; features `ports` and `network_details` |
 
 ### API keys
 
@@ -754,7 +756,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.12.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.0/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|
