@@ -5,6 +5,7 @@ is injected as the client's transport."""
 import hashlib
 import json
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 import pytest
 import requests
@@ -273,13 +274,13 @@ def test_tag_list_redirects_never_forward_the_token_to_another_host():
             if "Authorization" not in headers:
                 return Resp(401, {"WWW-Authenticate": 'Bearer realm="https://auth.example/t",service="s"'})
             return Resp(302, {"Location": "https://cdn.example/tags"})
-        if url.startswith("https://auth.example"):
+        if urlsplit(url).hostname == "auth.example":
             return Resp(200, body={"token": "secret-token"})
         return Resp(200, body={"tags": ["1.0"]})
 
     tags, _ = RegistryClient(http=http).list_tags("lscr.io", "linuxserver/x")
     assert tags == ["1.0"]
-    cdn = [h for u, h in seen if u.startswith("https://cdn.example")][0]
+    cdn = [h for u, h in seen if urlsplit(u).hostname == "cdn.example"][0]
     assert "Authorization" not in cdn
 
 
@@ -1045,7 +1046,7 @@ def test_image_updates_list_and_state_filter(app, client, keys):
     body = client.get("/api/v1/image-updates", headers=read).get_json()
     assert body["total"] == 2 and {i["ref"] for i in body["items"]} == {
         "ghcr.io/o/app:1.0.0", "docker.io/library/redis:latest"}
-    item = [i for i in body["items"] if i["ref"].startswith("ghcr.io")][0]
+    item = [i for i in body["items"] if i["ref"].split("/", 1)[0] == "ghcr.io"][0]
     assert item["entries"][0]["name"] == "web" and item["tags_total"] == 5 and item["checked_at"].endswith("Z")
     only = client.get("/api/v1/image-updates?state=update", headers=read).get_json()
     assert [i["ref"] for i in only["items"]] == ["ghcr.io/o/app:1.0.0"]
