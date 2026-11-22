@@ -377,7 +377,8 @@ image that could not be checked.
 - **Load:** one request per distinct image, `HEAD` for manifests (which Docker Hub does
   not count as a pull), a few requests at a time, backoff after a failure and a pause
   when a registry answers 429. **Check now** (`POST /api/v1/image-updates/run`) is
-  throttled to once an hour, or once per 15 minutes for one image.
+  always allowed; within an hour of the last check (15 minutes for one image) the page asks
+  you to confirm, since registries limit anonymous requests. The API answers 429 instead.
 - STD never pulls or recreates a container, and an available update does not change an
   entry's health.
 

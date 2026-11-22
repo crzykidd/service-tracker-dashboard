@@ -403,21 +403,47 @@ def test_docker_section_hint_while_off(app, admin_client):
 # --- Check now -------------------------------------------------------------------------------
 
 
-def test_check_now_entry_is_throttled_with_a_message(app, admin_client, seeded):
+def _never_checked(app):
+    with app.app_context():
+        ImageReference.query.update({"checked_at": None})
+        db.session.commit()
+
+
+def test_check_now_entry_asks_for_confirmation_inside_the_cooldown(app, admin_client, seeded):
     image_update.reset_state()
-    first = admin_client.post(f"/service/{seeded['web']}/image-update/check")
+    _never_checked(app)
+    url = f"/service/{seeded['web']}/image-update/check"
+    first = admin_client.post(url)
     assert first.status_code == 202 and first.get_json()["ok"] is True
-    second = admin_client.post(f"/service/{seeded['web']}/image-update/check")
+    image_update._drain_pending()                                  # the run took the request
+    second = admin_client.post(url)
     body = second.get_json()
-    assert second.status_code == 429 and body["ok"] is False
-    assert "try again in about" in body["message"] and second.headers["Retry-After"]
+    assert second.status_code == 409 and body["ok"] is False and body["confirm_required"] is True
+    assert body["ago_text"] == "less than a minute ago" and "Check again anyway?" in body["message"]
+    assert admin_client.post(url + "?force=1").status_code == 202
+    image_update._drain_pending()
+    assert admin_client.post(url, json={"force": True}).status_code == 202
+    image_update._drain_pending()
+    assert admin_client.post(url, data={"force": "1"}).status_code == 202
     image_update.reset_state()
 
 
-def test_check_now_global_is_throttled(app, admin_client, seeded):
+def test_check_now_global_asks_for_confirmation_inside_the_cooldown(app, admin_client, seeded):
     image_update.reset_state()
     assert admin_client.post("/settings/image-updates/check").status_code == 202
-    assert admin_client.post("/settings/image-updates/check").status_code == 429
+    image_update._drain_pending()
+    again = admin_client.post("/settings/image-updates/check")
+    assert again.status_code == 409 and again.get_json()["confirm_required"] is True
+    assert admin_client.post("/settings/image-updates/check?force=1").status_code == 202
+    image_update.reset_state()
+
+
+def test_check_now_while_a_run_is_pending_says_already_running(app, admin_client, seeded):
+    image_update.reset_state()
+    assert admin_client.post("/settings/image-updates/check").status_code == 202
+    again = admin_client.post("/settings/image-updates/check?force=1")
+    body = again.get_json()
+    assert again.status_code == 202 and body["already_running"] is True and "already running" in body["message"]
     image_update.reset_state()
 
 
@@ -446,6 +472,7 @@ def csrf_on(app):
 
 def test_check_now_and_settings_save_need_csrf(app, csrf_on, seeded):
     image_update.reset_state()
+    _never_checked(app)
     from tests.conftest import ADMIN_PASSWORD, ADMIN_USER
 
     with app.app_context():

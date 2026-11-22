@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GET /api/v1/ports` (read key; **API revision 6**, new `ports` feature) and as the
   `list_ports` tool of the MCP server.
 
+### Changed
+
+- **Check now always works.** Within an hour of the last check (15 minutes for one image) it
+  now asks you to confirm instead of refusing, because image registries limit anonymous
+  requests. The management API and MCP tool still answer 429 with `Retry-After`.
+
+### Fixed
+
+- **The image update check never actually ran.** Check now, the daily run and the first run
+  after turning the check on all failed before checking anything (an error in the log:
+  "Image update run failed"). Settings → Sources → Image updates kept showing **Last run:
+  never**, while a second Check now was refused as "checked recently". The check now runs and
+  records its last run; no setting needs to change.
+
 ## [0.12.0] — 2026-11-21
 
 ### Added

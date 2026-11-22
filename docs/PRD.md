@@ -111,6 +111,7 @@
 | 0.101   | 2026-11-21 | v0.12.0 released: §24 Image update check (registry provider, daily job, `image_info` register field, UI, MQTT/HA `update` entities) and the image repository link (GitHub #6) marked delivered; API revision 5 assigned to 0.12.0 in §18.1. |
 | 0.102   | 2026-11-21 | Ports in use (GitHub #58), on `dev`, unreleased: new §25 (the Ports tab and `/ports` page, `GET /api/v1/ports`, the `list_ports` MCP tool, inclusion and conflict rules), §18.1 revision 6 row, §3.1 module layout (`ports.py`). Reads the existing `exposed_ports` / `published_ports` columns; no schema, register or stream-ingest wire-contract change. |
 | 0.103   | 2026-11-22 | §25.4: the Ports page filters apply on change and the whole page state (view, sort and every filter) is remembered per browser until Reset (`static/js/ports.js`, `localStorage`). No API, schema or wire-contract change. |
+| 0.104   | 2026-11-22 | §24 Check now: inside the cooldown the UI asks for confirmation (409 `confirm_required`, repeat with `force`) instead of refusing; the management API keeps 429; the last-check time uses the persisted last run and wall-clock request times; a pending run is not doubled. Scheduler fix (the run reads the enable switch in an app context). No API revision, schema or wire-contract change. |
 
 ---
 
@@ -4091,9 +4092,13 @@ Wire contract: `docs/register-api.md`; cross-repo plan: §22.2 item 5.
   recomputed.
 - Per-reference backoff: after a failure the reference is skipped for 1, 2, 4 days, capped at 7; success
   resets; a 429 sets the next attempt to `max(Retry-After, backoff)`.
-- **Check now:** `POST /api/v1/image-updates/run`, throttled to once per hour for everything and once per
-  15 minutes per reference (a single entry's Check now ignores backoff). Not a schedule: it records a request
-  and asks for a one-shot run on the scheduler.
+- **Check now:** `POST /api/v1/image-updates/run`, with a cooldown of one hour for everything and
+  15 minutes per reference (a single entry's Check now ignores backoff). The management API answers 429 with
+  `Retry-After` inside it. The session routes (below) answer 409 `confirm_required` instead and accept a
+  repeat with `force`; the UI asks the operator first. The time since the last check is the later of the
+  stored one (`last_run.at`, or the reference's `checked_at`) and the last accepted request (wall-clock UTC),
+  so it survives a restart. A run already pending or in progress is not queued twice. Not a schedule: it
+  records a request and asks for a one-shot run on the scheduler.
 - **Retention:** the nightly retention job deletes `image_reference` rows no active entry has wanted for 30
   days (skipped while the check is off, so stored results survive).
 - Not part of the health roll-up: an available update is information, not a fault.
@@ -4141,8 +4146,9 @@ session. The state shown is `image_update.effective_state()`, so everything is h
   (CSRF from the page meta tag, delegated so it also works in the Compact dialog) to
   `POST /service/<id>/image-update/check` and `POST /settings/image-updates/check` (admin only), which call
   `image_update.request_check` and answer JSON: 202 when queued, 409 when the check is off or the entry has
-  nothing to check, 429 with `Retry-After` when throttled; the script shows the message as a toast
-  ("Checked recently; try again in about N min.").
+  nothing to check, 409 with `confirm_required`, `ago_seconds`, `ago_text` and a message inside the cooldown
+  (repeat with `force=1`, form, JSON or query, to run anyway). The script asks (the Settings confirm dialog,
+  else `window.confirm`), repeats with `force` on OK and shows the answer as a toast.
 - **Edit page** (Docker entries): an "Image updates" block with Policy (Auto / Newer tags / Digest / Off), Scope
   (Default / Any / Same major / Same minor) and Tag pattern, validated with `image_tags.validate_tag_pattern`
   before anything is changed (an invalid value is a banner and the form is re-rendered). Saving recomputes the
@@ -4154,7 +4160,7 @@ session. The state shown is `image_update.effective_state()`, so everything is h
   Enabled switch (default off; locked, with "Set by environment (STD_IMAGE_UPDATE_ENABLED)", while the env var
   is set) and the Default scope in one guarded form (`POST /settings/image-updates`; saving the switch calls
   `image_update.on_settings_changed`, a changed scope recomputes the entries locally); a status card (last run:
-  when, references checked, updates found, errors; next run; Check now, once an hour); a problems list
+  when, references checked, updates found, errors; next run; Check now, which asks to confirm within an hour of the last check); a problems list
   (references in `error` with the error and the entries that use them). No interval field: the text says
   "Checks once a day". The Docker section shows a one-line hint pointing here while the check is off.
 

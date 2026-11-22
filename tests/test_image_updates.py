@@ -674,29 +674,76 @@ def test_check_now_is_refused_while_the_check_is_off(app, reg):
 
 
 def test_global_check_now_once_an_hour_and_per_reference_every_fifteen_minutes(app, reg, monkeypatch):
-    clock = [1000.0]
-    monkeypatch.setattr(image_update.time, "monotonic", lambda: clock[0])
+    image_update.reset_state()
+    clock = [datetime(2026, 11, 22, 12, 0, 0)]
+    monkeypatch.setattr(image_update, "_now", lambda: clock[0])
     with app.app_context():
         enable()
         a = add_entry("a", "ghcr.io/o/a:1.0.0")
         add_entry("b", "ghcr.io/o/b:1.0.0")
         assert image_update.request_check(app) == 2
-        clock[0] += 3599
+        image_update._drain_pending()                              # the run took it
+        clock[0] += timedelta(seconds=3599)
         with pytest.raises(image_update.CheckRequestError) as exc:
             image_update.request_check(app)
-        assert exc.value.status == 429 and exc.value.retry_after == 1
-        clock[0] += 2
+        assert exc.value.status == 429 and exc.value.retry_after == 1 and exc.value.confirm_required
+        assert image_update.request_check(app, force=True) == 2    # confirmed
+        image_update._drain_pending()
+        clock[0] += timedelta(seconds=3601)
         assert image_update.request_check(app) == 2                # an hour has passed
+        image_update._drain_pending()
         assert image_update.request_check(app, entry(a)) == 1
-        clock[0] += 899
+        image_update._drain_pending()
+        clock[0] += timedelta(seconds=899)
         with pytest.raises(image_update.CheckRequestError) as exc:
             image_update.request_check(app, entry(a))
-        assert exc.value.status == 429
-        clock[0] += 2
+        assert exc.value.status == 429 and exc.value.confirm_required
+        assert image_update.request_check(app, entry(a), force=True) == 1
+        image_update._drain_pending()
+        clock[0] += timedelta(seconds=901)
         assert image_update.request_check(app, entry(a)) == 1
         with pytest.raises(image_update.CheckRequestError) as exc:
             image_update.request_check(app, entry(add_entry("m", None)))
         assert exc.value.status == 409
+
+
+def test_a_persisted_last_run_asks_for_confirmation_after_a_restart(app, reg):
+    image_update.reset_state()
+    store = image_update.settings_store
+    with app.app_context():
+        enable()
+        add_entry("a", "ghcr.io/o/a:1.0.0")
+        at = datetime.utcnow() - timedelta(minutes=27)
+        store.set_image_update_value(store.KEY_IMAGE_UPDATE_LAST_RUN, {"at": image_update._iso(at)})
+        with pytest.raises(image_update.CheckRequestError) as exc:
+            image_update.request_check(app)
+        assert exc.value.confirm_required and 26 * 60 <= exc.value.ago_seconds <= 28 * 60
+        old = datetime.utcnow() - timedelta(hours=2)
+        store.set_image_update_value(store.KEY_IMAGE_UPDATE_LAST_RUN, {"at": image_update._iso(old)})
+        assert image_update.request_check(app) == 1
+    image_update.reset_state()
+
+
+def test_a_pending_or_running_check_is_not_queued_twice(app, reg):
+    image_update.reset_state()
+    with app.app_context():
+        enable()
+        a = add_entry("a", "ghcr.io/o/a:1.0.0")
+        image_update._PENDING["everything"] = True
+        for result in (image_update.request_check(app), image_update.request_check(app, force=True),
+                       image_update.request_check(app, entry(a), force=True)):
+            assert result.already_running and result == 0
+        image_update.reset_state()
+        assert image_update._RUN_LOCK.acquire(blocking=False)
+        assert image_update.request_check(app).already_running
+        assert not image_update._has_pending()
+    image_update.reset_state()
+
+
+def test_ago_text_in_plain_words():
+    assert image_update.ago_text(5) == "less than a minute ago"
+    assert image_update.ago_text(60) == "1 minute ago"
+    assert image_update.ago_text(27 * 60 + 10) == "27 minutes ago"
 
 
 def test_register_nudge_is_debounced_to_once_per_five_minutes(app, reg, monkeypatch):
@@ -732,8 +779,8 @@ def test_a_run_in_progress_keeps_the_request_pending(app, reg):
         assert image_update._RUN_LOCK.acquire(blocking=False)
         try:
             assert run_all(app) is None
-            image_update.request_check(app)
-            assert image_update._PENDING["everything"] is True
+            assert image_update.request_check(app).already_running   # not queued twice
+            assert image_update._PENDING["everything"] is False
         finally:
             image_update._RUN_LOCK.release()
 
@@ -1063,8 +1110,13 @@ def test_run_route_returns_202_and_throttles_with_429(app, client, keys, reg):
     again = client.post("/api/v1/image-updates/run", headers=write)
     assert again.status_code == 429 and int(again.headers["Retry-After"]) > 0
     assert again.get_json()["details"]["retry_after_seconds"] > 0
+    image_update._drain_pending()                                 # the run took the request
+    with app.app_context():
+        ImageReference.query.update({"checked_at": None})         # as if never checked
+        db.session.commit()
     one = client.post("/api/v1/image-updates/run", json={"entry_id": a}, headers=write)
     assert one.status_code == 202 and one.get_json()["queued"] == 1
+    image_update._drain_pending()
     assert client.post("/api/v1/image-updates/run", json={"entry_id": a}, headers=write).status_code == 429
     assert client.post("/api/v1/image-updates/run", json={"entry_id": m}, headers=write).status_code == 409
     assert client.post("/api/v1/image-updates/run", json={"entry_id": 9999}, headers=write).status_code == 404
@@ -1178,3 +1230,22 @@ def test_an_import_with_a_bad_pattern_is_rejected(app, client, keys):
     plan = client.post("/api/v1/import/plan", headers=write, json={"document": doc}).get_json()
     text = json.dumps(plan)
     assert "image_update_policy must be one of" in text and "repeat inside a repeat" in text
+
+
+def test_scheduler_runs_outside_an_app_context_record_the_last_run(app, reg, admin_client):
+    """Check now and the daily job run on the scheduler thread with no app context. They used
+    to fail before checking anything, so the last run stayed "never" while the throttle held."""
+    reg.tags[("registry-1.docker.io", "library/nginx")] = ["1.4.2", "1.5.0"]
+    with app.app_context():
+        enable()
+        add_entry("web", "docker.io/library/nginx:1.4.2")
+    assert admin_client.post("/settings/image-updates/check").status_code == 202
+    summaries = image_update.run_pending(app)                     # no app context, like the job
+    assert summaries and summaries[0].checked == 1
+    assert image_update.run_scheduled(app)[0].provider == "registry"
+    with app.app_context():
+        saved = image_update.last_run()
+        assert saved["refs"] == 1 and saved["checked"] == 1
+    html = admin_client.get("/settings?section=image-updates").get_data(as_text=True)
+    last = html[html.index("data-image-update-last"):]
+    assert "never" not in last[:last.index("</dd>")]

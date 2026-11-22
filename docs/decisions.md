@@ -5,6 +5,20 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-22 — Image Check now: confirm in the UI, 429 in the API
+
+- **The confirmation is UI-only.** The session routes answer 409 `confirm_required` inside the
+  cooldown and accept `force`; the management API and MCP tool get no `force` and keep 429 with
+  `Retry-After`. The API has no human to confirm, and a script hammering the registries is the
+  case the cooldown exists for. No `API_REVISION` change.
+- **The cooldown clock is wall-clock UTC**, the later of the persisted last run / reference
+  `checked_at` and the last accepted request, so it survives a restart and compares with stored
+  times. The old monotonic in-memory clock forgot a check on restart.
+- **Double clicks are stopped by "already running"**, not by the throttle: a pending or in-progress
+  run is never queued twice, even with `force`.
+
+---
+
 ## 2026-11-21 — Ports in use page (GitHub #58)
 
 - **Stopped containers are excluded.** Docker clears `NetworkSettings.Ports` on stop, so a
