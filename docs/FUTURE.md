@@ -130,6 +130,9 @@ overrides. Whichever comes first.
 **Parked:** 2026-05-16, during v0.6.1 wrap-up. Design ongoing in
 conversation; full design captured here for posterity.
 
+**Design for 0.14.0:** [`docs/design/2026-11-22-moves-and-label-settings.md`](design/2026-11-22-moves-and-label-settings.md)
+(awaiting operator approval; this entry stays until it ships).
+
 ### Context
 
 When a service moves between hosts, or gets renamed, today's
@@ -290,6 +293,9 @@ history and filters.
 ---
 
 ## Register overwrites some operator edits
+
+**Design for 0.14.0:** [`docs/design/2026-11-22-moves-and-label-settings.md`](design/2026-11-22-moves-and-label-settings.md)
+§3 (per-field provenance; awaiting operator approval; this entry stays until it ships).
 
 Parked 2026-11-16, during v0.9.0. The operator asked whether a register
 zeroes out manually configured items. It doesn't. `upsert_service` in
