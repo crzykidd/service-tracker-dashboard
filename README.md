@@ -103,7 +103,7 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
   grouped by host or as a flat table, with clashing ports marked and counted. Host-network
   and macvlan/ipvlan containers are shown for what they are. Also in the API and MCP.
 - **Network details:** STD accepts each network's driver, addresses and MAC from the
-  notifier (sent by docker-api-notifier 0.5.x) and shows them in the entry details.
+  notifier (sent by docker-api-notifier 0.6.0+) and shows them in the entry details.
 - **The image update check now really runs,** and Check now always works: within the hour
   it asks you to confirm, because registries limit anonymous requests.
 
@@ -441,7 +441,7 @@ their Edit page.
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
 | `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
-| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.5.x sends. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
+| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.6.0+ sends. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:

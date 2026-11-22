@@ -115,6 +115,7 @@
 | 0.105   | 2026-11-22 | §25.4: the Ports page sorts by state first (published, then not published) and then by container name (new default), port, protocol or host (flat only); the sort control shows in both views; `host_port` stays an alias of `port`. The UI relabels "exposed" as "not published"; the API keeps `kind: "exposed"` and `summary.exposed` (label/value split documented). No API, schema or wire-contract change. |
 | 0.106   | 2026-11-22 | Network details on register, on `dev`, unreleased: §5.3 `networks` items gain optional `driver`, `ip_address`, `ipv6_address`, `mac_address` ("names only" reversed; no migration), §18.1 revision 6 row extended (feature `network_details`, ports `kind` `host_network` / `direct`), §22.2 item 6 (notifier 0.5.x will send them), §25 macvlan / ipvlan (direct) and host-network rows, conflict rules, the reserved `host` network name. Register contract: additive optional fields, so STD ships first. |
 | 0.107   | 2026-11-22 | v0.13.0 released: §25 Ports in use (GitHub #58: the Ports tab, `GET /api/v1/ports`, the `list_ports` MCP tool, host-network and macvlan/ipvlan rows) marked delivered; network details on register (§5.3); API revision 6 assigned to 0.13.0 in §18.1; §24 Check now confirmation and the scheduler fix. |
+| 0.108   | 2026-11-22 | Correction: the notifier release that sends the network details is 0.6.0, not 0.5.x (notifier 0.5.0 already shipped `image_info`); §22.2 item 6 updated. |
 
 ---
 
@@ -3957,7 +3958,7 @@ not lead.
    means "keep the stored values", and moving tags show `unknown` until it reports.
 6. STD (unreleased, API revision 6) accepts the optional `networks[].driver`, `ip_address`,
    `ipv6_address` and `mac_address` and advertises the `network_details` feature in
-   `GET /api/v1/meta`. **A notifier 0.5.x will send them**, only when `/api/v1/meta` lists
+   `GET /api/v1/meta`. **Notifier 0.6.0 will send them**, only when `/api/v1/meta` lists
    `network_details`. The driver is not in the container's own network settings: the notifier needs a
    network inspect, cached per network id (a network's driver does not change). Consumer leads,
    producer follows. An older notifier keeps working: the keys are absent and the Ports page

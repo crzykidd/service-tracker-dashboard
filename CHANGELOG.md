@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   network name (for example `lan_macvlan (macvlan) 192.168.1.50`) and the Ports page uses
   them. An invalid address or MAC is rejected with a 400; an empty value counts as not
   reported. STD advertises the new `network_details` feature (API revision 6). This needs a
-  docker-api-notifier version that sends the fields, coming in 0.5.x; until then nothing
+  docker-api-notifier version that sends the fields, coming in 0.6.0; until then nothing
   changes for existing entries.
 - **Ports page: which container ports are in use on which host.** A new **Ports** tab
   (between Compact and Add) lists the ports your containers publish across all hosts, so

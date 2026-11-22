@@ -211,7 +211,7 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 ## Build Status
 
 Current shipped release: **v0.13.0** (latest tag on `main`).
-In flight: nothing scoped (notifier 0.5.x — `image_info` and `network_details` senders — is next, in its own repo).
+In flight: nothing scoped on `dev` (notifier 0.6.0, the `network_details` sender, is queued in its own repo).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -311,7 +311,7 @@ A newer STD with an older notifier must keep working:
 - STD (API revision 6, next release) accepts the optional
   `networks[].driver` / `ip_address` / `ipv6_address` / `mac_address` and
   advertises the `network_details` feature in `/api/v1/meta`; the notifier
-  sends them from 0.5.x, gated on that feature. They are never required.
+  sends them from 0.6.0, gated on that feature. They are never required.
 
 ## Inventory Stream Ingest Rules (v0.10.0+)
 

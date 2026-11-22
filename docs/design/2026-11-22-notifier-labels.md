@@ -4,9 +4,10 @@
 **Code read:** STD `dev` at `ceceaae`; docker-api-notifier at v0.4.3 (`main.py`,
 `notifiers/service_tracker_dashboard.py`, `image_info.py`). Where this note and the code
 disagree, trust the code.
-**Purpose:** input for the next notifier handoff (0.5.x). That handoff already carries
-`image_info`, and the network details (driver, IPs, MAC) are planned in
-`prompts/2026-11-22-network-details-macvlan.md`.
+**Purpose:** input for the next notifier handoff (0.6.0). Notifier 0.5.0 already sends
+`image_info`; the network details (driver, IPs, MAC) shipped on the STD side in 0.13.0, and
+the notifier side is queued in
+`docker-api-notifier/prompts/2026-11-22-std-network-details-and-label-hardening.md`.
 
 ## 1. What the notifier sends today
 
