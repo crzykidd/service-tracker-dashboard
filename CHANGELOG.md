@@ -7,17 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Entry details showed wrong or empty image fields for some images.** Images from a
-  registry with a port (`localhost:5000/app:1`), nested paths (`ghcr.io/org/team/app`),
-  two-part names on another registry (`quay.io/app:1`) and digest references
-  (`nginx@sha256:...`) were split wrongly or left blank. The image is now parsed the way
-  Docker reads it, and the details show the full reference (`registry/repository:tag`,
-  Docker Hub as `docker.io/library/...`, a missing tag as `latest`). The repository link
-  now works for nested GHCR paths too. Entries correct themselves on their next register;
-  existing ones that were already read correctly are filled in on upgrade. Management API
-  revision 5: the entry detail carries the read-only `notifier.image_ref`.
+## [0.12.0] — 2026-11-21
 
 ### Added
 
@@ -92,6 +82,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   somewhere else, or to add one for an entry with no Docker image; clear it to go back to
   the derived link. The override is included in exports and imports. Management API
   revision 5: entries carry `image_repo_url` and the resulting `image_repo_link`.
+
+### Fixed
+
+- **Entry details showed wrong or empty image fields for some images.** Images from a
+  registry with a port (`localhost:5000/app:1`), nested paths (`ghcr.io/org/team/app`),
+  two-part names on another registry (`quay.io/app:1`) and digest references
+  (`nginx@sha256:...`) were split wrongly or left blank. The image is now parsed the way
+  Docker reads it, and the details show the full reference (`registry/repository:tag`,
+  Docker Hub as `docker.io/library/...`, a missing tag as `latest`). The repository link
+  now works for nested GHCR paths too. Entries correct themselves on their next register;
+  existing ones that were already read correctly are filled in on upgrade. Management API
+  revision 5: the entry detail carries the read-only `notifier.image_ref`.
 
 ## [0.11.0] — 2026-11-21
 
@@ -1560,7 +1562,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...v0.10.0

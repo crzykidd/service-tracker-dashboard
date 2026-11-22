@@ -108,6 +108,7 @@
 | 0.98    | 2026-11-21 | Image update check engine (img-02, phase 2; design `docs/design/2026-11-21-image-update-check.md`), on `dev`, unreleased: new §24 (architecture, provider seam, tag and digest models, the daily job, data model, the `image_info` register field, management API and MCP), new §5.13 (migration `b5d9a3f1c7e2`: `image_reference` table and the `service_entry` image update columns), §3.1 module layout (`registry_client.py`, `image_tags.py`, `image_update.py`), §18.1 revision 5 row extended (register `image_info`, `image_update` block, the new routes, features `image_updates` and `image_info`), §20.2 ownership table (the three operator columns round-trip), §22 cross-repo notes (notifier 0.5.0 will send `image_info`, gated on `/api/v1/meta`). Off by default (`STD_IMAGE_UPDATE_ENABLED`); no UI yet (img-03), no MQTT/Home Assistant yet (img-04). Register contract: additive optional field, so STD ships first per the ordering rule. |
 | 0.99    | 2026-11-21 | Image update UI (img-03, phase 3), on `dev`, unreleased: new §24.8 (dashboard badge and `?updates=true` filter, entry-details lines, Check now, the edit-page block, Settings → Sources → Image updates, the Docker hint); the old §24.8 "Not built yet" becomes §24.9 and now lists only MQTT / Home Assistant (img-04), credentials and other providers. §13.7 (badge, details line, Check now in the entry facts), §19.1 (fourteen sections, `image-updates` under Sources), §3.1 module layout (`image_update_ui.py`, `static/js/image_update.js`). New session routes `POST /service/<id>/image-update/check`, `POST /settings/image-updates`, `POST /settings/image-updates/check`. No schema, API revision or wire-contract change (the UI reads the state img-02 stores). |
 | 0.100   | 2026-11-21 | Image update MQTT and Home Assistant (img-04, phase 4), on `dev`, unreleased: new §24.10; §17.3 (`entry/<id>/image` topic, `summary.updates`, `entry/<id>/state.image_update_state`, the new sync triggers), §17.4 (the read-only `update` entity and the hub "Updates available" sensor), §24.9 now lists only credentials and other providers. `notify_state.py`, `notify_ha.py`, `notify_purge.py`, `image_update.on_settings_changed`. No schema, API revision or register wire-contract change. |
+| 0.101   | 2026-11-21 | v0.12.0 released: §24 Image update check (registry provider, daily job, `image_info` register field, UI, MQTT/HA `update` entities) and the image repository link (GitHub #6) marked delivered; API revision 5 assigned to 0.12.0 in §18.1. |
 
 ---
 
@@ -136,7 +137,7 @@
 21. [Versioning, Branches, and Releases](#21-versioning-branches-and-releases)
 22. [Cross-Repo Coordination](#22-cross-repo-coordination)
 23. [Open Questions](#23-open-questions)
-24. [v0.12.0 — Image update check](#24-v0120--image-update-check)
+24. [v0.12.0 — Image update check (Delivered)](#24-v0120--image-update-check-delivered)
 
 ---
 
@@ -3030,7 +3031,7 @@ server supports and log it.
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
-| 5 | next after 0.11.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
+| 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3987,11 +3988,12 @@ image and release cadence. The same rules apply as for the notifier:
 
 ---
 
-## 24. v0.12.0 — Image update check
+## 24. v0.12.0 — Image update check (Delivered)
 
 **Status:** the engine, data model, register field, management API and MCP (img-02) and the UI
 (img-03: badges, filter, entry details, edit block, Settings section, §24.8) and the MQTT topic and
-Home Assistant `update` entity (img-04, §24.10) are built on `dev`, unreleased. Design: `docs/design/2026-11-21-image-update-check.md`
+Home Assistant `update` entity (img-04, §24.10) shipped in 0.12.0. The digest model needs
+docker-api-notifier 0.5.0+ (it sends `image_info`); until then moving tags show `unknown`. Design: `docs/design/2026-11-21-image-update-check.md`
 (its section 14 decisions are final). Decisions made while building are in `docs/decisions.md`.
 
 ### 24.1 What it does

@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.11.0-blue)
+![Version](https://img.shields.io/badge/version-0.12.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -96,6 +96,16 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.12.0 (2026-11-21)
+
+- **Image update check (off by default):** once a day STD asks the image registries whether
+  a newer image exists, and shows a badge, an Updates filter, a line in the entry details,
+  and a Home Assistant `update` entity. Turn it on in Settings → Sources → Image updates.
+- **The Docker image links to its repository page,** with an optional override per entry.
+- **Image names parse correctly** for registries with a port, nested paths and digests.
+
+[Full entry](CHANGELOG.md#0120--2026-11-21)
+
 ### v0.11.0 (2026-11-21)
 
 - **Backup, export and import:** scheduled database snapshots and settings exports, and
@@ -106,13 +116,6 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
   details and health history.
 
 [Full entry](CHANGELOG.md#0110--2026-11-21)
-
-### v0.10.1 (2026-11-20)
-
-- **Stale stream and missing-device warnings** across Settings, MQTT and Home Assistant.
-- **Health checks follow a device's new IP** when a stream reports it.
-
-[Full entry](CHANGELOG.md#0101--2026-11-20)
 
 ---
 
@@ -565,6 +568,7 @@ needs no CSRF token.
 | 2 | 0.10.0 | meta and revision headers; update-check settings; notification channels; `ha_publish`; inventory streams and the ingest scope |
 | 3 | 0.10.1 | stream staleness, rejections, expected interval, missing expiry; optional `snapshot_interval_seconds` on the snapshot |
 | 4 | 0.11.0 | backup settings, backup list and run, export, import plan and apply |
+| 5 | 0.12.0 | `image_info` on register; image repository link and override; image update block, settings, list and run |
 
 ### API keys
 
@@ -746,7 +750,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.11.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.12.0/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|
