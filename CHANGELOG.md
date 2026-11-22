@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Network driver, addresses and MAC from the notifier.** STD now accepts the network
+  driver (`bridge`, `macvlan`, `ipvlan`, `host`, ...), the IPv4 and IPv6 address and the MAC
+  address of each Docker network a container is on. The entry details show them next to the
+  network name (for example `lan_macvlan (macvlan) 192.168.1.50`) and the Ports page uses
+  them. An invalid address or MAC is rejected with a 400; an empty value counts as not
+  reported. STD advertises the new `network_details` feature (API revision 6). This needs a
+  docker-api-notifier version that sends the fields, coming in 0.5.x; until then nothing
+  changes for existing entries.
 - **Ports page: which container ports are in use on which host.** A new **Ports** tab
   (between Compact and Add) lists the ports your containers publish across all hosts, so
   you can answer "what is on 8080 on host X" and "which ports are free". It shows each
@@ -22,9 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   your view and filters in your browser until you press **Reset**. Two different containers on the same host that publish the same
   protocol and host port are marked **conflict** (red, with the other container named) and
   counted at the top of the page. The ports come from docker-api-notifier 0.4.0 or later;
-  stopped containers report none and are left out. The same data is available as
-  `GET /api/v1/ports` (read key; **API revision 6**, new `ports` feature) and as the
-  `list_ports` tool of the MCP server.
+  stopped containers report none and are left out. Containers on a **macvlan or ipvlan**
+  network (they have their own LAN address, so every port they listen on is reachable there
+  without being published) show as **direct (macvlan)** / **direct (ipvlan)**, and containers
+  on the **host network** (a network named `host`) show as **host network**: their ports are
+  bound on the host and can clash with published ports of other containers on the same host.
+  Direct rows clash only with another direct row on the same address. Both kinds have their
+  own Show filter entry and summary count; they need the network details above. The same data
+  is available as `GET /api/v1/ports` (read key; **API revision 6**, new `ports` feature; `kind`
+  also accepts `host_network` and `direct`) and as the `list_ports` tool of the MCP server.
 
 ### Changed
 

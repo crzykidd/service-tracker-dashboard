@@ -42,8 +42,11 @@ name/version`; STD logs each distinct one once per restart.
   "group_name": "web",
   "sort_priority": 1,
   "networks": [
-    {"name": "proxy", "aliases": ["frontend"]},
-    {"name": "ammoledger_default", "aliases": ["frontend"]}
+    {"name": "proxy", "aliases": ["frontend"], "driver": "bridge",
+     "ip_address": "172.18.0.5", "ipv6_address": null,
+     "mac_address": "02:42:ac:12:00:05"},
+    {"name": "lan_macvlan", "aliases": [], "driver": "macvlan",
+     "ip_address": "192.168.1.50", "ipv6_address": "", "mac_address": ""}
   ],
   "exposed_ports": ["5173/tcp"],
   "published_ports": [
@@ -111,6 +114,23 @@ Either way STD records what the notifier sent in `notifier_reported_group_name` 
 `networks`, `exposed_ports` and `published_ports` are pure observation: STD overwrites
 them on every register, with no ownership rules. docker-api-notifier 0.4.0+ sends them;
 older notifiers leave them empty.
+
+Each `networks` item has `name` (required), `aliases` (list, default `[]`) and, since API
+revision 6, four optional fields (feature `network_details` in `GET /api/v1/meta`):
+
+| Field | Type | Rule |
+|-------|------|------|
+| `driver` | string | Lowercased, at most 32 characters; any value (`bridge`, `macvlan`, `ipvlan`, `host`, `overlay`, `none`, plugin names). |
+| `ip_address` | string | IPv4; stored in canonical form. |
+| `ipv6_address` | string | IPv6; stored in canonical form. |
+| `mac_address` | string | Stored as lowercase `aa:bb:cc:dd:ee:ff`; `-`, dotted and bare forms are accepted. |
+
+`null`, absent and `""` (what Docker sends for "no address") all mean not reported; the key is
+then not stored. An invalid address or MAC is a 400 like any schema error, and an unknown key
+in an item is still rejected. An older notifier that omits them keeps working unchanged. They
+show in the entry details and drive the macvlan, ipvlan and host-network rows of the Ports
+page: a macvlan/ipvlan container is reachable at its own address, and a network named `host`
+means the container's ports are bound on the host. They are not exported.
 
 The read-only **Reported by notifier** block at the bottom of the Edit page shows
 them ("Not reported" when empty). Manual entries have no such block.

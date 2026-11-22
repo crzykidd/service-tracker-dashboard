@@ -308,6 +308,10 @@ A newer STD with an older notifier must keep working:
   synthesized URLs into `internalurl` / `externalurl`. (A v0.3.2 was
   developed for the capture fields but never cut as a tag — it shipped
   inside v0.4.0. Do not reference v0.3.2 as a release boundary.)
+- STD (API revision 6, next release) accepts the optional
+  `networks[].driver` / `ip_address` / `ipv6_address` / `mac_address` and
+  advertises the `network_details` feature in `/api/v1/meta`; the notifier
+  sends them from 0.5.x, gated on that feature. They are never required.
 
 ## Inventory Stream Ingest Rules (v0.10.0+)
 

@@ -174,3 +174,44 @@ def test_notifier_wins_overwrites_group_and_priority(app, register):
             assert _entry().sort_priority == 2
     finally:
         app.config["register_field_ownership"] = "user_wins"
+
+
+# --- network details (API revision 6) -------------------------------------
+
+
+def _stored_networks(app):
+    with app.app_context():
+        return ServiceEntry.query.filter_by(host="host1", container_name="svc1").one().networks
+
+
+def test_network_details_are_stored_canonical(app, register):
+    resp = register(networks=[{
+        "name": "lan", "aliases": ["a"], "driver": " MacVLAN ", "ip_address": "192.168.1.5",
+        "ipv6_address": "FD00:0:0::2", "mac_address": "02-42-AC-11-00-02"}])
+    assert resp.status_code in (200, 201)
+    assert _stored_networks(app) == [{
+        "name": "lan", "aliases": ["a"], "driver": "macvlan", "ip_address": "192.168.1.5",
+        "ipv6_address": "fd00::2", "mac_address": "02:42:ac:11:00:02"}]
+
+
+def test_empty_network_details_are_none(app, register):
+    resp = register(networks=[{"name": "bridge", "driver": "bridge", "ip_address": "", "ipv6_address": "",
+                               "mac_address": ""}])
+    assert resp.status_code in (200, 201)
+    assert _stored_networks(app) == [{"name": "bridge", "aliases": [], "driver": "bridge"}]
+
+
+def test_older_payload_without_details_is_stored_as_before(app, register):
+    register(networks=[{"name": "n", "aliases": ["x"]}])
+    assert _stored_networks(app) == [{"name": "n", "aliases": ["x"]}]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("ip_address", "999.1.1.1"), ("ip_address", "fd00::1"), ("ip_address", "nope"),
+    ("ipv6_address", "10.0.0.1"), ("ipv6_address", "zz::1"),
+    ("mac_address", "02:42:ac:11:00"), ("mac_address", "not a mac"),
+    ("driver", "x" * 33), ("driver", 5), ("ip_address", 5)])
+def test_invalid_network_details_are_a_400(register, field, value):
+    resp = register(networks=[{"name": "n", field: value}])
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Invalid register payload"

@@ -113,6 +113,7 @@
 | 0.103   | 2026-11-22 | §25.4: the Ports page filters apply on change and the whole page state (view, sort and every filter) is remembered per browser until Reset (`static/js/ports.js`, `localStorage`). No API, schema or wire-contract change. |
 | 0.104   | 2026-11-22 | §24 Check now: inside the cooldown the UI asks for confirmation (409 `confirm_required`, repeat with `force`) instead of refusing; the management API keeps 429; the last-check time uses the persisted last run and wall-clock request times; a pending run is not doubled. Scheduler fix (the run reads the enable switch in an app context). No API revision, schema or wire-contract change. |
 | 0.105   | 2026-11-22 | §25.4: the Ports page sorts by state first (published, then not published) and then by container name (new default), port, protocol or host (flat only); the sort control shows in both views; `host_port` stays an alias of `port`. The UI relabels "exposed" as "not published"; the API keeps `kind: "exposed"` and `summary.exposed` (label/value split documented). No API, schema or wire-contract change. |
+| 0.106   | 2026-11-22 | Network details on register, on `dev`, unreleased: §5.3 `networks` items gain optional `driver`, `ip_address`, `ipv6_address`, `mac_address` ("names only" reversed; no migration), §18.1 revision 6 row extended (feature `network_details`, ports `kind` `host_network` / `direct`), §22.2 item 6 (notifier 0.5.x will send them), §25 macvlan / ipvlan (direct) and host-network rows, conflict rules, the reserved `host` network name. Register contract: additive optional fields, so STD ships first. |
 
 ---
 
@@ -449,7 +450,7 @@ backup leaves them NULL; the next register call fills them in.
 
 | Change | Detail |
 |--------|--------|
-| Column | `service_entry.networks` (`JSON`, nullable). List of `{"name": str, "aliases": [str]}` capturing Docker network membership as reported by the notifier. Pure observation; overwritten on every register. Names only — IPs/gateways are intentionally not captured. |
+| Column | `service_entry.networks` (`JSON`, nullable). List of `{"name": str, "aliases": [str]}` capturing Docker network membership as reported by the notifier. Since API revision 6 an item may also carry `driver` (lowercase, at most 32 characters), `ip_address` (IPv4), `ipv6_address` and `mac_address` (canonical lowercase colon form); each key is absent, not null, when unreported (an older notifier, or Docker sent `""`). Pure observation; overwritten on every register, no UI editing, no migration (the JSON column holds the new keys). Gateways stay uncaptured. The first design was "names only"; it was reversed because the Ports page needs the addresses (§25, `docs/decisions.md`). The column is not exported (§20.2). |
 | Column | `service_entry.exposed_ports` (`JSON`, nullable). List of `"<port>/<proto>"` strings (e.g. `"5173/tcp"`). The container's `EXPOSE` declarations / compose `expose:` entries. |
 | Column | `service_entry.published_ports` (`JSON`, nullable). List of `{"container_port", "protocol", "host_ip", "host_port"}` objects — the host-to-container port mappings from compose `ports:`. Distinct from `exposed_ports`: published is what reaches the host, exposed is what the container declares it listens on. |
 
@@ -3039,7 +3040,7 @@ server supports and log it.
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
 | 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
-| 6 | unreleased | `GET /ports` (container ports in use across all hosts, with conflicts; §25), feature `ports` |
+| 6 | unreleased | `GET /ports` (container ports in use across all hosts, with conflicts; §25; `kind` also accepts `host_network` and `direct`, rows carry `network` and `driver`, the summary has `host_network` and `direct`), feature `ports` Register: optional `driver`, `ip_address`, `ipv6_address` and `mac_address` on each `networks` item (§5.3, §22), feature `network_details` |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3953,6 +3954,13 @@ not lead.
    before STD omits it instead of getting a 400 on every register. Consumer leads, producer
    follows: STD ships the schema first. An older notifier keeps working: no `image_info`
    means "keep the stored values", and moving tags show `unknown` until it reports.
+6. STD (unreleased, API revision 6) accepts the optional `networks[].driver`, `ip_address`,
+   `ipv6_address` and `mac_address` and advertises the `network_details` feature in
+   `GET /api/v1/meta`. **A notifier 0.5.x will send them**, only when `/api/v1/meta` lists
+   `network_details`. The driver is not in the container's own network settings: the notifier needs a
+   network inspect, cached per network id (a network's driver does not change). Consumer leads,
+   producer follows. An older notifier keeps working: the keys are absent and the Ports page
+   behaves as before (except that a network named `host` is always the host network, §25.2).
 
 ---
 
@@ -4222,55 +4230,70 @@ change. All of it lives in the pure module `ports.py`, which the UI and the API 
   together; that is one binding).
 - An **exposed-only** row (labelled **not published** in the UI) per exposed `port/proto` with no published binding for the same
   container port and protocol on that entry. It is not bound on the host and takes no host port.
-- `network_mode: host` containers have no published ports: they appear only through exposed ports,
-  and only if the image declares them. Ports in manual and stream entry URLs are not read.
+- A **host network** row (kind `host_network`) per listening port of an entry on the `host`
+  network: `host_port` is the container port (bound directly on the host), `host_ips` is
+  `["0.0.0.0"]`. An entry is on the host network when a network is **named `host`** (Docker reserves
+  the name), with or without a reported driver, or has driver `host`. The listening ports are the
+  exposed ports plus the container side of any published binding (Docker ignores those here).
+- A **direct** row (kind `direct`) per listening port, per network, of an entry on a `macvlan` or
+  `ipvlan` network that has an address: the container has its own LAN address, so the port is
+  reachable at `<address>:<port>` without being published. `host_ips` are the network's IPv4 and
+  IPv6 addresses, `host_port` is the container port, `network` the network name and `driver` the driver. A
+  macvlan network without an address, or an address with no reported driver, gives no direct rows.
+- Docker ignores published ports on the host network and on macvlan/ipvlan, so an entry attached
+  only to those has no published rows; with an ordinary network too (bridge, unknown), they stay.
+  Ports covered by a host-network or direct row get no exposed-only row.
+- Entries without `driver` data (an older notifier) behave exactly as before, apart from the
+  reserved `host` name rule above. Ports in manual and stream entry URLs are not read.
 - Row keys: `entry_id`, `name` (the container name, as on the dashboards), `host`,
-  `container_name`, `stack_name`, `docker_status`, `kind` (`published` | `exposed`), `host_ips`,
-  `host_port` (null for exposed), `container_port`, `protocol`, `conflict`, `conflict_with`
-  (entry ids).
+  `container_name`, `stack_name`, `docker_status`, `kind` (`published` | `host_network` | `direct` |
+  `exposed`), `host_ips`, `host_port` (null for exposed), `container_port`, `protocol`, `network`
+  and `driver` (direct rows, else null), `conflict`, `conflict_with` (entry ids).
 
 ### 25.3 Conflicts
 
-Two published rows of **different entries** conflict when they have the same non-empty `host`,
-the same protocol and host port, and overlapping addresses. Any wildcard address (empty,
+Two published or host-network rows of **different entries** conflict when they have the same
+non-empty `host`, the same protocol and host port, and overlapping addresses. Any wildcard address (empty,
 `0.0.0.0`, `::`) overlaps every address (no per-family check); two different specific addresses
-do not. Exposed-only rows never conflict. The **conflict count** is the number of conflicting
+do not. Direct rows never conflict with host ports; two direct rows of different entries conflict
+only with the same address, protocol and port (any host). Exposed-only rows never conflict. The **conflict count** is the number of conflicting
 rows (both sides count), over all ports, not only the filtered ones.
 
 ### 25.4 The page
 
 `GET /ports` (login required), the **Ports** tab between Compact and Add. Query parameters, all
 falling back to their default when unknown: `view=grouped|flat` (default `grouped`),
-`kind=all|published|exposed`, `host`, `q` (name, container, stack, port), `conflicts=true`, and
+`kind=all|published|host_network|direct|exposed`, `host`, `q` (name, container, stack, port), `conflicts=true`, and
 `sort=name|port|protocol` (the flat table also accepts `host`; in the grouped view `host` falls
 back to the default; `host_port` is kept as an alias of `port`). The default is `name`, the
-container name A to Z. Every sort puts published rows first, then not-published rows, and
-breaks ties by host, port, protocol, entry id; `port` is the host port for published rows and
-the container port for not-published ones. The sort control shows in both views and each host
+container name A to Z. Every sort puts published rows first, then host network, direct and not-published rows, and
+breaks ties by host, port, protocol, entry id; `port` is the host port for published rows (the container port for host-network and direct rows, which
+are the same number) and the container port for not-published ones. The sort control shows in both views and each host
 section uses the same order. Server-rendered; `static/js/ports.js` applies
 the filters as soon as a dropdown or the checkbox changes (the search on Enter or blur; the Apply
 button is hidden then) and remembers the whole page state (view, sort, kind, host, search,
 conflicts only) in the browser's `localStorage` (`ports:state`, the query string): a bare `/ports`
 (the nav tab) opens the remembered state, and **Reset** forgets it and loads the defaults. Without JS the page works with the Apply button. The
-summary bar reads "N hosts · N published · N not published · N conflicts" (the last is a link applying
+summary bar reads "N hosts · N published · N not published · N conflicts" (plus "N host network" and "N direct" when there are any) (the last is a link applying
 `conflicts=true`). Grouped: a section per host (alphabetical) with its port count, rows in the chosen sort. Conflict rows are red with a tooltip naming the other entries; not-published
 rows are dimmed.
 
 **Label versus value.** The UI says "not published" (State column, Show filter, summary bar,
 tooltips): an exposed-only port is not reachable from outside on that host. The wire keeps
 Docker's term: the API's `kind: "exposed"` and `summary.exposed`, the `kind=exposed` query
-value (also on the page) and the `data-kind` attributes are unchanged. Each row links to `/edit/<id>`. The empty state says ports come from
+value (also on the page) and the `data-kind` attributes are unchanged. The new kinds follow the same pattern: the labels are "host network" and "direct (macvlan)" / "direct (ipvlan)" (State column, Show filter), the wire values are `host_network` and `direct`. Each row links to `/edit/<id>`. The empty state says ports come from
 docker-api-notifier 0.4.0+. One query for the entries regardless of their number.
 
 ### 25.5 API and MCP
 
 `GET /api/v1/ports` (read scope; **API revision 6**, feature `ports`): query `kind`, `host`, `q`,
 `conflicts` (`true`/`false`); an invalid `kind` or `conflicts` is a 400. Response:
-`{"summary": {"hosts", "published", "exposed", "conflicts"}, "ports": [rows]}`. The MCP read tool
+`{"summary": {"hosts", "published", "host_network", "direct", "exposed", "conflicts"}, "ports": [rows]}`. The MCP read tool
 `list_ports(kind, host, query, conflicts_only)` calls it; its description explains what a
 conflict is and that exposed-only ports are not bound on the host.
 
 ### 25.6 Out of scope
 
 Ports parsed from manual or stream entry URLs; remembering the last-known ports of stopped
-containers (both in `docs/FUTURE.md`); host-network containers beyond their exposed ports.
+containers (both in `docs/FUTURE.md`); the real listening ports of host-network and macvlan/ipvlan containers
+(only the image's declared ports are known).

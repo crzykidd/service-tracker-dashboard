@@ -5,6 +5,31 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-22 — Network details on register: "names only" reversed
+
+- **Why.** The first design captured network names only ("IPs are SSH territory"). The Ports page
+  cannot be right for macvlan/ipvlan without addresses: those containers have their own LAN IP,
+  Docker ignores their published ports, and a host-network container binds on the host. The STD
+  install is the operator's own network, so a container's address on it is not sensitive. So
+  `networks[]` gains optional `driver`, `ip_address`, `ipv6_address`, `mac_address`.
+- **No migration, extended revision 6.** The values live inside the existing `networks` JSON items;
+  unreported ones are dropped from the stored item (a model serializer), so an older notifier's data is
+  byte-identical to before. Revision 6 is unreleased, so its row grew (feature `network_details`) instead
+  of adding a 7, as revision 5 did within 0.12.0.
+- **Not exported.** `networks` stays out of the export (§20.2): it is observation the notifier rewrites
+  on the next register, and the new keys carry addresses and MACs. No change to `export_format.py`.
+- **The network named `host` is the host network even without a driver.** Docker reserves the name, and
+  the notifier's driver lookup (a network inspect) is optional, so an older or driverless report must not
+  hide a host-network container. Any other network needs a `macvlan` / `ipvlan` driver *and* an address to
+  produce direct rows; an unknown address means nothing is claimed.
+- **Published ports are dropped only when nothing else publishes.** An entry only on host / macvlan /
+  ipvlan has no published rows (Docker ignores them, so they would be false); an entry also on a bridge
+  keeps them. Those container ports still become direct or host-network rows.
+- **Direct conflicts ignore the host.** The address is the identity on a LAN, so two direct rows clash on
+  the same address, protocol and port regardless of host, and never with host ports.
+
+---
+
 ## 2026-11-22 — Image Check now: confirm in the UI, 429 in the API
 
 - **The confirmation is UI-only.** The session routes answer 409 `confirm_required` inside the

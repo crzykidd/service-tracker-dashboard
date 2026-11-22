@@ -5,10 +5,11 @@ this is the only register surface — the legacy /api/register compat
 shim has been removed.
 """
 
+import ipaddress
 import re
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 _REPO_DIGEST_RE = re.compile(r"^[^@\s]{1,255}@sha256:[0-9a-f]{64}$")
 
@@ -16,16 +17,73 @@ _REPO_DIGEST_RE = re.compile(r"^[^@\s]{1,255}@sha256:[0-9a-f]{64}$")
 class NetworkMembership(BaseModel):
     """One Docker network the container is attached to.
 
-    Names only — IPs and gateway info are SSH/debugger territory, not
-    dashboard territory. Aliases are captured because they reveal
-    compose service names, which future logical-service-identity work
-    will want.
+    Name and aliases from the first notifier; since API revision 6 also the
+    network driver and the container's address on it (the Ports page needs them:
+    a macvlan/ipvlan container is reachable at its own LAN IP). All of the new
+    fields are optional: an older notifier omits them and the item stays
+    `{"name", "aliases"}`. Docker sends `""` for "no address"; that is None here.
+    Aliases are captured because they reveal compose service names.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     aliases: List[str] = []
+    driver: Optional[str] = None
+    ip_address: Optional[str] = None
+    ipv6_address: Optional[str] = None
+    mac_address: Optional[str] = None
+
+    @field_validator("driver", mode="before")
+    @classmethod
+    def _driver(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            raise ValueError("driver must be a string")
+        v = v.strip().lower()
+        if len(v) > 32:
+            raise ValueError("driver must be at most 32 characters")
+        return v or None
+
+    @field_validator("ip_address", "ipv6_address", mode="before")
+    @classmethod
+    def _address(cls, v, info):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            raise ValueError(f"{info.field_name} must be a string")
+        v = v.strip()
+        if not v:
+            return None
+        klass = ipaddress.IPv4Address if info.field_name == "ip_address" else ipaddress.IPv6Address
+        try:
+            return str(klass(v))
+        except ValueError:
+            family = "IPv4" if info.field_name == "ip_address" else "IPv6"
+            raise ValueError(f"{info.field_name} is not a valid {family} address") from None
+
+    @field_validator("mac_address", mode="before")
+    @classmethod
+    def _mac(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            raise ValueError("mac_address must be a string")
+        if not v.strip():
+            return None
+        from streams import normalize_mac  # lazy: streams pulls in models and the db
+
+        mac = normalize_mac(v)
+        if mac is None:
+            raise ValueError("mac_address is not a valid MAC address")
+        return mac
+
+    @model_serializer(mode="wrap")
+    def _drop_unset(self, handler):
+        # Unreported details are absent from the stored item, not null: an older
+        # notifier's networks column reads exactly as it always did.
+        return {k: v for k, v in handler(self).items() if v is not None}
 
 
 class PublishedPort(BaseModel):

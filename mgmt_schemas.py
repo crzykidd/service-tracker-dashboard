@@ -1209,18 +1209,23 @@ class PortRowOut(TypedDict):
     container_name: str
     stack_name: str | None
     docker_status: str | None
-    kind: str                        # published | exposed
-    host_ips: list[str]              # one row per binding; 0.0.0.0 and :: of one port are one row
-    host_port: int | None            # null for an exposed-only port (not bound on the host)
+    kind: str                        # published | host_network | direct | exposed
+    host_ips: list[str]              # one row per binding; 0.0.0.0 and :: of one port are one row;
+                                     # host_network: 0.0.0.0; direct: the container's address(es)
+    host_port: int | None            # null for an exposed-only port; the container port for host_network and direct
     container_port: int
     protocol: str
-    conflict: bool                   # another entry on the same host binds the same port
+    network: str | None              # direct rows: the macvlan/ipvlan network name
+    driver: str | None               # direct rows: macvlan | ipvlan
+    conflict: bool                   # another entry binds the same port (same host, or same address for direct)
     conflict_with: list[int]         # the other entries' ids
 
 
 class PortSummaryOut(TypedDict):
     hosts: int
     published: int
+    host_network: int
+    direct: int
     exposed: int
     conflicts: int                   # conflicting rows, over all ports (not only the filtered ones)
 
