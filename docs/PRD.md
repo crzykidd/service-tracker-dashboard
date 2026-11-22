@@ -110,6 +110,7 @@
 | 0.100   | 2026-11-21 | Image update MQTT and Home Assistant (img-04, phase 4), on `dev`, unreleased: new §24.10; §17.3 (`entry/<id>/image` topic, `summary.updates`, `entry/<id>/state.image_update_state`, the new sync triggers), §17.4 (the read-only `update` entity and the hub "Updates available" sensor), §24.9 now lists only credentials and other providers. `notify_state.py`, `notify_ha.py`, `notify_purge.py`, `image_update.on_settings_changed`. No schema, API revision or register wire-contract change. |
 | 0.101   | 2026-11-21 | v0.12.0 released: §24 Image update check (registry provider, daily job, `image_info` register field, UI, MQTT/HA `update` entities) and the image repository link (GitHub #6) marked delivered; API revision 5 assigned to 0.12.0 in §18.1. |
 | 0.102   | 2026-11-21 | Ports in use (GitHub #58), on `dev`, unreleased: new §25 (the Ports tab and `/ports` page, `GET /api/v1/ports`, the `list_ports` MCP tool, inclusion and conflict rules), §18.1 revision 6 row, §3.1 module layout (`ports.py`). Reads the existing `exposed_ports` / `published_ports` columns; no schema, register or stream-ingest wire-contract change. |
+| 0.103   | 2026-11-22 | §25.4: the Ports page filters apply on change and the view (grouped/flat, flat sort) is remembered per browser (`static/js/ports.js`, `localStorage`). No API, schema or wire-contract change. |
 
 ---
 
@@ -4234,7 +4235,11 @@ rows (both sides count), over all ports, not only the filtered ones.
 `GET /ports` (login required), the **Ports** tab between Compact and Add. Query parameters, all
 falling back to their default when unknown: `view=grouped|flat` (default `grouped`),
 `kind=all|published|exposed`, `host`, `q` (name, container, stack, port), `conflicts=true`, and
-for the flat table `sort=host|host_port|name|protocol`. Server-rendered, no client script. The
+for the flat table `sort=host|host_port|name|protocol`. Server-rendered; `static/js/ports.js` applies
+the filters as soon as a dropdown or the checkbox changes (the search on Enter or blur; the Apply
+button is hidden then) and remembers the view and the flat sort in the browser's `localStorage`
+(`ports:view`, `ports:sort`): a `/ports` URL with no `view` (the tab, Reset) opens the remembered
+one. Without JS the page works with the Apply button. The
 summary bar reads "N hosts · N published · N exposed · N conflicts" (the last is a link applying
 `conflicts=true`). Grouped: a section per host (alphabetical) with its port count, rows by host
 port, exposed rows last. Conflict rows are red with a tooltip naming the other entries; exposed

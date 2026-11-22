@@ -194,6 +194,16 @@ def test_tab_is_in_the_nav_on_every_view(admin_client):
         assert 'href="/ports"' in admin_client.get(view).get_data(as_text=True)
 
 
+def test_page_loads_the_autosubmit_and_view_memory_script(admin_client):
+    html = admin_client.get("/ports").get_data(as_text=True)
+    # Not deferred: it restores the remembered view before the tables render.
+    start = html.index('js/ports.js')
+    tag = html[html.rindex('<script', 0, start):html.index('</script>', start)]
+    assert 'defer' not in tag
+    # The Apply button stays in the markup for no-JS use.
+    assert 'type="submit"' in html
+
+
 def test_grouped_view_with_conflict_and_summary(admin_client, seeded):
     html = admin_client.get("/ports").get_data(as_text=True)
     assert 'class="mb-6 ports-host" data-host="h1"' in html and 'data-host="h2"' in html

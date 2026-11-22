@@ -26,6 +26,8 @@
 {% endmacro %}
 
 {% block content %}
+{# Not deferred: it restores the remembered view before the tables render. #}
+<script src="{{ static_v('js/ports.js') }}"></script>
 <div id="ports-summary" class="mb-4 text-sm text-gray-300">
   <span id="ports-count-hosts">{{ summary.hosts }} host{{ '' if summary.hosts == 1 else 's' }}</span> ·
   <span id="ports-count-published">{{ summary.published }} published</span> ·

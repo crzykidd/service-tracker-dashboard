@@ -439,7 +439,7 @@ their Edit page.
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
 | `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
-| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|exposed\|all`, `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort`. |
+| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|exposed\|all`, `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort`. Filters apply on change; the view and sort are remembered per browser. |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:
