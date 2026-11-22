@@ -1,32 +1,29 @@
-// Ports page: remember the view (grouped/flat and the flat sort) in this browser, and apply
-// the filters as soon as a dropdown or the checkbox changes. The page still works without
-// JS (the Apply button is only hidden when this script runs).
+// Ports page: remember the whole page state (view, sort, kind, host, search, conflicts only)
+// in this browser, and apply the filters as soon as a dropdown or the checkbox changes.
+// The page still works without JS (the Apply button is only hidden when this script runs).
 (function () {
-  const VIEW_KEY = 'ports:view';
-  const SORT_KEY = 'ports:sort';
+  const STATE_KEY = 'ports:state';
 
-  function read(key) {
-    try { return localStorage.getItem(key); } catch (e) { return null; }
+  function read() {
+    try { return localStorage.getItem(STATE_KEY); } catch (e) { return null; }
   }
-  function write(key, value) {
-    try { localStorage.setItem(key, value); } catch (e) { /* storage blocked: nothing to remember */ }
+  function write(value) {
+    try {
+      if (value) localStorage.setItem(STATE_KEY, value); else localStorage.removeItem(STATE_KEY);
+    } catch (e) { /* storage blocked: nothing to remember */ }
   }
 
-  // Runs before the tables render (the script is not deferred): a URL with no `view`
-  // (the nav tab, Reset) gets the remembered view instead of the default.
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has('view')) {
-    const savedView = read(VIEW_KEY);
-    if (savedView === 'flat') {
-      params.set('view', 'flat');
-      const savedSort = read(SORT_KEY);
-      if (savedSort && !params.has('sort')) params.set('sort', savedSort);
-      window.location.replace(window.location.pathname + '?' + params.toString());
+  // Runs before the tables render (the script is not deferred). A bare `/ports` (the nav
+  // tab) opens the remembered state; a URL with parameters is the new state to remember.
+  const search = window.location.search.replace(/^\?/, '');
+  if (!search) {
+    const saved = read();
+    if (saved) {
+      window.location.replace(window.location.pathname + '?' + saved);
       return;
     }
   } else {
-    write(VIEW_KEY, params.get('view') === 'flat' ? 'flat' : 'grouped');
-    if (params.get('view') === 'flat' && params.get('sort')) write(SORT_KEY, params.get('sort'));
+    write(search);
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -36,15 +33,15 @@
     if (apply) apply.classList.add('hidden');
 
     form.querySelectorAll('select, input[type="checkbox"]').forEach(function (el) {
-      el.addEventListener('change', function () {
-        if (el.name === 'view') write(VIEW_KEY, el.value);
-        if (el.name === 'sort') write(SORT_KEY, el.value);
-        form.submit();
-      });
+      el.addEventListener('change', function () { form.submit(); });
     });
     // The search box submits on Enter (native form behavior) and when it loses focus
     // after an edit.
-    const search = form.querySelector('input[name="q"]');
-    if (search) search.addEventListener('change', function () { form.submit(); });
+    const q = form.querySelector('input[name="q"]');
+    if (q) q.addEventListener('change', function () { form.submit(); });
+
+    // Reset forgets the remembered state, then loads the defaults.
+    const reset = document.getElementById('ports-reset');
+    if (reset) reset.addEventListener('click', function () { write(null); });
   });
 })();

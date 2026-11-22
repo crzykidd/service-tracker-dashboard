@@ -200,6 +200,7 @@ def test_page_loads_the_autosubmit_and_view_memory_script(admin_client):
     start = html.index('js/ports.js')
     tag = html[html.rindex('<script', 0, start):html.index('</script>', start)]
     assert 'defer' not in tag
+    assert 'id="ports-reset"' in html
     # The Apply button stays in the markup for no-JS use.
     assert 'type="submit"' in html
 
