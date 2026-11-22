@@ -54,6 +54,7 @@ import image_update
 import jobs
 import mgmt_serializers
 import notify
+import ports
 import restore_staging
 import settings_sections
 import settings_store
@@ -398,6 +399,37 @@ def compact_dash():
         show_urlless=show_urlless,
         sort_in_group=sort_in_group,
         active_tab="compact"
+    )
+
+
+@dashboard_bp.route('/ports')
+@login_required
+def ports_page():
+    """Ports in use across all hosts (PRD 25). One query; unknown params fall back."""
+    args = request.args
+    view = args.get('view') if args.get('view') in ('grouped', 'flat') else 'grouped'
+    kind = ports.normalize_kind(args.get('kind'))
+    sort = ports.normalize_sort(args.get('sort'))
+    host = (args.get('host') or '').strip() or None
+    q = (args.get('q') or '').strip()
+    conflicts_only = (args.get('conflicts') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    all_rows = ports.build_rows(ServiceEntry.active().all())
+    summary = ports.summarize(all_rows)
+    hosts = sorted({r['host'] for r in all_rows if r['host']}, key=str.lower)
+    if host not in hosts:
+        host = None
+    rows = ports.filter_rows(all_rows, kind=kind, host=host, q=q, conflicts_only=conflicts_only)
+    by_id = {r['entry_id']: r['name'] for r in all_rows}
+
+    return render_template(
+        'ports.html',
+        view=view, kind=kind, sort=sort, host=host, q=q, conflicts_only=conflicts_only,
+        hosts=hosts, summary=summary, total_rows=len(all_rows), visible=len(rows),
+        grouped=ports.group_by_host(rows) if view == 'grouped' else [],
+        flat=ports.sort_rows(rows, sort) if view == 'flat' else [],
+        names=by_id,
+        active_tab='ports',
     )
 
 

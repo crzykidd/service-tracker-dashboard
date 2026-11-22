@@ -447,6 +447,18 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
         return client.request("GET", "/image-updates", params=dict(state=state, limit=limit, offset=offset))
 
     @read_tool
+    def list_ports(kind: str = "all", host: str | None = None, query: str | None = None,
+                   conflicts_only: bool = False) -> dict:
+        """List the container ports in use across all hosts: answer "what is on port 8080 on host X" or "is this port free". Ports come from the Docker notifier and only for running containers.
+
+        kind: published (bound on the host: reachable at host:host_port) | exposed (declared by the image but NOT bound on the host, so it takes no host port) | all (default). host: exact host name. query: text in the name, container name, stack or a port number. conflicts_only: only rows in conflict.
+        A conflict means two different entries on the same host publish the same protocol and host port on overlapping addresses (a wildcard address such as 0.0.0.0 or :: overlaps any other), so one of them cannot bind. Network_mode host containers have no published ports and show only the ports their image declares.
+        Returns {summary: {hosts, published, exposed, conflicts}, ports: [{entry_id, name, host, container_name, stack_name, docker_status, kind, host_ips, host_port (null when exposed), container_port, protocol, conflict, conflict_with: [entry ids]}]}; summary counts all ports, not only the filtered ones.
+        """
+        return client.request("GET", "/ports", params=dict(
+            kind=kind, host=host, q=query, conflicts="true" if conflicts_only else None))
+
+    @read_tool
     def backup_settings() -> dict:
         """The backup settings: the folder and the two daily jobs (snapshot, export), each value with its origin (env | ui | file | default; env means pinned by an environment variable and read-only), plus last_runs and next_runs by kind."""
         return client.request("GET", "/settings/backup")

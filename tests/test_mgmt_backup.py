@@ -41,7 +41,7 @@ def rkey(app):
 
 
 def test_revision_4_row_and_feature():
-    assert API_REVISION == 5          # 5 is the image_repo_url addition
+    assert API_REVISION >= 5         # 5 is the image_repo_url addition, 6 the ports route
     row = [r for r in API_REVISION_HISTORY if r[0] == 4][0]
     assert row[:2] == (4, "0.11.0") and "export" in row[2]
     assert "backup" in FEATURES

@@ -505,6 +505,27 @@ conveniences. Renaming a stream from its card is already parked above.
 
 ---
 
+## Ports from manual and stream entry URLs
+
+**Parked:** 2026-11-21, while building the Ports page (GitHub #58).
+
+The Ports page lists only what the notifier observed on Docker containers. Manual and
+stream entries have no observed ports, but their `internalurl` often carries one
+(`http://nas.lan:5000`). Parsing it would let the page show those too, flagged as
+"from URL" (a guess, not an observation) and possibly in conflict checks. Deferred: a URL
+port is not a binding, and a conflict claim built on it would often be wrong (proxies,
+redirects).
+
+## Remember the last-known ports of stopped containers
+
+**Parked:** 2026-11-21, while building the Ports page (GitHub #58).
+
+Docker clears published ports when a container stops, so a stopped container vanishes from
+the page and its port reads as free, though it will reclaim it on start. Remembering the
+last-known bindings (a column, shown dimmed as "stopped") would catch that conflict early.
+Deferred: it needs a migration and a rule for when a remembered port expires, and the
+observation columns are pure overwrite today.
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

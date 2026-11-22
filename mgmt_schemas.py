@@ -1200,3 +1200,31 @@ class OfferAnswerOut(TypedDict):
     key: str
     answer: str                      # accepted | declined
     entry: EntryOut                  # the entry that now carries the key
+
+
+class PortRowOut(TypedDict):
+    entry_id: int
+    name: str
+    host: str | None
+    container_name: str
+    stack_name: str | None
+    docker_status: str | None
+    kind: str                        # published | exposed
+    host_ips: list[str]              # one row per binding; 0.0.0.0 and :: of one port are one row
+    host_port: int | None            # null for an exposed-only port (not bound on the host)
+    container_port: int
+    protocol: str
+    conflict: bool                   # another entry on the same host binds the same port
+    conflict_with: list[int]         # the other entries' ids
+
+
+class PortSummaryOut(TypedDict):
+    hosts: int
+    published: int
+    exposed: int
+    conflicts: int                   # conflicting rows, over all ports (not only the filtered ones)
+
+
+class PortsOut(TypedDict):
+    summary: PortSummaryOut
+    ports: list[PortRowOut]

@@ -35,7 +35,7 @@ READ_TOOLS = {
     "list_notification_channels", "get_notification_channel", "list_notification_previous_bases",
     "list_streams", "get_stream", "preview_stream", "list_stream_blocks", "list_stream_offers",
     "list_stream_unmatched_items", "backup_settings", "list_backups", "export_config",
-    "list_image_updates",
+    "list_image_updates", "list_ports",
 }
 WRITE_TOOLS = {
     "create_manual_entry", "update_entry", "delete_entry", "restore_entry", "add_check",
@@ -65,6 +65,8 @@ CALLS = {
     "list_backups": ({}, "GET", "/api/v1/backups", {}, None),
     "list_image_updates": ({"state": "update"}, "GET", "/api/v1/image-updates",
                            {"state": "update", "limit": "200", "offset": "0"}, None),
+    "list_ports": ({"kind": "published", "query": "web", "conflicts_only": True}, "GET", "/api/v1/ports",
+                   {"kind": "published", "q": "web", "conflicts": "true"}, None),
     "run_image_update_check": ({"entry_id": 7}, "POST", "/api/v1/image-updates/run", {}, {"entry_id": 7}),
     "export_config": ({}, "GET", "/api/v1/export", {"format": "json"}, None),
     "run_backup": ({"kind": "export"}, "POST", "/api/v1/backups/run", {}, {"kind": "export"}),

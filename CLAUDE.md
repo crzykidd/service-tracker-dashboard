@@ -457,6 +457,8 @@ synthesizer.py      ← exposure → internalurl/externalurl translation + prove
 image_utils.py      ← icon fetch + cache; `resolve_image_metadata` (image string -> registry/owner/name/tag/ref)
 image_ref.py        ← pure stdlib image reference parser (`parse()`); the one place an image string is split;
                       feeds `resolve_image_metadata`, `image_repo.py` and `service_entry.image_ref`
+ports.py            ← pure: container ports in use across hosts + conflicts (PRD 25); shared by the
+                      `/ports` page and `GET /api/v1/ports`; no Flask, no DB queries
 image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
                       lscr.io; None for anything else) + the `image_repo_url` override rule
 registry_client.py  ← OCI distribution v2 client for the image update check (PRD 24): anonymous Bearer

@@ -5,6 +5,32 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Ports in use page (GitHub #58)
+
+- **Stopped containers are excluded.** Docker clears `NetworkSettings.Ports` on stop, so a
+  stopped container reports no published ports; its `exposed_ports` (image config) survive, and
+  listing them would show a stopped service as using ports. Excluded: an entry whose
+  `docker_status` is set and not running. `start` counts as running, as it does on the dashboards
+  (`dashboard.html` treats `start` and `running` alike); a NULL status (older notifier, manual) is
+  included. Remembering last-known ports is parked in FUTURE.md.
+- **Any wildcard address overlaps everything.** `""`, `0.0.0.0` and `::` conflict with any other
+  address on the same host, protocol and port, without a per-family check. A `0.0.0.0` vs `::`
+  split across two entries would strictly not clash on some stacks; it is rare, and a false
+  positive is cheaper than a missed clash. Two different specific IPs never conflict.
+- **`0.0.0.0` and `::` collapse into one row.** Docker publishes both for a plain `-p 8080:80`;
+  to the operator it is one binding. One entry's bindings sharing (host port, container port,
+  protocol) become one row with all its `host_ips`.
+- **The conflict count is the number of conflicting rows** (both sides of a clash count, so one
+  clash of two entries is 2), computed over all ports, not the filtered ones. The page and
+  `GET /api/v1/ports` use the same `ports.summarize`, so the summary bar and the API summary match
+  and the count stays visible while filtering (its link applies `conflicts=true`).
+- **Display name is `container_name`**, which is what all three dashboard views show; rows link to
+  `/edit/<id>`, the dashboards' edit target (they have no entry detail page).
+- **An exposed-only row** is an exposed `port/proto` with no published binding of the same
+  container port and protocol on that entry. Exposed rows never conflict.
+
+---
+
 ## 2026-11-21 — Image update over MQTT and Home Assistant (img-04)
 
 - **Sync trigger: add the computed columns to `notify_state._ENTRY_ATTRS`** (`image_ref`,

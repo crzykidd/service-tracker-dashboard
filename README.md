@@ -74,6 +74,7 @@ Reference pages: [register API](docs/register-api.md) ·
 
 ### On top of that
 
+- **Ports view:** every container port in use across your hosts, with port conflicts flagged.
 - **Views:** Dashboard (table), Tiled and Compact, all usable on a phone. Group by
   group, stack or host; filter by health status and source; per-entry sort priority.
 - **Health checks:** internal and external URL checks, a Docker container check, and
@@ -438,6 +439,7 @@ their Edit page.
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
 | `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
+| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|exposed\|all`, `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort`. |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:
@@ -629,6 +631,7 @@ curl -s -H "Authorization: Bearer $KEY" "$STD/api/v1/whoami"
 | PUT | `/api/v1/settings/image-updates` | write | Change the image update check settings |
 | GET | `/api/v1/image-updates` | read | Image references and their update state |
 | POST | `/api/v1/image-updates/run` | write | Check for newer images now |
+| GET | `/api/v1/ports` | read | Container ports in use across all hosts |
 | GET | `/api/v1/settings/backup` | read | Backup settings, with each value's origin |
 | PUT | `/api/v1/settings/backup` | write | Change the backup settings |
 | GET | `/api/v1/backups` | read | List backup files |
@@ -861,6 +864,7 @@ Other pages and endpoints:
 | Route | What it is |
 |---|---|
 | `/`, `/tiled_dash`, `/compact_dash` | The three views |
+| `/ports` | Ports in use across all hosts, with conflicts |
 | `/add`, `/edit/<id>` | Add a manual entry; edit, lock or delete an entry |
 | `/settings/import/<token>` | The import preview page |
 | `/login`, `/logout` | Local user sign-in |

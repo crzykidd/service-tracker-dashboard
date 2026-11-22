@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Ports page: which container ports are in use on which host.** A new **Ports** tab
+  (between Compact and Add) lists the ports your containers publish across all hosts, so
+  you can answer "what is on 8080 on host X" and "which ports are free". It shows each
+  published port (host port, container port, the address it is bound to, the container),
+  and, dimmed, ports a container's image only exposes without binding them on the host.
+  Two views: **grouped by host** (default) and a **flat table** (sortable by host, host
+  port, name or protocol), with filters for published / exposed / all, host, a text search
+  and conflicts only. Two different containers on the same host that publish the same
+  protocol and host port are marked **conflict** (red, with the other container named) and
+  counted at the top of the page. The ports come from docker-api-notifier 0.4.0 or later;
+  stopped containers report none and are left out. The same data is available as
+  `GET /api/v1/ports` (read key; **API revision 6**, new `ports` feature) and as the
+  `list_ports` tool of the MCP server.
+
 ## [0.12.0] — 2026-11-21
 
 ### Added

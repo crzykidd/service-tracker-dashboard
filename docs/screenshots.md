@@ -44,6 +44,13 @@ Small tiles in columns, one per group; a click opens the entry's URL.
 
 [![Compact view](screenshots/std_compact.png)](screenshots/std_compact.png)
 
+### Ports
+
+To take: `std_ports.png`, the Ports tab in the grouped-by-host view, ideally with one
+conflict (two containers on one host publishing the same port) and a dimmed exposed-only row.
+
+[![Ports view](screenshots/std_ports.png)](screenshots/std_ports.png)
+
 ### Phone
 
 The Tiled view on a phone, and a tile's drawer opened.
