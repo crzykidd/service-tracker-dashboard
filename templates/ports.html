@@ -5,10 +5,15 @@
 
 {# One row. Not-published rows are dimmed; conflicting rows get a red marker naming the others. #}
 {% macro port_cells(r) %}
+  {% set _unknown_tip = "The image declares no ports and none are published; any port the container listens on is reachable at this address. Set the entry's internal URL to http://" ~ (r.host_ips[0] if r.host_ips and r.kind == 'direct' else '<ip>') ~ ":<port> to show the port here." %}
+  {% if r.ports_unknown %}
+  <td class="px-3 py-2 text-xs text-gray-400" colspan="2" title="{{ _unknown_tip }}">all ports (none declared)</td>
+  {% else %}
   <td class="px-3 py-2 font-mono">
     {% if r.kind != 'exposed' %}{{ r.host_port }}{% else %}<span class="text-gray-500">-</span>{% endif %}
   </td>
-  <td class="px-3 py-2 font-mono">{{ r.container_port }}/{{ r.protocol }}</td>
+  <td class="px-3 py-2 font-mono"{% if r.port_source == 'url' %} title="Port taken from the entry's internal or external URL (from URL)"{% endif %}>{{ r.container_port }}/{{ r.protocol }}{% if r.port_source == 'url' %}{% endif %}</td>
+  {% endif %}
   <td class="px-3 py-2 text-xs font-mono">{% if r.host_ips %}{{ r.host_ips | map('default', 'any', true) | join(', ') }}{% else %}<span class="text-gray-500">not bound</span>{% endif %}</td>
   <td class="px-3 py-2">
     <a href="/edit/{{ r.entry_id }}" class="text-blue-400 hover:underline">{{ r.name }}</a>

@@ -5,6 +5,22 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-22 — Ports page: a row for containers with no known ports (0.13.1)
+
+- **Why a row with no port.** Home Assistant on macvlan declares no ports, so the Ports page had no row
+  for it at all, although the container is reachable on its own address on every port. Listing nothing
+  hid a real address; a `ports_unknown` row (kind `direct` / `host_network`, port fields null, "all ports
+  (none declared)") keeps it visible. It never conflicts: there is no port to clash on.
+- **Why URL ports only count when the URL host is the container's own IP.** A hostname or a reverse-proxy
+  URL says nothing about which port this container listens on (the proxy's port is not the container's).
+  Only a URL whose host equals the direct network's address is evidence, so only that is read (compared
+  with `ipaddress`, so IPv6 spellings match). Host-network rows have no reliable host IP and skip it.
+- **Revision 7 for a patch.** The new row keys and nullable port fields are an additive API change, so it
+  bumps `API_REVISION` to 7 even in 0.13.1. The label-settings fields planned for 0.14.0 move to
+  revision 8 (`docs/design/2026-11-22-moves-and-label-settings.md` renumbered).
+
+---
+
 ## 2026-11-22 — Network details on register: "names only" reversed
 
 - **Why.** The first design captured network names only ("IPs are SSH territory"). The Ports page

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ports page: containers that declare no ports no longer disappear.** Containers on
+  macvlan, ipvlan or the host network whose image declares no ports (Home Assistant, for
+  example) now show on the Ports page, as "all ports (none declared)", or with the port from
+  the entry's internal or external URL when it points at the container's own address
+  (`http://10.100.20.11:8123` shows 8123/tcp). They never count as conflicts. In the API,
+  `GET /api/v1/ports` rows gain `ports_unknown` and `port_source`, and `container_port`,
+  `host_port` and `protocol` can be null on those rows (API revision 7).
+
 ## [0.13.0] — 2026-11-22
 
 ### Added

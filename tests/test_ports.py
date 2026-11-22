@@ -332,7 +332,8 @@ def test_api_shape_and_filters(client, app, seeded):
     row = next(r for r in body["ports"] if r["name"] == "web" and r["kind"] == "published")
     assert set(row) == {"entry_id", "name", "host", "container_name", "stack_name", "docker_status", "kind",
                         "host_ips", "host_port", "container_port", "protocol", "network", "driver",
-                       "conflict", "conflict_with"}
+                        "port_source", "ports_unknown", "conflict", "conflict_with"}
+    assert row["port_source"] == "declared" and row["ports_unknown"] is False
     assert row["conflict"] and row["conflict_with"] == [seeded["other"]]
     h = _key(app)
     got = client.get("/api/v1/ports?kind=exposed", headers=h).get_json()
@@ -350,9 +351,9 @@ def test_api_bad_params_and_auth(client, app):
     assert client.get("/api/v1/ports", headers=_key(app, "write")).status_code == 200
 
 
-def test_meta_reports_revision_6(client):
+def test_meta_reports_revision_7(client):
     meta = client.get("/api/v1/meta").get_json()
-    assert API_REVISION == 6 and meta["api_revision"] == 6 and "ports" in meta["features"]
+    assert API_REVISION == 7 and meta["api_revision"] == 7 and "ports" in meta["features"]
 
 
 # --- network details: macvlan, ipvlan, host network (PRD 25) ---------------------------------
@@ -476,3 +477,112 @@ def test_page_labels_and_filter_options(app, admin_client):
 
 def test_meta_advertises_network_details(client):
     assert "network_details" in client.get("/api/v1/meta").get_json()["features"]
+
+
+# --- no declared ports (0.13.1) --------------------------------------------------------------
+
+HA_NETS = [net("ha-crzynet", "macvlan", "10.100.20.11"), net("ha-iot", "macvlan", "10.100.32.11"),
+           net("ha-backend", "bridge", "172.20.0.2"), net("traefik", "bridge", "172.21.0.2")]
+
+
+def ha(id_=1, url=None, ext=None, networks=None, **kw):
+    e = fake(id_, "homeassistant", networks=HA_NETS if networks is None else networks, **kw)
+    e.internalurl, e.externalurl = url, ext
+    return e
+
+
+def test_home_assistant_shape_gives_two_unknown_direct_rows():
+    rows = ports.build_rows([ha(published=[])])
+    assert [r["kind"] for r in rows] == ["direct", "direct"]
+    assert all(r["ports_unknown"] and r["container_port"] is None and r["host_port"] is None
+               and r["protocol"] is None and r["port_source"] == "declared" and not r["conflict"]
+               for r in rows)
+    assert {r["network"] for r in rows} == {"ha-crzynet", "ha-iot"}
+
+
+def test_url_on_the_container_address_gives_the_port():
+    rows = ports.build_rows([ha(published=[], url="http://10.100.20.11:8123")])
+    by_net = {r["network"]: r for r in rows}
+    assert (by_net["ha-crzynet"]["container_port"], by_net["ha-crzynet"]["protocol"],
+            by_net["ha-crzynet"]["port_source"], by_net["ha-crzynet"]["ports_unknown"]) == (8123, "tcp", "url", False)
+    assert by_net["ha-iot"]["ports_unknown"] is True
+
+
+def test_url_scheme_default_ports_and_external_url():
+    https = ports.build_rows([ha(published=[], url="https://10.100.20.11/")])
+    assert [r["container_port"] for r in https if r["network"] == "ha-crzynet"] == [443]
+    http = ports.build_rows([ha(published=[], ext="http://10.100.20.11")])
+    assert [r["container_port"] for r in http if r["network"] == "ha-crzynet"] == [80]
+
+
+def test_url_with_a_hostname_is_not_used():
+    rows = ports.build_rows([ha(published=[], url="http://ha.example.com:8123", ext="not a url ::")])
+    assert all(r["ports_unknown"] for r in rows)
+
+
+def test_url_port_added_next_to_declared_ports():
+    rows = ports.build_rows([ha(published=[], exposed=["80/tcp"], url="http://10.100.20.11:8123")])
+    crz = sorted((r["container_port"], r["port_source"]) for r in rows if r["network"] == "ha-crzynet")
+    assert crz == [(80, "declared"), (8123, "url")]
+    assert [r["container_port"] for r in rows if r["network"] == "ha-iot"] == [80]
+
+
+def test_host_network_without_ports_gives_one_row():
+    rows = ports.build_rows([ha(networks=[net("host", "host")], url="http://10.100.20.11:8123")])
+    assert len(rows) == 1 and rows[0]["kind"] == "host_network" and rows[0]["ports_unknown"]
+    assert rows[0]["host_ips"] == ["0.0.0.0"] and rows[0]["container_port"] is None
+
+
+def test_unknown_rows_never_conflict():
+    rows = ports.build_rows([ha(1, published=[]), ha(2, published=[]),
+                             ha(3, networks=[net("host", "host")]), ha(4, networks=[net("host", "host")])])
+    assert len(rows) == 6 and not any(r["conflict"] for r in rows)
+
+
+def _mixed():
+    return [ha(1, published=[]),
+            fake(2, "nas", exposed=["80/tcp"], networks=[net("lan", "macvlan", "192.168.1.50")]),
+            ha(3, networks=[net("host", "host")]),
+            fake(4, "web", published=[pub(8080, 80)]),
+            fake(5, "app", exposed=["9000/tcp"])]
+
+
+@pytest.mark.parametrize("sort", ports.SORTS)
+def test_sorts_are_none_safe_and_unknown_rows_come_last_in_their_kind(sort):
+    rows = ports.build_rows(_mixed())
+    flat = ports.sort_rows(rows, sort)
+    assert len(flat) == len(rows)
+    direct = [r["ports_unknown"] for r in flat if r["kind"] == "direct"]
+    assert direct == sorted(direct)
+    assert [r["kind"] for r in flat] == sorted((r["kind"] for r in flat), key=ports.KIND_ORDER.get)
+    grouped = ports.group_by_host(rows, sort)
+    assert sum(len(rs) for _, rs in grouped) == len(rows)
+
+
+def test_search_and_kind_filter_for_unknown_rows():
+    rows = ports.build_rows(_mixed())
+    assert {r["network"] for r in ports.filter_rows(rows, q="10.100.32")} == {"ha-iot"}
+    assert {r["network"] for r in ports.filter_rows(rows, q="ha-crz")} == {"ha-crzynet"}
+    assert len(ports.filter_rows(rows, q="homeassistant")) == 3
+    assert not ports.filter_rows(rows, q="none")
+    assert all(r["ports_unknown"] for r in ports.filter_rows(rows, kind="host_network"))
+    summary = ports.summarize(rows)
+    assert (summary["direct"], summary["host_network"]) == (3, 1)
+
+
+def test_page_and_api_show_unknown_rows(app, client, admin_client):
+    with app.app_context():
+        add("homeassistant", "h1", None, None, networks=HA_NETS, internalurl="http://10.100.20.11:8123")
+    html = admin_client.get("/ports").get_data(as_text=True)
+    assert "all ports (none declared)" in html and "any port the container listens on" in html
+    assert "8123/tcp" in html and "from URL" in html
+    assert 'id="ports-count-direct"' in html
+    for view in ("grouped", "flat"):
+        for sort in ports.SORTS:
+            assert admin_client.get(f"/ports?view={view}&sort={sort}").status_code == 200
+    body = client.get("/api/v1/ports", headers=_key(app)).get_json()
+    by_net = {r["network"]: r for r in body["ports"]}
+    assert by_net["ha-iot"]["ports_unknown"] is True and by_net["ha-iot"]["container_port"] is None
+    assert by_net["ha-iot"]["host_port"] is None and by_net["ha-iot"]["protocol"] is None
+    assert by_net["ha-crzynet"]["port_source"] == "url" and by_net["ha-crzynet"]["container_port"] == 8123
+    assert body["summary"]["direct"] == 2 and body["summary"]["conflicts"] == 0

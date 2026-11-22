@@ -230,7 +230,11 @@ OPERATIONS: tuple = (
                    "(declared by the image, not bound). A conflict is two different entries on the same host "
                    "publishing or binding the same protocol and host port on overlapping addresses (a "
                    "wildcard address overlaps any other), or two `direct` rows with the same address, protocol "
-                   "and port; `direct` never conflicts with host ports. Stopped containers report no ports "
+                   "and port; `direct` never conflicts with host ports. A `direct` or `host_network` row with "
+                   "`ports_unknown: true` is a container that declares no ports and has no URL port to show: "
+                   "`container_port`, `host_port` and `protocol` are null, and any port is reachable (these rows "
+                   "never conflict). `port_source` is `declared` or `url` (the port came from an internal or "
+                   "external URL whose host is the container's own address). Stopped containers report no ports "
                    "and are left out."),
     Op("POST", "/image-updates/run", "write", "Check for newer images now", S.RunRequestedOut,
        request=S.ImageUpdateRunRequest, status=202, errors=(404, 409, 429),

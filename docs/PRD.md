@@ -116,6 +116,7 @@
 | 0.106   | 2026-11-22 | Network details on register, on `dev`, unreleased: §5.3 `networks` items gain optional `driver`, `ip_address`, `ipv6_address`, `mac_address` ("names only" reversed; no migration), §18.1 revision 6 row extended (feature `network_details`, ports `kind` `host_network` / `direct`), §22.2 item 6 (notifier 0.5.x will send them), §25 macvlan / ipvlan (direct) and host-network rows, conflict rules, the reserved `host` network name. Register contract: additive optional fields, so STD ships first. |
 | 0.107   | 2026-11-22 | v0.13.0 released: §25 Ports in use (GitHub #58: the Ports tab, `GET /api/v1/ports`, the `list_ports` MCP tool, host-network and macvlan/ipvlan rows) marked delivered; network details on register (§5.3); API revision 6 assigned to 0.13.0 in §18.1; §24 Check now confirmation and the scheduler fix. |
 | 0.108   | 2026-11-22 | Correction: the notifier release that sends the network details is 0.6.0, not 0.5.x (notifier 0.5.0 already shipped `image_info`); §22.2 item 6 updated. |
+| 0.109   | 2026-11-22 | §25 (0.13.1 fix, on `dev`, unreleased): macvlan / ipvlan / host-network containers that declare no ports now get a `ports_unknown` row ("all ports (none declared)"); a direct network's ports are also read from the entry's internal / external URL when its host is the container's own address (`port_source` `url`); §18.1 revision 7 row; the 0.14.0 design note renumbered to revision 8. No schema or register wire-contract change. |
 
 ---
 
@@ -3043,6 +3044,7 @@ server supports and log it.
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
 | 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
 | 6 | 0.13.0 | `GET /ports` (container ports in use across all hosts, with conflicts; §25; `kind` also accepts `host_network` and `direct`, rows carry `network` and `driver`, the summary has `host_network` and `direct`), feature `ports` Register: optional `driver`, `ip_address`, `ipv6_address` and `mac_address` on each `networks` item (§5.3, §22), feature `network_details` |
+| 7 | 0.13.1 | `GET /ports` rows: `ports_unknown` and `port_source`; `container_port`, `host_port` and `protocol` may be null when `ports_unknown` (§25) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -4245,11 +4247,24 @@ change. All of it lives in the pure module `ports.py`, which the UI and the API 
 - Docker ignores published ports on the host network and on macvlan/ipvlan, so an entry attached
   only to those has no published rows; with an ordinary network too (bridge, unknown), they stay.
   Ports covered by a host-network or direct row get no exposed-only row.
+- **Ports from the entry's own URL (0.13.1).** For each direct network address, an `internalurl` or
+  `externalurl` whose host (compared as an IP address, so a hostname never matches) is that address adds its
+  port as `<port>/tcp` (the URL's port, else 80 / 443 from `http` / `https`) to that network's rows, with
+  `port_source` `url`. Host-network rows have no reliable host address, so they skip this. All other rows
+  have `port_source` `declared`.
+- **No ports known (0.13.1).** A host-network entry with no listening ports, and each direct network with no
+  declared and no URL port, gets one row with `ports_unknown` true and `container_port`, `host_port` and
+  `protocol` null: the image declares nothing and nothing is published, so any port the container listens on
+  is reachable. Every other row has `ports_unknown` false. These rows never conflict, sort after the same
+  kind's rows with ports, match the search on name, stack, network and address, and count under their kind
+  in the summary.
 - Entries without `driver` data (an older notifier) behave exactly as before, apart from the
-  reserved `host` name rule above. Ports in manual and stream entry URLs are not read.
+  reserved `host` name rule above. Ports in manual and stream entry URLs are not read (the URL rule above
+  applies to a direct network's own address only).
 - Row keys: `entry_id`, `name` (the container name, as on the dashboards), `host`,
   `container_name`, `stack_name`, `docker_status`, `kind` (`published` | `host_network` | `direct` |
-  `exposed`), `host_ips`, `host_port` (null for exposed), `container_port`, `protocol`, `network`
+  `exposed`), `host_ips`, `host_port` (null for exposed or `ports_unknown`), `container_port` and `protocol`
+  (null when `ports_unknown`), `port_source` (`declared` | `url`), `ports_unknown`, `network`
   and `driver` (direct rows, else null), `conflict`, `conflict_with` (entry ids).
 
 ### 25.3 Conflicts
@@ -4284,11 +4299,14 @@ rows are dimmed.
 tooltips): an exposed-only port is not reachable from outside on that host. The wire keeps
 Docker's term: the API's `kind: "exposed"` and `summary.exposed`, the `kind=exposed` query
 value (also on the page) and the `data-kind` attributes are unchanged. The new kinds follow the same pattern: the labels are "host network" and "direct (macvlan)" / "direct (ipvlan)" (State column, Show filter), the wire values are `host_network` and `direct`. Each row links to `/edit/<id>`. The empty state says ports come from
-docker-api-notifier 0.4.0+. One query for the entries regardless of their number.
+docker-api-notifier 0.4.0+. One query for the entries regardless of their number. A `ports_unknown` row shows the
+address and network as usual and "all ports (none declared)" across both port columns, with a tooltip explaining
+that the image declares nothing and that setting the entry's internal URL to `http://<ip>:<port>` shows the port;
+a URL-derived port carries a "from URL" tooltip.
 
 ### 25.5 API and MCP
 
-`GET /api/v1/ports` (read scope; **API revision 6**, feature `ports`): query `kind`, `host`, `q`,
+`GET /api/v1/ports` (read scope; **API revision 6**, feature `ports`; revision 7 in 0.13.1 adds `ports_unknown` and `port_source`): query `kind`, `host`, `q`,
 `conflicts` (`true`/`false`); an invalid `kind` or `conflicts` is a 400. Response:
 `{"summary": {"hosts", "published", "host_network", "direct", "exposed", "conflicts"}, "ports": [rows]}`. The MCP read tool
 `list_ports(kind, host, query, conflicts_only)` calls it; its description explains what a
@@ -4296,6 +4314,6 @@ conflict is and that exposed-only ports are not bound on the host.
 
 ### 25.6 Out of scope
 
-Ports parsed from manual or stream entry URLs; remembering the last-known ports of stopped
+Ports parsed from URLs that do not point at a container's own address; remembering the last-known ports of stopped
 containers (both in `docs/FUTURE.md`); the real listening ports of host-network and macvlan/ipvlan containers
 (only the image's declared ports are known).

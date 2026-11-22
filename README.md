@@ -441,7 +441,7 @@ their Edit page.
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
 | `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
-| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.6.0+ sends. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
+| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.6.0+ sends; one that declares no ports (Home Assistant, for example) shows as "all ports (none declared)", or with the port from the entry's internal or external URL when it points at the container's address. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:
@@ -574,6 +574,7 @@ needs no CSRF token.
 | 4 | 0.11.0 | backup settings, backup list and run, export, import plan and apply |
 | 5 | 0.12.0 | `image_info` on register; image repository link and override; image update block, settings, list and run |
 | 6 | 0.13.0 | `GET /ports` (ports in use, conflicts, host-network and direct rows); network `driver`, `ip_address`, `ipv6_address`, `mac_address` on register; features `ports` and `network_details` |
+| 7 | 0.13.1 | `GET /ports` rows: `ports_unknown` and `port_source`; `container_port`, `host_port` and `protocol` may be null when `ports_unknown` |
 
 ### API keys
 
