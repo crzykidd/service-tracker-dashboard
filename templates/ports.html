@@ -3,7 +3,7 @@
 
 {% block body_data_view %}ports{% endblock %}
 
-{# One row. Exposed-only rows are dimmed; conflicting rows get a red marker naming the others. #}
+{# One row. Not-published rows are dimmed; conflicting rows get a red marker naming the others. #}
 {% macro port_cells(r) %}
   <td class="px-3 py-2 font-mono">
     {% if r.kind == 'published' %}{{ r.host_port }}{% else %}<span class="text-gray-500">-</span>{% endif %}
@@ -15,7 +15,7 @@
     {% if r.stack_name %}<span class="text-xs text-gray-500 ml-1">{{ r.stack_name }}</span>{% endif %}
   </td>
   <td class="px-3 py-2 text-xs">
-    {% if r.kind == 'exposed' %}<span class="text-gray-400">exposed</span>{% else %}<span class="text-green-400">published</span>{% endif %}
+    {% if r.kind == 'exposed' %}<span class="text-gray-400" title="The image declares this port, but it is not published on the host">not published</span>{% else %}<span class="text-green-400">published</span>{% endif %}
     {% if r.conflict %}
       {% set _others = [] %}
       {% for oid in r.conflict_with %}{% set _ = _others.append(names.get(oid, '#' ~ oid)) %}{% endfor %}
@@ -31,7 +31,7 @@
 <div id="ports-summary" class="mb-4 text-sm text-gray-300">
   <span id="ports-count-hosts">{{ summary.hosts }} host{{ '' if summary.hosts == 1 else 's' }}</span> ·
   <span id="ports-count-published">{{ summary.published }} published</span> ·
-  <span id="ports-count-exposed">{{ summary.exposed }} exposed</span> ·
+  <span id="ports-count-exposed">{{ summary.exposed }} not published</span> ·
   <a id="ports-count-conflicts" href="{{ url_for('dashboard.ports_page', view=view, kind=kind, host=host, q=q or None, sort=sort, conflicts='true') }}"
      class="{{ 'text-red-400 font-semibold' if summary.conflicts else 'text-gray-300' }} hover:underline">{{ summary.conflicts }} conflict{{ '' if summary.conflicts == 1 else 's' }}</a>
 </div>
@@ -39,7 +39,7 @@
 <form method="get" action="{{ url_for('dashboard.ports_page') }}" class="flex flex-wrap items-end gap-3 mb-4 text-sm" id="ports-filters">
   <label class="flex flex-col text-xs text-gray-400">Show
     <select name="kind" class="bg-gray-800 text-gray-200 rounded px-2 py-1">
-      {% for k in ['all', 'published', 'exposed'] %}<option value="{{ k }}" {{ 'selected' if kind == k }}>{{ k }}</option>{% endfor %}
+      {% for k in ['all', 'published', 'exposed'] %}<option value="{{ k }}" {{ 'selected' if kind == k }}>{{ 'not published' if k == 'exposed' else k }}</option>{% endfor %}
     </select>
   </label>
   <label class="flex flex-col text-xs text-gray-400">Host
@@ -57,13 +57,11 @@
       <option value="flat" {{ 'selected' if view == 'flat' }}>flat table</option>
     </select>
   </label>
-  {% if view == 'flat' %}
   <label class="flex flex-col text-xs text-gray-400">Sort
     <select name="sort" class="bg-gray-800 text-gray-200 rounded px-2 py-1">
-      {% for s in ['host', 'host_port', 'name', 'protocol'] %}<option value="{{ s }}" {{ 'selected' if sort == s }}>{{ s | replace('_', ' ') }}</option>{% endfor %}
+      {% for s in (['name', 'port', 'host', 'protocol'] if view == 'flat' else ['name', 'port', 'protocol']) %}<option value="{{ s }}" {{ 'selected' if sort == s }}>{{ s }}</option>{% endfor %}
     </select>
   </label>
-  {% endif %}
   <label class="flex items-center gap-1 text-xs text-gray-400"><input type="checkbox" name="conflicts" value="true" {{ 'checked' if conflicts_only }}> conflicts only</label>
   <button type="submit" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded">Apply</button>
   <a id="ports-reset" href="{{ url_for('dashboard.ports_page') }}" class="text-gray-400 hover:underline py-1">Reset</a>
@@ -72,7 +70,7 @@
 {% if total_rows == 0 %}
 <div id="ports-empty" class="bg-gray-800 rounded p-6 text-gray-300">
   No ports reported yet. Ports come from docker-api-notifier 0.4.0 or later, which sends each running
-  container's exposed and published ports when it registers. Stopped containers report none.
+  container's published and not-published ports when it registers. Stopped containers report none.
 </div>
 {% elif visible == 0 %}
 <div id="ports-no-match" class="bg-gray-800 rounded p-6 text-gray-300">No ports match these filters.</div>

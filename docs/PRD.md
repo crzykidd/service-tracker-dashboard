@@ -112,6 +112,7 @@
 | 0.102   | 2026-11-21 | Ports in use (GitHub #58), on `dev`, unreleased: new §25 (the Ports tab and `/ports` page, `GET /api/v1/ports`, the `list_ports` MCP tool, inclusion and conflict rules), §18.1 revision 6 row, §3.1 module layout (`ports.py`). Reads the existing `exposed_ports` / `published_ports` columns; no schema, register or stream-ingest wire-contract change. |
 | 0.103   | 2026-11-22 | §25.4: the Ports page filters apply on change and the whole page state (view, sort and every filter) is remembered per browser until Reset (`static/js/ports.js`, `localStorage`). No API, schema or wire-contract change. |
 | 0.104   | 2026-11-22 | §24 Check now: inside the cooldown the UI asks for confirmation (409 `confirm_required`, repeat with `force`) instead of refusing; the management API keeps 429; the last-check time uses the persisted last run and wall-clock request times; a pending run is not doubled. Scheduler fix (the run reads the enable switch in an app context). No API revision, schema or wire-contract change. |
+| 0.105   | 2026-11-22 | §25.4: the Ports page sorts by state first (published, then not published) and then by container name (new default), port, protocol or host (flat only); the sort control shows in both views; `host_port` stays an alias of `port`. The UI relabels "exposed" as "not published"; the API keeps `kind: "exposed"` and `summary.exposed` (label/value split documented). No API, schema or wire-contract change. |
 
 ---
 
@@ -4219,7 +4220,7 @@ change. All of it lives in the pure module `ports.py`, which the UI and the API 
 - A **published** row per binding. One entry's bindings with the same host port, container port
   and protocol collapse into one row with all its `host_ips` (Docker publishes `0.0.0.0` and `::`
   together; that is one binding).
-- An **exposed-only** row per exposed `port/proto` with no published binding for the same
+- An **exposed-only** row (labelled **not published** in the UI) per exposed `port/proto` with no published binding for the same
   container port and protocol on that entry. It is not bound on the host and takes no host port.
 - `network_mode: host` containers have no published ports: they appear only through exposed ports,
   and only if the image declares them. Ports in manual and stream entry URLs are not read.
@@ -4241,15 +4242,24 @@ rows (both sides count), over all ports, not only the filtered ones.
 `GET /ports` (login required), the **Ports** tab between Compact and Add. Query parameters, all
 falling back to their default when unknown: `view=grouped|flat` (default `grouped`),
 `kind=all|published|exposed`, `host`, `q` (name, container, stack, port), `conflicts=true`, and
-for the flat table `sort=host|host_port|name|protocol`. Server-rendered; `static/js/ports.js` applies
+`sort=name|port|protocol` (the flat table also accepts `host`; in the grouped view `host` falls
+back to the default; `host_port` is kept as an alias of `port`). The default is `name`, the
+container name A to Z. Every sort puts published rows first, then not-published rows, and
+breaks ties by host, port, protocol, entry id; `port` is the host port for published rows and
+the container port for not-published ones. The sort control shows in both views and each host
+section uses the same order. Server-rendered; `static/js/ports.js` applies
 the filters as soon as a dropdown or the checkbox changes (the search on Enter or blur; the Apply
 button is hidden then) and remembers the whole page state (view, sort, kind, host, search,
 conflicts only) in the browser's `localStorage` (`ports:state`, the query string): a bare `/ports`
 (the nav tab) opens the remembered state, and **Reset** forgets it and loads the defaults. Without JS the page works with the Apply button. The
-summary bar reads "N hosts · N published · N exposed · N conflicts" (the last is a link applying
-`conflicts=true`). Grouped: a section per host (alphabetical) with its port count, rows by host
-port, exposed rows last. Conflict rows are red with a tooltip naming the other entries; exposed
-rows are dimmed. Each row links to `/edit/<id>`. The empty state says ports come from
+summary bar reads "N hosts · N published · N not published · N conflicts" (the last is a link applying
+`conflicts=true`). Grouped: a section per host (alphabetical) with its port count, rows in the chosen sort. Conflict rows are red with a tooltip naming the other entries; not-published
+rows are dimmed.
+
+**Label versus value.** The UI says "not published" (State column, Show filter, summary bar,
+tooltips): an exposed-only port is not reachable from outside on that host. The wire keeps
+Docker's term: the API's `kind: "exposed"` and `summary.exposed`, the `kind=exposed` query
+value (also on the page) and the `data-kind` attributes are unchanged. Each row links to `/edit/<id>`. The empty state says ports come from
 docker-api-notifier 0.4.0+. One query for the entries regardless of their number.
 
 ### 25.5 API and MCP

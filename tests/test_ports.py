@@ -147,12 +147,29 @@ def test_group_and_sort_order():
     rows = ports.build_rows([
         fake(1, "a", "zeta", [pub(90)]), fake(2, "b", "alpha", [pub(9000)], ["1/tcp"]), fake(3, "c", "alpha", [pub(80)]),
     ])
+    # Default sort is the container name, but published rows always come first.
     groups = ports.group_by_host(rows)
     assert [h for h, _ in groups] == ["alpha", "zeta"]
-    assert [r["host_port"] for r in groups[0][1]] == [80, 9000, None]
-    flat = ports.sort_rows(rows, "name")
-    assert [r["name"] for r in flat] == ["a", "b", "b", "c"]
-    assert ports.normalize_sort("bogus") == "host" and ports.normalize_kind("bogus") == "all"
+    assert [(r["name"], r["kind"]) for r in groups[0][1]] == [("b", "published"), ("c", "published"), ("b", "exposed")]
+    assert [r["host_port"] for r in ports.group_by_host(rows, "port")[0][1]] == [80, 9000, None]
+    # `host` is not offered inside a section: it falls back to the default.
+    assert ports.group_by_host(rows, "host") == ports.group_by_host(rows, "name")
+    flat = ports.sort_rows(rows)
+    assert [(r["name"], r["kind"]) for r in flat] == [
+        ("a", "published"), ("b", "published"), ("c", "published"), ("b", "exposed")]
+    assert [r["host"] for r in ports.sort_rows(rows, "host")][:3] == ["alpha", "alpha", "zeta"]
+    assert ports.normalize_sort("bogus") == "name" and ports.normalize_kind("bogus") == "all"
+
+
+def test_sort_by_port_uses_container_port_for_not_published_and_keeps_alias():
+    rows = ports.build_rows([
+        fake(1, "a", "h1", [pub(9000, 1)], ["70/tcp"]), fake(2, "b", "h1", [pub(80, 2)], ["5/tcp"]),
+    ])
+    out = ports.sort_rows(rows, "port")
+    assert [(r["kind"], r["host_port"] or r["container_port"]) for r in out] == [
+        ("published", 80), ("published", 9000), ("exposed", 5), ("exposed", 70)]
+    assert ports.normalize_sort("host_port") == "port"
+    assert ports.sort_rows(rows, "host_port") == out
 
 
 # --- the page and the API ----------------------------------------------------------------
@@ -211,10 +228,29 @@ def test_grouped_view_with_conflict_and_summary(admin_client, seeded):
     assert html.index('data-host="h1"') < html.index('data-host="h2"')
     assert html.count("ports-conflict-marker") == 2
     assert "Same host port as other" in html and "Same host port as web" in html
-    assert "2 hosts" in html and "3 published" in html and "1 exposed" in html
-    assert 'id="ports-count-conflicts" href="/ports?view=grouped&amp;kind=all&amp;sort=host&amp;conflicts=true"' in html
+    assert "2 hosts" in html and "3 published" in html and "1 not published" in html
+    assert 'id="ports-count-conflicts" href="/ports?view=grouped&amp;kind=all&amp;sort=name&amp;conflicts=true"' in html
     assert "7777" not in html
     assert "port-exposed opacity-50" in html and "0.0.0.0, ::" in html
+
+
+def test_not_published_label(admin_client, seeded):
+    html = admin_client.get("/ports").get_data(as_text=True)
+    assert ">not published</span>" in html and ">not published</option>" in html
+    assert ">exposed<" not in html and 'data-kind="exposed"' in html
+    # The kind=exposed query value still works on the page.
+    assert "9000/tcp" in admin_client.get("/ports?kind=exposed").get_data(as_text=True)
+
+
+def test_sort_select_in_both_views(admin_client, seeded):
+    flat = admin_client.get("/ports?view=flat").get_data(as_text=True)
+    grouped = admin_client.get("/ports?view=grouped").get_data(as_text=True)
+    assert 'name="sort"' in flat and 'name="sort"' in grouped
+    assert '<option value="host"' in flat and '<option value="host"' not in grouped
+    assert '<option value="name" selected>' in grouped
+    # host falls back to the default in the grouped view; the old alias still selects port.
+    assert '<option value="name" selected>' in admin_client.get("/ports?sort=host").get_data(as_text=True)
+    assert '<option value="port" selected>' in admin_client.get("/ports?sort=host_port").get_data(as_text=True)
 
 
 def test_flat_view_and_sort(admin_client, seeded):

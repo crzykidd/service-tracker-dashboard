@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (between Compact and Add) lists the ports your containers publish across all hosts, so
   you can answer "what is on 8080 on host X" and "which ports are free". It shows each
   published port (host port, container port, the address it is bound to, the container),
-  and, dimmed, ports a container's image only exposes without binding them on the host.
-  Two views: **grouped by host** (default) and a **flat table** (sortable by host, host
-  port, name or protocol), with filters for published / exposed / all, host, a text search
+  and, dimmed, ports a container's image declares but does not publish on the host (shown
+  as **not published**). Two views: **grouped by host** (default) and a **flat table**.
+  Published ports always come first, then the not-published ones, and each group is
+  sorted by container name (the default), port or protocol (the flat table can also sort
+  by host). There are filters for published / not published / all, host, a text search
   and conflicts only. The filters apply as soon as you change one, and the page remembers
   your view and filters in your browser until you press **Reset**. Two different containers on the same host that publish the same
   protocol and host port are marked **conflict** (red, with the other container named) and

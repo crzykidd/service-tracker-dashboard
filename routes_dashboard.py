@@ -409,7 +409,7 @@ def ports_page():
     args = request.args
     view = args.get('view') if args.get('view') in ('grouped', 'flat') else 'grouped'
     kind = ports.normalize_kind(args.get('kind'))
-    sort = ports.normalize_sort(args.get('sort'))
+    sort = ports.normalize_sort(args.get('sort'), ports.SORTS if view == 'flat' else ports.GROUPED_SORTS)
     host = (args.get('host') or '').strip() or None
     q = (args.get('q') or '').strip()
     conflicts_only = (args.get('conflicts') or '').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -426,7 +426,7 @@ def ports_page():
         'ports.html',
         view=view, kind=kind, sort=sort, host=host, q=q, conflicts_only=conflicts_only,
         hosts=hosts, summary=summary, total_rows=len(all_rows), visible=len(rows),
-        grouped=ports.group_by_host(rows) if view == 'grouped' else [],
+        grouped=ports.group_by_host(rows, sort) if view == 'grouped' else [],
         flat=ports.sort_rows(rows, sort) if view == 'flat' else [],
         names=by_id,
         active_tab='ports',

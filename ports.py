@@ -9,8 +9,12 @@ nothing here edits it.
 """
 
 KINDS = ("all", "published", "exposed")
-SORTS = ("host", "host_port", "name", "protocol")
-DEFAULT_SORT = "host"
+SORTS = ("name", "port", "host", "protocol")
+DEFAULT_SORT = "name"
+# Sorts that make sense inside one host's section (the host is the same for every row).
+GROUPED_SORTS = ("name", "port", "protocol")
+# Old name of `port`; kept so saved browser states and old links keep working.
+SORT_ALIASES = {"host_port": "port"}
 
 # A container reported with one of these is running (the dashboards treat `start` as
 # running too). Any other set status is stopped: Docker clears its published ports.
@@ -181,24 +185,41 @@ def normalize_kind(value):
     return value if value in KINDS else "all"
 
 
-def normalize_sort(value):
-    return value if value in SORTS else DEFAULT_SORT
+def normalize_sort(value, allowed=SORTS):
+    """A known sort (the `host_port` alias maps to `port`), else the default. `allowed`
+    narrows the choice (the grouped view has no `host` sort)."""
+    value = SORT_ALIASES.get(value, value)
+    return value if value in allowed else DEFAULT_SORT
+
+
+def _sort_key(sort):
+    """Every sort orders by state first (published, then exposed), then by the chosen key,
+    then by a stable tie-break (host, port, protocol, entry id)."""
+    primary = {
+        "name": lambda r: (r["name"] or "").lower(),
+        "port": lambda r: r["host_port"] if r["kind"] == "published" and r["host_port"] is not None
+        else r["container_port"],
+        "host": lambda r: (r["host"] or "").lower(),
+        "protocol": lambda r: r["protocol"],
+    }[sort]
+
+    def key(r):
+        return (r["kind"] != "published", primary(r), (r["host"] or "").lower(),
+                r["host_port"] if r["host_port"] is not None else 0, r["container_port"],
+                r["protocol"], r["entry_id"] or 0)
+    return key
 
 
 def sort_rows(rows, sort=DEFAULT_SORT):
-    """Flat-table order: the chosen key first, then host and host port."""
-    keys = {
-        "host": lambda r: (r["host"] or "", r["host_port"] is None, r["host_port"] or 0, r["container_port"]),
-        "host_port": lambda r: (r["host_port"] is None, r["host_port"] or 0, r["host"] or "", r["container_port"]),
-        "name": lambda r: ((r["name"] or "").lower(), r["host"] or "", r["host_port"] is None, r["host_port"] or 0),
-        "protocol": lambda r: (r["protocol"], r["host"] or "", r["host_port"] is None, r["host_port"] or 0),
-    }
-    return sorted(rows, key=keys[normalize_sort(sort)])
+    """Flat-table order: published rows first, then not-published, each sorted by `sort`."""
+    return sorted(rows, key=_sort_key(normalize_sort(sort)))
 
 
-def group_by_host(rows):
-    """`[(host, rows)]`, hosts alphabetical, rows by host port (exposed last)."""
+def group_by_host(rows, sort=DEFAULT_SORT):
+    """`[(host, rows)]`, hosts alphabetical, each section ordered like the flat table
+    (`host` is meaningless inside one host, so it falls back to the default)."""
+    key = _sort_key(normalize_sort(sort, GROUPED_SORTS))
     groups = {}
     for r in rows:
         groups.setdefault(r["host"] or "", []).append(r)
-    return [(h, sorted(rs, key=_order)) for h, rs in sorted(groups.items(), key=lambda kv: kv[0].lower())]
+    return [(h, sorted(rs, key=key)) for h, rs in sorted(groups.items(), key=lambda kv: kv[0].lower())]
