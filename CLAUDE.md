@@ -210,8 +210,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.11.0** (latest tag on `main`, once cut).
-In flight: nothing scoped.
+Current shipped release: **v0.12.0** (latest tag on `main`).
+In flight: nothing scoped (the notifier 0.5.0 `image_info` sender is on hold in its own repo).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
@@ -436,6 +436,8 @@ routes_import.py    ← Settings import routes on `dashboard_bp` (upload, previe
 backups.py          ← backup settings (env > UI > settings.yml > default), snapshot/export runs,
                       per-kind retention, file list + confined `resolve_file`; run functions record
                       `backup_last_runs`
+image_update_ui.py  ← read-only view helpers for the image update badge, details line and Check now
+                      (Jinja globals `image_update_info`, `image_updates_enabled`); reads stored state only
 widget_rules.py     ← widget plugin discovery + validation for the management API
 entry_rules.py      ← entry-level rules shared by /add, /edit and the management API
 check_form.py       ← health-check form parsing + dict-based validators shared with the API
@@ -452,7 +454,19 @@ settings_sections.py ← Settings section registry (groups, slugs, labels, legac
                       `resolve()`); pure data, the sidebar and the routes both read it
 version_check.py    ← build channel + display strings; cached GitHub update check (page-load driven)
 synthesizer.py      ← exposure → internalurl/externalurl translation + provenance
-image_utils.py      ← icon fetch + cache
+image_utils.py      ← icon fetch + cache; `resolve_image_metadata` (image string -> registry/owner/name/tag/ref)
+image_ref.py        ← pure stdlib image reference parser (`parse()`); the one place an image string is split;
+                      feeds `resolve_image_metadata`, `image_repo.py` and `service_entry.image_ref`
+image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
+                      lscr.io; None for anything else) + the `image_repo_url` override rule
+registry_client.py  ← OCI distribution v2 client for the image update check (PRD 24): anonymous Bearer
+                      flow, HEAD manifests with the four Accept types, tag lists, 429 pause; no DB;
+                      errors are short fixed messages, never raw exception text
+image_tags.py       ← pure tag model, digest model and `evaluate()` (the state of one entry)
+image_update.py     ← the update provider seam (`PROVIDERS`; `registry` is the built-in one), settings
+                      (OFF by default, env `STD_IMAGE_UPDATE_ENABLED`), the run engine (`_RUN_LOCK`,
+                      dedupe, backoff), Check now throttles, register-time recompute, retention;
+                      registry I/O never inside a DB transaction or `routes_api._UPSERT_LOCK`
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates; templates/partials/settings/ = one partial per Settings
                       section + _macros.html (see PRD §19)

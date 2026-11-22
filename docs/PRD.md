@@ -102,6 +102,13 @@
 | 0.92    | 2026-11-21 | §13.7: the Dashboard expand row shows the shared entry facts (`partials/entry_facts.html`, the tile drawer's info rows) beside the health detail, two columns stacking below 768px. No schema, API or wire-contract change. |
 | 0.93    | 2026-11-21 | §13.7: Compact view gets an expand button per tile that opens a details dialog (facts, health detail, Edit / Delete / Dozzle) fetched from the new `GET /service/<id>/details` session route (`partials/compact_details.html`, `static/js/compact_details.js`). Tile size, grid and click-to-open unchanged. No schema, API or wire-contract change. |
 | 0.94    | 2026-11-21 | v0.11.0 released: §19 Settings modernization and §20 backup, export, import and staged restore marked delivered (API revision 4), plus the Dashboard and Compact expand views (§13.7) and the 0.10.2 fixes (MQTT test bounded to ~5 s, 128-character entry names). Table of contents headings for §16–§20 brought in line with the section headings. |
+| 0.95    | 2026-11-21 | §13.7 image repo link on `dev` (GitHub #6): `image_repo.py` derives the repository page for Docker Hub, GHCR, Quay and LinuxServer images, new operator-owned `service_entry.image_repo_url` override (migration `e9b3d5f7a126`, new §5.11), Add/Edit field, management API and MCP `image_repo_url` / `image_repo_link`, export and import field (§20.2). **`API_REVISION` 5** (§18.1). Register and stream-ingest wire contracts unchanged. |
+| 0.96    | 2026-11-21 | Docs-only: the subsections under §22 (Cross-Repo Coordination) are renumbered 22.1–22.3; they were numbered 21.1–21.3. The existing §22.3 cross-reference in §18 now resolves. No content changes. |
+| 0.97    | 2026-11-21 | Image reference parser (img-01, phase 1 of the image update check; design `docs/design/2026-11-21-image-update-check.md`): new pure `image_ref.py` (distribution reference grammar: ports, nested paths, digests, Docker Hub normalisation) replaces the naive split in `image_utils.resolve_image_metadata`; new observed column `service_entry.image_ref` (migration `a2c6e8f1b345`, indexed, backfilled where the old columns are sound), written by register from the raw `image_name`, shown in the entry facts and returned read-only as `notifier.image_ref` by the management API (**`API_REVISION` 5** row extended, §18.1); `image_repo.py` derives links from it (correct nested GHCR paths). §3.1 module layout, §5.12, §13.7 updated. `schemas.py` and the register wire contract unchanged; not exported. |
+| 0.98    | 2026-11-21 | Image update check engine (img-02, phase 2; design `docs/design/2026-11-21-image-update-check.md`), on `dev`, unreleased: new §24 (architecture, provider seam, tag and digest models, the daily job, data model, the `image_info` register field, management API and MCP), new §5.13 (migration `b5d9a3f1c7e2`: `image_reference` table and the `service_entry` image update columns), §3.1 module layout (`registry_client.py`, `image_tags.py`, `image_update.py`), §18.1 revision 5 row extended (register `image_info`, `image_update` block, the new routes, features `image_updates` and `image_info`), §20.2 ownership table (the three operator columns round-trip), §22 cross-repo notes (notifier 0.5.0 will send `image_info`, gated on `/api/v1/meta`). Off by default (`STD_IMAGE_UPDATE_ENABLED`); no UI yet (img-03), no MQTT/Home Assistant yet (img-04). Register contract: additive optional field, so STD ships first per the ordering rule. |
+| 0.99    | 2026-11-21 | Image update UI (img-03, phase 3), on `dev`, unreleased: new §24.8 (dashboard badge and `?updates=true` filter, entry-details lines, Check now, the edit-page block, Settings → Sources → Image updates, the Docker hint); the old §24.8 "Not built yet" becomes §24.9 and now lists only MQTT / Home Assistant (img-04), credentials and other providers. §13.7 (badge, details line, Check now in the entry facts), §19.1 (fourteen sections, `image-updates` under Sources), §3.1 module layout (`image_update_ui.py`, `static/js/image_update.js`). New session routes `POST /service/<id>/image-update/check`, `POST /settings/image-updates`, `POST /settings/image-updates/check`. No schema, API revision or wire-contract change (the UI reads the state img-02 stores). |
+| 0.100   | 2026-11-21 | Image update MQTT and Home Assistant (img-04, phase 4), on `dev`, unreleased: new §24.10; §17.3 (`entry/<id>/image` topic, `summary.updates`, `entry/<id>/state.image_update_state`, the new sync triggers), §17.4 (the read-only `update` entity and the hub "Updates available" sensor), §24.9 now lists only credentials and other providers. `notify_state.py`, `notify_ha.py`, `notify_purge.py`, `image_update.on_settings_changed`. No schema, API revision or register wire-contract change. |
+| 0.101   | 2026-11-21 | v0.12.0 released: §24 Image update check (registry provider, daily job, `image_info` register field, UI, MQTT/HA `update` entities) and the image repository link (GitHub #6) marked delivered; API revision 5 assigned to 0.12.0 in §18.1. |
 
 ---
 
@@ -130,6 +137,7 @@
 21. [Versioning, Branches, and Releases](#21-versioning-branches-and-releases)
 22. [Cross-Repo Coordination](#22-cross-repo-coordination)
 23. [Open Questions](#23-open-questions)
+24. [v0.12.0 — Image update check (Delivered)](#24-v0120--image-update-check-delivered)
 
 ---
 
@@ -288,7 +296,19 @@ settings_sections.py ← Settings section registry: groups, slugs, labels, legac
                       `?section=` aliases, `resolve()` (§19)
 synthesizer.py      ← exposure → internalurl/externalurl translation +
                       URL provenance tracking
-image_utils.py      ← icon fetch + cache
+image_utils.py      ← icon fetch + cache; `resolve_image_metadata` (image string -> registry/owner/name/tag/ref)
+image_ref.py        ← pure, stdlib-only image reference parser (`parse()` -> registry, repository, tag,
+                      digest, canonical string); the one place an image string is split
+registry_client.py  ← OCI distribution v2 client for the image update check (§24): anonymous Bearer challenge,
+                      HEAD manifests with the four Accept types, `tags/list` pagination, 429 pause; no DB
+image_tags.py       ← pure tag model, digest model and `evaluate()` (the state of one entry) for §24
+image_update.py     ← the update provider seam and the registry provider, settings (off by default,
+                      `STD_IMAGE_UPDATE_ENABLED`), the run engine, Check now throttles, register-time
+                      recompute (`apply_register`), retention (§24)
+image_update_ui.py  ← read-only view helpers for §24.8 (`image_update_info`, `image_updates_enabled`,
+                      GitHub release-notes URL); Jinja globals; no registry call
+image_repo.py       ← image repository link: pure `image_repo_url()` derivation (Docker Hub, GHCR, Quay,
+                      lscr.io; None for anything else; reads `image_ref`) + the `image_repo_url` override rule
 view_helpers.py     ← grouping/sorting for dashboard views
 templates/          ← Jinja templates; `templates/partials/settings/` holds one
                       partial per Settings section plus `_macros.html` (§19)
@@ -530,6 +550,52 @@ Migrations `f4c8a2e6d173` (§18.4), `a9d3c5e7f102` (`inventory_stream.default_ch
 | Value | `service_entry.source` gains `stream` (`VALID_SOURCES`). The downgrade turns `stream` entries into `manual` ones. |
 | Value | `api_key.scope` gains `ingest` (the column was already wide enough; no DDL). |
 | Backups | `to_dict()` carries `mac`, `ip`, `network` and `attributes`. A stream entry restores as a manual entry (it has no stream to rejoin); a backup record never overwrites a live stream entry. |
+
+---
+
+### 5.11 Image repo link override
+
+Migration `e9b3d5f7a126`: `service_entry.image_repo_url` (`String(512)`, nullable). A plain
+operator-owned column (see §13.7): no FK, so no index; register never writes it, export
+and import carry it (§20.2), and `ServiceEntry.to_dict()` (the legacy entry list) does not.
+
+### 5.12 Canonical image reference
+
+Migration `a2c6e8f1b345`: `service_entry.image_ref` (`String(512)`, nullable, indexed
+`ix_service_entry_image_ref`; the index is a lookup aid for the image update check, not an
+FK). It holds the canonical reference `registry/repository:tag` (`registry/repository@digest`
+when there is no tag) parsed by `image_ref.parse` from the raw `image_name` the notifier
+sends: ports (`localhost:5000/app:1`), nested paths (`ghcr.io/org/team/app`) and digests
+(`nginx@sha256:...`) are handled; Docker Hub names normalise to `docker.io/library/<name>`
+and a missing tag becomes `latest`. Observed, like the capture columns: register overwrites
+it whenever it carries `image_name` (NULL if the string is not a valid reference), an
+absent `image_name` leaves it alone, the UI never edits it, and export and import do not
+carry it. The legacy `image_registry` / `image_owner` / `image_name` / `image_tag` columns
+are filled from the same parse: `image_registry` stays NULL for Docker Hub, `image_owner` is
+everything before the last path component (`org/team`; NULL for official images), and
+`image_name` is the last component. The migration backfills `image_ref` from those columns
+only where they are sound (the old parser mangled the cases above); the next register fixes
+the rest. The entry facts show `image_ref` when set, else the old `registry/owner/name:tag`
+join. `schemas.py` is unchanged (no wire field). Management API: `notifier.image_ref`,
+read-only (revision 5, §18.1).
+
+### 5.13 Image update check (migration `b5d9a3f1c7e2`)
+
+One new table and eleven `service_entry` columns, no foreign keys (so no FK indexes). Details and
+semantics are in §24.
+
+`image_reference` (remote facts, one row per canonical reference, shared by every entry that runs
+it): `ref` (`String(512)`, unique, indexed `ix_image_reference_ref`), `registry`, `repository`, `tag`,
+`remote_digest`, `remote_digest_changed_at`, `candidates` (JSON), `checked_at`, `last_error`,
+`last_error_at`, `failures`, `next_check_at`, `last_wanted_at`.
+
+`service_entry`, observed (register only; not edited, not exported): `image_running_digest`
+(`String(80)`), `image_info` (JSON). Operator-owned (UI, API, export/import; register never writes
+them): `image_update_policy` (`String(8)`, NOT NULL, default `auto`), `image_tag_pattern`
+(`String(200)`), `image_update_scope` (`String(8)`, null = the global default). Computed and stored
+(the provider and the register recompute): `image_update_state`, `image_update_latest`,
+`image_update_kind`, `image_update_since`, `image_update_provider`, `image_update_detail` (JSON:
+`reason`, `model`, `rebuilt`).
 
 ---
 
@@ -1825,6 +1891,29 @@ on the 24h/7d toggle, renders with DOM calls (no innerHTML of server text),
 and drives the tooltip and Check now (`stdPost`, then re-fetch every 2 s until every shown check has a result newer than the request's `requested_at`, up to 75 s).
 Dashboard gets a leading chevron column and an expand row (group-header
 `colspan` is now 13); an open row pauses auto-refresh like an open drawer.
+**Image repo link (post-0.11.0, GitHub #6).** In the entry facts the Docker image
+string is a link (`target="_blank" rel="noopener noreferrer"`) to the image's
+repository page. `image_repo.image_repo_url(registry, owner, name)` derives it from
+`image_registry` / `image_owner` / `image_name`: Docker Hub hosts (empty, `docker.io`,
+`index.docker.io`, `registry-1.docker.io`) give `hub.docker.com/_/<name>` for official
+images (owner empty or `library`) or `hub.docker.com/r/<owner>/<name>`; `ghcr.io` gives
+`github.com/users/<owner>/packages/container/package/<name>`; `quay.io` gives
+`quay.io/repository/<owner>/<name>`; `lscr.io/linuxserver/<name>` gives
+`github.com/linuxserver/docker-<name>`. Any other registry, or a missing name or owner,
+gives no link: STD never guesses for private or self-hosted registries. The nullable
+`service_entry.image_repo_url` (`String(512)`, migration `e9b3d5f7a126`, no FK, no index)
+is an operator-owned override: it wins over the derived link, is edited on `/add` and
+`/edit` and through the management API (`http(s)` only, validated by
+`entry_rules.validate_image_repo_url`), travels in export and import, and is never
+written by register (`schemas.py` is unchanged). An entry with no Docker image but an
+override shows a "Repo" row with the link. The container name is not linked (it already
+opens the entry's URL). API revision 5 (§18.1). Since img-01 the links are derived
+from `image_ref` (§5.12) when set, so a nested GHCR path (`ghcr.io/org/team/app`) links to the
+package `team/app` under `org`; a registry with a port or a `localhost` registry still gets no
+link. Entries without `image_ref` yet fall back to the split columns.
+
+**Image update (img-03).** The facts gain an "Image update" row under the Docker line, the three views a badge next to the name, and the filter bar an "Updates available (N)" toggle; see §24.8. Read-only: they show the state the image update check stored.
+
 Since 0.11.0 the Dashboard expand row has two columns: the shared entry facts
 (`partials/entry_facts.html`, also the tile drawer's info rows) on the left and the
 health detail (facts hidden) on the right; the columns stack below 768px.
@@ -2641,9 +2730,10 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
 | Topic | Payload |
 |-------|---------|
 | `<base>/status` | `online` / `offline` (§17.2). |
-| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). Stream entries (§18.9): `missing` and `missing_since` (null for other sources); they never change `state`. |
+| `<base>/entry/<entry_id>/state` | Roll-up of the entry (`health_state.entry_health`): `state` (`up`, `degraded`, `down`, `unknown`, `none`), `entry_id`, `name`, `host` (null for manual entries), `group` (group name or null), `source` (`notifier` / `manual`), `dashboard_url`, `since` (when `state` last changed), `checks` (`{up, down, unknown}` counts of the checks that count). Stream entries (§18.9): `missing` and `missing_since` (null for other sources); they never change `state`. Additive: `image_update_state` (the effective image update state, null when nothing is published); it never changes `state`. |
 | `<base>/entry/<entry_id>/check/<check_id>` | One check: `ok` (true / false / null before its first run), `state` (`up` / `down` / `unknown`), `entry_id`, `check_id`, `name`, `kind` (`container`, `internal_url`, `external_url`, `service`), `check_type` (`http`, `tcp`, `ping`, `dns`, or `container`), `target`, `latency_ms`, `status_code`, `message`, `consecutive_failures`, `last_checked_at`, `last_change` (when `ok` last changed). |
-| `<base>/summary` | `{up, degraded, down, unknown, none, total}` over active (not soft-deleted) entries. |
+| `<base>/entry/<entry_id>/image` | The image update check (§24.10), only while the check is on and the entry's effective state is not `off`: `installed_version`, `latest_version`, `title` (the image repository), `release_url`, `release_summary`, `state` (`update`, `current`, `unknown`, `error`, `pinned`), `kind`, `checked_at`, `std_entry_id`. |
+| `<base>/summary` | `{up, degraded, down, unknown, none, total, updates}` over active (not soft-deleted) entries; `updates` (additive) counts effective `update` states and is 0 while the check is off. It is never part of the roll-up. |
 | `<base>/stream/<stream_id>` | One inventory stream (§18.6): `stream_id`, `display_name`, `status` (`pending`, `enabled`, `disabled`, `ignored`), `producer`, `producer_version`, `last_snapshot_at`, `last_applied_at` (null before the first), `counts` (`{active, missing, pending_offers}`: entries not soft-deleted, those flagged missing, open link offers), `item_count` (the last snapshot's item count). §18.9 adds `stale` (computed at publish time; the health tick requests a sync when it flips), `expected_interval_seconds` (the effective one), `last_error`, `last_rejected_at` and `last_rejection`. |
 
 - **Stream topic (notif-06).** Published for every stream, whatever its status
@@ -2671,7 +2761,7 @@ UTC ISO 8601 (`2026-11-16T21:25:12Z`).
   (re)connect and every 10 minutes (an APScheduler job, the safety net); and,
   not forced (only topics whose payload changed), 2 seconds after any commit
   that changed what a topic carries (entry name, host, group, URLs, source,
-  soft delete, a check's enabled/kind/name/type/target, a group's name), via
+  soft delete, a check's enabled/kind/name/type/target, a group's name, an entry's image reference, update policy, or computed image update state or newer value), via
   `notify.request_sync()`. Nothing is published, and nothing remembered, while
   no channel has a live session; the connect that follows forces a sync.
 - The published topic set persists in the `setting` key
@@ -2707,6 +2797,8 @@ topic; the events carry `absolute: true`, and discovery is sent per channel
 |--------|--------|
 | Hub `binary_sensor` connectivity | object id `hub_connectivity`, unique id `<node>_hub_connectivity`; state topic `<base>/status`, on `online` / off `offline`. No separate availability topic (it would turn "off" into "unavailable"). |
 | Hub `sensor`s `up`, `degraded`, `down`, `unknown` | object ids `hub_<state>`, unique ids `<node>_hub_<state>`; state topic `<base>/summary`, `value_template` `{{ value_json.<state> }}`. |
+| Entry `update` "Image" (§24.10) | Only while the image update check is on and the image topic is published: object id `entry_<id>_image`, unique id `<node>_entry_<id>_image`, `entity_category: diagnostic`; `state_topic` = `<base>/entry/<id>/image`, **no `command_topic`** (read-only, §17.1), no `entity_picture`; the JSON carries `installed_version`, `latest_version`, `title`, `release_url`, `release_summary`. |
+| Hub `sensor` "Updates available" (§24.10) | Only while the check is on: object id `hub_updates`, unique id `<node>_hub_updates`; state topic `<base>/summary`, `value_template` `{{ value_json.updates }}`. |
 | Entry `sensor` "Since" | object id `entry_<id>_since`, unique id `<node>_entry_<id>_since`, `device_class: timestamp`; state topic `<base>/entry/<id>/state` with `value_template` `{{ value_json.since if value_json.since else None }}` (ISO 8601 UTC; null renders `None`, which MQTT sensors read as unknown). |
 | Entry `sensor` "State" | object id `entry_<id>_state`, unique id `<node>_entry_<id>_state`, `device_class: enum`, `options: [up, degraded, down, unknown, none]`; state and `json_attributes_topic` = `<base>/entry/<id>/state`. |
 | Stream hub `sensor` "Status" | object id `stream_<stream_id>_status`, unique id `<node>_stream_<stream_id>_status`, `device_class: enum`, `options: [pending, enabled, disabled, ignored]`; state and `json_attributes_topic` = `<base>/stream/<stream_id>`, `value_template` `{{ value_json.status }}`. |
@@ -2939,6 +3031,7 @@ server supports and log it.
 | 2 | 0.10.0 | `meta`, revision headers; update-check settings (§16); notification channels, purge, cleanup and orphan scan (§17); stream purge; `ha_publish`; inventory streams and the `ingest` key scope (§18.4–§18.7) |
 | 3 | 0.10.1 | Stream observability (§18.9): optional `snapshot_interval_seconds` on the snapshot PUT (ingest contract); stream `expected_interval_seconds`, `producer_interval_seconds`, `effective_interval_seconds`, `interval_source`, `stale`, `stale_message`, `stale_after_seconds`, `snapshot_age_seconds`, `missing_expiry_days`, `last_rejected_at`, `last_rejection`, `rejecting`; `stale` on `GET /streams`; `PATCH` takes the interval and the expiry; health summary `streams`, `stale_streams`, `counts.streams_stale`; `inventory.missing_since` |
 | 4 | 0.11.0 | Backup settings, backup list and run, export (§20): `GET`/`PUT /settings/backup`, `GET /backups`, `POST /backups/run`, `GET /export`, `POST /import/plan`, `POST /import/apply`; features `backup` and `import` (one bump for the whole 0.11.0 set) |
+| 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -3416,7 +3509,7 @@ few validation errors that re-render instead of redirecting.
 
 ### 19.1 Information architecture
 
-Thirteen sections in six labelled groups, from `settings_sections.py`:
+Fourteen sections in six labelled groups, from `settings_sections.py` (`image-updates` was added by the image update check, §24.8):
 
 | Group | Section | Slug | Legacy `?section=` |
 |---|---|---|---|
@@ -3426,6 +3519,7 @@ Thirteen sections in six labelled groups, from `settings_sections.py`:
 | Dashboard | Widgets | `widgets` | |
 | Sources | Docker (exposure interpreter) | `docker` | `exposure` |
 | Sources | Streams (incl. Blocked, Link offers) | `streams` | |
+| Sources | Image updates | `image-updates` | |
 | Integrations | Notifications | `notifications` | |
 | Integrations | Home Assistant | `home-assistant` | |
 | Access | Users | `users` | |
@@ -3606,9 +3700,14 @@ YAML opens with a short comment listing what is not included.
   Exported: lock, description, group (by name), sort priority, `ha_publish`, widget
   reference, every check's configuration (`HealthCheck.to_config()`), **a URL only when
   operator-owned** (source `ui_edit`, or any URL on a manual or stream entry; the source
-  is written so import can restore it), and **`image_icon` only for manual, stream and
+  is written so import can restore it), **`image_repo_url`** (the operator's image repo
+  link override, §13.7, every kind), **`image_update_policy`, `image_update_scope` and
+  `image_tag_pattern`** (the image update check settings, §24; Docker entries only, the
+  policy only when not `auto`; import validates them and recomputes the entry's state),
+  and **`image_icon` only for manual, stream and
   locked Docker entries** (an unlocked Docker entry's icon is rewritten on every
-  register). Not exported: status, container ids, image metadata, networks and ports,
+  register). Not exported: status, container ids, image metadata (including the observed
+  running digest and `image_info`, and the computed update state), networks and ports,
   IP, MAC, `attributes`, missing markers, exposure observations, label-owned
   (`explicit_label`) and `synthesized` URLs, health results, link offers, snapshots,
   timestamps.
@@ -3627,7 +3726,7 @@ YAML opens with a short comment listing what is not included.
   `Cache-Control: no-store`) backs the **Download YAML** / **Download JSON** buttons on
   the Exports card; the management API (§14.4) has `GET /export` and the backup routes;
   the MCP server has `backup_settings`, `list_backups`, `export_config` and `run_backup`.
-  `API_REVISION` is 4 (§18.1).
+  `API_REVISION` is 5 (§18.1).
 
 ### 20.3 Import (Delivered in 0.11.0; bak-03 engine, bak-04 UI and API)
 
@@ -3804,7 +3903,7 @@ route (a whole-database swap through an API key is too sharp).
 This project is paired with
 [docker-api-notifier](https://github.com/crzykidd/docker-api-notifier).
 
-### 21.1 Contract ownership
+### 22.1 Contract ownership
 
 STD owns the wire contract for the register endpoint. The notifier is
 a producer — it sends what STD documents. Wire-format changes start
@@ -3817,7 +3916,7 @@ any new field the notifier intends to send must be added to STD's
 schema and shipped first. The notifier may lag arbitrarily; it must
 not lead.
 
-### 21.2 Release history
+### 22.2 Release history
 
 1. STD v0.5.0 shipped `/api/v1/register` (canonical keys) alongside
    the `/api/register` compat shim that translated legacy keys.
@@ -3839,10 +3938,17 @@ not lead.
    alongside the interpreter mechanism. Do not present v0.3.2 as a
    shipped boundary; the only notifier release boundaries that
    exist on this axis are v0.3.0 and v0.4.0.)
+5. STD 0.12.0 accepts the optional `image_info` register field (the running image's
+   `RepoDigests` and OCI labels, §24.5) and advertises the `image_info` feature in
+   `GET /api/v1/meta`. **Notifier 0.5.0 will send it**, and only when `/api/v1/meta` lists
+   `image_info` (re-checked when `X-STD-API-Revision` changes), so a notifier upgraded
+   before STD omits it instead of getting a 400 on every register. Consumer leads, producer
+   follows: STD ships the schema first. An older notifier keeps working: no `image_info`
+   means "keep the stored values", and moving tags show `unknown` until it reports.
 
 ---
 
-### 21.3 Inventory stream producers (§18; delivered in 0.10.0)
+### 22.3 Inventory stream producers (§18; delivered in 0.10.0)
 
 From 0.10.0 STD also owns the **ingest contract** (§18.5), and inventory
 sidecars are its producers. The first is
@@ -3879,3 +3985,200 @@ image and release cadence. The same rules apply as for the notifier:
 - **Read-replica for dashboard reads.** WAL handles concurrent reads
   fine at this scale, but if widget growth pushes DB size up, worth
   measuring. No evidence it's needed.
+
+---
+
+## 24. v0.12.0 — Image update check (Delivered)
+
+**Status:** the engine, data model, register field, management API and MCP (img-02) and the UI
+(img-03: badges, filter, entry details, edit block, Settings section, §24.8) and the MQTT topic and
+Home Assistant `update` entity (img-04, §24.10) shipped in 0.12.0. The digest model needs
+docker-api-notifier 0.5.0+ (it sends `image_info`); until then moving tags show `unknown`. Design: `docs/design/2026-11-21-image-update-check.md`
+(its section 14 decisions are final). Decisions made while building are in `docs/decisions.md`.
+
+### 24.1 What it does
+
+For every Docker entry (`source = notifier`) with an image, STD answers once a day: **is a newer
+image available than the one this container runs?** It asks the image registries directly
+(anonymous, plain HTTPS, the OCI distribution v2 API), never updates a container, makes no
+outbound call from a request thread, and keeps the result out of the health roll-up. It is **off
+by default** (§24.6): registries learn which images this install runs.
+
+### 24.2 Architecture
+
+- `registry_client.py`: one generic client for Docker Hub (API host `registry-1.docker.io`), GHCR,
+  quay.io, lscr.io, gcr.io, GitLab, Harbor, Gitea and `registry:2`. The Bearer realm, service and
+  scope are read from `WWW-Authenticate` (nothing hardcoded; the realm must be https); tokens are
+  cached per `(host, scope)` until `expires_in`; a token is never forwarded to another host on a
+  redirect. Timeouts 5 s connect, 10 s read, one retry on a connection error,
+  `User-Agent: service-tracker-dashboard/<version>`. `HEAD /v2/<repo>/manifests/<tag>` carries all
+  four manifest media types (OCI index, Docker manifest list, OCI manifest, Docker manifest v2), so a
+  multi-arch tag returns the index digest that `docker pull` records in `RepoDigests`; with no
+  `Docker-Content-Digest` on HEAD it falls back to GET + SHA-256, **never on Docker Hub** (a GET counts
+  as a pull). `tags/list?n=1000` follows `Link` pagination, at most 10 pages. A `429` honours
+  `Retry-After` and pauses that registry for the rest of the run. Errors are short fixed messages; raw
+  exception text is never stored (the CodeQL rule).
+- `image_tags.py` (pure): the tag model, the digest model and `evaluate()`.
+- `image_update.py`: the provider seam, the run engine, settings, throttles, register recompute and
+  retention.
+- **Provider seam** (design §14): an `UpdateProvider` has an `id` (`registry` is the built-in one) and
+  produces a per-entry state in the §24.4 vocabulary. The job iterates the **enabled** providers and
+  stores the provider id in `image_update_provider`, so a later What's Up Docker or Komodo provider
+  needs no schema change. Only `registry` exists.
+
+### 24.3 Models
+
+- **Choosing** (`image_update_policy`: `auto`, `tags`, `digest`, `off`): under `auto`, a tag with no
+  digit (`latest`, `stable`) or one numeric component (`16`, `v3`) uses the **digest model**; two or more
+  numeric components (`1.4.2`, `16.4-alpine`, `2024.11.01`) use the **tag model**; a `@sha256:...`
+  reference is `pinned`.
+- **Tag model.** A tag's *skeleton* replaces every digit run with `N`; its *version* is those runs as
+  integers. Candidates have the same skeleton and a greater version tuple (so `v` prefixes, `-alpine`
+  vs `-bookworm`, linuxserver `-lsN` builds and calendar versions behave, and `-rcN` is excluded unless
+  already running). Scope (`any` default, `minor` = same first component, `patch` = same first two) and
+  classification (`major`, `minor`, `patch`, `build`, by the first differing component). An optional
+  per-entry `image_tag_pattern` (full match) replaces the skeleton rule; it is validated on save (compiles,
+  at most 200 characters, no repeat inside a repeat) and only tags of at most 128 characters are
+  evaluated. Up to 50 candidates are stored on the reference row (plus one pool per pattern in use), so a
+  scope change is recomputed locally. When a pinned tag is also re-pushed upstream and the running digest
+  is known, the entry stays `current` with a muted `rebuilt` note, never `update`.
+- **Digest model.** The registry digest of the tag is compared with the running digest from `image_info`.
+  No running digest: `unknown`, with "needs notifier 0.5.0 or later" when there is no `image_info`, or
+  "no registry digest for this image" (a local build or another repository) when there is.
+
+### 24.4 State per entry
+
+`update` (newer tag, or remote digest differs), `current`, `unknown` (with a reason), `error` (the last
+check of its reference failed), `pinned` (digest reference), `off` (policy `off`, or the check switched
+off: stored results are kept and shown as `off`). Stored on the entry (`image_update_state`, `_latest`
+(the tag, or `sha256:<12 hex>` for the digest model), `_kind` (`major`, `minor`, `patch`, `build`,
+`digest`), `_since`, `_provider`, `_detail`) so a filter is a plain predicate and a change can be detected.
+
+### 24.5 The `image_info` register field
+
+`RegisterPayload.image_info: Optional[ImageInfo] = None` (`schemas.py`, `extra="forbid"`): `id`,
+`repo_digests` (at most 20 items, each `^[^@\s]{1,255}@sha256:[0-9a-f]{64}$`; a bad item is a 400),
+`created`, `version`, `revision`, `source` (OCI labels; only an http(s) `source` is kept). Absent or
+null keeps the stored values; present replaces them; a changed `image_name` with no `image_info` clears
+the stored digest values (a digest of the previous image is never compared with the new tag). STD picks the
+`RepoDigests` item matching the entry's normalised repository (`image_ref.parse`) and stores it as
+`image_running_digest`; the display facts go in `image_info`. Observation only: never edited, never
+exported. Register recomputes the entry's state from the stored reference row with no network; a
+never-checked reference nudges a run, debounced to once per 5 minutes and only when the check is on.
+Wire contract: `docs/register-api.md`; cross-repo plan: §22.2 item 5.
+
+### 24.6 The job and settings
+
+- `image_update_check_job` (`jobs.py`): `IntervalTrigger(hours=24)` with 30 minutes of jitter. **The
+  interval is fixed; there is no setting.** The first run is 24 hours after the persisted
+  `image_update_last_run`; when the check is first enabled the first run is a few minutes later (unless
+  one ran in the last 24 hours). The job body returns at once while the check is off.
+- Settings (DB `setting` rows): `image_update_enabled` (**default off**; the env var
+  `STD_IMAGE_UPDATE_ENABLED` wins, and while it is set the API refuses a different value) and
+  `image_update_scope` (`any` | `minor` | `patch`, default `any`). Off means no registry request at all.
+- A run collects the distinct references of active Docker entries (not `off`, not pinned, and not a digest
+  model entry with no running digest), upserts their `image_reference` rows, then checks per repository:
+  one tag list per repository, one HEAD per tag, deduped across entries. `ThreadPoolExecutor(4)`, at most 2
+  requests in flight per registry host, a 30-minute run budget (unfinished references wait for the next
+  run), `_RUN_LOCK` taken non-blocking. Registry I/O happens outside any DB transaction and outside
+  `routes_api._UPSERT_LOCK`; results are written per run in short transactions, then every entry's state is
+  recomputed.
+- Per-reference backoff: after a failure the reference is skipped for 1, 2, 4 days, capped at 7; success
+  resets; a 429 sets the next attempt to `max(Retry-After, backoff)`.
+- **Check now:** `POST /api/v1/image-updates/run`, throttled to once per hour for everything and once per
+  15 minutes per reference (a single entry's Check now ignores backoff). Not a schedule: it records a request
+  and asks for a one-shot run on the scheduler.
+- **Retention:** the nightly retention job deletes `image_reference` rows no active entry has wanted for 30
+  days (skipped while the check is off, so stored results survive).
+- Not part of the health roll-up: an available update is information, not a fault.
+
+### 24.7 Management API and MCP (API revision 5)
+
+Entry responses gain `image_update` (`state`, `latest`, `kind`, `since`, `checked_at`, `error`, `reason`,
+`model`, `rebuilt`, `policy`, `scope`, `tag_pattern`, `running_digest`, `ref`, `provider`; null for manual and
+stream entries) and the detail's `notifier.image_info`. `PATCH /entries/<id>` accepts `image_update_policy`,
+`image_update_scope` and `image_tag_pattern` (Docker entries only, validated, recomputed locally).
+`GET /image-updates` (read; `?state=`), `GET`/`PUT /settings/image-updates` (`enabled`, `scope`, read-only
+`interval_hours: 24`, `last_run`, `next_run`, `enabled_origin`), `POST /image-updates/run` (write; optional
+`entry_id`; 202, 409 when off or nothing to check, 429 when throttled with `Retry-After`). All are in
+`mgmt_openapi.OPERATIONS`. MCP: `list_image_updates`, `run_image_update_check`; `update_entry` takes the
+three fields. Export format v1 (§20.2): `image_update_policy` (omitted when `auto`), `image_update_scope` and
+`image_tag_pattern` are operator-owned and round-trip for Docker entries; the observed digest and the computed
+state are not exported.
+
+### 24.8 UI (img-03)
+
+Everything here reads the stored state; no page makes a registry call, and the update state is not part of
+the health roll-up (no row tint, no status change). `image_update_ui.py` holds the read-only helpers
+(`image_update_info(entry)`, `image_updates_enabled()`, the GitHub `release_notes_url`), registered as Jinja
+globals; the enabled flag is read once per request (`g`), because a missing settings row is not cached by the
+session. The state shown is `image_update.effective_state()`, so everything is hidden while the check is off.
+
+- **Badge** (`partials/image_update_badge.html`): a Tabler `arrow-big-up-line` next to the name on the
+  Dashboard row, the Tiled tile and the Compact card (and in the Compact details dialog header), only for
+  `update`, with `role="img"`, an `aria-label` and a title: "Newer image: 1.5.0 (minor)" (tag model) or
+  "Image updated upstream (latest, pushed 2 days ago)" (digest model). The provider is not shown.
+- **Filter:** `?updates=true` ("Updates available (N)" checkbox beside Status and Source, a `view-control`
+  like the others). `view_helpers.normalize_updates_filter` / `matches_updates` (a plain predicate on
+  `image_update_state`) / `updates_count` (N counts what the Source, Status and Show URL-less filters leave).
+  While the check is off the toggle is hidden and the parameter is ignored. The view tabs carry
+  `?updates=true` while it is set. The view query loads `image_reference` with `selectinload`, so the page cost
+  stays flat as entries grow.
+- **Entry details** (`partials/entry_facts.html`, a row under the Docker line, shared by the Dashboard expand
+  row, the Compact dialog and the Tiled drawer): `update` tag model "Update: **1.5.0** available (minor) ·
+  checked 2 hours ago"; `update` digest model "Update: newer `latest` pushed 2 days ago (running 1.27.2) ·
+  checked ..."; `current` "Image up to date · checked ..."; `unknown` the stored reason; `error` "Could not
+  check: <short error>" (muted); `pinned` "Pinned by digest"; `off` nothing. The muted "rebuilt upstream" note
+  comes from `image_update_detail.rebuilt`. **Release notes** (`<source>/releases`, `target="_blank"
+  rel="noopener noreferrer"`) appears when `image_info.source` is a GitHub repository URL.
+- **Check now:** an admin-only link per entry and a button in Settings. Both POST via `static/js/image_update.js`
+  (CSRF from the page meta tag, delegated so it also works in the Compact dialog) to
+  `POST /service/<id>/image-update/check` and `POST /settings/image-updates/check` (admin only), which call
+  `image_update.request_check` and answer JSON: 202 when queued, 409 when the check is off or the entry has
+  nothing to check, 429 with `Retry-After` when throttled; the script shows the message as a toast
+  ("Checked recently; try again in about N min.").
+- **Edit page** (Docker entries): an "Image updates" block with Policy (Auto / Newer tags / Digest / Off), Scope
+  (Default / Any / Same major / Same minor) and Tag pattern, validated with `image_tags.validate_tag_pattern`
+  before anything is changed (an invalid value is a banner and the form is re-rendered). Saving recomputes the
+  entry with `image_update.recompute_entry` (no network). The "matches" line is read from the candidates stored
+  at the last check (the saved pattern's pool, or the newer tags of the running shape); there is no live
+  preview of an unsaved pattern, which would need the registry: it says "A changed pattern applies at the next
+  check".
+- **Settings → Sources → Image updates** (slug `image-updates`, `partials/settings/image_updates.html`): the
+  Enabled switch (default off; locked, with "Set by environment (STD_IMAGE_UPDATE_ENABLED)", while the env var
+  is set) and the Default scope in one guarded form (`POST /settings/image-updates`; saving the switch calls
+  `image_update.on_settings_changed`, a changed scope recomputes the entries locally); a status card (last run:
+  when, references checked, updates found, errors; next run; Check now, once an hour); a problems list
+  (references in `error` with the error and the entries that use them). No interval field: the text says
+  "Checks once a day". The Docker section shows a one-line hint pointing here while the check is off.
+
+### 24.9 Not built yet
+
+Registry credentials and insecure registries (img-05, out of the MVP: no private registries); a
+What's Up Docker or Komodo provider.
+
+### 24.10 MQTT and Home Assistant (img-04) [`img-04`] — Delivered
+
+Reconciled by `notify_state.full_sync()` like every other topic (§17.3); no second mechanism.
+
+- **Topic and payload:** `<base>/entry/<id>/image` (§17.3), for every active entry whose
+  effective state (`image_update.effective_state`, so `off` while the check is off) is not `off`.
+  Tag model: `installed_version` is the running tag, `latest_version` the newer tag or the running
+  tag when current. Digest model: `<tag>@<first 7 hex>` on both sides, with `Running version <OCI
+  version label>` in `release_summary` when known. `unknown` and `error`: both versions null, so
+  Home Assistant shows the entity as unknown. `pinned` (a digest-only reference): `@<7 hex>` on both
+  sides, so Home Assistant reads it as up to date. The topic follows every active entry, not only
+  `ha_publish` ones, like the other entry topics; `ha_publish` only gates the discovery entity.
+- **Additive fields:** `summary.updates` and `entry/<id>/state.image_update_state` (§17.3). No
+  existing key changes, and no update ever affects the roll-up, a health count or a State sensor.
+- **Discovery (§17.4):** an `update` entity per published entry with an image topic, and the hub
+  "Updates available" sensor. Both exist only while the check is on: switching it off (or an
+  entry's policy to Off) withdraws them through the normal reconcile, and the entry, channel and
+  stream purges clear the image topic and its entity with the rest of the entry.
+- **Sync triggers:** `image_ref`, `image_update_policy`, `image_update_state`,
+  `image_update_latest` and `image_update_kind` are in the commit listener's attribute list, so the
+  daily job's `apply_evaluation` (which writes a column only when its value changed) requests the
+  usual non-forced, debounced sync only when something changed. `image_update.on_settings_changed`
+  requests a forced sync when the switch flips. The job never touches the broker.
+- `checked_at` in the payload is the reference row's last check; it refreshes with the next sync
+  that republishes the topic (any state change, the 10-minute safety net compares payloads).

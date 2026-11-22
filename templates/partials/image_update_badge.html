@@ -1,0 +1,8 @@
+{# Image update badge (PRD 24): only for an entry with a newer image, hidden while the check is off.
+   Expects `entry`; optional `variant`: 'pill' (default: Dashboard row), 'icon' (Tiled), 'compact'.
+   Not part of health: no tint, no status change. #}
+{% set _iu = image_update_info(entry) %}
+{% if _iu and _iu.state == 'update' %}
+<span class="image-update-badge image-update-{{ variant | default('pill') }}" data-image-update-badge
+      title="{{ _iu.badge_title }}" role="img" aria-label="{{ _iu.badge_title }}"><i class="ti ti-arrow-big-up-line" aria-hidden="true"></i></span>
+{% endif %}

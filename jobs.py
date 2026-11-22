@@ -9,7 +9,8 @@ reference here.
 Public entry points:
 - `start_background_workers(app)` — registers the APScheduler jobs
   (widget refresh, daily snapshot and export, widget_value retention prune, soft-delete
-  purge, daily API audit purge, hourly health-history purge and compaction) and starts the
+  purge, daily API audit purge, hourly health-history purge and compaction, the daily
+  image update check) and starts the
   concurrent health-check scheduler thread (probes live in checker.py). Called once, via app.run_startup_tasks(),
   after migrations.
 - `verify_and_fetch_missing_icons(app)` — one-shot icon sweep run
@@ -22,16 +23,18 @@ import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import partial
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func
 
 import backups
 import checker
+import image_update
 import notify
 import streams
 from extensions import db
@@ -627,6 +630,56 @@ def next_run_times(scheduler=None):
     return out
 
 
+IMAGE_UPDATE_JOB = image_update.JOB_ID
+IMAGE_UPDATE_RUN_JOB = 'image_update_run_job'
+
+
+def image_update_check_job(app):
+    """The daily image update check (`image_update.py`); does nothing while it is switched off."""
+    try:
+        image_update.run_scheduled(app)
+    except Exception:
+        logger.exception("Image update check job failed.")
+
+
+def image_update_run_job(app):
+    """One-shot run for Check now, the register nudge and the first enable."""
+    try:
+        image_update.run_pending(app)
+    except Exception:
+        logger.exception("Image update run failed.")
+
+
+def schedule_image_update_run(app, delay_seconds=0, scheduler=None):
+    """Ask the scheduler for a one-shot `image_update_run_job` (never blocks, never runs on
+    the caller's thread). Returns False when there is no running scheduler. A run already
+    queued is replaced, not doubled."""
+    scheduler = scheduler or _SCHEDULER
+    if scheduler is None:
+        return False
+    try:
+        scheduler.add_job(
+            partial(image_update_run_job, app),
+            DateTrigger(run_date=datetime.now().astimezone() + timedelta(seconds=delay_seconds)),
+            id=IMAGE_UPDATE_RUN_JOB, name='Image update check (requested)',
+            replace_existing=True, max_instances=1, misfire_grace_time=3600)
+        return True
+    except Exception:
+        logger.exception("Could not schedule an image update run.")
+        return False
+
+
+def image_update_next_run(scheduler=None):
+    """When the daily image update check next fires (a datetime), or None."""
+    scheduler = scheduler or _SCHEDULER
+    try:
+        job = scheduler.get_job(IMAGE_UPDATE_JOB) if scheduler is not None else None
+    except Exception:
+        job = None
+    when = getattr(job, 'next_run_time', None) if job is not None else None
+    return when if isinstance(when, datetime) else None
+
+
 def prune_widget_values(app):
     """Delete widget_value rows whose last_updated is older than the
     configured retention window.
@@ -681,6 +734,14 @@ def purge_deleted_entries(app):
                             f"{expired_missing['kept']} kept (edited by a human).")
         except Exception:
             logger.exception("Missing-entry expiry failed; rolling back.")
+            db.session.rollback()
+        try:
+            # Image reference rows no entry has wanted for 30 days (image update check).
+            pruned = image_update.prune_references()
+            if pruned:
+                logger.info(f"🧹 Pruned {pruned} unused image reference row(s).")
+        except Exception:
+            logger.exception("Image reference retention failed; rolling back.")
             db.session.rollback()
         try:
             retention_days = int(app.config.get("deleted_retention_days", 30))
@@ -774,6 +835,22 @@ def start_background_workers(app):
         CronTrigger(minute=5),
         id='health_result_compaction_job',
         name='Compact old raw health successes into hourly ranges',
+        replace_existing=True
+    )
+    # Every 24 hours, fixed (no setting), 30 minutes of jitter; the first run is 24 h after the
+    # persisted last run. The body returns at once while the check is switched off.
+    try:
+        with app.app_context():
+            first_run = image_update.first_run_time()
+    except Exception:
+        logger.exception("Could not read the last image update run; first run in 24 hours.")
+        first_run = datetime.utcnow() + timedelta(hours=image_update.INTERVAL_HOURS)
+    scheduler.add_job(
+        partial(image_update_check_job, app),
+        IntervalTrigger(hours=image_update.INTERVAL_HOURS, jitter=image_update.JITTER_SECONDS,
+                        start_date=first_run.replace(tzinfo=timezone.utc)),
+        id=IMAGE_UPDATE_JOB,
+        name='Check registries for newer images',
         replace_existing=True
     )
     scheduler.add_job(

@@ -34,6 +34,8 @@ import check_form
 import entry_rules
 import export_format
 import health_history
+import image_tags
+import image_update
 import importer
 import jobs
 import mgmt_openapi
@@ -60,6 +62,8 @@ from mgmt_schemas import (
     ExposureSettingsPut,
     GroupCreate,
     GroupPatch,
+    ImageUpdateRunRequest,
+    ImageUpdateSettingsPut,
     ImportApplyRequest,
     ImportPlanRequest,
     NotificationChannelCreate,
@@ -455,6 +459,7 @@ def _entry_query():
         joinedload(ServiceEntry.group),
         joinedload(ServiceEntry.stream),
         selectinload(ServiceEntry.checks),
+        selectinload(ServiceEntry.image_reference),
     )
 
 
@@ -487,9 +492,13 @@ def _entry_snapshot(entry):
         "internalurl": entry.internalurl,
         "externalurl": entry.externalurl,
         "icon": entry.image_icon or None,
+        "image_repo_url": entry.image_repo_url or None,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
         "ha_publish": bool(entry.ha_publish),
+        "image_update_policy": entry.image_update_policy or "auto",
+        "image_update_scope": entry.image_update_scope,
+        "image_tag_pattern": entry.image_tag_pattern or None,
     }
 
 
@@ -602,6 +611,8 @@ def create_entry():
     icon, icon_error = entry_rules.resolve_icon(data.icon)
     if icon_error:
         errors.append({"field": "icon", "message": icon_error})
+    image_repo_url = (data.image_repo_url or "").strip() or None
+    errors += entry_rules.validate_image_repo_url("image_repo_url", image_repo_url)
     if group_name and len(group_name) > 100:
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
 
@@ -648,8 +659,8 @@ def create_entry():
             internalurl_source=synthesizer.SOURCE_UI_EDIT if internalurl else None,
             externalurl_source=synthesizer.SOURCE_UI_EDIT if externalurl else None,
             last_updated=datetime.now(), group_id=group.id if group else None,
-            image_icon=icon, sort_priority=data.sort_priority, is_static=data.locked,
-            ha_publish=data.ha_publish,
+            image_icon=icon, image_repo_url=image_repo_url, sort_priority=data.sort_priority,
+            is_static=data.locked, ha_publish=data.ha_publish,
         )
         ensure_url_checks(entry)
         for which, values in url_values.items():
@@ -714,6 +725,30 @@ def patch_entry(id):
         icon, icon_error = entry_rules.resolve_icon(data.icon)
         if icon_error:
             errors.append({"field": "icon", "message": icon_error})
+    new_repo_url = None
+    if "image_repo_url" in sent:
+        new_repo_url = (data.image_repo_url or "").strip() or None
+        errors += entry_rules.validate_image_repo_url("image_repo_url", new_repo_url)
+    image_update_sent = {"image_update_policy", "image_update_scope", "image_tag_pattern"} & sent
+    new_policy = new_scope = new_pattern = None
+    if image_update_sent and not entry.is_docker:
+        errors.append({"field": sorted(image_update_sent)[0],
+                       "message": "image update settings apply to Docker entries only"})
+    if "image_update_policy" in sent:
+        new_policy = (data.image_update_policy or "").strip().lower()
+        if new_policy not in image_tags.POLICIES:
+            errors.append({"field": "image_update_policy",
+                           "message": "must be one of: " + ", ".join(image_tags.POLICIES)})
+    if "image_update_scope" in sent:
+        new_scope = (data.image_update_scope or "").strip().lower() or None
+        if new_scope is not None and new_scope not in image_tags.SCOPES:
+            errors.append({"field": "image_update_scope",
+                           "message": "must be one of: " + ", ".join(image_tags.SCOPES) + " (or null)"})
+    if "image_tag_pattern" in sent:
+        new_pattern = (data.image_tag_pattern or "").strip() or None
+        problem = image_tags.validate_tag_pattern(new_pattern)
+        if problem:
+            errors.append({"field": "image_tag_pattern", "message": problem})
     group_name = (data.group or "").strip() or None if "group" in sent else None
     if group_name and len(group_name) > 100:
         errors.append({"field": "group", "message": "group is limited to 100 characters"})
@@ -754,8 +789,19 @@ def patch_entry(id):
                 entry.url_check(which).last_checked_at = None
         if "icon" in sent:
             entry.image_icon = icon or ""
+        if "image_repo_url" in sent:
+            entry.image_repo_url = new_repo_url
         if "sort_priority" in sent:
             entry.sort_priority = data.sort_priority
+        if image_update_sent:
+            if "image_update_policy" in sent:
+                entry.image_update_policy = new_policy
+            if "image_update_scope" in sent:
+                entry.image_update_scope = new_scope
+            if "image_tag_pattern" in sent:
+                entry.image_tag_pattern = new_pattern
+            # Local recompute from the stored reference row: no registry call.
+            image_update.recompute_entry(entry)
         if "ha_publish" in sent and data.ha_publish is not None:
             entry.ha_publish = data.ha_publish
         if "locked" in sent and data.locked is not None:
@@ -1369,6 +1415,88 @@ def put_update_check_settings():
     after = _update_check_payload()
     audit("update_check_settings", None, _diff(before, after))
     return jsonify(after)
+
+
+# --- image update check (PRD 21) -------------------------------------------------------
+
+
+def _image_update_payload():
+    enabled, origin = image_update.effective_enabled()
+    next_run = jobs.image_update_next_run() if enabled else None
+    return {
+        "enabled": enabled, "enabled_origin": origin, "scope": image_update.default_scope(),
+        "interval_hours": image_update.INTERVAL_HOURS, "last_run": image_update.last_run(),
+        "next_run": (next_run.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                     if next_run is not None else None),
+    }
+
+
+@mgmt_bp.route("/settings/image-updates", methods=["GET"])
+@require_api_key("read")
+def get_image_update_settings():
+    return jsonify(_image_update_payload())
+
+
+@mgmt_bp.route("/settings/image-updates", methods=["PUT"])
+@require_api_key("write")
+def put_image_update_settings():
+    audit("image_update_settings")
+    data = ImageUpdateSettingsPut.model_validate(_json_body())
+    errors = []
+    if data.enabled is None and data.scope is None:
+        errors.append({"field": "body", "message": "name at least one of enabled, scope"})
+    if data.scope is not None and data.scope not in image_tags.SCOPES:
+        errors.append({"field": "scope", "message": "must be one of: " + ", ".join(image_tags.SCOPES)})
+    before = _image_update_payload()
+    if (data.enabled is not None and before["enabled_origin"] == "env"
+            and data.enabled != before["enabled"]):
+        return json_error(409, f"Set by environment ({image_update.ENV_ENABLED}); it cannot be changed here.")
+    if errors:
+        return _fail(errors)
+    image_update.save_settings(data.enabled, data.scope)
+    db.session.commit()
+    image_update.on_settings_changed(current_app._get_current_object(), before["enabled"])
+    if data.scope is not None and data.scope != before["scope"]:
+        # A new default scope changes what is "newer": recompute locally, no registry call.
+        for e in ServiceEntry.active().filter(ServiceEntry.image_ref.isnot(None)).all():
+            image_update.recompute_entry(e, scope=data.scope)
+        db.session.commit()
+    after = _image_update_payload()
+    audit("image_update_settings", None, _diff(before, after))
+    return jsonify(after)
+
+
+@mgmt_bp.route("/image-updates", methods=["GET"])
+@require_api_key("read")
+def list_image_updates():
+    limit, offset = _page_args()
+    state = (request.args.get("state") or "").strip().lower() or None
+    if state is not None and state not in image_tags.STATES:
+        abort(400, f"'state' must be one of: {', '.join(image_tags.STATES)}.")
+    items = image_update.reference_report(state)
+    return _page(items[offset:offset + limit], len(items), limit, offset)
+
+
+@mgmt_bp.route("/image-updates/run", methods=["POST"])
+@require_api_key("write")
+def run_image_update_check():
+    audit("image_updates")
+    raw = request.get_json(silent=True)
+    data = ImageUpdateRunRequest.model_validate(raw if raw is not None else {})
+    entry = _load_entry(data.entry_id) if data.entry_id is not None else None
+    try:
+        queued = image_update.request_check(current_app._get_current_object(), entry)
+    except image_update.CheckRequestError as exc:
+        details = {"retry_after_seconds": exc.retry_after} if exc.retry_after else None
+        response = json_error(exc.status, exc.message, details)
+        if exc.retry_after:
+            response.headers["Retry-After"] = str(exc.retry_after)
+        return response
+    audit("image_updates", data.entry_id, {"check_requested": [None, data.entry_id or "all"]})
+    response = jsonify({"ok": True, "queued": queued,
+                        "requested_at": health_history.iso_z(datetime.utcnow())})
+    response.status_code = 202
+    return response
 
 
 # --- backups and export (PRD 20) -----------------------------------------------------

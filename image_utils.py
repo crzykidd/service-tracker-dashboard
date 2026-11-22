@@ -5,6 +5,8 @@ from datetime import datetime
 
 import requests
 
+from image_ref import parse as parse_image_ref
+
 _ICON_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 MAX_ICON_NAME_LENGTH = 100
 
@@ -107,20 +109,20 @@ def resolve_image_metadata(
     logger=None,
     debug=False
 ):
-    registry = owner = img_name = tag = None
+    registry = owner = img_name = tag = image_ref = None
 
-    if image_raw:
-        tag_split = image_raw.split(":")
-        base = tag_split[0]
-        tag = tag_split[1] if len(tag_split) > 1 else None
-        parts = base.split("/")
-        if len(parts) == 3:
-            registry, owner, img_name = parts
-        elif len(parts) == 2:
-            owner, img_name = parts
-        elif len(parts) == 1:
-            img_name = parts[0]
-    elif fallback_name:
+    parsed = parse_image_ref(image_raw) if image_raw else None
+    if parsed:
+        # Docker Hub keeps the legacy shape (registry NULL, no "library" owner) so
+        # existing entries display and link as before; the canonical string is image_ref.
+        registry = None if parsed.is_docker_hub else parsed.registry
+        owner = parsed.owner
+        if parsed.is_docker_hub and owner == "library":
+            owner = None
+        img_name = parsed.name
+        tag = parsed.tag
+        image_ref = parsed.canonical
+    elif fallback_name and not image_raw:
         img_name = fallback_name
 
     icon_source_name = img_name or fallback_name
@@ -145,6 +147,7 @@ def resolve_image_metadata(
                 "image_name": img_name,
                 "image_tag": tag,
                 "image_icon": None,
+                "image_ref": image_ref,
             }
         image_icon = safe_name
         now = datetime.now()
@@ -179,5 +182,6 @@ def resolve_image_metadata(
         "owner": owner,
         "image_name": img_name,
         "image_tag": tag,
-        "image_icon": image_icon
+        "image_icon": image_icon,
+        "image_ref": image_ref,
     }

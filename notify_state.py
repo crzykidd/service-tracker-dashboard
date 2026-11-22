@@ -20,8 +20,8 @@ Builds the retained MQTT topics from the database and decides what to send:
 `setting` store, so the cleanup still works after a restart.
 
 Topic suffixes under the channel's `base_topic`:
-    entry/<entry_id>/state, entry/<entry_id>/check/<check_id>, summary,
-    stream/<stream_id>
+    entry/<entry_id>/state, entry/<entry_id>/check/<check_id>,
+    entry/<entry_id>/image (image update check, PRD 24), summary, stream/<stream_id>
 """
 
 import json
@@ -33,8 +33,11 @@ from sqlalchemy import event, func, inspect
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 import health_state
+import image_update
+import image_update_ui
 import settings_store
 from extensions import db
+from image_ref import parse as parse_image_ref
 from models import (
     CHECK_KIND_CONTAINER,
     CHECK_KIND_EXTERNAL,
@@ -56,7 +59,11 @@ SUMMARY_TOPIC = "summary"
 # on purpose: every health tick writes those, and a sync per tick is wasteful.
 _ENTRY_ATTRS = ("container_name", "host", "group_id", "source", "deleted_at",
                 "internalurl", "externalurl", "is_static", "image_tag", "ha_publish",
-                "ip", "mac", "network", "stream_id", "inventory_missing", "inventory_missing_since")
+                "ip", "mac", "network", "stream_id", "inventory_missing", "inventory_missing_since",
+                # The image update check's computed columns (PRD 24): a changed state or newer
+                # value asks for a sync; `_set` in image_update only writes a real change.
+                "image_ref", "image_update_policy", "image_update_state", "image_update_latest",
+                "image_update_kind")
 # The `stream` field of a stream entry's payload and everything the per-stream status topic
 # carries (PRD 18.6).
 _STREAM_ATTRS = ("display_name", "status", "producer", "producer_version", "last_snapshot_at",
@@ -72,6 +79,10 @@ def entry_topic(entry_id):
 
 def check_topic(entry_id, check_id):
     return f"entry/{entry_id}/check/{check_id}"
+
+
+def image_topic(entry_id):
+    return f"entry/{entry_id}/image"
 
 
 def stream_topic(stream_slug):
@@ -150,9 +161,66 @@ def check_payload(entry, check, last_change):
     }
 
 
-def entry_payload(entry, health, since):
+def image_info(entry, enabled=None):
+    """The entry's image update facts when something is published for it (effective state is
+    not `off`), else None. `enabled` is the global switch (read once per sync)."""
+    return image_update_ui.image_update_info(entry, enabled)
+
+
+def _short(digest):
+    """First 7 hex digits of a `sha256:<hex>` value, or None."""
+    hexpart = (digest or "").partition(":")[2]
+    return hexpart[:7] or None
+
+
+def image_payload(entry, info):
+    """The `entry/<id>/image` topic (PRD 24 / 17.3). Versions follow Home Assistant's `update`
+    entity: `installed_version` null reads as unknown. Tag model: the running tag and the newer
+    tag (the running tag when current). Digest model: `<tag>@<7 hex>` for both. `pinned`
+    (a digest-only reference) shows the same `@<7 hex>` on both sides, so HA reads up to
+    date rather than unknown."""
+    state = info["state"]
+    tag = info["tag"]
+    parsed = parse_image_ref(entry.image_ref) if entry.image_ref else None
+    installed = latest = None
+    summary = None
+    if state == "pinned":
+        short = _short(parsed.digest) if parsed is not None else None
+        installed = latest = f"@{short}" if short else None
+    elif state in ("update", "current"):
+        digest_model = info["model"] == "digest" or info["kind"] == "digest"
+        if digest_model:
+            running = _short(entry.image_running_digest)
+            installed = f"{tag}@{running}" if running and tag else None
+            if state == "update":
+                newer = _short(info["latest"])
+                latest = f"{tag}@{newer}" if newer and tag else None
+            else:
+                latest = installed
+            if info["running_version"]:
+                summary = f"Running version {info['running_version']}"
+        else:
+            installed = tag
+            latest = info["latest"] if state == "update" else tag
+    return {
+        "installed_version": installed,
+        "latest_version": latest,
+        "title": parsed.repository if parsed is not None else entry.container_name,
+        "release_url": info["release_url"],
+        "release_summary": summary,
+        "state": state,
+        "kind": info["kind"],
+        "checked_at": _iso(info["checked_at"]),
+        "std_entry_id": entry.id,
+    }
+
+
+def entry_payload(entry, health, since, image_enabled=None):
+    info = image_info(entry, image_enabled)
     return {
         "state": health.state,
+        # Additive (image update check): null when nothing is published for the entry.
+        "image_update_state": info["state"] if info else None,
         "entry_id": entry.id,
         "std_entry_id": entry.id,
         "name": entry.container_name,
@@ -199,11 +267,19 @@ def stream_payload(stream, active, missing, pending_offers, now=None):
     }
 
 
-def summary_payload(healths):
+def updates_count(entries, enabled=None):
+    """How many entries show an `update` (effective state, so 0 while the check is off)."""
+    enabled = image_update.is_enabled() if enabled is None else enabled
+    return sum(1 for e in entries if (image_info(e, enabled) or {}).get("state") == "update")
+
+
+def summary_payload(healths, updates=0):
     counts = {s: 0 for s in health_state.STATES}
     for h in healths:
         counts[h.state] += 1
     counts["total"] = len(healths)
+    # Additive; never part of a health count or the roll-up.
+    counts["updates"] = updates
     return counts
 
 
@@ -334,13 +410,14 @@ def publish_changes(publisher, check_ids):
             publisher.enqueue(_event(topic, payload))
             sent += 1
         rollup_changed = False
+        image_enabled = image_update.is_enabled()
         for entry in entries.values():
             health = health_state.entry_health(entry)
             counts = check_counts_by_state(entry)
             known = state.entries.get(entry.id)
             since, state_changed = state.entry_since(entry, health, now)
             if state_changed or known.get("checks") != counts:
-                payload = entry_payload(entry, health, since)
+                payload = entry_payload(entry, health, since, image_enabled)
                 state.entries[entry.id] = {"state": health.state, "since": _iso(since), "checks": counts}
                 topic = entry_topic(entry.id)
                 state.payloads[topic] = _text(payload)
@@ -349,7 +426,9 @@ def publish_changes(publisher, check_ids):
                 sent += 1
             rollup_changed = rollup_changed or state_changed
         if rollup_changed:
-            summary = summary_payload([health_state.entry_health(e) for e in _active_entries()])
+            active = _active_entries()
+            summary = summary_payload([health_state.entry_health(e) for e in active],
+                                      updates_count(active, image_enabled))
             text = _text(summary)
             if text != state.summary:
                 state.summary = text
@@ -372,6 +451,8 @@ def desired_state(state, now=None):
     healths = []
     entry_meta, check_meta = {}, {}
     stream_active, stream_missing = {}, {}
+    image_enabled = image_update.is_enabled()
+    updates = 0
     for entry in _active_entries():
         if entry.stream_id is not None:
             stream_active[entry.stream_id] = stream_active.get(entry.stream_id, 0) + 1
@@ -382,12 +463,16 @@ def desired_state(state, now=None):
         since, _ = state.entry_since(entry, health, now)
         entry_meta[entry.id] = {"state": health.state, "since": _iso(since),
                                 "checks": check_counts_by_state(entry)}
-        desired[entry_topic(entry.id)] = entry_payload(entry, health, since)
+        desired[entry_topic(entry.id)] = entry_payload(entry, health, since, image_enabled)
+        info = image_info(entry, image_enabled)
+        if info is not None:
+            desired[image_topic(entry.id)] = image_payload(entry, info)
+            updates += info["state"] == "update"
         for check in counted_checks(entry):
             changed = state.check_changed(check, now)
             check_meta[check.id] = state.checks[check.id]
             desired[check_topic(entry.id, check.id)] = check_payload(entry, check, changed)
-    desired[SUMMARY_TOPIC] = summary_payload(healths)
+    desired[SUMMARY_TOPIC] = summary_payload(healths, updates)
     offers = dict(db.session.query(StreamLinkOffer.stream_id, func.count(StreamLinkOffer.id))
                   .group_by(StreamLinkOffer.stream_id).all())
     for stream in InventoryStream.query.order_by(InventoryStream.id).all():
@@ -425,12 +510,13 @@ def sync_discovery(publisher, state, force):
     if not sessions:
         return 0, 0
     entries = _active_entries()
+    image_enabled = image_update.is_enabled()
     instance_id = settings_store.get_instance_id()
     version = current_app.config.get("VERSION_INFO", {}).get("version", "unknown")
     for channel_id, session in sessions:
         key = str(channel_id)
         config = session.config
-        desired = (notify_ha.desired_configs(entries, config, instance_id, version)
+        desired = (notify_ha.desired_configs(entries, config, instance_id, version, image_enabled)
                    if config.get("ha_discovery") else {})
         for topic in sorted(desired):
             text = _text(desired[topic])

@@ -43,6 +43,8 @@ import backups
 import check_form
 import entry_rules
 import export_format
+import image_tags
+import image_update
 import notify
 import settings_store
 import streams
@@ -283,6 +285,16 @@ def _check_entry(rec, legacy):
             errs += [e["message"] for e in entry_rules.validate_url(which, value.value)]
     if rec.image_icon:
         _, problem = entry_rules.resolve_icon(rec.image_icon)
+        if problem:
+            errs.append(problem)
+    if rec.image_repo_url:
+        errs += [e["message"] for e in entry_rules.validate_image_repo_url("image_repo_url", rec.image_repo_url)]
+    if rec.kind == "docker":
+        if rec.image_update_policy and rec.image_update_policy not in image_tags.POLICIES:
+            errs.append("image_update_policy must be one of: " + ", ".join(image_tags.POLICIES))
+        if rec.image_update_scope and rec.image_update_scope not in image_tags.SCOPES:
+            errs.append("image_update_scope must be one of: " + ", ".join(image_tags.SCOPES))
+        problem = image_tags.validate_tag_pattern(rec.image_tag_pattern)
         if problem:
             errs.append(problem)
     seen = set()
@@ -756,6 +768,16 @@ def _entry_diffs(rec, entry, L, D):
     # The icon is stored as `entry_rules.resolve_icon` writes it (`name` -> `name.svg`).
     _diff(diffs, "image_icon", entry_rules.resolve_icon(rec.image_icon)[0],
           entry_rules.resolve_icon(entry.image_icon)[0] or entry.image_icon, not _norm(entry.image_icon))
+    _diff(diffs, "image_repo_url", (rec.image_repo_url or "").strip() or None, entry.image_repo_url,
+          not _norm(entry.image_repo_url))
+    if docker:
+        # Image update settings are operator-owned; an absent value leaves the local one alone.
+        _diff(diffs, "image_update_policy", rec.image_update_policy, entry.image_update_policy,
+              (entry.image_update_policy or "auto") == "auto")
+        _diff(diffs, "image_update_scope", rec.image_update_scope, entry.image_update_scope,
+              not _norm(entry.image_update_scope))
+        _diff(diffs, "image_tag_pattern", rec.image_tag_pattern, entry.image_tag_pattern,
+              not _norm(entry.image_tag_pattern))
     if bool(rec.is_static) != bool(entry.is_static):
         diffs.append(FieldDiff("is_static", bool(rec.is_static), bool(entry.is_static),
                                MISSING if not entry.is_static else DIFFERS))
@@ -1553,6 +1575,13 @@ class _Applier:
             entry.description = value.strip()[:entry_rules.DESCRIPTION_MAX]
         elif name == "image_icon":
             entry.image_icon = entry_rules.resolve_icon(value)[0] or None
+        elif name == "image_repo_url":
+            entry.image_repo_url = value.strip() or None
+        elif name in ("image_update_policy", "image_update_scope", "image_tag_pattern"):
+            setattr(entry, name, value.strip() or None)
+            if name == "image_update_policy" and not entry.image_update_policy:
+                entry.image_update_policy = "auto"
+            image_update.recompute_entry(entry)
         elif name == "is_static":
             entry.is_static = bool(value)
         elif name == "ha_publish":

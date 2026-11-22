@@ -86,6 +86,30 @@ class ServiceEntry(db.Model):
     image_name = db.Column(db.String(100), nullable=True)
     image_tag = db.Column(db.String(100), nullable=True)
     image_icon = db.Column(db.String(100), nullable=True)
+    # Canonical image reference (registry/repository:tag or @digest), parsed by image_ref.py
+    # from the raw image the notifier sends. Observed by register only: not editable, not exported.
+    image_ref = db.Column(db.String(512), nullable=True, index=True)
+    # Operator-owned override for the image repository link (v0.11.1); never written by register.
+    image_repo_url = db.Column(db.String(512), nullable=True)
+    # Image update check (design docs/design/2026-11-21-image-update-check.md, PRD 21).
+    # Observed (register only, never edited, not exported): the RepoDigests entry matching
+    # image_ref, and the stored ImageInfo (id, created, version, revision, source).
+    image_running_digest = db.Column(db.String(80), nullable=True)
+    image_info = db.Column(db.JSON, nullable=True)
+    # Operator-owned (UI / API / export): auto | tags | digest | off, a full-match regex for
+    # the tag model, and a scope (null = the global default).
+    image_update_policy = db.Column(db.String(8), nullable=False, default='auto', server_default='auto')
+    image_tag_pattern = db.Column(db.String(200), nullable=True)
+    image_update_scope = db.Column(db.String(8), nullable=True)
+    # Computed and stored by the update provider and the register recompute: update | current |
+    # unknown | error | pinned | off, the newer tag or short digest, major | minor | patch |
+    # build | digest, when the state became `update`, the provider id, and {reason, model, rebuilt}.
+    image_update_state = db.Column(db.String(10), nullable=True)
+    image_update_latest = db.Column(db.String(128), nullable=True)
+    image_update_kind = db.Column(db.String(8), nullable=True)
+    image_update_since = db.Column(db.DateTime, nullable=True)
+    image_update_provider = db.Column(db.String(16), nullable=True)
+    image_update_detail = db.Column(db.JSON, nullable=True)
     is_static = db.Column(db.Boolean, nullable=False, default=False)
     started_at = db.Column(db.String(100), nullable=True)  # stored in ISO string format
     widget_id = db.Column(db.Integer, db.ForeignKey('widget.id'), nullable=True)
@@ -322,6 +346,14 @@ class ServiceEntry(db.Model):
         """True for entries owned by the Docker notifier (`source == notifier`)."""
         # A not-yet-flushed instance has source None; the column default is notifier.
         return (self.source or SOURCE_NOTIFIER) == SOURCE_NOTIFIER
+
+    @property
+    def image_repo_link(self):
+        """The image's repository page: the operator override, else derived from
+        the image fields, else None (see image_repo.py)."""
+        from image_repo import effective_repo_url
+
+        return effective_repo_url(self)
 
     @property
     def is_docker_status_stale(self):
@@ -623,6 +655,40 @@ class ServiceExposure(db.Model):
 
     def __repr__(self):
         return f'<ServiceExposure {self.layer} svc={self.service_entry_id} host={self.hostname}>'
+
+
+class ImageReference(db.Model):
+    """Remote facts about one canonical image reference (`registry/repository:tag`), shared by
+    every entry that runs it (image update check, design 6.1). No foreign key: entries join by
+    `service_entry.image_ref = image_reference.ref`; a dangling row is pruned by retention."""
+    __tablename__ = 'image_reference'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ref = db.Column(db.String(512), nullable=False, unique=True, index=True)
+    # (`registry` is reserved on a declarative class, hence the attribute name.)
+    registry_name = db.Column('registry', db.String(255), nullable=False)
+    repository = db.Column(db.String(255), nullable=False)
+    tag = db.Column(db.String(128), nullable=False)
+    remote_digest = db.Column(db.String(80), nullable=True)
+    remote_digest_changed_at = db.Column(db.DateTime, nullable=True)
+    # {"tags": [<= 50 newer tags of the running skeleton, version-sorted], "tags_total": int,
+    #  "truncated": bool, "patterns": {<regex>: [<= 50 tags]}}
+    candidates = db.Column(db.JSON, nullable=True)
+    checked_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.String(300), nullable=True)
+    last_error_at = db.Column(db.DateTime, nullable=True)
+    failures = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    next_check_at = db.Column(db.DateTime, nullable=True)
+    last_wanted_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ImageReference {self.ref}>'
+
+
+# Read-only join, no database foreign key: the entry's reference row (None until checked).
+ServiceEntry.image_reference = db.relationship(
+    ImageReference, primaryjoin=db.foreign(ServiceEntry.image_ref) == ImageReference.ref,
+    viewonly=True, uselist=False, lazy='select')
 
 
 class Setting(db.Model):

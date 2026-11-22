@@ -1,47 +1,72 @@
-# Start a new session: 0.11.0 built on dev, awaiting browser test
+# Start a new session: v0.11.0 released, nothing scoped
 
 Say "read prompts/startnewsession.md and start".
 
 ## Where things stand (2026-11-21)
 
-- **Released:** v0.10.1 on `main`. No 0.10.2 was cut; its two fixes ship in 0.11.0.
-- **On `dev`, unreleased (0.11.0):**
-  - `d69d769` fix: MQTT test bounded to ~5 s; entry names 128 chars (migration `d7a3e9b2c418`).
-  - Settings modernization (PRD §19, design `docs/design/2026-11-20-settings-modernization.md`):
-    `dfc73e8` phase 1 foundation, `06756b5` notifications + HA, `ab31a38` streams,
-    `bd3828e` remaining sections.
-  - Backup / export / import (PRD §20, design `docs/design/2026-11-20-backup-export-import.md`):
-    `9f32a3f` scheduled backups, `3c68318` export v1 + API revision 4, `0183523` import
-    engine, `a5ce3ca` import UI/API/MCP, `94a32e9` staged restore.
-- Handoff-prompt queue is empty (all in `prompts/done/`). Nothing was browser-tested;
-  every phase is green on ruff + pytest only.
+- **Released:** v0.11.0 on `main`.
+  - Tag `v0.11.0` is on merge commit `c18a19b`, and the GitHub release is published.
+  - The `:latest`, `:0.11.0` and `:0` images are in GHCR.
+  - Nothing new is on `dev` since the release.
+- **What 0.11.0 shipped** (the CHANGELOG `[0.11.0]` section has the full list):
+  - the 0.10.2 fixes: the MQTT test is capped at about 5 s, and entry names can be 128 characters;
+  - the Settings modernization (PRD §19);
+  - backup, export, import and staged restore (PRD §20), API revision 4;
+  - the expanded Dashboard row and the Compact details dialog, both built on
+    `partials/entry_facts.html` (PRD §13.7);
+  - the full Docker image shown in entry details;
+  - removal of the `/reset_user_password` route;
+  - `settings.yml` values cast to their types the same way env values are;
+  - the UI delete route moved to `/entries/<id>/delete`;
+  - fixes for the CodeQL findings.
+- **Docs:**
+  - The README was rewritten top-down; What's New shows only the latest two releases.
+  - Detailed reference pages: `docs/register-api.md`, `docs/inventory-streams.md` and
+    `docs/mqtt-home-assistant.md`.
+  - The screenshot gallery is `docs/screenshots.md`, with images named `std_*.png`.
+- The handoff-prompt queue is empty; everything is in `prompts/done/`.
 
 ## This session's job
 
-1. Ask the operator what they found testing `:dev` in a browser; fix it (small fixes
-   in-session, bigger ones via a handoff prompt).
-2. Browser checklists per phase are in each phase's prompt in `prompts/done/` and in the
-   end-of-night report; the riskiest items:
-   - API key create/rotate: key shown once in a dialog; reload must not re-POST.
-   - Channel / stream / user / group dialogs reopen on a validation error with input kept.
-   - HA section: grouped by source, tri-state group checkbox, search, sticky save bar.
-   - Backup: schedule save + live reschedule, Run now, env-pinned fields read-only.
-   - Import: upload → stream mapping → preview → apply; stale-plan 409; users imported
-     with no password can't sign in.
-   - Staged restore: stage, restart the container, check `[restore]` log lines,
-     `pre-restore-*` kept, green banner; a corrupted `pending.json` sha256 must still
-     start STD on the old DB.
-3. Then `/release-prep 0.11.0`.
+Nothing is scoped. Ask the operator what's next. Candidates:
 
-## Known follow-ups
+- **GitHub issues still open:**
+  - #58: a "ports in use" page across all hosts. Per-container ports already shipped; I
+    commented on the issue.
+  - #6: link the container name to its image repo.
+  - #9: Discord notifications, or "alert after N failed checks".
+- **Parked in `docs/FUTURE.md`:**
+  - Settings follow-ups (after 0.11.0);
+  - small gaps parked after v0.10.1;
+  - stream observability follow-ups;
+  - the UniFi inventory source;
+  - register overwriting some operator edits;
+  - service identity and duplicate detection;
+  - tools as a first-class concept;
+  - the notifier logging STD's API revision.
+- **Backup "Later" list:** `docs/design/2026-11-20-backup-export-import.md` §15.
 
-- Settings follow-ups parked in `docs/FUTURE.md` ("Settings follow-ups (after 0.11.0)"),
-  backup "Later" list in the backup design doc §15.
-- Older parked items: stream observability follow-ups, small gaps after v0.10.1,
-  notifier API-revision logging, the network-inventory design.
+## Known follow-ups (small, unscheduled)
+
+- **Registry retention race:** two retention runs triggered in the same second can try to
+  delete the same version, and one fails with a 404. It's harmless, and the operator said
+  to leave it. If it's wanted later: add a `concurrency` group to
+  `.github/workflows/retention.yml` and treat a 404 on delete as "already gone".
+- **The README still needs two screenshots:** the Compact view with the expand chevron
+  (`std_compact.png` predates it), and widgets on tiles.
+- **The Tiled drawer overlays the tile below** instead of pushing it down. The operator
+  noticed it and didn't ask for a change.
+- **PRD numbering:** the subsections under §22 are numbered 21.1–21.3 (flagged by the
+  README audit, not fixed).
+- **A missing setting in `VALID_KEYS`:** `FLASK_SECRET_KEY` can only be set as an env
+  variable (documented). Add it to `VALID_KEYS` masked only if the operator wants it
+  settable from the file.
 
 ## Housekeeping
 
-- Lint: `uvx ruff@0.15.17 check .`. Tests: `uvx --with-requirements requirements-dev.txt pytest -q`.
-- No `Co-authored-by:` trailers (CLAUDE.md wins). CHANGELOG archive step is skipped.
-- Release prep labels API revision 4's release in `api_version.py` (already "0.11.0").
+- Lint: `uvx ruff@0.15.17 check .`. Tests (1,637): `uvx --with-requirements requirements-dev.txt pytest -q`.
+- No `Co-authored-by:` trailers (CLAUDE.md wins). The CHANGELOG archive step is skipped on
+  minor releases (standing preference).
+- MCP version tests are tied to `MCP_VERSION`, so a release bump no longer breaks them.
+- CodeQL runs on pull requests to `main`. Five false positives were dismissed for 0.11.0,
+  each with a reason. Expect similar flags on path handling and the YAML loader.

@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-21
+
+### Added
+
+- **Image update check: STD can tell you when a container's image has a newer version
+  (off by default).** Once a day
+  STD asks the image registries (Docker Hub, GHCR, quay.io, lscr.io and any other
+  standard registry, anonymously over HTTPS) whether a newer image exists than the one
+  each Docker entry runs. It sends the names of the images you run to those registries,
+  so it is **off until you turn it on**: Settings → Sources → **Image updates** (a switch and
+  a default scope), `STD_IMAGE_UPDATE_ENABLED=true`, or `PUT /api/v1/settings/image-updates`
+  with `{"enabled": true}`. When the environment variable is set, the switch shows as locked.
+  - **On the dashboards:** a small up-arrow badge next to the name of any container with a
+    newer image, on the Dashboard, Tiled and Compact views ("Newer image: 1.5.0 (minor)", or
+    "Image updated upstream (latest, pushed 2 days ago)" for a moving tag), and an **Updates
+    available (N)** filter beside the status and source filters (it combines with them and
+    follows you between the three views). Both are hidden while the check is off. An update is
+    information, not a fault: rows are not tinted and health does not change.
+  - **In an entry's details** (under the Docker image): "Update: **1.5.0** available (minor)",
+    "Image up to date", why an image cannot be compared yet, the last error, "Pinned by
+    digest", a muted "rebuilt upstream" note, a **Release notes** link when the image says
+    its source is on GitHub, and, for admins, a **Check now** link for that image.
+  - **On an entry's Edit page** (Docker entries): an **Image updates** block with the
+    policy (Auto, Newer tags, Digest, Off), the scope (Default, Any, Same major, Same minor)
+    and the tag pattern, with the tags that matched at the last check. A bad pattern is
+    refused and nothing is saved; saving recomputes the entry from the stored results
+    without contacting a registry.
+  - **Settings → Sources → Image updates:** the switch, the default scope, the last run
+    (when, images checked, updates found, errors), the next run, **Check now** (once an
+    hour, with the "try again" message when throttled) and a list of images that could not
+    be checked, with the error and the entries that use them. The Docker section points
+    there while the check is off. Read the same results through each entry's
+    `image_update` block, `GET /api/v1/image-updates`, or the MCP server
+    (`list_image_updates`, `run_image_update_check`).
+  - **Pinned versions** (`1.4.2`, `v2.3`, `16.4-alpine`, `4.0.14.2939-ls263`) are compared
+    by tag and reported as a `major`, `minor`, `patch` or `build` update; a newer tag of
+    another flavour (`-bookworm` for `-alpine`) or a pre-release is not offered. The
+    default scope is any newer version; limit it to the same major or the same
+    major.minor, globally or per entry.
+  - **Moving tags** (`latest`, `stable`, `16`) are compared by digest. That needs the
+    notifier to report the running image (the new optional `image_info` register field,
+    sent by docker-api-notifier 0.5.0 and later); until then those entries show
+    "unknown" with the reason. Pinned-by-digest images are shown as pinned.
+  - Per entry: a policy (`auto`, `tags`, `digest`, `off`), a scope and an optional tag
+    pattern (a regular expression that must match the whole tag), through
+    `PATCH /api/v1/entries/{id}`, export and import.
+  - **Gentle on registries:** one request per distinct image however many containers
+    share it, `HEAD` for manifests (Docker Hub does not count that as a pull), at most
+    four at a time and two per registry, a pause when a registry answers "too many
+    requests", and a longer wait after a failure (1, 2, 4, up to 7 days). The check
+    cannot run more than once a day by itself; **Check now**
+    (`POST /api/v1/image-updates/run`) is throttled to once an hour, or once per 15
+    minutes for one image. STD never pulls or recreates a container, and an available
+    update does not change an entry's health.
+  - Management API revision 5 (additive): the `image_info` register field, the
+    `image_update` block in entry responses, the three settings on
+    `PATCH /api/v1/entries/{id}`, `GET /api/v1/image-updates`,
+    `GET`/`PUT /api/v1/settings/image-updates`, `POST /api/v1/image-updates/run`, and the
+    features `image_updates` and `image_info` in `GET /api/v1/meta`.
+  - **MQTT and Home Assistant:** with the check on, each Docker entry's image state is
+    published as a retained topic `<base>/entry/<id>/image` (installed and latest version,
+    state, release link), `<base>/summary` gains an `updates` count and an entry's state
+    topic gains `image_update_state`. Home Assistant gets a read-only **Image** `update`
+    entity on each published entry (diagnostic, no install button) and an **Updates
+    available** sensor on the STD hub. Turning the check off, or an entry's policy to Off,
+    removes them. An update never changes an entry's health or its State sensor.
+- **The Docker image in an entry's details links to its repository page (closes #6).**
+  On the Dashboard, Tiled and Compact details, the image (`registry/owner/name:tag`) is
+  a link, derived from the image the notifier reports: Docker Hub (official and user
+  images), GitHub Container Registry, Quay and LinuxServer (`lscr.io`). For any other or
+  private registry no link is guessed. Set **Image repo URL** on the Add or Edit page
+  (or `image_repo_url` through the management API, MCP, or an import) to point the link
+  somewhere else, or to add one for an entry with no Docker image; clear it to go back to
+  the derived link. The override is included in exports and imports. Management API
+  revision 5: entries carry `image_repo_url` and the resulting `image_repo_link`.
+
+### Fixed
+
+- **Entry details showed wrong or empty image fields for some images.** Images from a
+  registry with a port (`localhost:5000/app:1`), nested paths (`ghcr.io/org/team/app`),
+  two-part names on another registry (`quay.io/app:1`) and digest references
+  (`nginx@sha256:...`) were split wrongly or left blank. The image is now parsed the way
+  Docker reads it, and the details show the full reference (`registry/repository:tag`,
+  Docker Hub as `docker.io/library/...`, a missing tag as `latest`). The repository link
+  now works for nested GHCR paths too. Entries correct themselves on their next register;
+  existing ones that were already read correctly are filled in on upgrade. Management API
+  revision 5: the entry detail carries the read-only `notifier.image_ref`.
+
 ## [0.11.0] — 2026-11-21
 
 ### Added
@@ -1474,7 +1562,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.9.0...v0.10.0

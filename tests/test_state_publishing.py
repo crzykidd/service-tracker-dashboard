@@ -87,7 +87,7 @@ def test_first_result_publishes_check_entry_and_summary(app, factory):
     assert entry["source"] == "manual" and entry["dashboard_url"] == f"/edit/{eid}"
     assert entry["checks"] == {"up": 1, "down": 0, "unknown": 0}
     assert json.loads(sent["std/summary"]) == {"up": 1, "degraded": 0, "down": 0, "unknown": 0,
-                                               "none": 0, "total": 1}
+                                               "none": 0, "total": 1, "updates": 0}
 
 
 def test_unchanged_result_does_not_publish(app, factory):

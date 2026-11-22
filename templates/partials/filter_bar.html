@@ -55,6 +55,15 @@
         Show URL-less
       </label>
 
+      {% if image_updates_on %}
+      <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
+        <input type="checkbox" id="updatesToggle" data-param="updates"
+               class="view-control h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+               {% if updates_filter %}checked{% endif %}>
+        Updates available (<span id="updatesCount">{{ updates_available }}</span>)
+      </label>
+      {% endif %}
+
       <label class="flex items-center gap-2 text-sm text-gray-300 select-none cursor-pointer">
         <input type="checkbox" id="showUptimeToggle"
                class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"

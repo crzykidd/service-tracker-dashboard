@@ -37,7 +37,7 @@ claude mcp add std -s user \
 claude mcp add std -s user \
   -e STD_URL=http://std.lan:8815 \
   -e STD_API_KEY=std_xxxxxxxx \
-  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.11.0/mcp/std_mcp.py
+  -- uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.12.0/mcp/std_mcp.py
 ```
 
 Updating means changing the tag in that URL (and re-running `claude mcp add`).
@@ -109,13 +109,15 @@ Read (any key): `list_entries`, `get_entry`, `health_summary`,
 `list_streams`, `get_stream`, `preview_stream`, `list_stream_blocks`,
 `list_stream_offers`, `list_stream_unmatched_items` (inventory streams),
 `backup_settings`, `list_backups`, `export_config` (the export of your settings as
-JSON, never any secret; STD API revision 4),
+JSON, never any secret; STD API revision 4), `list_image_updates` (which image references
+have a newer image available; the image update check is off by default; STD API revision 5),
 `get_config` (secrets are masked), `server_info` (the
 versions of this script and of your STD, and whether they match).
 
 Write (write key only): `create_manual_entry`, `update_entry`, `delete_entry`
 (soft by default), `unlink_entry`, `restore_entry`, `add_check`, `update_check`, `delete_check`,
-`run_checks`, `upsert_group`, `set_widget`, `remove_widget`,
+`run_checks`, `run_image_update_check` (check the registries for newer images now,
+throttled), `upsert_group`, `set_widget`, `remove_widget`,
 `set_exposure_settings`, `test_notification_channel`, `purge_notification_channel`,
 `purge_entry_notifications`, `purge_stream_notifications`, `delete_notification_channel`,
 `update_notification_channel`, `scan_notification_orphans`, `clear_notification_orphans`, `update_stream`, `enable_stream`, `disable_stream`,

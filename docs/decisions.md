@@ -5,6 +5,188 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-21 — Image update over MQTT and Home Assistant (img-04)
+
+- **Sync trigger: add the computed columns to `notify_state._ENTRY_ATTRS`** (`image_ref`,
+  `image_update_policy`, `image_update_state`, `image_update_latest`, `image_update_kind`) instead of
+  calling `request_sync` from the job. `image_update._set` writes only a changed value, so the
+  commit listener fires only on a real change, and the 2 s debounce collapses any burst into one
+  sync: no double sync, and the job (which already commits) never touches the publisher.
+- **Toggle:** `image_update.on_settings_changed` requests a forced sync when the effective switch
+  flips (both the UI and the API call it).
+- **Switch off withdraws the hub "Updates available" sensor** as well as the entities (consistent,
+  and an operator who never enables the check sees no new entity). `summary.updates` stays in the
+  topic, as 0; the key is additive and always present.
+- **`pinned` shows `@<7 hex>` on both sides**, not null: nothing is meant to update, so HA shows an
+  up-to-date entity instead of "unknown". `unknown` and `error` stay null.
+- **The image topic follows every active entry with a shown state, not only `ha_publish` ones**,
+  matching the other entry topics; `ha_publish` gates only the discovery entity.
+- **Entity existence = image topic existence** (effective state not `off`/none, `ha_publish`), so
+  the entity never points at a topic that is not there.
+- **Purge:** the image topic is cleared by the entry/stream purge only when it is remembered as
+  published, so purge counts for installs with the check off are unchanged; the `update` config is
+  cleared through the remembered `ha_topics` like the other entry configs. The orphan scan
+  recognises `entry/<id>/image` as an STD topic shape.
+- **`checked_at` can lag:** it is in the payload but not a sync trigger (a sync per daily run for
+  every entry would publish when nothing meaningful changed); it refreshes on the next publish.
+- Existing test `test_first_result_publishes_check_entry_and_summary` now expects `updates: 0`
+  in the summary (additive key).
+
+---
+
+## 2026-11-21 — Image update UI (img-03)
+
+- **Check now is a fetch POST with a toast, not a form redirect.** The three dashboard views
+  render no flash messages (only Settings and Add/Edit do), so a redirect would lose the
+  throttle message. `static/js/image_update.js` (delegated, so it also works in the
+  fetched Compact dialog) posts with the meta CSRF token and builds a toast. The routes
+  answer JSON: 202, 409 (off or nothing to check), 429 with `Retry-After`.
+- **The `?updates=true` filter is ignored while the check is off**, as well as the toggle
+  being hidden. The stored `image_update_state` outlives the switch (img-02), so honouring
+  a bookmarked `?updates=true` would filter on stale answers. The predicate itself stays a
+  plain test on the stored column; the route drops it when off.
+- **The view tabs carry only `?updates=true`**, not the status/source/group filters (those
+  have never followed the tabs). Widening that to every filter is a separate change.
+- **No live "matches" preview.** The page shows what matched at the last check (the saved
+  pattern's stored pool, or the newer tags of the running shape) and says a changed pattern
+  applies at the next check. A preview of unsaved text would need the registry.
+- **Edit block only saves when `image_update_form` is posted**, so a client posting the
+  older edit form never resets policy, scope or pattern. Validation runs before any field is
+  changed, like the image repo URL.
+- **The badge tooltip is built in Python (`image_update_ui`)**, not the template, so the
+  tag and digest wording lives once and is the `aria-label` too.
+- **Rendering N+1:** the view query `selectinload`s `ServiceEntry.image_reference`
+  (the digest tooltip and the details read its times), and the enabled flag is cached in `g`.
+  `test_view_query_count_stays_flat` guards all three views.
+- **The Settings page needs no new settings helper:** save goes through `image_update.save_settings`
+  and `on_settings_changed`, as the API does; with the env var set the submitted switch is
+  ignored and the control renders disabled with the env lock text.
+
+---
+
+## 2026-11-21 — Image update check engine (img-02)
+
+- **Where the columns live.** Observed (`image_running_digest`, `image_info`), operator
+  (`image_update_policy`, `image_tag_pattern`, `image_update_scope`) and computed
+  (`image_update_*`) columns are on `service_entry`, per design 6.2; `image_reference`
+  holds only the remote facts per canonical reference (design 6.1). The two are joined
+  by `image_ref = ref` with a read-only ORM relationship that carries no database FK.
+  `image_reference.ref` is `String(512)` (matches `service_entry.image_ref`; the design said 400).
+  The ORM attribute for the `registry` column is `registry_name` (`registry` is reserved
+  on a declarative class).
+- **Extra computed column `image_update_detail` (JSON: reason, model, rebuilt).** Not in
+  the design's list. Without it "unknown, with a reason" and the muted "rebuilt" note could
+  only be derived per read by re-running the model for every entry in every list; stored,
+  the serializer and the UI read one column. Same transaction as the state, so they
+  cannot disagree.
+- **Switched off means shown as `off`, stored results kept.** `effective_state()` overlays
+  `off` while the check is disabled; the stored columns are not rewritten, so turning it
+  back on shows the last answers at once. The register recompute and local recomputes
+  therefore run whether or not the check is on (no network). `img-03` must apply the same
+  overlay to the `?updates=1` filter (the stored `image_update_state` is not enough on
+  its own) and to badges.
+- **Retention skips while the check is off.** `last_wanted_at` is only refreshed by a run,
+  so pruning at 30 days while the check is off would delete the stored results the design
+  promises to keep. Pruning resumes after it is turned on.
+- **Candidates are stored with a per-pattern pool.** The design stores up to 50 newer tags
+  of the running skeleton, but a per-entry pattern *replaces* the skeleton rule, so its
+  candidates may lie outside that set. The run therefore also stores up to 50 per distinct
+  pattern in use (`candidates.patterns[<regex>]`). A scope change recomputes locally. A
+  pattern that has no stored pool yet (just saved) shows `unknown` "applies at the next
+  check" until a run; a live "matches" preview for an unsaved pattern is not possible from
+  stored data alone.
+- **Nested-quantifier rule.** A repeat that can run more than once (`+`, `*`, `{n,}`,
+  `{n,m}` with m > 1) containing a repeat of variable length is rejected, found by walking
+  `re._parser`'s tree (a regex heuristic is the fallback where that module is missing).
+  `(\d{2})+` and `(-alpine)?` pass; `(\d+\.)+` does not. Tags over 128 characters are
+  never evaluated, which bounds the cost of anything that slips through.
+- **A failed HEAD does not fail a tag-model reference.** For the tag model the HEAD only
+  feeds the muted "rebuilt" note, so a 404 or timeout there leaves the tag result intact;
+  for the digest model it is the whole check and fails the reference.
+- **What a run requests.** Digest model with no running digest, pinned references and
+  policy `off` make no request (their state is `unknown`/`pinned`/`off` without one). A
+  tag-model reference is HEAD-ed too only when some entry on it reports a running digest.
+- **Backoff slack.** A reference is skipped when `next_check_at` is more than one hour in
+  the future. With the job's 30-minute jitter a 1-day backoff would otherwise skip the next
+  daily run (24 h later minus jitter) and make it 2 days. So "skipped for 1, 2, 4 days"
+  means the retries happen 1, 2, 4 days after the failure.
+- **Manual and nudge runs are one-shot jobs** (`DateTrigger`, id `image_update_run_job`),
+  not `modify_job(next_run_time=now)` as the design sketched: the daily interval job keeps
+  its own cadence. Pending requests (everything / never-checked / specific references) live
+  in memory behind `_STATE_LOCK` and are drained by whichever run starts next, so a request
+  that arrives during a run is served by a follow-up run. Throttle clocks are in memory
+  too: a restart clears them (politeness limit, not a security control).
+- **`image_update_last_run` is saved for full and nudge runs**, not for single-reference
+  Check now, so an entry check never moves the "24 h after the last run" start.
+- **Digest `latest` is stored as `sha256:<12 hex>`**; `img-04` builds `<tag>@<7 hex>` from it.
+- **`image_info.source`** is length-limited by the schema but only an http(s) value is
+  stored (a git@ URL is dropped, not a 400: a weird OCI label must not fail a register).
+  `id`, `created`, `version`, `revision` are length-limited only; only `repo_digests` items
+  have a strict pattern (the design). `repo_digests` is reduced to the running digest and
+  not stored.
+- **Register 400s no longer carry validator `ctx`.** A `field_validator` error puts the
+  raised `ValueError` in `errors()[i]["ctx"]`, which is not JSON; the handler now calls
+  `errors(include_context=False)`. (The first validator on the register schema exposed it.)
+- **Check now with the check off is a 409**, not a quiet no-op; a throttled one is a 429
+  with `Retry-After` and `details.retry_after_seconds`.
+- **PRD section is new §24**, appended, so §21 to §23 and their many cross-references keep
+  their numbers.
+
+---
+
+## 2026-11-21 — Image reference parser (img-01)
+
+- **Legacy columns map from the parse like this:** `image_name` = last path component,
+  `image_owner` = everything before it (`org/team` for `ghcr.io/org/team/app`),
+  `image_registry` = the registry host[:port]. Docker Hub keeps the old shape: registry
+  stays NULL (not `docker.io`) and the implicit `library` owner is NULL, so existing
+  entries, `image_repo.py` and the display don't change meaning; the canonical string
+  lives in the new `image_ref`. Rejected: storing `docker.io` / `library` in the legacy
+  columns (rewrites every existing Hub row's meaning for no gain).
+- **`image_tag` now defaults to `latest`** when the reference has neither tag nor digest
+  (it was NULL), matching the canonical string; a digest-only reference leaves it NULL.
+- **`image_ref` is `String(512)` and indexed.** The prompt said 512 and no index unless
+  design section 6 asks; the design asks for an index (the check groups entries by
+  reference) and says 400. 512 wins on length (a superset); the index follows the design.
+- **Register overwrites `image_ref` only when it carries `image_name`**, like the other
+  `image_*` fields, so an absent field never clobbers it; an invalid string sets NULL.
+- **Not exported or imported**: it is observed (design 6.2), like the other `image_*` columns.
+- **Backfill reimplements the rules inside the migration** (migrations stay independent of
+  app code) and skips rows the old parser mangled (owner that is a host, tag with a `/`,
+  name with `@`); the next register fixes those.
+- **Nested GHCR links:** `ghcr.io/org/team/app` is the package `team/app` under `org`, so
+  the package segment is percent-encoded (`team%2Fapp`). Docker Hub nested namespaces and
+  registries with a port get no link.
+- **The conftest `fake_resolve` is left as is;** register reads `image_ref` with `.get`.
+
+---
+
+## 2026-11-21 — Image repo link (GitHub #6)
+
+- **GHCR uses `github.com/users/<owner>/packages/container/package/<name>`.** Checked
+  against github.com: the `/users/` form redirects to the right package page for both a
+  user (`crzykidd/service-tracker-dashboard`) and an organisation (`home-assistant`,
+  which lands on `home-assistant/core`), and `/orgs/` gives the same result. The
+  `<owner>/<name>/pkgs/container/<name>` form is wrong whenever the repo name differs
+  from the package name.
+- **Only four registries are derived** (Docker Hub, `ghcr.io`, `quay.io`, `lscr.io` for
+  `linuxserver`). `gcr.io`, `mcr.microsoft.com` and `registry.gitlab.com` have no stable,
+  browsable page URL from `owner/name` alone (GitLab nests groups), and private registries
+  must never be guessed; those entries get no link unless the operator sets the override.
+  A two-part reference whose "owner" looks like a host (`ghcr.io/app`, `localhost:5000/app`;
+  the notifier-side parser files it as owner/name) is treated as unknown, not as a Hub user.
+- **The container name is not linked.** It already opens the entry's URL on every view and
+  is not in the shared facts partial; the image string carries the link. An entry with an
+  override but no Docker image gets a "Repo" row instead.
+- **The override is operator-owned for every kind** in export/import (unlike `image_icon`,
+  which register rewrites on an unlocked Docker entry), because register never writes it.
+  It is left out of the legacy `ServiceEntry.to_dict()` list on purpose; that format is only
+  read for old files.
+- **`API_REVISION` 5**, labelled "next after 0.11.0" until `/release-prep` assigns the
+  version. The MCP `update_entry` field list gained `image_repo_url`.
+
+---
+
 ## 2026-11-21 — CodeQL findings on the 0.11.0 pull request
 
 CodeQL raised 15 alerts on PR #82. Fixed: an unexpected exception during import apply no

@@ -92,6 +92,13 @@
         <p class="mt-1 text-xs text-gray-500">Will attempt auto-match if left blank.</p>
       </div>
 
+      <!-- Image repo URL -->
+      <div class="mb-5">
+        <label for="image_repo_url" class="block text-sm font-medium text-gray-400 mb-1">Image repo URL</label>
+        <input type="url" name="image_repo_url" id="image_repo_url" maxlength="512" class="input-clean" placeholder="https://github.com/owner/project" value="{{ fv('image_repo_url', '') }}">
+        <p class="mt-1 text-xs text-gray-500">Optional. Where the entry's image link points.</p>
+      </div>
+
       <!-- Locked Checkbox -->
       <div class="mb-6">
         <div class="flex items-center">

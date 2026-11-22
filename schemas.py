@@ -5,9 +5,12 @@ this is the only register surface — the legacy /api/register compat
 shim has been removed.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+_REPO_DIGEST_RE = re.compile(r"^[^@\s]{1,255}@sha256:[0-9a-f]{64}$")
 
 
 class NetworkMembership(BaseModel):
@@ -57,6 +60,33 @@ class ExposureObservation(BaseModel):
     path_prefix: Optional[str] = None
     auth: Optional[str] = None
     details: Optional[Dict[str, Any]] = None
+
+
+class ImageInfo(BaseModel):
+    """What the notifier knows about the image a container was created from (API revision 5,
+    notifier 0.5.0+). Observation only: STD stores it and never lets an operator edit it.
+
+    `repo_digests` are Docker's raw `RepoDigests` (`<repo>@sha256:<64 hex>`); STD picks the
+    one whose repository matches the entry's image. A malformed item is a 400. The other
+    fields are display facts (the OCI image labels) and only length-limited.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: Optional[str] = Field(default=None, max_length=100)           # local image id, sha256:<hex>
+    repo_digests: Optional[List[str]] = Field(default=None, max_length=20)
+    created: Optional[str] = Field(default=None, max_length=64)       # image Created, ISO 8601
+    version: Optional[str] = Field(default=None, max_length=128)      # org.opencontainers.image.version
+    revision: Optional[str] = Field(default=None, max_length=128)     # org.opencontainers.image.revision
+    source: Optional[str] = Field(default=None, max_length=512)       # org.opencontainers.image.source
+
+    @field_validator("repo_digests")
+    @classmethod
+    def _check_repo_digests(cls, value):
+        for item in value or ():
+            if not _REPO_DIGEST_RE.match(item):
+                raise ValueError("repo_digests items must look like '<repo>@sha256:<64 hex>'")
+        return value
 
 
 class RegisterPayload(BaseModel):
@@ -113,3 +143,8 @@ class RegisterPayload(BaseModel):
     # "this container has no interpreter matches — clear all
     # existing rows."
     exposure_observations: Optional[List[ExposureObservation]] = None
+
+    # Optional — the image the container runs (API revision 5, notifier 0.5.0+).
+    # None (absent or null) means "no update — keep the stored values"; present replaces
+    # them. An older notifier never sends it, so entries stay "unknown" for digest tags.
+    image_info: Optional[ImageInfo] = None

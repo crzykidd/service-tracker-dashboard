@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
+import image_update
 import jobs
 import synthesizer
 from extensions import csrf, db
@@ -194,6 +195,7 @@ def upsert_service(canonical, app):
     mode = app.config.get("register_field_ownership", "user_wins")
 
     run_container_check = False
+    nudge_image_check = False
     with _UPSERT_LOCK:
         group_obj = None
         group_name = canonical.get("group_name")
@@ -220,6 +222,7 @@ def upsert_service(canonical, app):
             .first()
         )
 
+        old_image_ref = entry.image_ref if entry is not None else None
         if entry is not None:
             if entry.is_static:
                 logger.info(
@@ -296,6 +299,10 @@ def upsert_service(canonical, app):
                 entry.image_icon = image_meta["image_icon"]
             if image_meta["image_tag"]:
                 entry.image_tag = image_meta["image_tag"]
+            if canonical.get("image_name"):
+                # Observed: the canonical reference of the image the notifier reported
+                # (NULL when it is not a valid reference). Absent image_name leaves it be.
+                entry.image_ref = image_meta.get("image_ref")
 
             # Observed container facts — pure overwrite, no ownership.
             # `key in canonical` (rather than a truthy check) so the
@@ -348,6 +355,7 @@ def upsert_service(canonical, app):
                 image_name=image_meta["image_name"],
                 image_icon=image_meta["image_icon"],
                 image_tag=image_meta["image_tag"],
+                image_ref=image_meta.get("image_ref"),
                 sort_priority=canonical.get('sort_priority'),
                 notifier_reported_group_name=canonical.get('group_name'),
                 notifier_reported_sort_priority=canonical.get('sort_priority'),
@@ -372,7 +380,13 @@ def upsert_service(canonical, app):
         synthesizer.replace_exposures(entry, canonical.get("exposure_observations"))
         synthesizer.synthesize_for_entry(entry)
 
+        # Image update check: store image_info, then recompute this entry's state from the
+        # stored reference row (no network). A new row (no previous reference) passes None.
+        nudge_image_check = image_update.apply_register(entry, canonical, old_image_ref)
+
         db.session.commit()
+        if nudge_image_check:
+            image_update.maybe_nudge(app)
         if run_container_check:
             # In-memory request only; the scheduler thread writes the result.
             jobs.request_run([entry.container_check.id])
@@ -402,7 +416,8 @@ def api_v1_register():
     try:
         payload = RegisterPayload.model_validate(raw)
     except ValidationError as e:
-        errors = e.errors()
+        # include_context=False: a validator's ValueError sits in `ctx` and is not JSON.
+        errors = e.errors(include_context=False)
         unknown_keys = [
             err["loc"][0] for err in errors
             if err.get("type") == "extra_forbidden" and err.get("loc")

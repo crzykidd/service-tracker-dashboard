@@ -176,6 +176,13 @@ class EntryRecord(_Rec):
     is_static: bool = False
     description: str | None = None
     image_icon: str | None = None
+    image_repo_url: str | None = None   # operator-owned override, all kinds
+    # Image update check, Docker entries only, written only when not the default
+    # (policy `auto`, no scope, no pattern). The observed digest and the computed state are
+    # never exported: the notifier and the next check rebuild them.
+    image_update_policy: str | None = None
+    image_update_scope: str | None = None
+    image_tag_pattern: str | None = None
     group: str | None = None
     sort_priority: int | None = None
     internalurl: UrlValue | None = None
@@ -298,6 +305,11 @@ def _entry_record(entry):
         kind=kind, identity=identity, is_static=bool(entry.is_static),
         description=entry.description or None,
         image_icon=(entry.image_icon or None) if icon_owned else None,
+        image_repo_url=entry.image_repo_url or None,
+        image_update_policy=(entry.image_update_policy if kind == "docker"
+                             and (entry.image_update_policy or "auto") != "auto" else None),
+        image_update_scope=entry.image_update_scope if kind == "docker" else None,
+        image_tag_pattern=(entry.image_tag_pattern or None) if kind == "docker" else None,
         group=entry.group.group_name if entry.group else None,
         sort_priority=entry.sort_priority,
         internalurl=_url_value(entry, "internalurl"),

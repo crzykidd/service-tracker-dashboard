@@ -2,6 +2,9 @@
 `mgmt_schemas.py` (v0.8.0, PRD 14). No queries beyond what is eager-loaded,
 except `entry_detail_out` (exposures, widget)."""
 
+from flask import g, has_request_context
+
+import image_update
 import notify
 from extensions import db
 from health_history import effective_target, iso_z
@@ -15,6 +18,7 @@ from mgmt_schemas import (
     EntryOut,
     ExposureOut,
     GroupOut,
+    ImageUpdateOut,
     InventoryOut,
     NotificationChannelOut,
     NotifierOut,
@@ -107,6 +111,41 @@ def inventory_out(entry: ServiceEntry) -> InventoryOut | None:
     }
 
 
+def _image_update_enabled():
+    """The check's on/off switch, read once per request (a missing settings row is not cached
+    by the session, so reading it per entry would be one query each)."""
+    if not has_request_context():
+        return image_update.is_enabled()
+    if "image_update_enabled" not in g:
+        g.image_update_enabled = image_update.is_enabled()
+    return g.image_update_enabled
+
+
+def image_update_out(entry: ServiceEntry) -> ImageUpdateOut | None:
+    """The image update block of a Docker entry (None for manual and stream entries)."""
+    if not entry.is_docker:
+        return None
+    row = entry.image_reference if entry.image_ref else None
+    detail = entry.image_update_detail if isinstance(entry.image_update_detail, dict) else {}
+    return {
+        "state": image_update.effective_state(entry, _image_update_enabled()),
+        "latest": entry.image_update_latest,
+        "kind": entry.image_update_kind,
+        "since": iso_z(entry.image_update_since),
+        "checked_at": iso_z(row.checked_at) if row else None,
+        "error": row.last_error if row else None,
+        "reason": detail.get("reason"),
+        "model": detail.get("model"),
+        "rebuilt": bool(detail.get("rebuilt")),
+        "policy": entry.image_update_policy or "auto",
+        "scope": entry.image_update_scope,
+        "tag_pattern": entry.image_tag_pattern or None,
+        "running_digest": entry.image_running_digest,
+        "ref": entry.image_ref,
+        "provider": entry.image_update_provider,
+    }
+
+
 def entry_out(entry: ServiceEntry) -> EntryOut:
     group = entry.group
     return {
@@ -121,6 +160,8 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "internalurl_source": entry.internalurl_source,
         "externalurl_source": entry.externalurl_source,
         "icon": entry.image_icon or None,
+        "image_repo_url": entry.image_repo_url or None,
+        "image_repo_link": entry.image_repo_link,
         "sort_priority": entry.sort_priority,
         "locked": bool(entry.is_static),
         "ha_publish": bool(entry.ha_publish),
@@ -128,6 +169,7 @@ def entry_out(entry: ServiceEntry) -> EntryOut:
         "last_updated": _local_iso(entry.last_updated),
         "deleted_at": _local_iso(entry.deleted_at),
         "inventory": inventory_out(entry),
+        "image_update": image_update_out(entry),
         "health": health_out(entry),
         "checks": [check_out(entry, c) for c in entry.checks],
     }
@@ -149,6 +191,8 @@ def entry_detail_out(entry: ServiceEntry) -> EntryDetailOut:
         "image_owner": entry.image_owner,
         "image_name": entry.image_name,
         "image_tag": entry.image_tag,
+        "image_ref": entry.image_ref,
+        "image_info": entry.image_info,
         "reported_group_name": entry.notifier_reported_group_name,
         "reported_sort_priority": entry.notifier_reported_sort_priority,
         "networks": entry.networks,
