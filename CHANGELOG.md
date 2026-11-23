@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3] — 2026-11-23
+
+### Changed
+
+- The MCP server (`mcp/std_mcp.py`) now uses the MCP Python SDK 2.x. Tools are unchanged. If you run it with `uv run`, the next run fetches the new dependencies; if you installed `mcp/requirements.txt` into a virtualenv yourself, reinstall it.
+
 ## [0.13.2] — 2026-11-22
 
 ### Security
@@ -1653,7 +1659,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.3...HEAD
+[0.13.3]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...v0.13.0

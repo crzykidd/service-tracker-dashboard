@@ -5,6 +5,28 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-23 — MCP server ported to the `mcp` SDK 2.x (replaces Dependabot #93)
+
+- **Why not take #93.** 2.x renames `FastMCP` to `MCPServer` (`mcp.server.mcpserver`) and removes
+  `mcp.server.fastmcp` outright, so a bare bump broke the server and the tests. The port is the
+  import, the class name and the `ToolError` import path (`mcp.server.mcpserver.exceptions`); tool
+  registration (`server.tool()`) and `server.run(transport="stdio")` are unchanged.
+- **`httpx` kept, not `httpx2`.** 2.x depends on `httpx2` for its own client side; the server
+  half does not use it. `StdClient` stays on `httpx==0.28.1` (the app and the tests use it too:
+  `MockTransport`, `WSGITransport`). Both are installed side by side; the MCP lock grows by
+  `httpx2`, `httpcore2`, `mcp-types`, `opentelemetry-api`, `truststore`. Moving to `httpx2` would
+  gain nothing and force the test transports to change.
+- **Re-locked with `-c requirements.txt`** (Dependabot's lock dropped the constraint): no shared
+  package (pydantic, anyio, starlette, ...) moved, so no app dependency bump was needed.
+- **Tests use the public in-process `Client(server)`** instead of `server.call_tool()` /
+  `list_tools()`. 2.x returns a `CallToolResult` with `is_error` rather than raising; the `call`
+  helper re-raises `ToolError(text)` on `is_error` so every existing error assertion keeps its meaning.
+- **Protocol versions.** 2.x still negotiates 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 over
+  the initialize handshake (checked against the real stdio server), and 2026-07-28 with
+  `Client(mode="auto")`, so older clients such as Claude Code keep working.
+
+---
+
 ## 2026-11-22 — Image patching at build time, Dependabot on dev
 
 - **`apt-get upgrade` in the Dockerfile.** `python:3.11-slim` lags Debian security updates between
@@ -19,7 +41,7 @@ workarounds — newest at top. One entry per decision.
   now because operators occasionally `pip list` inside the container to debug.
 - **`.dockerignore` excludes `.git`, `tests/`, `docs/`, `prompts/`, `.claude/`, caches.** Only
   `CHANGELOG.md` is read at runtime (the What's New popup); it stays.
-- **Dependabot version updates target `dev`** (pip at `/` and `/mcp`, docker, github-actions; weekly),
+- **Dependabot version updates target `dev`** (pip at `/`, docker, github-actions; weekly; grouped: one PR per ecosystem, pip majors on their own; no `/mcp` entry because the root scan already follows `requirements-dev.txt` → `-r mcp/requirements.txt`, and a second entry opened every mcp PR twice),
   matching docker-api-notifier. Python minor/major base bumps are ignored: leaving 3.11 is deliberate.
   Security-update PRs always target `main`; leave them off in the repo settings if they conflict with
   the protected-main flow.

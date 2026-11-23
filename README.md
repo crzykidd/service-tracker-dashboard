@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.13.2-blue)
+![Version](https://img.shields.io/badge/version-0.13.3-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -97,6 +97,14 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.13.3 (2026-11-23)
+
+- **MCP server on the MCP Python SDK 2.x.** Tools are unchanged. `uv run` picks up the new
+  dependencies on the next run; if you installed `mcp/requirements.txt` into a virtualenv
+  yourself, reinstall it.
+
+[Full entry](CHANGELOG.md#0133--2026-11-23)
+
 ### v0.13.2 (2026-11-22)
 
 - **Security fixes in the image:**
@@ -115,16 +123,6 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
   with a hardened STD and the notifier behind a read-only socket proxy.
 
 [Full entry](CHANGELOG.md#0132--2026-11-22)
-
-### v0.13.1 (2026-11-22)
-
-- **Ports page:** containers on macvlan, ipvlan or the host network whose image declares no
-  ports (Home Assistant, for example) now show, as "all ports (none declared)" or with the
-  port from the entry's URL when it points at the container's own address.
-- **Network details** (from v0.13.0) need docker-api-notifier 0.6.0 (its next release). If the
-  notifier runs behind a docker-socket-proxy, allow `NETWORKS=1` and `IMAGES=1` (read-only).
-
-[Full entry](CHANGELOG.md#0131--2026-11-22)
 
 ---
 
@@ -779,7 +777,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.2/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.3/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|

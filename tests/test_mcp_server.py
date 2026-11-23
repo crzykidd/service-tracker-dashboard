@@ -17,6 +17,8 @@ from pathlib import Path
 
 import httpx
 import pytest
+from mcp.client import Client
+from mcp.server.mcpserver.exceptions import ToolError
 
 from api_version import API_REVISION
 from tests.test_mgmt_api_keys import _key
@@ -178,12 +180,29 @@ class Fake:
 
 def call(server, name, args=None):
     """Run a tool; the result is the JSON the server put in its text content."""
-    out = asyncio.run(server.call_tool(name, args or {}))
-    return json.loads(out[0].text)
+
+    async def run():
+        async with Client(server) as client:
+            return await client.call_tool(name, args or {})
+
+    result = asyncio.run(run())
+    text = result.content[0].text
+    if result.is_error:
+        # The 1.x server raised the tool's error; keep that contract for the assertions.
+        raise ToolError(text)
+    return json.loads(text)
+
+
+def list_tools(server):
+    async def run():
+        async with Client(server) as client:
+            return (await client.list_tools()).tools
+
+    return asyncio.run(run())
 
 
 def tool_names(server):
-    return {t.name for t in asyncio.run(server.list_tools())}
+    return {t.name for t in list_tools(server)}
 
 
 # --- registration and scope gating ----------------------------------------------
@@ -205,7 +224,7 @@ def test_calls_table_covers_every_tool():
 
 def test_every_tool_has_a_description():
     server = std_mcp.build_server(Fake().client(), "write")
-    for tool in asyncio.run(server.list_tools()):
+    for tool in list_tools(server):
         assert tool.description and len(tool.description) > 20, tool.name
 
 
@@ -548,7 +567,7 @@ def test_instructions_name_the_update_command_when_std_is_newer():
 
 
 def test_stream_tool_descriptions_name_the_observability_fields():
-    tools = {t.name: t.description for t in asyncio.run(std_mcp.build_server(Fake().client(), "read").list_tools())}
+    tools = {t.name: t.description for t in list_tools(std_mcp.build_server(Fake().client(), "read"))}
     for name in ("list_streams", "get_stream"):
         for field in ("last_snapshot_at", "last_applied_at", "last_item_count", "last_error",
                       "last_rejected_at", "last_rejection", "stale", "effective_interval_seconds",
@@ -601,7 +620,7 @@ def test_startup_never_fails_on_a_mismatch(monkeypatch, capsys, version):
     monkeypatch.setenv("STD_API_KEY", "secret")
     monkeypatch.setattr(std_mcp.StdClient, "request", lambda self, *a, **k: who)
     ran = []
-    monkeypatch.setattr(std_mcp.FastMCP, "run", lambda self, transport: ran.append(self))
+    monkeypatch.setattr(std_mcp.MCPServer, "run", lambda self, transport: ran.append(self))
     std_mcp.main()
     err = capsys.readouterr().err
     assert ran and "Version notice" in ran[0].instructions
@@ -614,7 +633,7 @@ def test_startup_line_when_versions_are_equal(monkeypatch, capsys):
     monkeypatch.setenv("STD_API_KEY", "secret")
     monkeypatch.setattr(std_mcp.StdClient, "request", lambda self, *a, **k: {
         "name": "k", "prefix": "p", "scope": "read", "version": std_mcp.MCP_VERSION})
-    monkeypatch.setattr(std_mcp.FastMCP, "run", lambda self, transport: None)
+    monkeypatch.setattr(std_mcp.MCPServer, "run", lambda self, transport: None)
     std_mcp.main()
     err = capsys.readouterr().err
     assert f"connected to STD {std_mcp.MCP_VERSION} as key 'k' (read); std_mcp {std_mcp.MCP_VERSION}" in err
@@ -662,9 +681,8 @@ def test_import_apply_rejects_an_unknown_mode_without_a_request():
 
 
 def test_import_tools_document_the_plan_first_rule():
-    import asyncio
     server = std_mcp.build_server(Fake().client(), "write")
-    tools = {t.name: t for t in asyncio.run(server.list_tools())}
+    tools = {t.name: t for t in list_tools(server)}
     assert "ALWAYS call this first" in tools["import_plan"].description
     assert "import_plan first" in tools["import_apply"].description
 

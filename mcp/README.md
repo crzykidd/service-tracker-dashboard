@@ -16,6 +16,12 @@ Docker image, talks only to `<STD_URL>/api/v1`, and has no database access.
 
 ## Install
 
+The server uses the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 2.x
+(`mcp==2.3.0`, pinned in `requirements.in` and the header of `std_mcp.py`); it still speaks the older
+protocol revisions, so existing MCP clients keep working. After upgrading from an older
+`std_mcp.py`, `uv run` fetches the new dependencies on its next run; a virtualenv install needs
+`pip install -r requirements.txt` again.
+
 The easiest way is [uv](https://docs.astral.sh/uv/). `std_mcp.py` declares its
 own dependencies in a header (PEP 723), so `uv run` fetches them on first use:
 no virtualenv, no `requirements.txt` to copy around. uv caches the dependencies,
