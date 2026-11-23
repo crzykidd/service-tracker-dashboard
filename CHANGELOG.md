@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The MCP server (`mcp/std_mcp.py`) now uses the MCP Python SDK 2.x. Tools are unchanged. If you run it with `uv run`, the next run fetches the new dependencies; if you installed `mcp/requirements.txt` into a virtualenv yourself, reinstall it.
+
 ## [0.13.2] — 2026-11-22
 
 ### Security

@@ -119,6 +119,7 @@
 | 0.109   | 2026-11-22 | §25 (0.13.1 fix, on `dev`, unreleased): macvlan / ipvlan / host-network containers that declare no ports now get a `ports_unknown` row ("all ports (none declared)"); a direct network's ports are also read from the entry's internal / external URL when its host is the container's own address (`port_source` `url`); §18.1 revision 7 row; the 0.14.0 design note renumbered to revision 8. No schema or register wire-contract change. |
 | 0.110   | 2026-11-22 | v0.13.1 released: §25 rows for macvlan / ipvlan / host-network containers that declare no ports (`ports_unknown`, URL-derived ports), API revision 7 assigned to 0.13.1 in §18.1. |
 | 0.111   | 2026-11-22 | v0.13.2 released: image patched at build time (Debian security updates, current pip/setuptools/wheel), dependencies updated, `.dockerignore` keeps repo metadata, tests and docs out of the image; new production example `docker-compose.example.yml` + `.env.example` (validated in CI). No API, schema or wire-contract change. |
+| 0.112   | 2026-11-23 | §14.7 / §15.7 (on `dev`, unreleased): the MCP server is ported to the `mcp` Python SDK 2.3.0 (`MCPServer` replaces `FastMCP`; same tools, names, arguments and results; `httpx` kept for the STD client). No API, schema or wire-contract change. |
 
 ---
 
@@ -2291,7 +2292,7 @@ view of the log is not built yet.
 - **README:** a `claude mcp add` example.
 - **Tests:** each tool runs against a fake HTTP layer, with no network.
 
-**As built (v080-05):** `mcp/std_mcp.py` (FastMCP over stdio, `mcp==1.30.0`, `httpx` client) with its own `mcp/requirements.in` / `requirements.txt` and `mcp/README.md`. Env: `STD_URL`, `STD_API_KEY`, optional `STD_VERIFY_TLS` and `STD_TIMEOUT`. `main()` calls `GET /whoami` and exits with the reason on a bad key; a `read` key registers 9 read tools, a `write` key adds 12 write tools (21 in all). Beyond the §14.7 list: `list_widget_types` (so `set_widget` can be filled in) and `remove_widget`. `update_entry` / `update_check` take a `fields` object so that absent (untouched) and null (clear) stay distinct; `upsert_group` is client-side (list, then create or patch by exact name; optional `new_name`). Errors become tool errors as `HTTP <status> (<meaning>): <error>` plus the API's `details`. `.dockerignore` keeps `mcp/` out of the image; `requirements-dev.txt` includes `mcp/requirements.txt` so `tests/test_mcp_server.py` runs in the CI `Test` job (fake transport for every tool, scope gating, error mapping, every tool's method and path checked against `/api/v1/openapi.json`, and a flow against the real app via `httpx.WSGITransport`). No STD server change, no schema change.
+**As built (v080-05):** `mcp/std_mcp.py` (`MCPServer` over stdio, `mcp==2.3.0` since the 2.x port, `httpx` client; first built on FastMCP and `mcp==1.30.0`) with its own `mcp/requirements.in` / `requirements.txt` and `mcp/README.md`. Env: `STD_URL`, `STD_API_KEY`, optional `STD_VERIFY_TLS` and `STD_TIMEOUT`. `main()` calls `GET /whoami` and exits with the reason on a bad key; a `read` key registers 9 read tools, a `write` key adds 12 write tools (21 in all). Beyond the §14.7 list: `list_widget_types` (so `set_widget` can be filled in) and `remove_widget`. `update_entry` / `update_check` take a `fields` object so that absent (untouched) and null (clear) stay distinct; `upsert_group` is client-side (list, then create or patch by exact name; optional `new_name`). Errors become tool errors as `HTTP <status> (<meaning>): <error>` plus the API's `details`. `.dockerignore` keeps `mcp/` out of the image; `requirements-dev.txt` includes `mcp/requirements.txt` so `tests/test_mcp_server.py` runs in the CI `Test` job (fake transport for every tool, scope gating, error mapping, every tool's method and path checked against `/api/v1/openapi.json`, and a flow against the real app via `httpx.WSGITransport`). No STD server change, no schema change.
 
 **v0.9.0 addition (§15.7):** one-command install with `uv run` (PEP 723 header in `std_mcp.py`), a startup version comparison against `whoami.version`, and a `server_info` tool.
 
@@ -2544,7 +2545,7 @@ expiry, even though the HTTP status is fine.
 ### 15.7 MCP easy install and version check [`v090-09-mcp-easy-install-and-version`] — Delivered in v0.9.0
 
 - **uv install.** `mcp/std_mcp.py` starts with a PEP 723 block
-  (`requires-python >= 3.10`, `mcp==1.30.0`, `httpx==0.28.1`), so
+  (`requires-python >= 3.10`, `mcp==2.3.0`, `httpx==0.28.1`), so
   `uv run std_mcp.py` (or `uv run <raw GitHub URL at a tag>`) needs no virtualenv.
   `requirements.in` / `requirements.txt` stay for CI and the venv path; a test
   asserts the header pins equal `requirements.in`.
@@ -2557,7 +2558,7 @@ expiry, even though the HTTP status is fine.
   same major.minor = `match` (a patch difference is noted only on stderr);
   `std_newer`; `std_older` (a missing `version` means STD older than 0.9.0);
   `unknown` for anything not plain semver. A difference gives one stderr line
-  and one "Version notice" sentence in the FastMCP instructions. It never
+  and one "Version notice" sentence in the server instructions. It never
   refuses to start. The startup line is
   `connected to STD <v> as key '<name>' (<scope>); std_mcp <v>`.
 - **`server_info`** read tool: `{mcp_version, std_version, status, advice}`

@@ -2,5 +2,5 @@
 #   uv pip compile mcp/requirements.in -c requirements.txt -o mcp/requirements.txt
 # (-c keeps shared packages, such as pydantic, on the versions the app pins so the
 # CI Test job can install both files together.)
-mcp==1.30.0
+mcp==2.3.0
 httpx==0.28.1

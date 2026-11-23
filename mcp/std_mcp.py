@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["mcp==1.30.0", "httpx==0.28.1"]
+# dependencies = ["mcp==2.3.0", "httpx==0.28.1"]
 # ///
 """MCP server for the Service Tracker Dashboard management API (PRD 14.7, 15.7).
 
@@ -34,8 +34,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 # httpx logs every request URL at INFO; keep the stdio server quiet.
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -280,8 +280,8 @@ def version_notice(info: dict) -> str | None:
     return f"std_mcp {mine} talking to STD {shown}: update std_mcp.py (see mcp/README.md)"
 
 
-def build_server(client: StdClient, scope: str, version_info: dict | None = None) -> FastMCP:
-    """Create the FastMCP server. Write tools are registered only for a `write` key.
+def build_server(client: StdClient, scope: str, version_info: dict | None = None) -> MCPServer:
+    """Create the MCPServer. Write tools are registered only for a `write` key.
 
     `version_info` is the result of compare_versions from startup; `server_info` reports it
     and the instructions mention a mismatch. Omitted, no version check is reported.
@@ -303,7 +303,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
             " Version notice: the STD version could not be compared with this MCP server "
             f"({version_info['mcp_version']}). If a tool seems missing or returns 404, tell the "
             "operator to update the MCP server (std_mcp.py).")
-    server = FastMCP(
+    server = MCPServer(
         "std",
         instructions=(
             "Tools for a Service Tracker Dashboard (STD). Entries are the dashboard's services: "
