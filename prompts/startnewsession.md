@@ -1,126 +1,134 @@
-# Start a new session: v0.12.0 released; next up, the "ports in use" page (#58)
+# Start a new session: v0.13.3 released; next up, STD 0.14.0 (container moves + label settings)
 
 Say "read prompts/startnewsession.md and start".
 
-## Where things stand (2026-11-21)
+## Where things stand (2026-11-23)
 
-- **Released:** v0.12.0 on `main`.
-  - Tag `v0.12.0` is on merge commit `b01833e` (PR #83), and the GitHub release is
-    published.
-  - The `:latest`, `:0.12.0` and `:0` images are in GHCR.
-  - `dev` holds nothing new since the release.
-- **What 0.12.0 shipped** (the CHANGELOG `[0.12.0]` section has the full list):
-  - **Image repo link (#6, closed).** The image in an entry's details links to its
-    repository page (Docker Hub, GHCR, quay, lscr), and an operator can override it with
-    `image_repo_url`.
-  - **Image reference parser** (`image_ref.py`). Registries with ports, nested paths and
-    digests parse correctly, and the canonical reference is kept in
-    `service_entry.image_ref`.
-  - **Image update check** (PRD §24; design `docs/design/2026-11-21-image-update-check.md`).
-    It is **off by default** and runs once a day.
-    - Pinned version tags are compared against the registry's tag list.
-    - Moving tags (`latest` and the like) are compared by digest, which needs the
-      notifier to send `image_info`.
-    - Results show as badges, an Updates filter, a details line, an edit block, and
-      Settings → Sources → Image updates.
-    - Everything is also in the management API and MCP, plus an MQTT topic and Home
-      Assistant `update` entities.
-    - The update source is a provider seam: `registry` is built in, and What's Up Docker
-      or Komodo could be added later.
-  - API revision 5.
-- **Cross-repo:**
-  - The notifier 0.5.0 work (send `image_info`, gated on `/api/v1/meta`, and log STD's
-    API revision) is queued at
-    `~/projects/docker-api-notifier/prompts/2026-11-21-std-image-info.md`. It's
-    untracked and runs from a session **in the notifier repo**, not from here.
-  - Until it ships, `latest`-style entries show "unknown: needs notifier 0.5.0".
-  - The notifier repo was brought up to the crzynet standards; it is at v0.4.3.
+- **Released:** STD **v0.13.3** on `main`, with images `:latest`, `:0.13.3` and `:0` in
+  GHCR. `dev` holds only the Dependabot `setup-python` 6 → 7 bump (#96) since then.
+- **Notifier:** docker-api-notifier is at **v0.7.1**. It's an independent app with its own
+  sessions.
+  - 0.6.0 sends network details (driver, IPv4, IPv6, MAC; gated on `network_details`),
+    adds `dockernotifier.std.skip`, fixes the label collision and bool-typo bugs, and warns
+    once when a socket proxy blocks a lookup.
+  - 0.7.0 moved its image to Alpine, added `HEALTH_ALLOWED_IPS` and a production compose
+    example.
+  - 0.7.1 exits cleanly on SIGTERM.
+- **What shipped this round** (the CHANGELOG has the detail):
+  - **0.13.0:**
+    - the **Ports page** (#58, closed): grouped or flat view, state-first sort, the
+      "not published" label, conflicts counted, filters remembered per browser,
+      `GET /api/v1/ports` and the `list_ports` MCP tool;
+    - **network details on register** (`driver`, `ip_address`, `ipv6_address`,
+      `mac_address`; feature `network_details`);
+    - host-network and macvlan/ipvlan ("direct") rows on the Ports page;
+    - the **image update check fix**: it never ran from the scheduler before (it was
+      missing an app context);
+    - Check now **asks to confirm** within its cooldown instead of refusing.
+  - **0.13.1:** rows for macvlan/host-network containers that declare no ports (for
+    example Home Assistant), shown as "all ports (none declared)" or with the port taken
+    from the entry's URL when the URL points at the container's own IP. API revision 7.
+  - **0.13.2:**
+    - the image is **patched at build time** (`apt-get upgrade`, current
+      pip/setuptools/wheel), leaving no fixable HIGH/CRITICAL CVE;
+    - dependencies updated;
+    - a slimmer image (`.dockerignore`);
+    - `docker-compose.example.yml` + `.env.example`: a production example with a
+      hardened STD (all capabilities dropped except `DAC_OVERRIDE`, `no-new-privileges`,
+      a healthcheck) and the notifier behind a read-only socket proxy. CI validates it.
+  - **0.13.3:** the MCP server moved to the **`mcp` SDK 2.x** (`MCPServer`; tools
+    unchanged).
+- **Tooling:**
+  - **Dependabot**, configured in `.github/dependabot.yml`:
+    - PRs are grouped weekly, one per ecosystem, against `dev`. pip majors come on
+      their own.
+    - The root pip scan also covers `mcp/`, so there's no separate `/mcp` entry.
+    - Dependabot reads the config from `main` only.
+  - The GitHub Actions are all on their current majors.
+- **Live setup (emmett):**
+  - STD runs on **em-docker01**; the notifier on **em-dockha01** runs `:dev`.
+  - The emmett notifier socket proxies (`docker-compose` repo, `emmett/host-utils/
+    docker-api-notifier/*/compose.yml`, commit `c5463bf`) now allow `NETWORKS=1` and
+    `IMAGES=1`. The Woodinville stacks are deliberately left alone, since they'll be
+    rebuilt as they move.
+  - SSH from crzydev to em-docker01 and em-dockha01 works (key installed 2026-11-22).
+    Use it for **read-only** diagnosis.
 
-## This session's job: the "ports in use" page (GitHub #58)
+## This session's job: STD 0.14.0
 
-Issue #58 ("track ports used by docker containers") is partly delivered.
+The design is `docs/design/2026-11-22-moves-and-label-settings.md`. It covers:
+- container moves and renames (detect, then merge, never automatically);
+- per-field provenance, so a UI edit always beats a label;
+- fixing the register clobbers of the icon and the health toggles;
+- new label-driven settings at **API revision 8**: description, image update
+  policy/scope/pattern, `image_repo_url`, URL-check settings, `attributes`. Revision 7 went
+  to 0.13.1.
 
-**What exists today:**
-- Since STD 0.6.0 and notifier 0.4.0, the register payload carries `exposed_ports` (e.g.
-  `["5173/tcp"]`) and `published_ports` (e.g. `[{"container_port", "protocol",
-  "host_ip", "host_port"}]`).
-- These are stored as JSON columns on `service_entry`. They are pure observation: the
-  notifier owns them, they're overwritten on every register, and there's **no UI
-  editing** (CLAUDE.md Register Contract Rules).
-- 0.11.0 shows them per entry in the details. A port that is only exposed shows as
-  "(exposed)".
-
-**Still open:** one page listing ports across **all hosts and containers**, for example
-to answer "what's on 8080 on host X" or "which ports are free". The issue body says "Need
-to update DAN to push ports in use" (DAN = docker-api-notifier). Check whether that's
-still needed: the notifier may already send everything required. If anything new is
-needed from the notifier, the ordering rule applies: STD accepts it first.
-
-**Suggested approach** (this is a new feature, so it gets a handoff prompt, per
-CLAUDE.md):
-1. **Scope it with the operator first.** Questions to ask:
-   - Which view: per host, or one flat table?
-   - Columns: host, host_ip, host port, container port, protocol, container, entry link.
-   - Should exposed-only ports appear?
-   - Filters, search, sort.
-   - **Conflict highlighting:** the same host port on the same host from two entries.
-   - Manual and stream entries: do their URL ports count?
-   - Stale or stopped containers, and soft-deleted entries.
-   - Is a management API route and an MCP tool wanted?
-   - Where does it live: a new top-level view, or under Settings?
-2. Check what data is actually there: run a quick query over `published_ports` and
-   `exposed_ports` on a real database, or the operator's export, to see the shapes and
-   the gaps.
-3. Write a design note if the scope grows. Otherwise write one Sonnet build prompt
-   (`prompts/`, from `TEMPLATE.md`). The prompt should cover:
-   - the CHANGELOG, PRD (new section), README and screenshot list;
-   - if the management API changes, `API_REVISION` 6 with a PRD §18.1 row and
-     `mgmt_openapi.OPERATIONS`;
-   - tests, including a query-count guard like `test_view_query_count_stays_flat`.
-4. Spawn it, verify it (lint plus the full suite), and bring the commit back for a y/n.
+1. **Get the operator's answers to the design's 15 open questions** (the end of the note;
+   each has a recommendation). Update the note with the decisions and record them in
+   `docs/decisions.md`.
+2. **Write the phase prompts** (Sonnet, one per session-sized phase), in the note's order:
+   - a1: provenance core plus the clobber fixes;
+   - a2: badges, Reset, API `sources`, export/import;
+   - b: the revision-8 label fields;
+   - c1: move detection, with query-count guards;
+   - c2: merge and dismiss.
+3. **Run them one at a time.** Verify each yourself (lint plus the full suite), and bring
+   each commit back for a y/n.
+4. **After 0.14.0 ships:** the notifier 0.8.0 sends the new labels, gated on
+   `label_settings`. Write that handoff into the notifier's `prompts/` folder.
 
 ## Other open items
 
+- **Todo:** run the container as **non-root** (`docs/FUTURE.md`, "Run the container as a
+  non-root user"):
+  - `PUID`/`PGID`, with the entrypoint fixing `/config` ownership and then dropping
+    privileges;
+  - related: a scheduled weekly `:latest` rebuild;
+  - related: move off Python 3.11 before October 2027.
+- **Optional:** the Home Assistant label `dockernotifier.std.internalurl=http://10.100.20.11:8123`
+  would make Ports show 8123 instead of "all ports".
 - **GitHub #9:** Discord notifications, or "alert after N failed checks".
 - **Screenshots to retake** (README / `docs/screenshots.md`):
-  - `std_dashboard.png`, `std_tiled.png` and `std_compact.png`, which now have the
-    Updates toggle and badges;
-  - `std_dashboard_expanded.png` and `std_tiled_expanded.png`, which now have the Image
-    update row;
-  - a new `std_settings_image_updates.png`;
-  - the Edit page's Image updates block;
-  - still from before: the Compact view with the expand chevron, and widgets on tiles.
-- **Live test of the image check:** turn it on against real containers and check the
-  Home Assistant entities. All the tests used a fake registry and a fake MQTT client.
-- **Image check follow-ups** (design §13, PRD §24.9):
-  - registry credentials and insecure registries (`img-05`; none needed now);
-  - What's Up Docker and Komodo providers;
-  - GitHub release notes for images;
-  - the image check's `checked_at` in MQTT can lag, since it isn't a sync trigger.
+  - the three dashboards and both expanded views (image-update badges);
+  - Image updates settings;
+  - the new **Ports** page (`std_ports.png`);
+  - the Compact chevron, and widgets on tiles.
+- **Live check of the image update check:** now that `IMAGES=1` is set on emmett, confirm
+  `latest`-style entries get a real state, and look at the HA `update` entities.
+- **Image check follow-ups** (PRD §24.9): registry credentials, What's Up Docker and Komodo
+  providers, GitHub release notes for images.
 - **Parked in `docs/FUTURE.md`:**
-  - Settings follow-ups;
-  - stream observability follow-ups;
+  - Settings and stream follow-ups;
   - the UniFi source;
-  - register overwriting operator edits;
-  - service identity and duplicates;
-  - tools as a first-class concept.
+  - tools as a first-class concept;
+  - ports from manual/stream URLs;
+  - the remembered ports of stopped containers.
 - **Small, unscheduled:**
-  - the registry retention race (harmless, leave it);
   - the Tiled drawer overlays the tile below;
   - `FLASK_SECRET_KEY` isn't in `VALID_KEYS`;
-  - PRD §24 sits after §23 Open Questions (it was left out of order to avoid
-    renumbering).
+  - PRD §24/§25 sit after §23 Open Questions;
+  - the v0.13.0 GitHub release body still says "notifier 0.5.x" (the CHANGELOG is
+    fixed; edit the release body to match `main`'s section).
 
 ## Housekeeping
 
 - **Lint:** `uvx ruff@0.15.17 check .`.
-- **Tests (1,915):** `uvx --with-requirements requirements-dev.txt pytest -q`.
-- **No `Co-authored-by:` trailers** (CLAUDE.md wins over any attribution reminder).
-- **The CHANGELOG archive step is skipped** on minor releases (standing preference).
-- **CodeQL runs on PRs to `main`.**
-  - For 0.12.0 it flagged `py/incomplete-url-substring-sanitization` in **test** fakes;
-    those were fixed by comparing parsed hosts, not dismissed.
-  - Write host checks as `urlsplit(url).hostname == ...` from the start.
-  - Similar flags are possible on path handling and the YAML loader.
+- **Tests (1,994):** `uvx --with-requirements requirements-dev.txt pytest -q`.
+- **CVE check:**
+  - `uvx pip-audit -r requirements-dev.txt`;
+  - the image: `docker run --rm -v trivy-cache:/root/.cache aquasec/trivy:0.58.1 image
+    --scanners vuln --severity HIGH,CRITICAL ghcr.io/crzykidd/service-tracker-dashboard:latest`.
+    Expect about 50 HIGH from Debian with no fix yet, plus one stale `setuptools` entry in
+    pip's own SBOM (accepted; see `docs/decisions.md`).
+- **Commits:** no `Co-authored-by:` trailers (CLAUDE.md wins over any attribution
+  reminder).
+- **Changelog archive:** skipped on minor releases (standing preference).
+- **Release PRs: merge with "Create a merge commit", not squash.** #95 (0.13.3) was
+  squash-merged. That was harmless, but squash commits on `main` that `dev` lacks make
+  later `dev` → `main` PRs messy.
+- **Watch what you merge:** Dependabot PRs go to `dev`, and release PRs go to `main`.
 - **Handoff prompts:** agents can't `git mv` an untracked prompt, so a plain `mv` into
   `prompts/done/` is expected.
+- **zsh doesn't split unquoted variables.** For loops over `$ids` in a shell script, use
+  `bash <<'EOF'`.
