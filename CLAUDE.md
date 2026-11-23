@@ -210,8 +210,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.13.0** (latest tag on `main`).
-In flight: nothing scoped on `dev` (notifier 0.6.0, the `network_details` sender, is queued in its own repo).
+Current shipped release: **v0.13.1** (latest tag on `main`).
+In flight: nothing on `dev` (0.14.0 design awaiting operator answers; notifier 0.6.0, the `network_details` sender, releases next in its own repo).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.

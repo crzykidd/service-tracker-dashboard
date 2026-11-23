@@ -117,6 +117,7 @@
 | 0.107   | 2026-11-22 | v0.13.0 released: §25 Ports in use (GitHub #58: the Ports tab, `GET /api/v1/ports`, the `list_ports` MCP tool, host-network and macvlan/ipvlan rows) marked delivered; network details on register (§5.3); API revision 6 assigned to 0.13.0 in §18.1; §24 Check now confirmation and the scheduler fix. |
 | 0.108   | 2026-11-22 | Correction: the notifier release that sends the network details is 0.6.0, not 0.5.x (notifier 0.5.0 already shipped `image_info`); §22.2 item 6 updated. |
 | 0.109   | 2026-11-22 | §25 (0.13.1 fix, on `dev`, unreleased): macvlan / ipvlan / host-network containers that declare no ports now get a `ports_unknown` row ("all ports (none declared)"); a direct network's ports are also read from the entry's internal / external URL when its host is the container's own address (`port_source` `url`); §18.1 revision 7 row; the 0.14.0 design note renumbered to revision 8. No schema or register wire-contract change. |
+| 0.110   | 2026-11-22 | v0.13.1 released: §25 rows for macvlan / ipvlan / host-network containers that declare no ports (`ports_unknown`, URL-derived ports), API revision 7 assigned to 0.13.1 in §18.1. |
 
 ---
 

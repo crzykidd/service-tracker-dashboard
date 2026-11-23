@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-11-22
+
 ### Fixed
 
 - **Ports page: containers that declare no ports no longer disappear.** Containers on
@@ -1621,7 +1623,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...v0.11.0
