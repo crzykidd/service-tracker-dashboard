@@ -1,0 +1,29 @@
+# Version-update PRs only, opened against dev so they follow the normal dev -> main flow.
+# (Dependabot *security-update* PRs always target the default branch, main; leave them off
+# in the repo settings if that conflicts with the protected-main rule.)
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /mcp
+    target-branch: dev
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    ignore:
+      # The stack is Python 3.11; moving off it is a deliberate change.
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly

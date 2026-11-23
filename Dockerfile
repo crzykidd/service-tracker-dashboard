@@ -1,4 +1,13 @@
 FROM python:3.11-slim
+
+# Security patches: the slim base can lag Debian's security updates (e.g. zlib), and
+# its bundled pip/setuptools vendor old copies of wheel and jaraco.context. Apply the
+# OS updates and bring the Python packaging tools current on every build.
+RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel
+
 WORKDIR /app
 COPY . .
 
