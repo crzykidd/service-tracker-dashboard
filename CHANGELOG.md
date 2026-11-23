@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pydantic, PyYAML, SQLAlchemy, and the MCP server's dependencies). The test-only `pytest`
   moves to 9.0.3 (PYSEC-2026-1845); it is never in the image.
 
+### Added
+
+- **A production compose example,** `docker-compose.example.yml` with `.env.example`: STD
+  hardened (capabilities dropped except `DAC_OVERRIDE`, `no-new-privileges`, a healthcheck,
+  log rotation, secrets from `.env`), plus docker-api-notifier behind a read-only
+  docker-socket-proxy that allows `NETWORKS` and `IMAGES`, which the Ports page and the
+  image update check need. The notifier waits for STD to be healthy before it starts. The
+  repo's `docker-compose.yml` stays the development setup.
+
 ### Changed
 
 - **Smaller image.** Repository metadata, tests, docs and handoff prompts are no longer

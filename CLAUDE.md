@@ -179,7 +179,9 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 - Container: single-image Docker
   - `Dockerfile` — production image
   - `docker-compose.yml` — local dev compose (builds from source, mounts
-    the repo); the deployment example is in `README.md` → Docker Compose Setup
+    the repo)
+  - `docker-compose.example.yml` + `.env.example` — the production example (hardened STD +
+    notifier behind a read-only socket proxy); CI validates it; README → Docker Compose
 
 ## Configuration
 
@@ -485,7 +487,7 @@ tests/              ← pytest suite (conftest.py sets STD_CONFIG_DIR before imp
 requirements-dev.txt ← pytest + runtime deps; CI/dev only, not in the image
 VERSION             ← bare-semver version source of truth
 ruff.toml           ← lint config for CI (E, W, F, I, B; E501 ignored)
-Dockerfile, entrypoint.sh, docker-compose.yml
+Dockerfile, entrypoint.sh, docker-compose.yml (dev), docker-compose.example.yml (production)
 gunicorn.conf.py    ← gunicorn config; workers MUST stay 1; post_worker_init runs startup
 requirements.in     ← direct deps; edit this, then `uv pip compile` (see README)
 requirements.txt    ← fully pinned, generated from requirements.in

@@ -111,6 +111,8 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
 - **Dependencies updated** to their latest releases (certifi, charset-normalizer, pydantic,
   PyYAML, SQLAlchemy, and the MCP server's). STD's own dependencies had no known CVEs.
 - **Smaller image:** repository metadata, tests and docs are no longer copied in.
+- **Production compose example:** [`docker-compose.example.yml`](docker-compose.example.yml),
+  with a hardened STD and the notifier behind a read-only socket proxy.
 
 [Full entry](CHANGELOG.md#0132--2026-11-22)
 
@@ -144,6 +146,21 @@ Settings sections) are in the [screenshot gallery](docs/screenshots.md).
 ## Quick Start
 
 ### Docker Compose
+
+**For production, start from [`docker-compose.example.yml`](docker-compose.example.yml)**
+with [`.env.example`](.env.example). It contains:
+- **STD**, hardened: all Linux capabilities dropped except `DAC_OVERRIDE`,
+  `no-new-privileges`, and a healthcheck;
+- **docker-api-notifier** behind a read-only docker-socket-proxy, with `NETWORKS` and
+  `IMAGES` allowed so the Ports page and the image update check get their data;
+- secrets read from `.env`, and log rotation.
+
+```bash
+cp .env.example .env    # fill in API_TOKEN and FLASK_SECRET_KEY
+docker compose -f docker-compose.example.yml up -d
+```
+
+The minimal version, STD alone:
 
 ```yaml
 services:

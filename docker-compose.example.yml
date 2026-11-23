@@ -1,0 +1,143 @@
+# Service Tracker Dashboard: production example.
+#
+# Copy this file and .env.example next to each other, fill in .env, then:
+#   docker compose -f docker-compose.example.yml up -d
+# Open http://<host>:8815, sign in as admin / changeme123 and change the password
+# (Settings → Users). docker-compose.yml in the repo is for development (it builds from
+# source and mounts the code); don't run it in production.
+#
+# The file has two parts:
+#   1. `std`: the dashboard itself. One per install.
+#   2. `notifier` + `socket-proxy`: docker-api-notifier, which reports this host's
+#      containers to STD. Run this pair on every Docker host. On other hosts, copy just
+#      these two services and point STD_URL at the STD host.
+
+name: service-tracker-dashboard
+
+services:
+  std:
+    # :latest follows releases. Pin a version (e.g. :0.13.2) if you upgrade by hand, or use :0
+    # for every 0.x release. :dev is work in progress.
+    image: ghcr.io/crzykidd/service-tracker-dashboard:latest
+    container_name: std
+    restart: unless-stopped
+    ports:
+      - "8815:8815"
+    environment:
+      # Required. The register token every notifier uses (STD_API_TOKEN on their side).
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env}
+      # Required. Signs the session cookies; a long random string (openssl rand -hex 32).
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:?set FLASK_SECRET_KEY in .env}
+      # Local time for the daily jobs (backups, retention, the image update check).
+      TZ: ${TZ:-UTC}
+      # Optional:
+      # STD_IMAGE_UPDATE_ENABLED: "true"   # daily check for newer images (off by default)
+      # STD_DOZZLE_URL: https://dozzle.example.com
+    volumes:
+      # The database, icons, backups and logs. Back this up (or use Settings → Backup).
+      - ./config:/config
+    # Hardening. The app needs no Linux capabilities apart from DAC_OVERRIDE, which lets it
+    # write ./config whichever user owns that folder. The ping health check uses
+    # unprivileged ICMP, so it needs no NET_RAW.
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # The slim image has no curl; Python's urllib does the same job.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8815/healthz', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      # Let the notifier report STD itself.
+      - "dockernotifier.notifiers=service-tracker-dashboard"
+      - "dockernotifier.std.internalurl=http://${STD_HOST:-localhost}:8815/"
+      - "dockernotifier.std.internal.health=true"
+      # Behind Traefik, add the router labels here and attach STD to Traefik's network, e.g.:
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.std.rule=Host(`std.example.com`)"
+      # - "traefik.http.services.std.loadbalancer.server.port=8815"
+    networks:
+      - std
+
+  # docker-api-notifier: reports this host's containers to STD
+  # (github.com/crzykidd/docker-api-notifier).
+  notifier:
+    image: ghcr.io/crzykidd/docker-api-notifier:latest
+    container_name: docker-api-notifier
+    restart: unless-stopped
+    depends_on:
+      socket-proxy:
+        condition: service_started
+      # Wait for STD's healthcheck, so the notifier's first capability check (/api/v1/meta)
+      # finds it. On hosts without STD, drop this entry.
+      std:
+        condition: service_healthy
+    environment:
+      # Docker access only through the read-only proxy below, never the raw socket.
+      DOCKER_HOST: tcp://socket-proxy:2375
+      # Same host and network: talk to STD by service name. On another host use
+      # http://<std-host>:8815.
+      STD_URL: http://std:8815
+      STD_API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env}
+      # Report every container, not only the ones labelled
+      # dockernotifier.notifiers=service-tracker-dashboard.
+      STD_REPORT_ALL_CONTAINERS: "true"
+      TZ: ${TZ:-UTC}
+    volumes:
+      # The host's name, used as the entry's host in STD.
+      - /etc/hostname:/etc/host_hostname:ro
+      - ./notifier:/config
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - std
+      - socket-proxy
+
+  # Read-only Docker API for the notifier. NETWORKS and IMAGES are needed too: without them
+  # STD gets no network driver (macvlan / ipvlan / host-network containers are wrong on
+  # the Ports page) and no image digests (the image update check can't compare `latest`).
+  # POST=0 keeps it read-only.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    container_name: docker-api-notifier-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      NETWORKS: 1
+      IMAGES: 1
+      PING: 1
+      VERSION: 1
+      INFO: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+    logging:
+      driver: local
+    networks:
+      - socket-proxy
+
+networks:
+  std: {}
+  socket-proxy:
+    # No outbound access: only the notifier can reach the proxy.
+    internal: true
