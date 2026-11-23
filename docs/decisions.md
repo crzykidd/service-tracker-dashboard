@@ -19,7 +19,7 @@ workarounds — newest at top. One entry per decision.
   now because operators occasionally `pip list` inside the container to debug.
 - **`.dockerignore` excludes `.git`, `tests/`, `docs/`, `prompts/`, `.claude/`, caches.** Only
   `CHANGELOG.md` is read at runtime (the What's New popup); it stays.
-- **Dependabot version updates target `dev`** (pip at `/` and `/mcp`, docker, github-actions; weekly),
+- **Dependabot version updates target `dev`** (pip at `/`, docker, github-actions; weekly; grouped: one PR per ecosystem, pip majors on their own; no `/mcp` entry because the root scan already follows `requirements-dev.txt` → `-r mcp/requirements.txt`, and a second entry opened every mcp PR twice),
   matching docker-api-notifier. Python minor/major base bumps are ignored: leaving 3.11 is deliberate.
   Security-update PRs always target `main`; leave them off in the repo settings if they conflict with
   the protected-main flow.

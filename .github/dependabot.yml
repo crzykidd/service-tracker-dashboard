@@ -1,6 +1,13 @@
 # Version-update PRs only, opened against dev so they follow the normal dev -> main flow.
 # (Dependabot *security-update* PRs always target the default branch, main; leave them off
 # in the repo settings if that conflicts with the protected-main rule.)
+#
+# One weekly PR per ecosystem (groups). For pip, a major version comes as its own PR so it
+# isn't buried in a group (it usually needs code changes; e.g. the MCP SDK). GitHub Actions
+# majors are grouped too: they rarely need more than the version bump.
+#
+# The root pip entry also covers mcp/: requirements-dev.txt includes
+# `-r mcp/requirements.txt`, so a separate /mcp entry would open every mcp PR twice.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -8,16 +15,16 @@ updates:
     target-branch: dev
     schedule:
       interval: weekly
-  - package-ecosystem: pip
-    directory: /mcp
-    target-branch: dev
-    schedule:
-      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
   - package-ecosystem: docker
     directory: /
     target-branch: dev
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
     ignore:
       # The stack is Python 3.11; moving off it is a deliberate change.
       - dependency-name: python
@@ -27,3 +34,7 @@ updates:
     target-branch: dev
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns: ["*"]
