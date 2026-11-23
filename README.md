@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.13.0-blue)
+![Version](https://img.shields.io/badge/version-0.13.1-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -97,27 +97,27 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.13.1 (2026-11-22)
+
+- **Ports page:** containers on macvlan, ipvlan or the host network whose image declares no
+  ports (Home Assistant, for example) now show, as "all ports (none declared)" or with the
+  port from the entry's URL when it points at the container's own address.
+- **Network details** (from v0.13.0) need docker-api-notifier 0.6.0 (its next release). If the
+  notifier runs behind a docker-socket-proxy, allow `NETWORKS=1` and `IMAGES=1` (read-only).
+
+[Full entry](CHANGELOG.md#0131--2026-11-22)
+
 ### v0.13.0 (2026-11-22)
 
 - **Ports page:** a new **Ports** tab lists the container ports in use on every host,
   grouped by host or as a flat table, with clashing ports marked and counted. Host-network
   and macvlan/ipvlan containers are shown for what they are. Also in the API and MCP.
 - **Network details:** STD accepts each network's driver, addresses and MAC from the
-  notifier (sent by docker-api-notifier 0.5.x) and shows them in the entry details.
+  notifier (sent by docker-api-notifier 0.6.0+) and shows them in the entry details.
 - **The image update check now really runs,** and Check now always works: within the hour
   it asks you to confirm, because registries limit anonymous requests.
 
 [Full entry](CHANGELOG.md#0130--2026-11-22)
-
-### v0.12.0 (2026-11-21)
-
-- **Image update check (off by default):** once a day STD asks the image registries whether
-  a newer image exists, and shows a badge, an Updates filter, a line in the entry details,
-  and a Home Assistant `update` entity. Turn it on in Settings → Sources → Image updates.
-- **The Docker image links to its repository page,** with an optional override per entry.
-- **Image names parse correctly** for registries with a port, nested paths and digests.
-
-[Full entry](CHANGELOG.md#0120--2026-11-21)
 
 ---
 
@@ -441,7 +441,7 @@ their Edit page.
 | `/` | **Dashboard**: a table per group, with an expand row per entry. |
 | `/tiled_dash` | **Tiled**: one tile per entry; the chevron opens a drawer with the full detail, the chart icon opens it on the widget data. |
 | `/compact_dash` | **Compact**: dense rows with a source icon each; the chevron opens a details dialog (facts, health history, Edit, Delete). |
-| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.5.x sends. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
+| `/ports` | **Ports**: the container ports in use on every host, grouped by host or as a flat table, with conflicts (two containers on one host publishing the same port) marked and counted; macvlan / ipvlan containers (their own LAN address) and host-network containers are listed too, from the network details docker-api-notifier 0.6.0+ sends; one that declares no ports (Home Assistant, for example) shows as "all ports (none declared)", or with the port from the entry's internal or external URL when it points at the container's address. Ports come from docker-api-notifier 0.4.0+; filters: `kind=published\|host_network\|direct\|exposed\|all` (shown as published / host network / direct / not published / all), `host`, `q`, `conflicts=true`, `view=grouped\|flat`, `sort=name\|port\|protocol` (flat adds `host`; default name, published rows always first). Filters apply on change; the view and filters are remembered per browser until Reset. |
 
 All three work on a phone and share one filter bar, kept in the URL so a view is
 bookmarkable:
@@ -574,6 +574,7 @@ needs no CSRF token.
 | 4 | 0.11.0 | backup settings, backup list and run, export, import plan and apply |
 | 5 | 0.12.0 | `image_info` on register; image repository link and override; image update block, settings, list and run |
 | 6 | 0.13.0 | `GET /ports` (ports in use, conflicts, host-network and direct rows); network `driver`, `ip_address`, `ipv6_address`, `mac_address` on register; features `ports` and `network_details` |
+| 7 | 0.13.1 | `GET /ports` rows: `ports_unknown` and `port_source`; `container_port`, `host_port` and `protocol` may be null when `ports_unknown` |
 
 ### API keys
 
@@ -756,7 +757,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.0/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.1/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|

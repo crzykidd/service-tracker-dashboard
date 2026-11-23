@@ -1212,9 +1212,11 @@ class PortRowOut(TypedDict):
     kind: str                        # published | host_network | direct | exposed
     host_ips: list[str]              # one row per binding; 0.0.0.0 and :: of one port are one row;
                                      # host_network: 0.0.0.0; direct: the container's address(es)
-    host_port: int | None            # null for an exposed-only port; the container port for host_network and direct
-    container_port: int
-    protocol: str
+    host_port: int | None            # null for an exposed-only port or when ports_unknown; the container port for host_network and direct
+    container_port: int | None       # null when ports_unknown
+    protocol: str | None             # null when ports_unknown
+    port_source: str                 # declared (image or binding) | url (taken from the entry's own URL)
+    ports_unknown: bool              # direct/host_network row for a container that declares no ports
     network: str | None              # direct rows: the macvlan/ipvlan network name
     driver: str | None               # direct rows: macvlan | ipvlan
     conflict: bool                   # another entry binds the same port (same host, or same address for direct)

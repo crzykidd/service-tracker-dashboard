@@ -42,7 +42,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # The release this script belongs to. `/release-prep` sets it with VERSION; a test
 # keeps the two from drifting.
-MCP_VERSION = "0.13.0"
+MCP_VERSION = "0.13.1"
 
 API = "/api/v1"
 DEFAULT_TIMEOUT = 15.0
@@ -453,7 +453,7 @@ def build_server(client: StdClient, scope: str, version_info: dict | None = None
 
         kind: published (bound on the host: reachable at host:host_port) | host_network (a network_mode host container: its port is bound directly on the host, host_port = container port) | direct (a macvlan/ipvlan container with its own LAN address: reachable at host_ips[0]:container_port, not through the host; network names the network) | exposed (declared by the image but NOT bound on the host, so it takes no host port) | all (default). host: exact host name. query: text in the name, container name, stack or a port number. conflicts_only: only rows in conflict.
         A conflict means two different entries on the same host publish the same protocol and host port on overlapping addresses (a wildcard address such as 0.0.0.0 or :: overlaps any other), so one of them cannot bind. host_network rows take part in that rule; direct rows conflict only with another direct row on the same address, protocol and port.
-        Returns {summary: {hosts, published, host_network, direct, exposed, conflicts}, ports: [{entry_id, name, host, container_name, stack_name, docker_status, kind, host_ips, host_port (null when exposed), container_port, protocol, network and driver (direct rows, else null), conflict, conflict_with: [entry ids]}]}; summary counts all ports, not only the filtered ones.
+        Returns {summary: {hosts, published, host_network, direct, exposed, conflicts}, ports: [{entry_id, name, host, container_name, stack_name, docker_status, kind, host_ips, host_port (null when exposed or ports_unknown), container_port and protocol (null when ports_unknown), port_source (declared | url, a port read from the entry's URL), ports_unknown (a macvlan/ipvlan or host-network container that declares no ports: every port is reachable, never a conflict), network and driver (direct rows, else null), conflict, conflict_with: [entry ids]}]}; summary counts all ports, not only the filtered ones.
         """
         return client.request("GET", "/ports", params=dict(
             kind=kind, host=host, q=query, conflicts="true" if conflicts_only else None))

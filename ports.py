@@ -8,6 +8,9 @@ The data is pure observation from the notifier (`exposed_ports`, `published_port
 nothing here edits it.
 """
 
+import ipaddress
+from urllib.parse import urlsplit
+
 KINDS = ("all", "published", "host_network", "direct", "exposed")
 # Row kinds in display order: published, host network, direct, not published.
 KIND_ORDER = {"published": 0, "host_network": 1, "direct": 2, "exposed": 3}
@@ -104,7 +107,39 @@ def _networks(entry):
     return host_network, direct
 
 
-def _row(entry, kind, host_ips, host_port, container_port, protocol, network=None, driver=None):
+def _same_ip(a, b):
+    try:
+        return ipaddress.ip_address(a) == ipaddress.ip_address(b)
+    except ValueError:
+        return False
+
+
+def _url_ports(entry, ips):
+    """`(port, "tcp")` for each internal/external URL whose host is one of `ips` (the
+    container's own address). A hostname never matches: only the address proves the URL
+    points at this container. No port in the URL means the scheme's default."""
+    out = []
+    for url in (getattr(entry, "internalurl", None), getattr(entry, "externalurl", None)):
+        if not isinstance(url, str) or not url.strip():
+            continue
+        try:
+            parts = urlsplit(url.strip())
+            host = parts.hostname
+            port = parts.port
+        except ValueError:
+            continue
+        if not host or not any(_same_ip(host, ip) for ip in ips):
+            continue
+        if port is None:
+            port = {"http": 80, "https": 443}.get(parts.scheme.lower())
+        port = _port(port)
+        if port is not None and (port, "tcp") not in out:
+            out.append((port, "tcp"))
+    return out
+
+
+def _row(entry, kind, host_ips, host_port, container_port, protocol, network=None, driver=None,
+         port_source="declared", ports_unknown=False):
     return {
         "entry_id": entry.id,
         "name": entry.container_name,
@@ -119,6 +154,8 @@ def _row(entry, kind, host_ips, host_port, container_port, protocol, network=Non
         "protocol": protocol,
         "network": network,
         "driver": driver,
+        "port_source": port_source,
+        "ports_unknown": ports_unknown,
         "conflict": False,
         "conflict_with": [],
     }
@@ -147,6 +184,8 @@ def _mark_conflicts(rows):
     host_groups = {}
     direct_groups = {}
     for row in rows:
+        if row["ports_unknown"]:
+            continue
         if row["kind"] in ("published", "host_network") and row["host"]:
             host_groups.setdefault((row["host"], row["protocol"], row["host_port"]), []).append(row)
         elif row["kind"] == "direct":
@@ -158,9 +197,9 @@ def _mark_conflicts(rows):
 
 
 def _order(row):
-    return (row["host"] or "", KIND_ORDER[row["kind"]],
+    return (row["host"] or "", KIND_ORDER[row["kind"]], row["ports_unknown"],
             row["host_port"] if row["host_port"] is not None else 0,
-            row["container_port"], row["protocol"], row["name"] or "", row["entry_id"] or 0)
+            row["container_port"] or 0, row["protocol"] or "", row["name"] or "", row["entry_id"] or 0)
 
 
 def build_rows(entries):
@@ -203,10 +242,17 @@ def build_rows(entries):
         if host_network:
             for container_port, protocol in listening:
                 rows.append(_row(entry, "host_network", ["0.0.0.0"], container_port, container_port, protocol))
+            if not listening:
+                rows.append(_row(entry, "host_network", ["0.0.0.0"], None, None, None, ports_unknown=True))
         for name, driver, ips in direct:
-            for container_port, protocol in listening:
+            from_url = [p for p in _url_ports(entry, ips) if p not in listening]
+            for container_port, protocol in listening + from_url:
                 rows.append(_row(entry, "direct", list(ips), container_port, container_port, protocol,
-                                 network=name, driver=driver))
+                                 network=name, driver=driver,
+                                 port_source="declared" if (container_port, protocol) in listening else "url"))
+            if not listening and not from_url:
+                rows.append(_row(entry, "direct", list(ips), None, None, None, network=name, driver=driver,
+                                 ports_unknown=True))
         seen = set()
         for container_port, protocol in exposed:
             key = (container_port, protocol)
@@ -247,9 +293,13 @@ def filter_rows(rows, kind="all", host=None, q=None, conflicts_only=False):
         if conflicts_only and not r["conflict"]:
             continue
         if needle:
-            hay = [r["name"], r["container_name"], r["stack_name"], str(r["container_port"]),
-                   str(r["host_port"]) if r["host_port"] is not None else "", r["protocol"],
-                   f"{r['container_port']}/{r['protocol']}"]
+            hay = [r["name"], r["container_name"], r["stack_name"]]
+            if r["ports_unknown"]:
+                hay += [r["network"], *r["host_ips"]]
+            else:
+                hay += [str(r["container_port"]),
+                        str(r["host_port"]) if r["host_port"] is not None else "", r["protocol"],
+                        f"{r['container_port']}/{r['protocol']}"]
             if not any(needle in (h or "").lower() for h in hay):
                 continue
         out.append(r)
@@ -272,16 +322,16 @@ def _sort_key(sort):
     then by a stable tie-break (host, port, protocol, entry id)."""
     primary = {
         "name": lambda r: (r["name"] or "").lower(),
-        "port": lambda r: r["host_port"] if r["kind"] != "exposed" and r["host_port"] is not None
-        else r["container_port"],
+        "port": lambda r: (r["host_port"] if r["kind"] != "exposed" and r["host_port"] is not None
+                           else r["container_port"]) or 0,
         "host": lambda r: (r["host"] or "").lower(),
-        "protocol": lambda r: r["protocol"],
+        "protocol": lambda r: r["protocol"] or "",
     }[sort]
 
     def key(r):
-        return (KIND_ORDER[r["kind"]], primary(r), (r["host"] or "").lower(),
-                r["host_port"] if r["host_port"] is not None else 0, r["container_port"],
-                r["protocol"], r["entry_id"] or 0)
+        return (KIND_ORDER[r["kind"]], r["ports_unknown"], primary(r), (r["host"] or "").lower(),
+                r["host_port"] if r["host_port"] is not None else 0, r["container_port"] or 0,
+                r["protocol"] or "", r["entry_id"] or 0)
     return key
 
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-11-22
+
+### Fixed
+
+- **Ports page: containers that declare no ports no longer disappear.** Containers on
+  macvlan, ipvlan or the host network whose image declares no ports (Home Assistant, for
+  example) now show on the Ports page, as "all ports (none declared)", or with the port from
+  the entry's internal or external URL when it points at the container's own address
+  (`http://10.100.20.11:8123` shows 8123/tcp). They never count as conflicts. In the API,
+  `GET /api/v1/ports` rows gain `ports_unknown` and `port_source`, and `container_port`,
+  `host_port` and `protocol` can be null on those rows (API revision 7).
+
 ## [0.13.0] — 2026-11-22
 
 ### Added
@@ -17,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   network name (for example `lan_macvlan (macvlan) 192.168.1.50`) and the Ports page uses
   them. An invalid address or MAC is rejected with a 400; an empty value counts as not
   reported. STD advertises the new `network_details` feature (API revision 6). This needs a
-  docker-api-notifier version that sends the fields, coming in 0.5.x; until then nothing
+  docker-api-notifier version that sends the fields, coming in 0.6.0; until then nothing
   changes for existing entries.
 - **Ports page: which container ports are in use on which host.** A new **Ports** tab
   (between Compact and Add) lists the ports your containers publish across all hosts, so
@@ -1611,7 +1623,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.10.1...v0.11.0
