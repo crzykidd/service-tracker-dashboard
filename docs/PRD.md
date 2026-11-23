@@ -120,6 +120,7 @@
 | 0.110   | 2026-11-22 | v0.13.1 released: §25 rows for macvlan / ipvlan / host-network containers that declare no ports (`ports_unknown`, URL-derived ports), API revision 7 assigned to 0.13.1 in §18.1. |
 | 0.111   | 2026-11-22 | v0.13.2 released: image patched at build time (Debian security updates, current pip/setuptools/wheel), dependencies updated, `.dockerignore` keeps repo metadata, tests and docs out of the image; new production example `docker-compose.example.yml` + `.env.example` (validated in CI). No API, schema or wire-contract change. |
 | 0.112   | 2026-11-23 | §14.7 / §15.7 (on `dev`, unreleased): the MCP server is ported to the `mcp` Python SDK 2.3.0 (`MCPServer` replaces `FastMCP`; same tools, names, arguments and results; `httpx` kept for the STD client). No API, schema or wire-contract change. |
+| 0.113   | 2026-11-23 | v0.13.3 released: the MCP server on the `mcp` SDK 2.x (§14.7, §15.7). No STD server, API, schema or wire-contract change. |
 
 ---
 
