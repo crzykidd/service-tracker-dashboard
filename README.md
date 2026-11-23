@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.13.1-blue)
+![Version](https://img.shields.io/badge/version-0.13.2-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -97,6 +97,25 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.13.2 (2026-11-22)
+
+- **Security fixes in the image:**
+  - **zlib** heap buffer overflow (CVE-2026-85091, high): patched. Every image build now
+    applies Debian's security updates.
+  - **wheel** privilege escalation / code execution via a malicious wheel (CVE-2026-24049,
+    high) and **jaraco.context** path traversal (CVE-2026-23949, high): removed. Both were
+    old copies bundled in the base image's setuptools; pip, setuptools and wheel are now
+    brought current on every build.
+  - No fixable high or critical CVE is left. The remaining high findings are Debian
+    packages with no fixed version yet.
+- **Dependencies updated** to their latest releases (certifi, charset-normalizer, pydantic,
+  PyYAML, SQLAlchemy, and the MCP server's). STD's own dependencies had no known CVEs.
+- **Smaller image:** repository metadata, tests and docs are no longer copied in.
+- **Production compose example:** [`docker-compose.example.yml`](docker-compose.example.yml),
+  with a hardened STD and the notifier behind a read-only socket proxy.
+
+[Full entry](CHANGELOG.md#0132--2026-11-22)
+
 ### v0.13.1 (2026-11-22)
 
 - **Ports page:** containers on macvlan, ipvlan or the host network whose image declares no
@@ -106,18 +125,6 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
   notifier runs behind a docker-socket-proxy, allow `NETWORKS=1` and `IMAGES=1` (read-only).
 
 [Full entry](CHANGELOG.md#0131--2026-11-22)
-
-### v0.13.0 (2026-11-22)
-
-- **Ports page:** a new **Ports** tab lists the container ports in use on every host,
-  grouped by host or as a flat table, with clashing ports marked and counted. Host-network
-  and macvlan/ipvlan containers are shown for what they are. Also in the API and MCP.
-- **Network details:** STD accepts each network's driver, addresses and MAC from the
-  notifier (sent by docker-api-notifier 0.6.0+) and shows them in the entry details.
-- **The image update check now really runs,** and Check now always works: within the hour
-  it asks you to confirm, because registries limit anonymous requests.
-
-[Full entry](CHANGELOG.md#0130--2026-11-22)
 
 ---
 
@@ -139,6 +146,21 @@ Settings sections) are in the [screenshot gallery](docs/screenshots.md).
 ## Quick Start
 
 ### Docker Compose
+
+**For production, start from [`docker-compose.example.yml`](docker-compose.example.yml)**
+with [`.env.example`](.env.example). It contains:
+- **STD**, hardened: all Linux capabilities dropped except `DAC_OVERRIDE`,
+  `no-new-privileges`, and a healthcheck;
+- **docker-api-notifier** behind a read-only docker-socket-proxy, with `NETWORKS` and
+  `IMAGES` allowed so the Ports page and the image update check get their data;
+- secrets read from `.env`, and log rotation.
+
+```bash
+cp .env.example .env    # fill in API_TOKEN and FLASK_SECRET_KEY
+docker compose -f docker-compose.example.yml up -d
+```
+
+The minimal version, STD alone:
 
 ```yaml
 services:
@@ -757,7 +779,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.1/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.2/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|

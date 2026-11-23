@@ -5,6 +5,27 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-22 — Image patching at build time, Dependabot on dev
+
+- **`apt-get upgrade` in the Dockerfile.** `python:3.11-slim` lags Debian security updates between
+  base-image rebuilds (the 0.13.1 image had an unpatched zlib, CVE-2026-85091). Upgrading in the build
+  costs a few seconds and makes every `:dev` / `:latest` / release build pick up fixes. Pinning the base
+  by digest was rejected: it would freeze the OS CVEs between Dependabot bumps.
+- **`pip install --upgrade pip setuptools wheel`.** The base image's setuptools vendors old `wheel` and
+  `jaraco.context` (both with HIGH CVEs). The leftover Trivy finding `setuptools@70.3.0`
+  (CVE-2025-47273) comes from pip's own vendored SBOM (`pip/_vendor/bom.cdx.json`, pip's
+  `pkg_resources`), not an installed setuptools. The CVE is in `setuptools.package_index`, which pip
+  does not vendor, so it is accepted. Removing pip from the runtime image would clear it; rejected for
+  now because operators occasionally `pip list` inside the container to debug.
+- **`.dockerignore` excludes `.git`, `tests/`, `docs/`, `prompts/`, `.claude/`, caches.** Only
+  `CHANGELOG.md` is read at runtime (the What's New popup); it stays.
+- **Dependabot version updates target `dev`** (pip at `/` and `/mcp`, docker, github-actions; weekly),
+  matching docker-api-notifier. Python minor/major base bumps are ignored: leaving 3.11 is deliberate.
+  Security-update PRs always target `main`; leave them off in the repo settings if they conflict with
+  the protected-main flow.
+
+---
+
 ## 2026-11-22 — Ports page: a row for containers with no known ports (0.13.1)
 
 - **Why a row with no port.** Home Assistant on macvlan declares no ports, so the Ports page had no row

@@ -108,3 +108,5 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker compose config --quiet
+      # The production example; its required variables come from .env.example.
+      - run: docker compose -f docker-compose.example.yml --env-file .env.example config --quiet

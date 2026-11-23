@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-11-22
+
+### Security
+
+- **The image is patched at build time.** Every image build now applies Debian's security
+  updates and brings pip, setuptools and wheel current. That patches zlib (CVE-2026-85091)
+  and removes the old `wheel` (CVE-2026-24049) and `jaraco.context` (CVE-2026-23949) copies
+  bundled in the base image's setuptools. No fixable high or critical CVE is left in the
+  image. The remaining high findings are Debian packages with no fixed version yet, plus a
+  stale `setuptools` entry in pip's own bundled bill of materials that is not exploitable
+  through pip.
+- Python dependencies updated to their latest releases (certifi, charset-normalizer,
+  pydantic, PyYAML, SQLAlchemy, and the MCP server's dependencies). The test-only `pytest`
+  moves to 9.0.3 (PYSEC-2026-1845); it is never in the image.
+
+### Added
+
+- **A production compose example,** `docker-compose.example.yml` with `.env.example`: STD
+  hardened (capabilities dropped except `DAC_OVERRIDE`, `no-new-privileges`, a healthcheck,
+  log rotation, secrets from `.env`), plus docker-api-notifier behind a read-only
+  docker-socket-proxy that allows `NETWORKS` and `IMAGES`, which the Ports page and the
+  image update check need. The notifier waits for STD to be healthy before it starts. The
+  repo's `docker-compose.yml` stays the development setup.
+
+### Changed
+
+- **Smaller image.** Repository metadata, tests, docs and handoff prompts are no longer
+  copied into the image (`.git`, `tests/`, `docs/`, `prompts/`, caches). Nothing at runtime
+  used them.
+
 ## [0.13.1] — 2026-11-22
 
 ### Fixed
@@ -1623,7 +1653,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.11.0...v0.12.0

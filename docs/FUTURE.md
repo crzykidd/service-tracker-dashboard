@@ -532,6 +532,33 @@ last-known bindings (a column, shown dimmed as "stopped") would catch that confl
 Deferred: it needs a migration and a rule for when a remembered port expires, and the
 observation columns are pure overwrite today.
 
+## Run the container as a non-root user
+
+**Parked:** 2026-11-22, during the image CVE review (todo; operator wants it done).
+
+STD runs as **root** today: the Dockerfile has no `USER`. A non-root user is a bigger
+security win than any base-image change (see `docs/decisions.md`, 2026-11-22 "Image
+patching at build time", and the base-image comparison: slim stays).
+
+Sketch:
+- `PUID` / `PGID` env (default 1000/1000, matching the crzynet compose convention).
+  `entrypoint.sh` runs as root only long enough to `chown` `/config` (existing installs
+  are root-owned) and then drops privileges (`gosu` / `setpriv`) for `restore_swap.py`,
+  `alembic upgrade head` and gunicorn. `restore_swap.py` must still always exit 0.
+- Port 8815 needs no privileges. The ping health check uses unprivileged ICMP
+  (`icmplib`), which works under Docker's default `net.ipv4.ping_group_range`. Verify it,
+  and document the sysctl for hosts that override it.
+- Check every path STD writes: `/config` (DB, icons, backups, restore staging,
+  import staging) and anything under `/app` written at runtime (`version.txt` is written
+  at build).
+- Tests: the entrypoint on a root-owned `/config`, a fresh `/config`, and an
+  already-owned `/config`; a ping check as non-root. CHANGELOG under Security, plus README
+  compose examples with `PUID`/`PGID`.
+
+Related, smaller: a scheduled weekly rebuild of `:latest`, so Debian fixes reach installs
+without a code release (Dependabot doesn't bump a floating `3.11-slim` tag); and the move
+from Python 3.11 to 3.13 before 3.11 goes EOL (October 2027).
+
 ## Adding entries
 
 Append new sections at the bottom. When an item moves into a real

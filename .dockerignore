@@ -1,2 +1,17 @@
 # The MCP server runs on the operator's machine, not in the container.
 mcp/
+
+# Repo metadata, dev tooling and docs: not needed at runtime (CHANGELOG.md stays; the
+# What's New popup reads it).
+.git/
+.github/
+.claude/
+prompts/
+tests/
+docs/
+requirements-dev.txt
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env

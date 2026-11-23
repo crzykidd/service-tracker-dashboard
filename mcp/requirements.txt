@@ -14,19 +14,23 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
-certifi==2026.10.23
+certifi==2026.11.20
     # via
     #   -c requirements.txt
     #   httpcore
     #   httpx
 cffi==2.1.1
-    # via cryptography
+    # via
+    #   -c requirements.txt
+    #   cryptography
 click==8.5.1
     # via
     #   -c requirements.txt
     #   uvicorn
 cryptography==50.0.2
-    # via pyjwt
+    # via
+    #   -c requirements.txt
+    #   pyjwt
 h11==0.16.0
     # via
     #   httpcore
@@ -51,13 +55,15 @@ jsonschema-specifications==2025.9.1
 mcp==1.30.0
     # via -r mcp/requirements.in
 pycparser==3.12
-    # via cffi
-pydantic==2.14.3
+    # via
+    #   -c requirements.txt
+    #   cffi
+pydantic==2.14.4
     # via
     #   -c requirements.txt
     #   mcp
     #   pydantic-settings
-pydantic-core==2.50.4
+pydantic-core==2.50.5
     # via
     #   -c requirements.txt
     #   pydantic
@@ -69,7 +75,7 @@ python-dotenv==1.2.4
     # via
     #   -c requirements.txt
     #   pydantic-settings
-python-multipart==0.0.33
+python-multipart==0.0.34
     # via mcp
 referencing==0.37.0
     # via
@@ -79,7 +85,7 @@ rpds-py==2026.9.1
     # via
     #   jsonschema
     #   referencing
-sse-starlette==3.7.0
+sse-starlette==3.7.1
     # via mcp
 starlette==1.10.0
     # via
