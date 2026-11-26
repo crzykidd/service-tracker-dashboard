@@ -7,7 +7,7 @@
     <p>
       Once a day STD asks each image&#39;s public registry (Docker Hub, GHCR, Quay, ...) whether a newer tag, or for a
       moving tag like <code class="text-xs bg-gray-700 px-1 rounded">latest</code> a newer build, exists. It sends the
-      image names, no credentials, and never changes or restarts a container. An available update is information, not a
+      image names, anonymously unless you add a Docker Hub login below, and never changes or restarts a container. An available update is information, not a
       fault: it does not affect health, row colours or the Home Assistant state sensors.
     </p>
     <p>
@@ -38,6 +38,54 @@
     </div>
     {{ save_bar() }}
   </form>
+
+  {% set hub = dockerhub %}
+  <div class="settings-card" id="image-update-dockerhub">
+    <h3 class="settings-card-heading">Docker Hub login (optional)</h3>
+    <p class="settings-hint text-xs text-gray-400">
+      Without a login the check spends your public IP&#39;s anonymous Docker Hub quota, which every <code>docker pull</code>
+      on your network shares; once it is gone, images show &quot;registry rate limited the check&quot;. With a login the
+      check uses your account&#39;s quota instead. Create a read-only access token under Docker Hub &rarr; Account settings
+      &rarr; Personal access tokens (never use your password). The login goes only to <code>auth.docker.io</code>, never to
+      another registry. It is kept in the database, so a database backup contains it.
+    </p>
+    <p class="text-sm mt-2" data-dockerhub-status>
+      {% if hub.configured %}
+        <strong>Login set</strong> as <code>{{ hub.username }}</code> (from {{ hub.source_label }}).
+      {% elif hub.username_set or hub.token_set %}
+        <strong>Not configured:</strong> both a username and an access token are needed ({{ 'the token' if hub.username_set else 'the username' }} is missing). The check stays anonymous.
+      {% else %}
+        <strong>Not set.</strong> The check is anonymous.
+      {% endif %}
+    </p>
+    <form method="POST" action="{{ url_for('dashboard.save_dockerhub_login') }}" id="dockerhub-form" class="mt-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="settings-label" for="dockerhub-username">Username</label>
+        <input type="text" id="dockerhub-username" name="dockerhub_username" class="input-clean" autocomplete="off"
+               maxlength="255" value="{{ hub.username or '' }}"{% if hub.username_origin == 'env' %} readonly{% endif %}>
+        {% if hub.username_origin == 'env' %}<span class="backup-origin">Set by environment (<code>{{ hub.env_names[0] }}</code>); change it there.</span>{% endif %}
+      </div>
+      <div class="mt-3">
+        <label class="settings-label" for="dockerhub-token">Access token</label>
+        <input type="password" id="dockerhub-token" name="dockerhub_token" class="input-clean" autocomplete="new-password"
+               maxlength="512" value="" placeholder="{{ 'set; leave empty to keep it' if hub.token_set else 'not set' }}"{% if hub.token_origin == 'env' %} readonly{% endif %}>
+        {% if hub.token_origin == 'env' %}<span class="backup-origin">Set by environment (<code>{{ hub.env_names[1] }}</code> or <code>STD_DOCKERHUB_TOKEN_FILE</code>); change it there.</span>
+        {% elif hub.token_set %}<span class="settings-hint text-xs text-gray-400">A token is set ({{ hub.token_origin_label }}); it is never shown.</span>{% endif %}
+      </div>
+      <div class="mt-3">
+        {% if not (hub.username_origin == 'env' and hub.token_origin == 'env') %}
+        <button type="submit" class="btn-primary btn-sm">Save login</button>
+        {% endif %}
+        <button type="button" class="btn-secondary btn-sm" data-dockerhub-test
+                data-url="{{ url_for('dashboard.test_dockerhub_login') }}">Test login</button>
+        {% if hub.username_origin == 'ui' or hub.token_origin == 'ui' %}
+        <button type="submit" class="btn-secondary btn-sm" name="action" value="clear" formnovalidate>Clear Docker Hub login</button>
+        {% endif %}
+        <span class="text-xs text-gray-400 ml-2">Test login asks only auth.docker.io for a token; it pulls nothing.</span>
+      </div>
+    </form>
+  </div>
 
   <div class="settings-card" id="image-update-status">
     <h3 class="settings-card-heading">Status</h3>

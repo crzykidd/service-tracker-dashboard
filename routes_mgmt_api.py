@@ -1421,6 +1421,12 @@ def put_update_check_settings():
 # --- image update check (PRD 21) -------------------------------------------------------
 
 
+def _dockerhub_payload():
+    """Read-only Docker Hub login facts. The token is never returned, and cannot be set here."""
+    st = image_update.dockerhub_status()
+    return {"configured": st["configured"], "username": st["username"], "source": st["source"]}
+
+
 def _image_update_payload():
     enabled, origin = image_update.effective_enabled()
     next_run = jobs.image_update_next_run() if enabled else None
@@ -1429,6 +1435,7 @@ def _image_update_payload():
         "interval_hours": image_update.INTERVAL_HOURS, "last_run": image_update.last_run(),
         "next_run": (next_run.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                      if next_run is not None else None),
+        "dockerhub": _dockerhub_payload(),
     }
 
 

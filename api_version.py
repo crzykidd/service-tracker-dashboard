@@ -6,7 +6,7 @@ the release that ships it, plus one row in `API_REVISION_HISTORY` and in the PRD
 18.1 table. Breaking changes need `/api/v2`.
 """
 
-API_REVISION = 7
+API_REVISION = 8
 
 # (revision, STD release, what it adds): the PRD 18.1 table as data.
 API_REVISION_HISTORY = (
@@ -34,6 +34,9 @@ API_REVISION_HISTORY = (
     (7, "0.13.1",
      "ports rows: ports_unknown and port_source; container_port / host_port / protocol may be null "
      "when ports_unknown"),
+    (8, "0.13.4",
+     "GET and PUT /settings/image-updates: read-only dockerhub {configured, username, source} "
+     "(the optional Docker Hub login for the image check; the token is never returned)"),
 )
 
 # `streams` is advertised from 0.10.0 even though the endpoints land in a later

@@ -13,8 +13,12 @@ What it does:
 * `list_tags(registry, repository)` -> every tag, following `Link` pagination, at most
   `MAX_TAG_PAGES` pages.
 
-Authentication is the anonymous Bearer challenge flow, read from `WWW-Authenticate` (no
-realm is hardcoded). There are no credentials and no plain HTTP: this is HTTPS only.
+Authentication is the Bearer challenge flow, read from `WWW-Authenticate` (no realm is
+hardcoded), anonymous by default. The one exception is an optional Docker Hub login: HTTP
+Basic is sent on the token request, and only when the registry is Docker Hub and the realm is
+`https://auth.docker.io/...`. It is never sent to the registry itself, to another host, over
+plain HTTP or on a redirect, and a rejected login is an error, not a silent anonymous retry.
+There is no plain HTTP: this is HTTPS only.
 
 Errors are `RegistryError` with a short, fixed message. Raw exception text is never put in
 an error (it ends up stored and shown). A `429` raises `RateLimited` and pauses that
@@ -23,6 +27,7 @@ registry for the rest of this client's life, which is one check run.
 No database, no Flask: the caller supplies the transport (`http`) in tests.
 """
 
+import base64
 import hashlib
 import logging
 import re
@@ -36,6 +41,9 @@ logger = logging.getLogger(__name__)
 
 DOCKER_HUB = "docker.io"
 DOCKER_HUB_API_HOST = "registry-1.docker.io"
+DOCKER_HUB_AUTH_HOST = "auth.docker.io"
+DOCKER_HUB_TOKEN_URL = f"https://{DOCKER_HUB_AUTH_HOST}/token"
+DOCKER_HUB_SERVICE = "registry.docker.io"
 
 # The four manifest media types. A test pins this header: with fewer, Docker Hub answers a
 # multi-arch tag with a platform manifest (or 404 for an OCI index) and every multi-arch
@@ -69,6 +77,19 @@ ERR_NOT_FOUND = "image or tag not found in the registry"
 ERR_RATE_LIMITED = "registry rate limited the check"
 ERR_UNEXPECTED = "unexpected answer from the registry"
 ERR_NO_DIGEST = "registry returned no digest"
+ERR_HUB_LOGIN = "Docker Hub rejected the configured login"
+
+# Test login answers (fixed messages; the Settings page shows them).
+LOGIN_OK = "ok"
+LOGIN_REJECTED = "rejected"
+LOGIN_UNREACHABLE = "unreachable"
+LOGIN_UNEXPECTED = "unexpected"
+LOGIN_MESSAGES = {
+    LOGIN_OK: "Docker Hub accepted the login.",
+    LOGIN_REJECTED: ERR_HUB_LOGIN + ".",
+    LOGIN_UNREACHABLE: "Could not reach Docker Hub.",
+    LOGIN_UNEXPECTED: "Docker Hub gave an unexpected answer, or is rate limiting; try again later.",
+}
 
 
 class RegistryError(Exception):
@@ -127,8 +148,12 @@ class RegistryClient:
     """One instance per check run. Thread-safe: the token cache, the pause table and the
     per-host semaphores are guarded."""
 
-    def __init__(self, user_agent="service-tracker-dashboard/unknown", http=None, now=time.time):
+    def __init__(self, user_agent="service-tracker-dashboard/unknown", http=None, now=time.time,
+                 dockerhub_login=None):
         self.user_agent = user_agent
+        # (username, token) or None. Half a login is no login: anonymous.
+        self._hub_login = (tuple(dockerhub_login) if dockerhub_login
+                           and len(dockerhub_login) == 2 and all(dockerhub_login) else None)
         self._http = http or _default_http
         self._now = now
         self._lock = threading.Lock()
@@ -177,24 +202,38 @@ class RegistryClient:
         logger.debug("registry request failed: %s", last.__class__.__name__)
         raise RegistryError(ERR_UNREACHABLE)
 
-    def _token(self, challenge_params, host, default_scope):
-        """Anonymous token for a Bearer challenge. The realm must be https."""
+    @staticmethod
+    def _basic(login):
+        raw = f"{login[0]}:{login[1]}".encode()
+        return "Basic " + base64.b64encode(raw).decode("ascii")
+
+    def _token(self, challenge_params, host, default_scope, registry=None):
+        """Token for a Bearer challenge: anonymous, except that the configured Docker Hub
+        login goes (as HTTP Basic) to the Docker Hub token realm and nowhere else. The realm
+        must be https."""
         realm = challenge_params.get("realm") or ""
-        if urlparse(realm).scheme != "https":
+        parsed = urlparse(realm)
+        if parsed.scheme != "https":
             raise RegistryError(ERR_UNEXPECTED)
+        use_login = (self._hub_login is not None and registry == DOCKER_HUB
+                     and parsed.hostname == DOCKER_HUB_AUTH_HOST
+                     and parsed.port in (None, 443) and parsed.username is None)
         scope = challenge_params.get("scope") or default_scope
         query = {}
         if challenge_params.get("service"):
             query["service"] = challenge_params["service"]
         if scope:
             query["scope"] = scope
-        resp = self._send("GET", realm, {"Accept": "application/json"}, params=query or None)
+        headers = {"Accept": "application/json"}
+        if use_login:
+            headers["Authorization"] = self._basic(self._hub_login)
+        resp = self._send("GET", realm, headers, params=query or None)
         if resp.status_code == 429:
             seconds = parse_retry_after(resp.headers.get("Retry-After"), self._now())
             self._pause(host, seconds)
             raise RateLimited(seconds)
         if resp.status_code in (401, 403):
-            raise RegistryError(ERR_LOGIN)
+            raise RegistryError(ERR_HUB_LOGIN if use_login else ERR_LOGIN)
         if resp.status_code != 200:
             raise RegistryError(ERR_UNEXPECTED)
         try:
@@ -241,7 +280,7 @@ class RegistryClient:
             scheme, challenge = parse_challenge(resp.headers.get("WWW-Authenticate"))
             if attempt == 1 or scheme != "bearer":
                 raise RegistryError(ERR_LOGIN)
-            token = self._token(challenge, host, scope)
+            token = self._token(challenge, host, scope, registry)
         raise RegistryError(ERR_LOGIN)  # pragma: no cover - the loop returns or raises
 
     def _follow(self, method, url, headers, params, follow_redirects, host):
@@ -264,6 +303,30 @@ class RegistryClient:
         return resp
 
     # -- API --------------------------------------------------------------------------
+
+    def test_dockerhub_login(self, username, token):
+        """Ask only `auth.docker.io` for a token with HTTP Basic. No manifest request, no
+        pull. Returns `(status, message)`, status one of the `LOGIN_*` values."""
+        if not username or not token:
+            return LOGIN_REJECTED, LOGIN_MESSAGES[LOGIN_REJECTED]
+        headers = {"Accept": "application/json", "Authorization": self._basic((username, token))}
+        try:
+            resp = self._send("GET", DOCKER_HUB_TOKEN_URL, headers,
+                              params={"service": DOCKER_HUB_SERVICE})
+        except RegistryError:
+            return LOGIN_UNREACHABLE, LOGIN_MESSAGES[LOGIN_UNREACHABLE]
+        if resp.status_code == 200:
+            try:
+                body = resp.json()
+                got = body.get("token") or body.get("access_token")
+            except (ValueError, AttributeError):
+                got = None
+            if isinstance(got, str) and got:
+                return LOGIN_OK, LOGIN_MESSAGES[LOGIN_OK]
+            return LOGIN_UNEXPECTED, LOGIN_MESSAGES[LOGIN_UNEXPECTED]
+        if resp.status_code in (401, 403):
+            return LOGIN_REJECTED, LOGIN_MESSAGES[LOGIN_REJECTED]
+        return LOGIN_UNEXPECTED, LOGIN_MESSAGES[LOGIN_UNEXPECTED]
 
     def head_manifest(self, registry, repository, reference):
         """The content digest the registry has for `reference` (a tag), as `sha256:<hex>`.

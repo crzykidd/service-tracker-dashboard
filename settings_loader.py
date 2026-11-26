@@ -34,10 +34,18 @@ VALID_KEYS = {
     "health_history_days": int,
     "api_audit_retention_days": int,
     "tile_show_host": str,
+    "dockerhub_username": str,
+    "dockerhub_token": str,
 }
 
 # Keys whose values must never be written to logs in clear text.
-SECRET_KEYS = {"api_token"}
+SECRET_KEYS = {"api_token", "dockerhub_token"}
+
+# Keys whose environment variable is not simply the upper-cased key name.
+ENV_NAMES = {
+    "dockerhub_username": "STD_DOCKERHUB_USERNAME",
+    "dockerhub_token": "STD_DOCKERHUB_TOKEN",
+}
 
 
 def mask_value(key, value):
@@ -111,7 +119,7 @@ def load_settings():
 
     logger.debug("ENV settings:")
     for key, expected_type in VALID_KEYS.items():
-        env_val = os.getenv(key.upper())
+        env_val = os.getenv(ENV_NAMES.get(key, key.upper()))
         if env_val is not None:
             try:
                 final_config[key] = cast_value(expected_type, env_val)

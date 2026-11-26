@@ -351,9 +351,9 @@ def test_api_bad_params_and_auth(client, app):
     assert client.get("/api/v1/ports", headers=_key(app, "write")).status_code == 200
 
 
-def test_meta_reports_revision_7(client):
+def test_meta_reports_the_current_revision(client):
     meta = client.get("/api/v1/meta").get_json()
-    assert API_REVISION == 7 and meta["api_revision"] == 7 and "ports" in meta["features"]
+    assert API_REVISION == 8 and meta["api_revision"] == 8 and "ports" in meta["features"]
 
 
 # --- network details: macvlan, ipvlan, host network (PRD 25) ---------------------------------

@@ -66,7 +66,39 @@
     toast(ok ? 'success' : 'info', body.message || (ok ? 'Check requested.' : 'Could not start the check.'));
   }
 
+  // Docker Hub "Test login": posts the typed values (a blank field means the stored value) to the
+  // test route, which asks auth.docker.io only. The answer is a fixed message.
+  function testLogin(button) {
+    var form = document.getElementById('dockerhub-form');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var body = new URLSearchParams();
+    body.set('dockerhub_username', (form.elements.dockerhub_username.value || ''));
+    body.set('dockerhub_token', (form.elements.dockerhub_token.value || ''));
+    button.setAttribute('aria-disabled', 'true');
+    fetch(button.getAttribute('data-url'), {
+      method: 'POST',
+      headers: { 'X-CSRFToken': meta ? meta.content : '', 'Accept': 'application/json',
+                 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      credentials: 'same-origin'
+    }).then(function (resp) {
+      return resp.json().catch(function () { return {}; });
+    }).then(function (answer) {
+      toast(answer.ok ? 'success' : 'info', answer.message || 'Could not test the login.');
+    }).catch(function () {
+      toast('info', 'Could not test the login.');
+    }).then(function () {
+      button.removeAttribute('aria-disabled');
+    });
+  }
+
   document.addEventListener('click', function (event) {
+    var test = event.target.closest('[data-dockerhub-test]');
+    if (test) {
+      event.preventDefault();
+      if (test.getAttribute('aria-disabled') !== 'true') { testLogin(test); }
+      return;
+    }
     var trigger = event.target.closest('[data-image-check]');
     if (!trigger) { return; }
     event.preventDefault();

@@ -55,6 +55,7 @@ import jobs
 import mgmt_serializers
 import notify
 import ports
+import registry_client
 import restore_staging
 import settings_sections
 import settings_store
@@ -1783,6 +1784,77 @@ def save_image_update_settings():
     return _settings_redirect('image-updates')
 
 
+def _dockerhub_context():
+    """The Docker Hub login as the Settings page shows it: set / not set and where from, never
+    the token."""
+    st = image_update.dockerhub_status()
+    source = st['source']
+    return {**st,
+            'username_origin_label': _hub_origin_label(st['username_origin']),
+            'token_origin_label': _hub_origin_label(st['token_origin']),
+            'source_label': 'a mix of sources' if source == 'mixed' else _hub_origin_label(source),
+            'env_names': (image_update.ENV_DOCKERHUB_USERNAME, image_update.ENV_DOCKERHUB_TOKEN)}
+
+
+def _hub_origin_label(origin):
+    return {'env': 'the environment', 'ui': 'Settings', 'file': 'settings.yml'}.get(origin)
+
+
+@dashboard_bp.route('/settings/image-updates/dockerhub', methods=['POST'])
+@login_required
+@is_admin_required
+def save_dockerhub_login():
+    """Save or clear the optional Docker Hub login. The token is write-only: an empty token
+    field keeps the stored one, and nothing here echoes it. Values set by the environment
+    are not changed here."""
+    status = image_update.dockerhub_status()
+    if request.form.get('action') == 'clear':
+        image_update.clear_dockerhub()
+        db.session.commit()
+        after = image_update.dockerhub_status()
+        if after['username_set'] or after['token_set']:
+            flash("Docker Hub login cleared from Settings; a value from the environment or "
+                  "settings.yml is still in use.", 'info')
+        else:
+            flash("✅ Docker Hub login cleared. The check is anonymous again.", 'success')
+        return _settings_redirect('image-updates')
+    username = None if status['username_origin'] == 'env' else (request.form.get('dockerhub_username') or '').strip()
+    token = None if status['token_origin'] == 'env' else (request.form.get('dockerhub_token') or '').strip()
+    token = token or None                      # empty = keep the current token
+    error = image_update.validate_dockerhub(username or None, token)
+    if error:
+        flash(error, 'danger')
+        return _settings_redirect('image-updates')
+    if username == '':
+        # An emptied username clears the stored one (the login then counts as not configured).
+        image_update.clear_dockerhub_username()
+        username = None
+    image_update.save_dockerhub(username, token)
+    db.session.commit()
+    flash("✅ Docker Hub login saved.", 'success')
+    return _settings_redirect('image-updates')
+
+
+@dashboard_bp.route('/settings/image-updates/dockerhub/test', methods=['POST'])
+@login_required
+@is_admin_required
+def test_dockerhub_login():
+    """Ask auth.docker.io (only) for a token with the typed values, or the configured ones for
+    a blank field. No manifest request, no pull. Answers fixed messages, never the token."""
+    login = image_update.dockerhub_login()
+    username = (request.form.get('dockerhub_username') or '').strip() or login['username']
+    token = (request.form.get('dockerhub_token') or '').strip() or login['token']
+    if not username or not token:
+        return jsonify({'ok': False, 'status': 'incomplete',
+                        'message': 'Set both the username and the access token first.'}), 400
+    if image_update.validate_dockerhub(username, token):
+        return jsonify({'ok': False, 'status': registry_client.LOGIN_REJECTED,
+                        'message': registry_client.LOGIN_MESSAGES[registry_client.LOGIN_REJECTED]}), 200
+    client = registry_client.RegistryClient(http=image_update._http_override())
+    status, message = client.test_dockerhub_login(username, token)
+    return jsonify({'ok': status == registry_client.LOGIN_OK, 'status': status, 'message': message})
+
+
 def _image_update_settings_context():
     """Settings -> Image updates: the switch (and what locks it), the last and next run and
     the references in error. All read from stored state."""
@@ -1807,6 +1879,7 @@ def _image_update_settings_context():
         'image_update_last_at': last_at,
         'image_update_next': next_run.astimezone().strftime('%Y-%m-%d %H:%M') if next_run else None,
         'image_update_problems': problems,
+        'dockerhub': _dockerhub_context(),
     }
 
 

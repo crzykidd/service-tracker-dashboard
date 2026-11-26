@@ -32,6 +32,8 @@ services:
       TZ: ${TZ:-UTC}
       # Optional:
       # STD_IMAGE_UPDATE_ENABLED: "true"   # daily check for newer images (off by default)
+      # STD_DOCKERHUB_USERNAME: ${STD_DOCKERHUB_USERNAME:-}   # optional Docker Hub login for that check;
+      # STD_DOCKERHUB_TOKEN: ${STD_DOCKERHUB_TOKEN:-}         # a read-only access token (see .env.example)
       # STD_DOZZLE_URL: https://dozzle.example.com
     volumes:
       # The database, icons, backups and logs. Back this up (or use Settings → Backup).

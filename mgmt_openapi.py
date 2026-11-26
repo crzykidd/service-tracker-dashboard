@@ -202,7 +202,10 @@ OPERATIONS: tuple = (
        description="Whether STD checks the image registries for newer images (default off; the "
                    "environment variable `STD_IMAGE_UPDATE_ENABLED` wins, `enabled_origin` says which), the "
                    "default scope of the tag model, and the read-only `interval_hours` (always 24), "
-                   "`last_run` and `next_run`."),
+                   "`last_run` and `next_run`, and the read-only `dockerhub` block "
+                   "(`configured`, `username`, `source`) of the optional Docker Hub login. The access "
+                   "token is write-only: it is never returned and cannot be set through the API "
+                   "(Settings page, `STD_DOCKERHUB_TOKEN`, `STD_DOCKERHUB_TOKEN_FILE` or settings.yml)."),
     Op("PUT", "/settings/image-updates", "write", "Change the image update check settings",
        S.ImageUpdateSettingsOut, request=S.ImageUpdateSettingsPut, errors=(409,),
        description="`enabled` (default false) and `scope` (`any`, `minor` or `patch`). Omitted fields keep "

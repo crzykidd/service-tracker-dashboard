@@ -5,6 +5,31 @@ workarounds — newest at top. One entry per decision.
 
 ---
 
+## 2026-11-26 — Optional Docker Hub login for the image check
+
+- **Why.** Anonymous Docker Hub quota is per public IP and shared with every pull on the LAN, so the
+  check was starved ("registry rate limited the check"). An account login moves it to the account's quota.
+- **Docker Hub only, for now.** Other registries stay anonymous; credentials for them are parked in PRD
+  §24.9. One login, not a per-registry credential store.
+- **Basic only to the `auth.docker.io` realm.** The client sends HTTP Basic on the token request only when
+  the registry is `docker.io` and the realm host is exactly `auth.docker.io` (https, default port, no
+  userinfo). Never to the registry, another realm or a redirect target (redirects are not followed on the
+  token request at all). A challenge-driven flow could not tell a hostile realm from a real one otherwise.
+- **No silent anonymous fallback.** A 401/403 on the authenticated token request is
+  `Docker Hub rejected the configured login`; retrying anonymously would hide a revoked token and quietly
+  burn the shared IP quota again.
+- **The token is not settable over the API.** The management API (and so MCP) only reads
+  `dockerhub {configured, username, source}`; `PUT` rejects the token as an unknown field. Keeping the
+  secret on the Settings page, the environment or `settings.yml` keeps it out of API audit rows and
+  agent transcripts. API revision 8 for the new read-only block.
+- **Stored in the `setting` table, in the clear.** Like the MQTT password it must be usable, so it cannot be
+  hashed; a DB snapshot contains it (README says so). `STD_DOCKERHUB_TOKEN_FILE` (Docker secrets) is the
+  way to keep it out of the database.
+- **Loader.** `settings_loader` reads `STD_DOCKERHUB_*` (not `DOCKERHUB_*`) for the two keys via `ENV_NAMES`;
+  the token is in `SECRET_KEYS` (masked in logs, the Settings configuration table and `GET /config`).
+
+---
+
 ## 2026-11-23 — MCP server ported to the `mcp` SDK 2.x (replaces Dependabot #93)
 
 - **Why not take #93.** 2.x renames `FastMCP` to `MCPServer` (`mcp.server.mcpserver`) and removes

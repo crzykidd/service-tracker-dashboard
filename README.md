@@ -258,6 +258,7 @@ masked.
 | `api_audit_retention_days` | `API_AUDIT_RETENTION_DAYS` | `90` | Days the management API audit log is kept (daily job at 00:35). |
 | `user_session_length` | `USER_SESSION_LENGTH` | `120` | Login session length in minutes. |
 | `backup_path` | `BACKUP_PATH` | `/config/backups` | Backup folder. **Initial value**: Settings → Backup & restore can change it; the environment variable pins it. |
+| `dockerhub_username`, `dockerhub_token` | `STD_DOCKERHUB_USERNAME`, `STD_DOCKERHUB_TOKEN` | unset | Optional Docker Hub login for the image update check (see [Image update check](#image-update-check)). Both are needed. The token is write-only in STD. |
 | `backup_days_to_keep` | `BACKUP_DAYS_TO_KEEP` | `7` | Initial keep days (1-365) of **both** the snapshot and the export. Settings can change each; the environment variable pins both. |
 
 ### Environment-only variables
@@ -268,6 +269,8 @@ masked.
 | `TZ` | `UTC` | The container's time zone. Daily job times (backups at 00:05 and 00:10, the cleanup jobs) are container local time. |
 | `FLASK_DEBUG` | `0` | `1` runs the Werkzeug development server with auto-reload instead of gunicorn. Development only. |
 | `STD_CONFIG_DIR` | `/config` | Moves the settings file, database, logs, icons and backups. Used by the test suite; leave it unset in production. |
+| `STD_DOCKERHUB_USERNAME`, `STD_DOCKERHUB_TOKEN` | unset | Optional Docker Hub login for the [image update check](#image-update-check). Both are needed; they win over the Settings page and over the `dockerhub_username` / `dockerhub_token` keys in `settings.yml`. The token is never shown or returned. |
+| `STD_DOCKERHUB_TOKEN_FILE` | unset | Path to a file holding the Docker Hub access token (Docker secrets, for example). `STD_DOCKERHUB_TOKEN` wins if both are set. |
 | `STD_IMAGE_UPDATE_ENABLED` | unset (off) | `true` or `false` turns the daily [image update check](#image-update-check) on or off and wins over the value saved through the API. While it is set, the API refuses to change the switch. |
 
 The MCP server has its own variables (`STD_URL`, `STD_API_KEY`, `STD_VERIFY_TLS`,
@@ -404,6 +407,20 @@ image that could not be checked.
   entry's health.
 
 Results are in the entries' `image_update` block and in `GET /api/v1/image-updates`.
+
+**Docker Hub login (optional).** Without one the check is anonymous, and Docker Hub counts
+anonymous requests against your public IP (100 an hour at the time of writing), a quota
+every `docker pull` on your network shares. When it is spent the check shows "registry rate
+limited the check". A login moves the check onto your account's quota. In Docker Hub go to
+Account settings → Personal access tokens, create a token with **Read-only** access, then
+enter the username and token under Settings → Sources → Image updates (or set
+`STD_DOCKERHUB_USERNAME` with `STD_DOCKERHUB_TOKEN` or `STD_DOCKERHUB_TOKEN_FILE`, or the
+`settings.yml` keys). Use a token, never your password. **Test login** asks Docker Hub's
+sign-in host for a token and pulls nothing. The login is sent only to `auth.docker.io`;
+other registries stay anonymous. The token is write-only: STD never shows it again, returns
+it from the API, logs it or exports it. Because a token saved in Settings lives in the
+database, **a database snapshot backup contains it** (as it does the MQTT password); keep
+backups private, or supply it through the environment instead.
 
 ### Inventory streams
 

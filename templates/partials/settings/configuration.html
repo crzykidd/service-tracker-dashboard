@@ -22,7 +22,7 @@
           <td><code>{{ key }}</code></td>
           <td>
             <code>
-              {% if key == 'api_token' %}
+              {% if key in ('api_token', 'dockerhub_token') %}
                 ••••••••••
               {% else %}
                 {{ value }}

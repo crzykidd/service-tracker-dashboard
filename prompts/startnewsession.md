@@ -60,7 +60,7 @@ The design is `docs/design/2026-11-22-moves-and-label-settings.md`. It covers:
 - container moves and renames (detect, then merge, never automatically);
 - per-field provenance, so a UI edit always beats a label;
 - fixing the register clobbers of the icon and the health toggles;
-- new label-driven settings at **API revision 8**: description, image update
+- new label-driven settings at **API revision 9** (8 went to the 0.13.4 Docker Hub login): description, image update
   policy/scope/pattern, `image_repo_url`, URL-check settings, `attributes`. Revision 7 went
   to 0.13.1.
 

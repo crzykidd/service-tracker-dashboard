@@ -121,6 +121,7 @@
 | 0.111   | 2026-11-22 | v0.13.2 released: image patched at build time (Debian security updates, current pip/setuptools/wheel), dependencies updated, `.dockerignore` keeps repo metadata, tests and docs out of the image; new production example `docker-compose.example.yml` + `.env.example` (validated in CI). No API, schema or wire-contract change. |
 | 0.112   | 2026-11-23 | §14.7 / §15.7 (on `dev`, unreleased): the MCP server is ported to the `mcp` Python SDK 2.3.0 (`MCPServer` replaces `FastMCP`; same tools, names, arguments and results; `httpx` kept for the STD client). No API, schema or wire-contract change. |
 | 0.113   | 2026-11-23 | v0.13.3 released: the MCP server on the `mcp` SDK 2.x (§14.7, §15.7). No STD server, API, schema or wire-contract change. |
+| 0.114   | 2026-11-26 | Optional Docker Hub login for the image update check, on `dev`, unreleased: §24.2 (Basic only to the `auth.docker.io` realm, fixed `Docker Hub rejected the configured login` error, Test login), §24.6 (settings `dockerhub_username` / `dockerhub_token`, env > Settings > `settings.yml`, `STD_DOCKERHUB_TOKEN_FILE`, write-only token, the two Settings routes), §24.7 and the §18.1 table (API revision 8: read-only `dockerhub` block), §24.9 narrowed to credentials for other registries. No schema change (the `setting` key/value rows). |
 
 ---
 
@@ -3049,6 +3050,7 @@ server supports and log it.
 | 5 | 0.12.0 | Entries: optional `image_repo_url` (operator override of the image repository link) on `POST /entries` and `PATCH /entries/<id>`; `image_repo_url` and `image_repo_link` in the entry responses (§13.7). Register and stream-ingest contracts unchanged Also read-only `image_ref` (the canonical image reference, §5.12) in the entry detail's `notifier` block Image update check (§24): the optional register field `image_info` (absent or null keeps the stored values; present replaces them); `image_update` in the entry responses and `notifier.image_info` in the detail; `image_update_policy`, `image_update_scope` and `image_tag_pattern` on `PATCH /entries/<id>`; `GET /image-updates`, `GET`/`PUT /settings/image-updates`, `POST /image-updates/run`; features `image_updates` and `image_info` (one bump for the whole post-0.11.0 set) |
 | 6 | 0.13.0 | `GET /ports` (container ports in use across all hosts, with conflicts; §25; `kind` also accepts `host_network` and `direct`, rows carry `network` and `driver`, the summary has `host_network` and `direct`), feature `ports` Register: optional `driver`, `ip_address`, `ipv6_address` and `mac_address` on each `networks` item (§5.3, §22), feature `network_details` |
 | 7 | 0.13.1 | `GET /ports` rows: `ports_unknown` and `port_source`; `container_port`, `host_port` and `protocol` may be null when `ports_unknown` (§25) |
+| 8 | 0.13.4 | `GET` / `PUT /settings/image-updates`: read-only `dockerhub` `{configured, username, source}`, the optional Docker Hub login for the image check (§24.6, §24.7); the token is never returned and cannot be set over the API |
 
 ### 18.2 HA "Since" sensor and nightly database snapshot [`inv-02-ha-since-and-db-snapshot`] — Delivered
 
@@ -4034,7 +4036,13 @@ by default** (§24.6): registries learn which images this install runs.
   quay.io, lscr.io, gcr.io, GitLab, Harbor, Gitea and `registry:2`. The Bearer realm, service and
   scope are read from `WWW-Authenticate` (nothing hardcoded; the realm must be https); tokens are
   cached per `(host, scope)` until `expires_in`; a token is never forwarded to another host on a
-  redirect. Timeouts 5 s connect, 10 s read, one retry on a connection error,
+  redirect. **Optional Docker Hub login:** when a username and an access token are both configured
+  (§24.6), the token request sends them as HTTP Basic, and only when the registry is Docker Hub and
+  the Bearer realm is `https://auth.docker.io/...` (exact host, https, no userinfo, default port);
+  never to the registry host, another registry, another realm host or a redirect target. A 401/403 on
+  that request is the fixed error `Docker Hub rejected the configured login` (no anonymous retry).
+  Manifests are still HEAD only and tag lists are still the only GET. `test_dockerhub_login()` asks
+  `auth.docker.io` alone for a token (no manifest request). Timeouts 5 s connect, 10 s read, one retry on a connection error,
   `User-Agent: service-tracker-dashboard/<version>`. `HEAD /v2/<repo>/manifests/<tag>` carries all
   four manifest media types (OCI index, Docker manifest list, OCI manifest, Docker manifest v2), so a
   multi-arch tag returns the index digest that `docker pull` records in `RepoDigests`; with no
@@ -4100,6 +4108,17 @@ Wire contract: `docs/register-api.md`; cross-repo plan: §22.2 item 5.
 - Settings (DB `setting` rows): `image_update_enabled` (**default off**; the env var
   `STD_IMAGE_UPDATE_ENABLED` wins, and while it is set the API refuses a different value) and
   `image_update_scope` (`any` | `minor` | `patch`, default `any`). Off means no registry request at all.
+- **Docker Hub login (optional):** `dockerhub_username` and `dockerhub_token`. Each value resolves
+  environment (`STD_DOCKERHUB_USERNAME`; `STD_DOCKERHUB_TOKEN`, else the file named by
+  `STD_DOCKERHUB_TOKEN_FILE`) > Settings (DB `setting` rows) > `settings.yml` > unset; both must be set,
+  otherwise the check is anonymous and Settings says what is missing. The token is write-only: Settings
+  shows only set / not set and the source (`env`, `ui`, `file`, `mixed`), an empty token field keeps the
+  stored one, **Clear Docker Hub login** removes the Settings values (environment and `settings.yml`
+  values stay), and nothing logs, returns, exports (§20.2), publishes (§17) or puts it in an error. A
+  database snapshot contains the Settings token, like the MQTT password. Routes (admin, CSRF):
+  `POST /settings/image-updates/dockerhub` (save / `action=clear`) and `.../dockerhub/test` (**Test
+  login**: typed values, else the stored ones; answers `ok`, `rejected`, `unreachable` or `unexpected`
+  with fixed messages).
 - A run collects the distinct references of active Docker entries (not `off`, not pinned, and not a digest
   model entry with no running digest), upserts their `image_reference` rows, then checks per repository:
   one tag list per repository, one HEAD per tag, deduped across entries. `ThreadPoolExecutor(4)`, at most 2
@@ -4120,14 +4139,16 @@ Wire contract: `docs/register-api.md`; cross-repo plan: §22.2 item 5.
   days (skipped while the check is off, so stored results survive).
 - Not part of the health roll-up: an available update is information, not a fault.
 
-### 24.7 Management API and MCP (API revision 5)
+### 24.7 Management API and MCP (API revision 5; the `dockerhub` block, revision 8)
 
 Entry responses gain `image_update` (`state`, `latest`, `kind`, `since`, `checked_at`, `error`, `reason`,
 `model`, `rebuilt`, `policy`, `scope`, `tag_pattern`, `running_digest`, `ref`, `provider`; null for manual and
 stream entries) and the detail's `notifier.image_info`. `PATCH /entries/<id>` accepts `image_update_policy`,
 `image_update_scope` and `image_tag_pattern` (Docker entries only, validated, recomputed locally).
 `GET /image-updates` (read; `?state=`), `GET`/`PUT /settings/image-updates` (`enabled`, `scope`, read-only
-`interval_hours: 24`, `last_run`, `next_run`, `enabled_origin`), `POST /image-updates/run` (write; optional
+`interval_hours: 24`, `last_run`, `next_run`, `enabled_origin`, and from revision 8 the read-only
+`dockerhub: {configured, username, source}`; the token is never returned and `PUT` rejects it as an unknown
+field, so it cannot be set over the API), `POST /image-updates/run` (write; optional
 `entry_id`; 202, 409 when off or nothing to check, 429 when throttled with `Retry-After`). All are in
 `mgmt_openapi.OPERATIONS`. MCP: `list_image_updates`, `run_image_update_check`; `update_entry` takes the
 three fields. Export format v1 (§20.2): `image_update_policy` (omitted when `auto`), `image_update_scope` and
@@ -4183,8 +4204,9 @@ session. The state shown is `image_update.effective_state()`, so everything is h
 
 ### 24.9 Not built yet
 
-Registry credentials and insecure registries (img-05, out of the MVP: no private registries); a
-What's Up Docker or Komodo provider.
+Credentials for registries other than Docker Hub (Docker Hub's optional login is built, §24.2 and
+§24.6) and insecure registries (img-05, out of the MVP: no private registries); a What's Up Docker or
+Komodo provider.
 
 ### 24.10 MQTT and Home Assistant (img-04) [`img-04`] — Delivered
 

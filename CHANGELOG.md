@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Optional Docker Hub login for the image update check.** The check used Docker Hub anonymously, so it drew on your public IP's quota (100 requests an hour), which every `docker pull` on the network shares; once that was spent, images showed "registry rate limited the check". In Settings → Sources → Image updates you can now enter a Docker Hub username and a read-only access token, and the check draws on your account's quota instead. The same values can come from `STD_DOCKERHUB_USERNAME` and `STD_DOCKERHUB_TOKEN` (or `STD_DOCKERHUB_TOKEN_FILE`, a file holding the token, for Docker secrets) or from `dockerhub_username` / `dockerhub_token` in `settings.yml`; the environment wins over Settings, which wins over the file. Both a username and a token are needed. The login goes only to Docker Hub's sign-in host (`auth.docker.io`), never to GHCR, Quay or any other registry; the token is never shown again, returned by the API, logged or exported; **Test login** checks it without pulling anything; a login Docker Hub rejects shows as a fixed error instead of silently falling back to anonymous. A database backup contains the token, like the MQTT password.
+- API revision 8: `GET` and `PUT /api/v1/settings/image-updates` return a read-only `dockerhub` block (`configured`, `username`, `source`). The token is not returned and cannot be set through the API.
+
 ## [0.13.3] — 2026-11-23
 
 ### Changed
