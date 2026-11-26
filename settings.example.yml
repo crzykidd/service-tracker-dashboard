@@ -85,3 +85,12 @@ api_audit_retention_days: 90
 # host; always = every entry that has a host; never = hide it. Can be set as
 # TILE_SHOW_HOST in ENV.
 tile_show_host: duplicates
+
+# Optional Docker Hub login for the image update check (Settings -> Sources ->
+# Image updates). Without it the check uses your public IP's anonymous Docker Hub
+# quota, shared with every docker pull on the network. Use a read-only personal
+# access token (never your password). Both must be set. ENV STD_DOCKERHUB_USERNAME,
+# STD_DOCKERHUB_TOKEN (or STD_DOCKERHUB_TOKEN_FILE, a path to a file holding the
+# token) win over the Settings page, which wins over this file.
+#dockerhub_username: myhubuser
+#dockerhub_token: dckr_pat_xxxxxxxx

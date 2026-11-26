@@ -45,6 +45,13 @@ Keys currently in use:
 - `image_update_last_run`  dict: {at, trigger, refs, checked, updates, errors, skipped,
                            duration_seconds}; observed, written by the check run.
 
+- `dockerhub_username`, `dockerhub_token`
+                           str: the optional Docker Hub login for the image update check
+                           (image_update.py). The token is WRITE-ONLY: no page, API response,
+                           export, log line or error message may carry it. A DB snapshot
+                           does (like the MQTT password). Env (STD_DOCKERHUB_*) and
+                           settings.yml are the other sources; see `image_update.dockerhub_login`.
+
 - `exposure_layers_per_host`  dict[str, dict[str, str]]
                               e.g. {"docker-edge": {"traefik": "external"}}
                               Per-host override for `exposure_layers`.
@@ -85,6 +92,8 @@ KEY_RESTORE_LAST_SEEN = "restore_last_seen"
 KEY_IMAGE_UPDATE_ENABLED = "image_update_enabled"
 KEY_IMAGE_UPDATE_SCOPE = "image_update_scope"
 KEY_IMAGE_UPDATE_LAST_RUN = "image_update_last_run"
+KEY_DOCKERHUB_USERNAME = "dockerhub_username"
+KEY_DOCKERHUB_TOKEN = "dockerhub_token"
 
 DEFAULT_UPDATE_CHECK_ENABLED = True
 DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 6
@@ -308,3 +317,10 @@ def get_image_update_value(key: str):
 def set_image_update_value(key: str, value) -> None:
     """Store one image update setting. Caller validates and commits."""
     _set_value(key, value)
+
+
+def delete_image_update_value(key: str) -> None:
+    """Remove an image update setting row (e.g. Clear Docker Hub login). Caller commits."""
+    row = db.session.get(Setting, key)
+    if row is not None:
+        db.session.delete(row)

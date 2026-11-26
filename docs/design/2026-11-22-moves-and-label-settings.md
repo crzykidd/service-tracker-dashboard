@@ -7,7 +7,7 @@
 `main` at `ed3274e` (v0.5.1) plus its queued 0.6.0 prompt
 `prompts/2026-11-22-std-network-details-and-label-hardening.md`. Where this note and the code
 disagree, trust the code.
-**Revision numbering:** the label fields are API revision 8, not 7: revision 7 went to the 0.13.1 Ports fix (`ports_unknown`).
+**Revision numbering:** the label fields are API revision 9: revision 7 went to the 0.13.1 Ports fix (`ports_unknown`) and revision 8 to the 0.13.4 Docker Hub login.
 **Builds on:** `docs/design/2026-11-22-notifier-labels.md` (the label list and pitfalls),
 `docs/FUTURE.md` → "Service identity and duplicate detection" and "Register overwrites some
 operator edits".
@@ -25,7 +25,7 @@ Goals:
 - **Per-field provenance** for every operator-settable field register can write, so a UI edit
   always wins and a label can own a value without freezing it.
 - **Fix the existing clobbers:** the icon and the URL-check toggles (§3.5).
-- **New label-driven register fields** (API revision 8): `description`, the three image-update
+- **New label-driven register fields** (API revision 9): `description`, the three image-update
   fields, `image_repo_url`, URL-check settings, and a display-only `attributes` pass-through.
 - **Move and rename detection** with an operator-confirmed merge or dismiss.
 
@@ -233,7 +233,7 @@ only, register never writes them); observation columns (no ownership, CLAUDE.md)
 `externalurl_source`, `name_source`, `models.py:161-162`, `204`), the field set is closed and
 small, the export already models a source per value (`UrlValue`, `export_format.py:135-137`),
 and a JSON column needs reassign-on-write to be tracked. A JSON map would only win if label
-fields arrived without migrations; every rev-8 field already has its value column.
+fields arrived without migrations; every rev-9 field already has its value column.
 
 **Migration (one, phase a), with backfill:**
 
@@ -333,7 +333,7 @@ Under provenance:
   `export_format.py:11-13`), additions are optional. Legacy (format 0) import unchanged.
 - `entry_match` rows are not exported (they describe this install's rows).
 
-## 4. New register fields and labels (API revision 8)
+## 4. New register fields and labels (API revision 9)
 
 ### 4.1 Fields
 
@@ -367,12 +367,12 @@ Notes:
 
 ### 4.2 Revision and feature flag
 
-- `API_REVISION = 8` (`api_version.py:9`), one row in `API_REVISION_HISTORY` and the PRD §18.1
-  table: the register fields above, the rev-8 null semantics, `sources` / `reset` in the
+- `API_REVISION = 9` (`api_version.py:9`), one row in `API_REVISION_HISTORY` and the PRD §18.1
+  table: the register fields above, the rev-9 null semantics, `sources` / `reset` in the
   management API (§3.3), and the duplicates endpoints (§2.5). One row for the release, as
   revision 5 and 6 did (`docs/decisions.md`, 2026-11-22 entry).
 - **One feature flag `label_settings`** in `FEATURES` (`api_version.py:38-39`) for the register
-  side, and `duplicates` for the management API. One flag is enough because STD ships all rev-8
+  side, and `duplicates` for the management API. One flag is enough because STD ships all rev-9
   register fields together; a later field gets its own flag.
 - **The null semantics are part of `label_settings`.** A producer that advertises nothing new
   (older notifier) never sends null for these keys (`_to_canonical` only copies present labels,
@@ -383,7 +383,7 @@ Notes:
 Consumer leads, producer follows (CLAUDE.md ordering rule). A notifier prompt, written when STD
 0.14.0 is tagged:
 
-- **Gate:** send any rev-8 key only when `feature_supported("label_settings")` (the per-feature
+- **Gate:** send any rev-9 key only when `feature_supported("label_settings")` (the per-feature
   gate 0.6.0 adds). Unsupported: drop them with one log line, as for `network_details`.
 - **Map labels:** add the keys to `_PASSTHROUGH` / `_LEGACY_TO_CANONICAL`
   (`notifiers/service_tracker_dashboard.py:20-57`); build `url_checks` from
@@ -391,10 +391,10 @@ Consumer leads, producer follows (CLAUDE.md ordering rule). A notifier prompt, w
 - **Validate locally** with the same limits (§4.1); an invalid label is dropped with a warning,
   never sent.
 - **Send null for a removed label:** on every register to a `label_settings` STD, every
-  label-capable key the notifier knows (the rev-8 keys plus `internalurl`, `externalurl`,
+  label-capable key the notifier knows (the rev-9 keys plus `internalurl`, `externalurl`,
   `image_icon`, the two toggles, `group_name`, `sort_priority`) is sent: the value, or `null`
   when the label is absent. That is what lets STD clear a label-owned value (§3.3 rule 5).
-- **Rejection retry:** a 400 blaming a rev-8 key marks `label_settings` rejected, per the 0.6.0
+- **Rejection retry:** a 400 blaming a rev-9 key marks `label_settings` rejected, per the 0.6.0
   mechanism.
 
 ## 5. How the two parts interact
@@ -425,7 +425,7 @@ in that order; the release is 0.14.0 after c2. The notifier 0.7.0 prompt follows
 |---|---|---|---|
 | **a1 `prov-01`** provenance core | Migration (columns + backfill + nothing else); `provenance.py`; register rules incl. `model_fields_set`; icon and toggle fixes; group/sort onto provenance, `notifier_wins` deprecation warning; UI/API writes set `ui_edit` on change only | Icon chosen in UI survives N registers; derived icon still fills NULL; UI-disabled check stays off with label `true`; label still drives a NULL-source toggle; new-row absent toggle has NULL source; saving the Edit page unchanged sets no source; "No group" survives `user_wins`; `notifier_wins` keeps today's behaviour; absent `networks` no longer clears; migration backfill cases; adopted manual row keeps its icon | Fixed: icon and toggles no longer overwritten; Changed: adopted manual entries keep their settings; Deprecated: `notifier_wins`. PRD: §8.7 generalized to all provenance fields, §5.4 schema, new §26 |
 | **a2 `prov-02`** provenance surfaces | Edit page badges + Reset; `sources` in `EntryOut`/`CheckOut`; `reset` on PATCH; export rule and `CheckRecord` sources; import writes `ui_edit`; MCP passes through | Reset then register refills from label; API `sources` values; export omits label-owned values, keeps `ui_edit`; round trip of check sources; old export file defaults; OpenAPI registry lists the change (`mgmt_openapi.py` test) | Added: "set in UI / from label" badges and Reset. PRD: §20.2, §14 entries, §26 |
-| **b `labels-01`** rev-8 register fields | Schema fields + nested `url_checks` model (`extra="forbid"`); shared validators; rev-8 null clearing (§3.3 rule 5); `API_REVISION = 8`, `label_settings`; docs/register-api.md label table | Each field: absent leaves alone, value writes `explicit_label`, `ui_edit` blocks it, null clears only `explicit_label`; toggle null keeps value; unknown nested key 400; invalid policy/pattern/URL/interval 400 with the API's message; `attributes` limits; `/meta` lists `label_settings`; older-notifier payload unchanged behaviour (safe degradation) | Added: description, image update, repo link, check settings and attributes from labels (needs notifier 0.7.0). PRD: §18.1 row 8, §22 contract, §26 |
+| **b `labels-01`** rev-9 register fields | Schema fields + nested `url_checks` model (`extra="forbid"`); shared validators; rev-9 null clearing (§3.3 rule 5); `API_REVISION = 9`, `label_settings`; docs/register-api.md label table | Each field: absent leaves alone, value writes `explicit_label`, `ui_edit` blocks it, null clears only `explicit_label`; toggle null keeps value; unknown nested key 400; invalid policy/pattern/URL/interval 400 with the API's message; `attributes` limits; `/meta` lists `label_settings`; older-notifier payload unchanged behaviour (safe degradation) | Added: description, image update, repo link, check settings and attributes from labels (needs notifier 0.7.0). PRD: §18.1 row 9, §22 contract, §26 |
 | **c1 `moves-01`** detection | `entry_match` table + migration (FK indexes); rules engine (pure, from rows); register-time hook; Settings → Duplicates list (read-only) + nav badge; notices on both Edit pages; `GET /duplicates`, `POST /duplicates/scan` | Each evidence rule; eligibility (locked, manual, stream, deleted, active-active excluded); exited-but-fresh O counts; dismissed pair not re-offered; scan is O(n) (bucket test); **query-count guard: Dashboard, Tiled and Compact issue a constant number of queries for 10 vs 50 entries with open matches**; Settings badge is one query; register with no twin adds no match | Added: possible-move detection. PRD: §26, §19 sections list |
 | **c2 `moves-02`** merge and dismiss | Merge (option B) per §2.7 + §5 with per-field flips; dismiss; `snapshot`; MQTT/HA effects; `POST /duplicates/{id}/merge`, `/dismiss`; MCP tools; FUTURE.md sections removed | Field table row by row; survivor keeps id, check ids, history, widget; N soft-deleted and restore refused; N's service checks re-parented; exposures re-synthesized; image state recomputed; HA: N's configs cleared, O's republished with new host (publisher stub); audit row via API; merge refused when eligibility no longer holds (409) | Added: merge a moved container into its old entry, keeping history and HA devices. PRD: §26, §17 note, §18.1 (already in row 8) |
 
@@ -462,7 +462,7 @@ Sizing note: if a1 runs long, split the group/sort move to `notifier_wins` into 
     source? **Recommend omit**, as URLs already do.
 13. **Settings badge from day one.** FUTURE.md said start without one; the streams section
     already badges link offers. **Recommend a badge.**
-14. **One feature flag** `label_settings` for all rev-8 register fields, or one per field?
+14. **One feature flag** `label_settings` for all rev-9 register fields, or one per field?
     **Recommend one**, new flags for later fields.
 15. **An invalid label value:** 400 the whole register (today's contract), or STD drops the
     field with a warning? **Recommend 400** plus notifier-side validation in 0.7.0.

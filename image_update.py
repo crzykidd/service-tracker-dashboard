@@ -31,6 +31,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from flask import current_app
+
 import image_tags
 import settings_store
 from extensions import db
@@ -43,6 +45,11 @@ logger = logging.getLogger(__name__)
 
 PROVIDER_REGISTRY = "registry"
 ENV_ENABLED = "STD_IMAGE_UPDATE_ENABLED"
+ENV_DOCKERHUB_USERNAME = "STD_DOCKERHUB_USERNAME"
+ENV_DOCKERHUB_TOKEN = "STD_DOCKERHUB_TOKEN"
+ENV_DOCKERHUB_TOKEN_FILE = "STD_DOCKERHUB_TOKEN_FILE"
+MAX_HUB_USERNAME = 255
+MAX_HUB_TOKEN = 512
 JOB_ID = "image_update_check_job"
 INTERVAL_HOURS = 24                       # fixed: there is no interval setting
 JITTER_SECONDS = 30 * 60
@@ -118,6 +125,114 @@ def save_settings(enabled=None, scope=None):
         settings_store.set_image_update_value(settings_store.KEY_IMAGE_UPDATE_ENABLED, bool(enabled))
     if scope is not None:
         settings_store.set_image_update_value(settings_store.KEY_IMAGE_UPDATE_SCOPE, scope)
+
+
+# --- Docker Hub login (optional) ----------------------------------------------------------
+# The token is write-only: nothing here logs it, returns it to a page or puts it in an error.
+# Resolution per value: environment > Settings (DB) > settings.yml > unset. Both must be set.
+
+def _clean(value):
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _env_token():
+    token = _clean(os.environ.get(ENV_DOCKERHUB_TOKEN))
+    if token:
+        return token
+    path = _clean(os.environ.get(ENV_DOCKERHUB_TOKEN_FILE))
+    if path:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return _clean(fh.read(MAX_HUB_TOKEN + 1))
+        except OSError:
+            # The path only: never the file's content.
+            logger.warning("%s is set but the file could not be read", ENV_DOCKERHUB_TOKEN_FILE)
+    return None
+
+
+def _resolve_hub_value(name, env_value, store_key):
+    """`(value, origin)`; origin is `env`, `ui`, `file` or None."""
+    if env_value:
+        return env_value, "env"
+    stored = _clean(settings_store.get_image_update_value(store_key))
+    if stored:
+        return stored, "ui"
+    try:
+        if name in (current_app.config.get("CONFIG_FROM_FILE") or {}):
+            from_file = _clean(current_app.config.get(name))
+            if from_file:
+                return from_file, "file"
+    except RuntimeError:  # no app context
+        pass
+    return None, None
+
+
+def dockerhub_login():
+    """The resolved login: `{username, token, username_origin, token_origin, configured,
+    source}`. Internal: carries the token, so it never goes to a template or a response. Use
+    `dockerhub_status()` for anything shown."""
+    user, user_origin = _resolve_hub_value(
+        "dockerhub_username", _clean(os.environ.get(ENV_DOCKERHUB_USERNAME)),
+        settings_store.KEY_DOCKERHUB_USERNAME)
+    token, token_origin = _resolve_hub_value(
+        "dockerhub_token", _env_token(), settings_store.KEY_DOCKERHUB_TOKEN)
+    configured = bool(user and token)
+    source = None
+    if configured:
+        source = user_origin if user_origin == token_origin else "mixed"
+    return {"username": user, "token": token, "username_origin": user_origin,
+            "token_origin": token_origin, "configured": configured, "source": source}
+
+
+def dockerhub_credentials():
+    """`(username, token)` for the registry client, or None unless both are set."""
+    login = dockerhub_login()
+    return (login["username"], login["token"]) if login["configured"] else None
+
+
+def dockerhub_status():
+    """The shown form: never the token. `{configured, username, source, username_set,
+    token_set, username_origin, token_origin}`; `username` and `source` are None unless
+    both values are set."""
+    login = dockerhub_login()
+    return {
+        "configured": login["configured"],
+        "username": login["username"] if login["configured"] else None,
+        "source": login["source"],
+        "username_set": bool(login["username"]),
+        "token_set": bool(login["token"]),
+        "username_origin": login["username_origin"],
+        "token_origin": login["token_origin"],
+    }
+
+
+def save_dockerhub(username=None, token=None):
+    """Store the UI-set login values (None keeps). Caller validates and commits."""
+    if username is not None:
+        settings_store.set_image_update_value(settings_store.KEY_DOCKERHUB_USERNAME, username)
+    if token is not None:
+        settings_store.set_image_update_value(settings_store.KEY_DOCKERHUB_TOKEN, token)
+
+
+def clear_dockerhub_username():
+    settings_store.delete_image_update_value(settings_store.KEY_DOCKERHUB_USERNAME)
+
+
+def clear_dockerhub():
+    """Remove the UI-set login (environment and settings.yml values are not ours to clear)."""
+    settings_store.delete_image_update_value(settings_store.KEY_DOCKERHUB_USERNAME)
+    settings_store.delete_image_update_value(settings_store.KEY_DOCKERHUB_TOKEN)
+
+
+def validate_dockerhub(username, token):
+    """Error message or None for submitted values (None = not submitted)."""
+    if username is not None and (len(username) > MAX_HUB_USERNAME or not username.isprintable()
+                                 or any(c.isspace() for c in username)):
+        return "The Docker Hub username is not valid."
+    if token is not None and (len(token) > MAX_HUB_TOKEN or not token.isprintable()
+                              or any(c.isspace() for c in token)):
+        return "The Docker Hub access token is not valid."
+    return None
 
 
 def last_run():
@@ -409,7 +524,8 @@ class RegistryProvider(UpdateProvider):
                 results = {}
                 if selected:
                     client = RegistryClient(user_agent=f"service-tracker-dashboard/{version}",
-                                            http=_http_override())
+                                            http=_http_override(),
+                                            dockerhub_login=dockerhub_credentials())
                     deadline = time.monotonic() + RUN_BUDGET_SECONDS
                     groups = {}
                     for want in selected:

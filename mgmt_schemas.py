@@ -889,6 +889,12 @@ class ImportStaleOut(TypedDict):
     plan: ImportPlanOut
 
 
+class DockerHubLoginOut(TypedDict):
+    configured: bool                 # both a username and an access token are set
+    username: str | None             # null unless configured. The token is never returned
+    source: str | None               # env | ui | file | mixed; null unless configured
+
+
 class ImageUpdateSettingsOut(TypedDict):
     enabled: bool                    # default false
     enabled_origin: str              # env (STD_IMAGE_UPDATE_ENABLED, read-only here) | ui | default
@@ -896,6 +902,7 @@ class ImageUpdateSettingsOut(TypedDict):
     interval_hours: int              # always 24: fixed, there is no setting
     last_run: dict[str, Any] | None  # {at, trigger, refs, checked, updates, errors, skipped, duration_seconds}
     next_run: str | None             # the daily job's next run (UTC, Z); null while the check is off
+    dockerhub: DockerHubLoginOut     # optional Docker Hub login for the check; read-only here
 
 
 class ImageReferenceEntryOut(TypedDict):
