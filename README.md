@@ -1,6 +1,6 @@
 # 🧭 Service Tracker Dashboard (STD)
 
-![Version](https://img.shields.io/badge/version-0.13.3-blue)
+![Version](https://img.shields.io/badge/version-0.13.4-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue?logo=python)
 ![Flask](https://img.shields.io/badge/flask-web-black?logo=flask)
 ![SQLite](https://img.shields.io/badge/db-sqlite-blue?logo=sqlite)
@@ -97,6 +97,20 @@ Reference pages: [register API](docs/register-api.md) ·
 
 The two latest releases. Every release and every change is in the [CHANGELOG](CHANGELOG.md).
 
+### v0.13.4 (2026-11-26)
+
+- **Optional Docker Hub login for the image update check.** Anonymous checks share your
+  public IP's Docker Hub quota with every `docker pull` on the network, so images could end
+  up "registry rate limited the check". Enter a Docker Hub username and a read-only access
+  token in Settings → Sources → Image updates (or set `STD_DOCKERHUB_USERNAME` and
+  `STD_DOCKERHUB_TOKEN`), and the check uses your account's quota instead. **Test login**
+  checks it without pulling anything. The login goes only to Docker Hub, and the token is
+  never shown again, returned by the API, logged or exported.
+- API revision 8: `GET /api/v1/settings/image-updates` reports whether a Docker Hub login
+  is configured (never the token).
+
+[Full entry](CHANGELOG.md#0134--2026-11-26)
+
 ### v0.13.3 (2026-11-23)
 
 - **MCP server on the MCP Python SDK 2.x.** Tools are unchanged. `uv run` picks up the new
@@ -104,27 +118,6 @@ The two latest releases. Every release and every change is in the [CHANGELOG](CH
   yourself, reinstall it.
 
 [Full entry](CHANGELOG.md#0133--2026-11-23)
-
-### v0.13.2 (2026-11-22)
-
-- **Security fixes in the image:**
-  - **zlib** heap buffer overflow (CVE-2026-85091, high): patched. Every image build now
-    applies Debian's security updates.
-  - **wheel** privilege escalation / code execution via a malicious wheel (CVE-2026-24049,
-    high) and **jaraco.context** path traversal (CVE-2026-23949, high): removed. Both were
-    old copies bundled in the base image's setuptools; pip, setuptools and wheel are now
-    brought current on every build.
-  - No fixable high or critical CVE is left. The remaining high findings are Debian
-    packages with no fixed version yet.
-- **Dependencies updated** to their latest releases (certifi, charset-normalizer, pydantic,
-  PyYAML, SQLAlchemy, and the MCP server's). STD's own dependencies had no known CVEs.
-- **Smaller image:** repository metadata, tests and docs are no longer copied in.
-- **Production compose example:** [`docker-compose.example.yml`](docker-compose.example.yml),
-  with a hardened STD and the notifier behind a read-only socket proxy.
-
-[Full entry](CHANGELOG.md#0132--2026-11-22)
-
----
 
 ## Screenshots
 
@@ -794,7 +787,7 @@ claude mcp add std -s user \
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies from the script, so there is no
 virtualenv to set up. Without a checkout, run a release tag's copy:
-`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.3/mcp/std_mcp.py`.
+`uv run https://raw.githubusercontent.com/crzykidd/service-tracker-dashboard/v0.13.4/mcp/std_mcp.py`.
 
 | Variable | Default | What it does |
 |---|---|---|

@@ -122,6 +122,7 @@
 | 0.112   | 2026-11-23 | §14.7 / §15.7 (on `dev`, unreleased): the MCP server is ported to the `mcp` Python SDK 2.3.0 (`MCPServer` replaces `FastMCP`; same tools, names, arguments and results; `httpx` kept for the STD client). No API, schema or wire-contract change. |
 | 0.113   | 2026-11-23 | v0.13.3 released: the MCP server on the `mcp` SDK 2.x (§14.7, §15.7). No STD server, API, schema or wire-contract change. |
 | 0.114   | 2026-11-26 | Optional Docker Hub login for the image update check, on `dev`, unreleased: §24.2 (Basic only to the `auth.docker.io` realm, fixed `Docker Hub rejected the configured login` error, Test login), §24.6 (settings `dockerhub_username` / `dockerhub_token`, env > Settings > `settings.yml`, `STD_DOCKERHUB_TOKEN_FILE`, write-only token, the two Settings routes), §24.7 and the §18.1 table (API revision 8: read-only `dockerhub` block), §24.9 narrowed to credentials for other registries. No schema change (the `setting` key/value rows). |
+| 0.115   | 2026-11-26 | v0.13.4 released: the optional Docker Hub login for the image update check (§24.2, §24.6, §24.7) and API revision 8 (§18.1). No schema or register wire-contract change. |
 
 ---
 

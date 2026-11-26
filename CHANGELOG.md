@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.4] — 2026-11-26
+
 ### Added
 
 - **Optional Docker Hub login for the image update check.** The check used Docker Hub anonymously, so it drew on your public IP's quota (100 requests an hour), which every `docker pull` on the network shares; once that was spent, images showed "registry rate limited the check". In Settings → Sources → Image updates you can now enter a Docker Hub username and a read-only access token, and the check draws on your account's quota instead. The same values can come from `STD_DOCKERHUB_USERNAME` and `STD_DOCKERHUB_TOKEN` (or `STD_DOCKERHUB_TOKEN_FILE`, a file holding the token, for Docker secrets) or from `dockerhub_username` / `dockerhub_token` in `settings.yml`; the environment wins over Settings, which wins over the file. Both a username and a token are needed. The login goes only to Docker Hub's sign-in host (`auth.docker.io`), never to GHCR, Quay or any other registry; the token is never shown again, returned by the API, logged or exported; **Test login** checks it without pulling anything; a login Docker Hub rejects shows as a fixed error instead of silently falling back to anonymous. A database backup contains the token, like the MQTT password.
@@ -1664,7 +1666,8 @@ v0.2.0 through v0.2.12 released. Detailed notes not retained.
 
 Initial development releases v0.1.0 through v0.1.4.
 
-[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.3...HEAD
+[Unreleased]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.4...HEAD
+[0.13.4]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crzykidd/service-tracker-dashboard/compare/v0.13.0...v0.13.1

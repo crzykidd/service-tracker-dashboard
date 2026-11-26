@@ -212,8 +212,8 @@ rule come from the `code-checkin-and-pr` snippet above. Project extension:
 
 ## Build Status
 
-Current shipped release: **v0.13.3** (latest tag on `main`).
-In flight: 0.13.4 on `dev` (optional Docker Hub login for the image check, API revision 8); the 0.14.0 moves/label-settings design (now revision 9) awaits operator answers.
+Current shipped release: **v0.13.4** (latest tag on `main`).
+In flight: nothing on `dev` (the 0.14.0 moves/label-settings design, API revision 9, awaits operator answers).
 
 > Keep this to the two lines above; CHANGELOG and git tags are the record
 > of what shipped. Update them on each release / when work starts on `dev`.
