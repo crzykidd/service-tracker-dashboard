@@ -532,6 +532,31 @@ last-known bindings (a column, shown dimmed as "stopped") would catch that confl
 Deferred: it needs a migration and a rule for when a remembered port expires, and the
 observation columns are pure overwrite today.
 
+## Image check: a global default for version-tagged images
+
+**Parked:** 2026-11-26, after v0.13.4 (operator: "leave it for now").
+
+An entry on a version tag (`tecnativa/docker-socket-proxy:v0.4.1`) uses the tag model under
+the default `auto` policy, so STD suggests newer tags (`v0.4.2`, `v0.5.0`). Komodo only
+reports when the running tag itself is republished, so the two disagree and STD's badges
+look like "needs a pull" when the fix is a compose edit. The per-entry `digest` policy
+already gives Komodo's behavior; what is missing is a global default, so today it means
+setting every such entry by hand (13 socket proxies on emmett).
+
+Sketch: a Settings → Image updates choice for **version-tagged images**, the default for
+entries whose policy is `auto`:
+- **Suggest newer versions** (today's behavior; the default).
+- **Only watch for a republished tag** (as if the policy were `digest`).
+- **Don't check** (as if `off`).
+
+Tags with no version (`latest`, `stable`) keep the digest model either way, and an entry's
+own policy always wins. It goes in `image_tags.choose_model` / `evaluate` (a new
+`default_policy` argument beside `default_scope`), the settings store, the Settings page and
+the management API's `settings/image-updates` (an API revision bump). A change recomputes
+locally like the scope does, with no registry call. No register contract change, so it is
+independent of the 0.14.0 label settings (whose per-container `image_update_policy` label
+would override it).
+
 ## Run the container as a non-root user
 
 **Parked:** 2026-11-22, during the image CVE review (todo; operator wants it done).
